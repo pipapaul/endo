@@ -629,10 +629,14 @@ export default function EndoTrackApp() {
                         <Label>Dyspareunie</Label>
                         <SeverityPicker value={current.dyspareunia || 0} onChange={(v) => saveCurrent({ dyspareunia: v })} />
                       </div>
-                      <div className="grid gap-1">
-                        <Label>Schlaf (1–5)</Label>
-                        <NumberField id="sleep" value={current.sleep || 3} min={1} max={5} onChange={(v) => saveCurrent({ sleep: v })} />
-                      </div>
+                      <NumberField
+                        id="sleep"
+                        label="Schlaf (1–5)"
+                        value={current.sleep || 3}
+                        min={1}
+                        max={5}
+                        onChange={(v) => saveCurrent({ sleep: v })}
+                      />
                       <div className="grid gap-1">
                         <Label>Auslöser</Label>
                         <MultiSelectChips options={TRIGGERS} value={current.triggers || []} onChange={(v) => saveCurrent({ triggers: v })} />
