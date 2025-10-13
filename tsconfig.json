@@ -15,7 +15,11 @@
     "jsx": "preserve",
     "incremental": true,
     "types": ["node"],
-    "plugins": [{ "name": "next" }]
+    "plugins": [{ "name": "next" }],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"]
+    }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", "**/*.cjs"],
   "exclude": ["node_modules"]
