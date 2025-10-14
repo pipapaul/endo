@@ -510,11 +510,19 @@ export default function EndoTrackApp() {
 
           <div className="px-4 pb-2">
             <Tabs defaultValue="today" className="w-full">
-              <TabsList className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <TabsTrigger value="today">Heute</TabsTrigger>
-                <TabsTrigger value="history">Verlauf</TabsTrigger>
-                <TabsTrigger value="report">Report</TabsTrigger>
-                <TabsTrigger value="settings">Einstellungen</TabsTrigger>
+              <TabsList className="w-full gap-2 overflow-x-auto pb-1">
+                <TabsTrigger className="flex-none w-auto min-w-[7rem] whitespace-nowrap px-3 py-2" value="today">
+                  Heute
+                </TabsTrigger>
+                <TabsTrigger className="flex-none w-auto min-w-[7rem] whitespace-nowrap px-3 py-2" value="history">
+                  Verlauf
+                </TabsTrigger>
+                <TabsTrigger className="flex-none w-auto min-w-[7rem] whitespace-nowrap px-3 py-2" value="report">
+                  Report
+                </TabsTrigger>
+                <TabsTrigger className="flex-none w-auto min-w-[7rem] whitespace-nowrap px-3 py-2" value="settings">
+                  Einstellungen
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="today" className="mt-3">
@@ -918,26 +926,26 @@ export default function EndoTrackApp() {
                       </div>
                     }
                   >
-                    <div className="grid md:grid-cols-4 gap-3">
-                      <Card>
+                    <div className="flex gap-3 overflow-x-auto pb-2 md:grid md:grid-cols-4 md:gap-3 md:overflow-visible md:pb-0">
+                      <Card className="min-w-[12rem] md:min-w-0">
                         <CardContent className="p-4">
                           <div className="text-sm text-zinc-600">Tage dokumentiert</div>
                           <div className="text-2xl font-semibold">{stats.daysTracked}</div>
                         </CardContent>
                       </Card>
-                      <Card>
+                      <Card className="min-w-[12rem] md:min-w-0">
                         <CardContent className="p-4">
                           <div className="text-sm text-zinc-600">Durchschnittlicher Schmerzwert</div>
                           <div className="text-2xl font-semibold">{stats.avgPain}</div>
                         </CardContent>
                       </Card>
-                      <Card>
+                      <Card className="min-w-[12rem] md:min-w-0">
                         <CardContent className="p-4">
                           <div className="text-sm text-zinc-600">Maximaler Schmerzwert</div>
                           <div className="text-2xl font-semibold">{stats.maxPain}</div>
                         </CardContent>
                       </Card>
-                      <Card>
+                      <Card className="min-w-[12rem] md:min-w-0">
                         <CardContent className="p-4">
                           <div className="text-sm text-zinc-600">Flare‑Tage (≥6)</div>
                           <div className="text-2xl font-semibold">{stats.flareDays}</div>
