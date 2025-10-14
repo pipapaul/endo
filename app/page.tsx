@@ -1381,12 +1381,11 @@ function makeTextReport(stats: any, y: number, m: number) {
     ?.sort((a: any, b: any) => b.value - a.value)
     .map((x: any) => `${x.name}: ~${x.value}%`)
     .join("; ");
-  const bleedingCounts = stats.bleedingCounts as Record<string, number | null | undefined> | undefined;
-  const bleedingTotals = bleedingCounts
-    ? Object.values(bleedingCounts).reduce<number>((sum, value) => sum + Number(value ?? 0), 0)
+  const bleedingTotals = stats.bleedingCounts
+    ? Object.values(stats.bleedingCounts).reduce((sum: number, value: number) => sum + Number(value || 0), 0)
     : 0;
-  const bleedingBreakdown = bleedingCounts
-    ? BLEEDING_LEVELS.map((level) => `${level}: ${Number(bleedingCounts?.[level] ?? 0)}`)
+  const bleedingBreakdown = stats.bleedingCounts
+    ? BLEEDING_LEVELS.map((level) => `${level}: ${Number(stats.bleedingCounts?.[level] || 0)}`)
         .filter((part) => !part.endsWith(" 0"))
     : [];
   const bleedingLine = bleedingTotals
