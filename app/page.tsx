@@ -34,14 +34,16 @@ const DEFAULT_LOCATIONS = [
 const PAIN_TYPES = ["krampfartig", "stechend", "dumpf", "brennend", "ziehend"];
 const BLEEDING_LEVELS = ["keine", "Spotting", "leicht", "mittel", "stark"];
 const SEVERITY = ["keine", "leicht", "mittel", "stark"];
-const GI_FIELDS = [
+type GIFieldKey = "bloating" | "constipation" | "diarrhea" | "nausea" | "rectalPain";
+type UrinaryFieldKey = "frequency" | "urgency" | "dysuria";
+const GI_FIELDS: { key: GIFieldKey; label: string }[] = [
   { key: "bloating", label: "Blähbauch" },
   { key: "constipation", label: "Verstopfung" },
   { key: "diarrhea", label: "Durchfall" },
   { key: "nausea", label: "Übelkeit" },
   { key: "rectalPain", label: "Rektaler Schmerz" },
 ];
-const URINARY_FIELDS = [
+const URINARY_FIELDS: { key: UrinaryFieldKey; label: string }[] = [
   { key: "frequency", label: "Häufiger Harndrang" },
   { key: "urgency", label: "Harndrang (Dringlichkeit)" },
   { key: "dysuria", label: "Schmerzen beim Wasserlassen" },
@@ -498,13 +500,15 @@ export default function EndoTrackApp() {
     for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
       const key = toDateKey(d);
       const entry = entries.find((x) => x.date === key);
-      const gi = entry?.gi || {};
-      const urinary = entry?.urinary || {};
+      const gi: Partial<Record<GIFieldKey, number>> = entry?.gi ?? {};
+      const urinary: Partial<Record<UrinaryFieldKey, number>> = entry?.urinary ?? {};
       days.push({
         date: key.slice(-2),
-        ...Object.fromEntries(GI_FIELDS.map(({ key: giKey, label }) => [label, Number(gi?.[giKey] || 0)])),
         ...Object.fromEntries(
-          URINARY_FIELDS.map(({ key: urinaryKey, label }) => [label, Number(urinary?.[urinaryKey] || 0)])
+          GI_FIELDS.map(({ key: giKey, label }) => [label, Number(gi?.[giKey] ?? 0)])
+        ),
+        ...Object.fromEntries(
+          URINARY_FIELDS.map(({ key: urinaryKey, label }) => [label, Number(urinary?.[urinaryKey] ?? 0)])
         ),
       });
     }
