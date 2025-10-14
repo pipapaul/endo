@@ -11,6 +11,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
+import type { TooltipProps } from "recharts";
 import { Calendar, Download, Upload } from "lucide-react";
 
 import { DailyEntry, MonthlyEntry, WeeklyEntry } from "@/lib/types";
@@ -173,6 +174,7 @@ function Section({ title, description, aside, children }: {
 function ScoreInput({
   id,
   label,
+  termKey,
   value,
   onChange,
   min = 0,
@@ -181,6 +183,7 @@ function ScoreInput({
 }: {
   id: string;
   label: string;
+  termKey?: TermKey;
   value: number;
   onChange: (value: number) => void;
   min?: number;
