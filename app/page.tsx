@@ -510,18 +510,15 @@ export default function EndoTrackApp() {
 
           <div className="px-4 pb-2">
             <Tabs defaultValue="today" className="w-full">
-              <TabsList className="w-full gap-2 overflow-x-auto pb-1">
-                <TabsTrigger className="flex-none w-auto min-w-[7rem] whitespace-nowrap px-3 py-2" value="today">
+              <TabsList className="w-full grid grid-cols-3 gap-2 pb-1">
+                <TabsTrigger className="px-3 py-2" value="today">
                   Heute
                 </TabsTrigger>
-                <TabsTrigger className="flex-none w-auto min-w-[7rem] whitespace-nowrap px-3 py-2" value="history">
+                <TabsTrigger className="px-3 py-2" value="history">
                   Verlauf
                 </TabsTrigger>
-                <TabsTrigger className="flex-none w-auto min-w-[7rem] whitespace-nowrap px-3 py-2" value="report">
+                <TabsTrigger className="px-3 py-2" value="report">
                   Report
-                </TabsTrigger>
-                <TabsTrigger className="flex-none w-auto min-w-[7rem] whitespace-nowrap px-3 py-2" value="settings">
-                  Einstellungen
                 </TabsTrigger>
               </TabsList>
 
@@ -974,33 +971,6 @@ export default function EndoTrackApp() {
                       <Button onClick={copyReport}>In Zwischenablage</Button>
                     </div>
                   </Section>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="settings" className="mt-3">
-                <div className="grid gap-3">
-                  <Section title="Darstellung">
-                    <div className="flex items-center gap-6">
-                      <div className="flex items-center gap-3">
-                        <Switch checked={!!highContrast} onCheckedChange={setHighContrast} />
-                        <span className="text-sm">Hoher Kontrast</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <Label>Akzentfarbe</Label>
-                        <Select value={accent} onValueChange={setAccent}>
-                          <SelectTrigger className="h-9 w-40">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="rose">Rosa</SelectItem>
-                            <SelectItem value="violet">Violett</SelectItem>
-                            <SelectItem value="teal">Petrol</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  </Section>
-
                   <Section title="Zyklusstarts">
                     <div className="flex flex-wrap gap-2">
                       {periodStarts.map((d) => (
@@ -1017,7 +987,6 @@ export default function EndoTrackApp() {
                     </div>
                     <p className="text-xs text-zinc-500 mt-2">Zyklustag wird automatisch aus letztem Start berechnet.</p>
                   </Section>
-
                   <Section title="Daten">
                     <p className="text-sm text-zinc-600">
                       Alle Daten bleiben lokal in deinem Browser (kein Server). Export/Import ermöglicht Gerätewechsel.
@@ -1037,7 +1006,6 @@ export default function EndoTrackApp() {
                       </label>
                     </div>
                   </Section>
-
                   <Section title="Hinweis">
                     <p className="text-sm text-zinc-700">
                       Diese App dient der persönlichen Dokumentation von Symptomen (Schmerz, Blutung, Darm/Blase, Müdigkeit,
