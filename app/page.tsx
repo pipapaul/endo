@@ -385,6 +385,86 @@ function NumberField({
   );
 }
 
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+
+function sparklinePath(values: number[], range?: { min?: number; max?: number }) {
+  if (!values.length) return "";
+  const width = 100;
+  const height = 100;
+  const min =
+    range?.min !== undefined ? range.min : Math.min(...values.filter((v) => Number.isFinite(v)));
+  const max =
+    range?.max !== undefined ? range.max : Math.max(...values.filter((v) => Number.isFinite(v)));
+  const safeMin = Number.isFinite(min) ? min : 0;
+  const safeMax = Number.isFinite(max) ? max : 1;
+  const span = safeMax - safeMin || 1;
+
+  return values
+    .map((raw, index) => {
+      const value = Number.isFinite(raw) ? raw : 0;
+      const x = values.length === 1 ? width / 2 : (index / (values.length - 1)) * width;
+      const normalized = clamp01((value - safeMin) / span);
+      const y = height - normalized * height;
+      const command = index === 0 ? "M" : "L";
+      return `${command}${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ");
+}
+
+function KpiSquare({
+  label,
+  average,
+  max,
+  thresholdLabel,
+  thresholdValue,
+  fillAmount,
+  series,
+  valueRange,
+}: {
+  label: string;
+  average: number;
+  max: number;
+  thresholdLabel: string;
+  thresholdValue: number;
+  fillAmount: number;
+  series: number[];
+  valueRange?: { min?: number; max?: number };
+}) {
+  const fillPercent = Math.round(clamp01(fillAmount) * 100);
+  const path = sparklinePath(series, valueRange);
+
+  return (
+    <div className="space-y-2">
+      <div
+        className="relative aspect-square w-full overflow-hidden rounded-2xl border border-rose-200 bg-white shadow-sm"
+        style={{
+          background: `linear-gradient(to top, rgba(244, 63, 94, 0.85) ${fillPercent}%, rgba(255, 255, 255, 0.95) ${fillPercent}%)`,
+        }}
+      >
+        <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full">
+          <path
+            d={path}
+            fill="none"
+            stroke="rgba(255, 255, 255, 0.85)"
+            strokeWidth={3}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col justify-between p-3">
+          <div className="text-xs font-medium uppercase tracking-wide text-zinc-700/80">{label}</div>
+          <div>
+            <div className="text-2xl font-semibold text-zinc-900">{average.toFixed(1)}</div>
+            <div className="text-[11px] font-medium text-zinc-700/80">
+              Max {max} · {thresholdLabel}: {thresholdValue}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function EndoTrackApp() {
   const [entries, setEntries] = usePersistentState<DailyEntry[]>("endo.entries", []);
   const [periodStarts, setPeriodStarts] = usePersistentState<string[]>("endo.periodStarts", []);
@@ -484,6 +564,22 @@ export default function EndoTrackApp() {
   const [repYear, setRepYear] = useState<number>(new Date().getFullYear());
   const [repMonth, setRepMonth] = useState<number>(new Date().getMonth() + 1);
   const stats = useMemo(() => computeMonthlyStats(entries, repYear, repMonth), [entries, repYear, repMonth]);
+  const timelineSeries = useMemo(() => {
+    const sorted = [...entries].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    return {
+      gi: GI_FIELDS.reduce((acc, { key }) => {
+        acc[key] = sorted.map((entry) => Number(entry.gi?.[key] ?? 0));
+        return acc;
+      }, {} as Record<GIFieldKey, number[]>),
+      urinary: URINARY_FIELDS.reduce((acc, { key }) => {
+        acc[key] = sorted.map((entry) => Number(entry.urinary?.[key] ?? 0));
+        return acc;
+      }, {} as Record<UrinaryFieldKey, number[]>),
+      fatigue: sorted.map((entry) => Number(entry.fatigue ?? 0)),
+      mood: sorted.map((entry) => Number(entry.mood ?? 0)),
+      sleep: sorted.map((entry) => Number(entry.sleep ?? 0)),
+    };
+  }, [entries]);
   const painSeries = useMemo(() => {
     const { start, end } = monthBounds(repYear, repMonth);
     const days: any[] = [];
@@ -529,7 +625,81 @@ export default function EndoTrackApp() {
     }
     return days;
   }, [entries, repYear, repMonth]);
-  const formatAverage = (metric?: { avg: number }) => (metric ? metric.avg.toFixed(1) : "0.0");
+  const kpiOverview = useMemo(
+    () => {
+      const items: {
+        id: string;
+        label: string;
+        metric: { avg: number; max: number; thresholdDays: number };
+        thresholdLabel: string;
+        fillAmount: number;
+        series: number[];
+        range?: { min?: number; max?: number };
+      }[] = [];
+
+      GI_FIELDS.forEach(({ key, label }) => {
+        const metric = stats.giStats?.[key] || { avg: 0, max: 0, thresholdDays: 0 };
+        items.push({
+          id: `gi-${key}`,
+          label: `${label} (Ø)`,
+          metric,
+          thresholdLabel: "Belastete Tage (≥ mittel)",
+          fillAmount: metric.avg / 3,
+          series: timelineSeries.gi[key] || [],
+          range: { min: 0, max: 3 },
+        });
+      });
+
+      URINARY_FIELDS.forEach(({ key, label }) => {
+        const metric = stats.urinaryStats?.[key] || { avg: 0, max: 0, thresholdDays: 0 };
+        items.push({
+          id: `urinary-${key}`,
+          label: `${label} (Ø)`,
+          metric,
+          thresholdLabel: "Belastete Tage (≥ mittel)",
+          fillAmount: metric.avg / 3,
+          series: timelineSeries.urinary[key] || [],
+          range: { min: 0, max: 3 },
+        });
+      });
+
+      const fatigueMetric = stats.fatigueStats || { avg: 0, max: 0, thresholdDays: 0 };
+      items.push({
+        id: "fatigue",
+        label: "Müdigkeit (Ø)",
+        metric: fatigueMetric,
+        thresholdLabel: "Belastete Tage (≥ mittel)",
+        fillAmount: fatigueMetric.avg / 3,
+        series: timelineSeries.fatigue,
+        range: { min: 0, max: 3 },
+      });
+
+      const moodMetric = stats.moodStats || { avg: 0, max: 0, thresholdDays: 0 };
+      items.push({
+        id: "mood",
+        label: "Stimmung (Ø)",
+        metric: moodMetric,
+        thresholdLabel: "Tage ≤ schlecht",
+        fillAmount: Math.max(0, -moodMetric.avg) / 2,
+        series: timelineSeries.mood,
+        range: { min: -2, max: 2 },
+      });
+
+      const sleepMetric = stats.sleepStats || { avg: 0, max: 0, thresholdDays: 0 };
+      items.push({
+        id: "sleep",
+        label: "Schlafqualität (Ø)",
+        metric: sleepMetric,
+        thresholdLabel: "Nächte ≤2",
+        fillAmount: (5 - sleepMetric.avg) / 4,
+        series: timelineSeries.sleep,
+        range: { min: 1, max: 5 },
+      });
+
+      return items;
+    },
+    [stats, timelineSeries]
+  );
 
   function exportData() {
     if (typeof document === "undefined") return;
@@ -1060,62 +1230,20 @@ export default function EndoTrackApp() {
                         </CardContent>
                       </Card>
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {GI_FIELDS.map(({ key, label }) => {
-                        const metric = stats.giStats?.[key] || { avg: 0, max: 0, thresholdDays: 0 };
-                        return (
-                          <Card key={`gi-${key}`}>
-                            <CardContent className="p-4">
-                              <div className="text-sm text-zinc-600">{label} (Ø)</div>
-                              <div className="text-2xl font-semibold">{metric.avg.toFixed(1)}</div>
-                              <div className="text-xs text-zinc-500 mt-1">
-                                Max: {metric.max} · Belastete Tage (≥ mittel): {metric.thresholdDays}
-                              </div>
-                            </CardContent>
-                          </Card>
-                        );
-                      })}
-                      {URINARY_FIELDS.map(({ key, label }) => {
-                        const metric = stats.urinaryStats?.[key] || { avg: 0, max: 0, thresholdDays: 0 };
-                        return (
-                          <Card key={`urinary-${key}`}>
-                            <CardContent className="p-4">
-                              <div className="text-sm text-zinc-600">{label} (Ø)</div>
-                              <div className="text-2xl font-semibold">{metric.avg.toFixed(1)}</div>
-                              <div className="text-xs text-zinc-500 mt-1">
-                                Max: {metric.max} · Belastete Tage (≥ mittel): {metric.thresholdDays}
-                              </div>
-                            </CardContent>
-                          </Card>
-                        );
-                      })}
-                      <Card>
-                        <CardContent className="p-4">
-                          <div className="text-sm text-zinc-600">Müdigkeit (Ø)</div>
-                          <div className="text-2xl font-semibold">{formatAverage(stats.fatigueStats)}</div>
-                          <div className="text-xs text-zinc-500 mt-1">
-                            Max: {stats.fatigueStats?.max ?? 0} · Belastete Tage (≥ mittel): {stats.fatigueStats?.thresholdDays ?? 0}
-                          </div>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardContent className="p-4">
-                          <div className="text-sm text-zinc-600">Stimmung (Ø)</div>
-                          <div className="text-2xl font-semibold">{formatAverage(stats.moodStats)}</div>
-                          <div className="text-xs text-zinc-500 mt-1">
-                            Max: {stats.moodStats?.max ?? 0} · Belastete Tage (≤ schlecht): {stats.moodStats?.thresholdDays ?? 0}
-                          </div>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardContent className="p-4">
-                          <div className="text-sm text-zinc-600">Schlafqualität (Ø)</div>
-                          <div className="text-2xl font-semibold">{formatAverage(stats.sleepStats)}</div>
-                          <div className="text-xs text-zinc-500 mt-1">
-                            Max: {stats.sleepStats?.max ?? 0} · Nächte ≤2: {stats.sleepStats?.thresholdDays ?? 0}
-                          </div>
-                        </CardContent>
-                      </Card>
+                    <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+                      {kpiOverview.map((item) => (
+                        <KpiSquare
+                          key={item.id}
+                          label={item.label}
+                          average={item.metric.avg}
+                          max={item.metric.max}
+                          thresholdLabel={item.thresholdLabel}
+                          thresholdValue={item.metric.thresholdDays}
+                          fillAmount={item.fillAmount}
+                          series={item.series}
+                          valueRange={item.range}
+                        />
+                      ))}
                     </div>
                   </Section>
 
