@@ -356,7 +356,7 @@ export default function EndoTrackApp() {
       merged.date = targetDate;
       merged.cycle = {
         ...merged.cycle,
-        cycleDay: computeCycleDay(targetDate, effectiveStarts),
+        cycleDay: patch.cycle?.cycleDay ?? computeCycleDay(targetDate, effectiveStarts),
       };
 
       const next = [...prev];
@@ -387,7 +387,8 @@ export default function EndoTrackApp() {
   function markPeriodStart(dateKey: string) {
     setPeriodStarts((prev) => {
       const next = uniq([...(prev || []), dateKey]).sort();
-      saveEntry({ cycle: { periodStart: true } }, { date: dateKey, starts: next });
+      const cycleDay = computeCycleDay(dateKey, next);
+      saveEntry({ cycle: { periodStart: true, cycleDay } }, { date: dateKey, starts: next });
       return next;
     });
   }
@@ -395,7 +396,8 @@ export default function EndoTrackApp() {
   function unmarkPeriodStart(dateKey: string) {
     setPeriodStarts((prev) => {
       const next = (prev || []).filter((d) => d !== dateKey);
-      saveEntry({ cycle: { periodStart: false } }, { date: dateKey, starts: next });
+      const cycleDay = computeCycleDay(dateKey, next);
+      saveEntry({ cycle: { periodStart: false, cycleDay } }, { date: dateKey, starts: next });
       return next;
     });
   }
