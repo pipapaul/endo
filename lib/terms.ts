@@ -133,7 +133,7 @@ export const TERMS = {
   },
   notesTags: { label: "Schlagworte/Trigger", help: "Kurze Begriffe für Muster & Filter" },
   notesFree: { label: "Notizen", help: "Freier Text für Besonderheiten" },
-} as const;
+} satisfies Record<string, TermDescriptor>;
 
 export type TermKey = keyof typeof TERMS;
 

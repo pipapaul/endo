@@ -12,7 +12,7 @@ type Props = {
 };
 
 export function Labeled({ label, tech, help, htmlFor, meta, children }: Props) {
-  const Wrapper = (htmlFor ? "label" : "div") as const;
+  const Wrapper = (htmlFor ? "label" : "div") as "label" | "div";
   return (
     <Wrapper className="block" {...(htmlFor ? { htmlFor } : { role: "group" })}>
       <span className="flex items-center text-sm font-medium text-rose-900">

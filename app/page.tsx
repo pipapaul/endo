@@ -1153,7 +1153,7 @@ export default function HomePage() {
                   <div className="grid gap-4">
                     {SYMPTOM_ITEMS.map((item) => {
                       const symptom = dailyDraft.symptoms[item.key] ?? { present: false };
-                      const term = TERMS[item.termKey];
+                      const term: TermDescriptor = TERMS[item.termKey];
                       return (
                         <div key={item.key} className="rounded-lg border border-rose-100 bg-rose-50 p-4">
                           <div className="flex flex-wrap items-center justify-between gap-2">
