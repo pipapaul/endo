@@ -1,0 +1,262 @@
+import { DailyEntry, MonthlyEntry, WeeklyEntry } from "./types";
+
+export interface ValidationIssue {
+  path: string;
+  message: string;
+}
+
+const intRange = (value: number | undefined, min: number, max: number) =>
+  typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
+
+const nonNegative = (value: number | undefined) => typeof value === "number" && value >= 0;
+
+export function validateDailyEntry(entry: DailyEntry): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(entry.date)) {
+    issues.push({ path: "date", message: "Datum muss im Format YYYY-MM-DD vorliegen." });
+  }
+
+  if (!intRange(entry.painNRS, 0, 10)) {
+    issues.push({
+      path: "painNRS",
+      message: "Schmerzintensität muss als ganze Zahl zwischen 0 und 10 erfasst werden.",
+    });
+  }
+
+  const allowedPainQuality = new Set(["krampfend", "stechend", "brennend", "dumpf", "ziehend", "anders"]);
+  entry.painQuality.forEach((quality, index) => {
+    if (!allowedPainQuality.has(quality)) {
+      issues.push({
+        path: `painQuality[${index}]`,
+        message: "Ungültige Schmerzqualität ausgewählt.",
+      });
+    }
+  });
+
+  if (!Array.isArray(entry.painMapRegionIds)) {
+    issues.push({ path: "painMapRegionIds", message: "Schmerzorte müssen als Liste gespeichert werden." });
+  }
+
+  if (entry.bleeding.isBleeding) {
+    if (!nonNegative(entry.bleeding.pbacScore)) {
+      issues.push({
+        path: "bleeding.pbacScore",
+        message: "PBAC-Score muss bei aktiver Blutung als nicht-negative Zahl vorliegen.",
+      });
+    }
+  } else {
+    if (entry.bleeding.pbacScore !== undefined) {
+      issues.push({
+        path: "bleeding.pbacScore",
+        message: "PBAC-Score darf nur angegeben werden, wenn eine Blutung vorliegt.",
+      });
+    }
+    if (entry.bleeding.clots !== undefined) {
+      issues.push({
+        path: "bleeding.clots",
+        message: "Koagel dürfen nur bei aktiver Blutung dokumentiert werden.",
+      });
+    }
+  }
+
+  const symptomKeys = [
+    "dysmenorrhea",
+    "deepDyspareunia",
+    "pelvicPainNonMenses",
+    "dyschezia",
+    "dysuria",
+    "fatigue",
+    "bloating",
+  ] as const;
+
+  symptomKeys.forEach((key) => {
+    const symptom = entry.symptoms[key];
+    if (!symptom) return;
+    if (typeof symptom.present !== "boolean") {
+      issues.push({ path: `symptoms.${key}.present`, message: "Symptom muss mit Ja/Nein erfasst werden." });
+    }
+    if (symptom.present) {
+      if (!intRange(symptom.score, 0, 10)) {
+        issues.push({
+          path: `symptoms.${key}.score`,
+          message: "Symptomschwere muss als ganze Zahl zwischen 0 und 10 erfasst werden.",
+        });
+      }
+    } else if (symptom.score !== undefined) {
+      issues.push({
+        path: `symptoms.${key}.score`,
+        message: "Wenn das Symptom nicht vorliegt, darf kein Score angegeben werden.",
+      });
+    }
+  });
+
+  entry.meds.forEach((med, index) => {
+    if (!med.name) {
+      issues.push({ path: `meds[${index}].name`, message: "Medikament benötigt eine Bezeichnung." });
+    }
+    if (med.doseMg !== undefined && (!Number.isFinite(med.doseMg) || med.doseMg < 0)) {
+      issues.push({
+        path: `meds[${index}].doseMg`,
+        message: "Dosen müssen als nicht-negative Zahl in mg angegeben werden.",
+      });
+    }
+  });
+
+  if (entry.rescueDosesCount !== undefined && !Number.isInteger(entry.rescueDosesCount)) {
+    issues.push({ path: "rescueDosesCount", message: "Anzahl der Akutdosen muss eine Ganzzahl sein." });
+  }
+
+  if (entry.sleep) {
+    const { hours, quality, awakenings } = entry.sleep;
+    if (hours !== undefined && (hours < 0 || hours > 24)) {
+      issues.push({ path: "sleep.hours", message: "Schlafdauer muss zwischen 0 und 24 Stunden liegen." });
+    }
+    if (quality !== undefined && !intRange(quality, 0, 10)) {
+      issues.push({ path: "sleep.quality", message: "Schlafqualität muss 0–10 (Ganzzahl) sein." });
+    }
+    if (awakenings !== undefined && (!Number.isInteger(awakenings) || awakenings < 0)) {
+      issues.push({
+        path: "sleep.awakenings",
+        message: "Nächtliche Aufwachphasen müssen als nicht-negative Ganzzahl erfasst werden.",
+      });
+    }
+  }
+
+  if (entry.gi) {
+    if (entry.gi.bristolType !== undefined && ![1, 2, 3, 4, 5, 6, 7].includes(entry.gi.bristolType)) {
+      issues.push({ path: "gi.bristolType", message: "Bristol-Score muss zwischen 1 und 7 liegen." });
+    }
+    if (entry.gi.bowelPain !== undefined && !intRange(entry.gi.bowelPain, 0, 10)) {
+      issues.push({ path: "gi.bowelPain", message: "Darm-Schmerz muss 0–10 (Ganzzahl) sein." });
+    }
+  }
+
+  if (entry.urinary) {
+    const { freqPerDay, urgency, pain } = entry.urinary;
+    if (freqPerDay !== undefined && (!Number.isInteger(freqPerDay) || freqPerDay < 0)) {
+      issues.push({
+        path: "urinary.freqPerDay",
+        message: "Miktionen/Tag müssen als nicht-negative Ganzzahl erfasst werden.",
+      });
+    }
+    if (urgency !== undefined && !intRange(urgency, 0, 10)) {
+      issues.push({ path: "urinary.urgency", message: "Drang muss 0–10 (Ganzzahl) sein." });
+    }
+    if (pain !== undefined && !intRange(pain, 0, 10)) {
+      issues.push({ path: "urinary.pain", message: "Blasenschmerz muss 0–10 (Ganzzahl) sein." });
+    }
+  }
+
+  if (entry.sexual?.fsfiTotal !== undefined && (!Number.isFinite(entry.sexual.fsfiTotal) || entry.sexual.fsfiTotal < 0)) {
+    issues.push({
+      path: "sexual.fsfiTotal",
+      message: "FSFI-Werte müssen als nicht-negative Zahl angegeben werden.",
+    });
+  }
+
+  if (entry.activity) {
+    if (entry.activity.steps !== undefined && (!Number.isInteger(entry.activity.steps) || entry.activity.steps < 0)) {
+      issues.push({ path: "activity.steps", message: "Schritte müssen als nicht-negative Ganzzahl angegeben werden." });
+    }
+    if (
+      entry.activity.activeMinutes !== undefined &&
+      (!Number.isInteger(entry.activity.activeMinutes) || entry.activity.activeMinutes < 0)
+    ) {
+      issues.push({
+        path: "activity.activeMinutes",
+        message: "Aktivminuten müssen als nicht-negative Ganzzahl angegeben werden.",
+      });
+    }
+  }
+
+  if (entry.exploratory?.hrvRmssdMs !== undefined && (!Number.isFinite(entry.exploratory.hrvRmssdMs) || entry.exploratory.hrvRmssdMs < 0)) {
+    issues.push({
+      path: "exploratory.hrvRmssdMs",
+      message: "HRV (RMSSD) muss als nicht-negative Zahl vorliegen.",
+    });
+  }
+
+  if (entry.ovulation) {
+    if (entry.ovulation.lhTime && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(entry.ovulation.lhTime)) {
+      issues.push({ path: "ovulation.lhTime", message: "LH-Test-Zeit muss ISO-Datetime sein." });
+    }
+    if (entry.ovulation.bbtCelsius !== undefined) {
+      const value = entry.ovulation.bbtCelsius;
+      const rounded = Math.round(value * 100) / 100;
+      if (!Number.isFinite(value) || value < 34 || value > 38) {
+        issues.push({ path: "ovulation.bbtCelsius", message: "BBT muss zwischen 34.00 °C und 38.00 °C liegen." });
+      }
+      if (Math.abs(value - rounded) > 1e-6) {
+        issues.push({ path: "ovulation.bbtCelsius", message: "BBT muss mit zwei Nachkommastellen erfasst werden." });
+      }
+    }
+  }
+
+  return issues;
+}
+
+export function validateWeeklyEntry(entry: WeeklyEntry): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  if (!/^\d{4}-W\d{2}$/.test(entry.isoWeek)) {
+    issues.push({ path: "isoWeek", message: "Kalenderwoche muss im Format JJJJ-WXX angegeben werden." });
+  }
+
+  if (entry.function) {
+    const { wpaiAbsenteeismPct, wpaiPresenteeismPct, wpaiOverallPct } = entry.function;
+    const inRange = (v: number | undefined) => typeof v === "number" && v >= 0 && v <= 100;
+    if (wpaiAbsenteeismPct !== undefined && !inRange(wpaiAbsenteeismPct)) {
+      issues.push({ path: "function.wpaiAbsenteeismPct", message: "WPAI Absenzen müssen 0–100 % sein." });
+    }
+    if (wpaiPresenteeismPct !== undefined && !inRange(wpaiPresenteeismPct)) {
+      issues.push({ path: "function.wpaiPresenteeismPct", message: "WPAI Präsenzminderung muss 0–100 % sein." });
+    }
+    if (wpaiOverallPct !== undefined && !inRange(wpaiOverallPct)) {
+      issues.push({ path: "function.wpaiOverallPct", message: "WPAI Gesamtbeeinträchtigung muss 0–100 % sein." });
+    }
+  }
+
+  return issues;
+}
+
+export function validateMonthlyEntry(entry: MonthlyEntry): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  if (!/^\d{4}-\d{2}$/.test(entry.month)) {
+    issues.push({ path: "month", message: "Monat muss im Format YYYY-MM angegeben werden." });
+  }
+
+  if (entry.qol?.ehp5Total !== undefined && (!Number.isFinite(entry.qol.ehp5Total) || entry.qol.ehp5Total < 0)) {
+    issues.push({ path: "qol.ehp5Total", message: "EHP-5 Gesamtscore muss eine nicht-negative Zahl sein." });
+  }
+
+  if (entry.qol?.ehp5Subscales) {
+    Object.entries(entry.qol.ehp5Subscales).forEach(([key, value]) => {
+      if (!Number.isFinite(value) || value < 0) {
+        issues.push({ path: `qol.ehp5Subscales.${key}`, message: "Subskalen müssen nicht-negative Zahlen sein." });
+      }
+    });
+  }
+
+  if (entry.mental) {
+    const { phq9, gad7 } = entry.mental;
+    if (phq9 !== undefined && (!Number.isInteger(phq9) || phq9 < 0 || phq9 > 27)) {
+      issues.push({ path: "mental.phq9", message: "PHQ-9 muss zwischen 0 und 27 liegen." });
+    }
+    if (gad7 !== undefined && (!Number.isInteger(gad7) || gad7 < 0 || gad7 > 21)) {
+      issues.push({ path: "mental.gad7", message: "GAD-7 muss zwischen 0 und 21 liegen." });
+    }
+  }
+
+  if (entry.promis) {
+    const { fatigueT, painInterferenceT } = entry.promis;
+    const validT = (v: number | undefined) => typeof v === "number" && v >= 0 && v <= 100;
+    if (fatigueT !== undefined && !validT(fatigueT)) {
+      issues.push({ path: "promis.fatigueT", message: "PROMIS Fatigue T-Score muss zwischen 0 und 100 liegen." });
+    }
+    if (painInterferenceT !== undefined && !validT(painInterferenceT)) {
+      issues.push({ path: "promis.painInterferenceT", message: "PROMIS Pain Interference T-Score muss zwischen 0 und 100 liegen." });
+    }
+  }
+
+  return issues;
+}
