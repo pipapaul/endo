@@ -1,352 +1,176 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { ChangeEvent, ReactNode } from "react";
 import {
   LineChart,
   Line,
   XAxis,
   YAxis,
-  CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  CartesianGrid,
 } from "recharts";
 import { Calendar, Download, Upload } from "lucide-react";
+
+import { DailyEntry, MonthlyEntry, WeeklyEntry } from "@/lib/types";
+import {
+  validateDailyEntry,
+  validateMonthlyEntry,
+  validateWeeklyEntry,
+  type ValidationIssue,
+} from "@/lib/validation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 
-const DEFAULT_LOCATIONS = [
-  "Unterbauch links",
-  "Unterbauch rechts",
-  "Uterus",
-  "Kreuzbein",
-  "Rektalbereich",
-  "Vaginalbereich",
-  "Oberschenkel",
+import { cn } from "@/lib/utils";
+
+type SymptomKey = keyof DailyEntry["symptoms"];
+
+const PAIN_QUALITIES: DailyEntry["painQuality"] = [
+  "krampfend",
+  "stechend",
+  "brennend",
+  "dumpf",
+  "ziehend",
+  "anders",
 ];
-const PAIN_TYPES = ["krampfartig", "stechend", "dumpf", "brennend", "ziehend"];
-const BLEEDING_LEVELS = ["keine", "Spotting", "leicht", "mittel", "stark"];
-const SEVERITY = ["keine", "leicht", "mittel", "stark"];
-type GIFieldKey = "bloating" | "constipation" | "diarrhea" | "nausea" | "rectalPain";
-type UrinaryFieldKey = "frequency" | "urgency" | "dysuria";
-const GI_FIELDS: { key: GIFieldKey; label: string }[] = [
-  { key: "bloating", label: "Blähbauch" },
-  { key: "constipation", label: "Verstopfung" },
-  { key: "diarrhea", label: "Durchfall" },
-  { key: "nausea", label: "Übelkeit" },
-  { key: "rectalPain", label: "Rektaler Schmerz" },
+
+const BODY_REGIONS: { id: string; label: string }[] = [
+  { id: "pelvis_left", label: "Becken links" },
+  { id: "pelvis_right", label: "Becken rechts" },
+  { id: "uterus", label: "Uterus" },
+  { id: "lower_back", label: "LWS / Kreuzbein" },
+  { id: "upper_abdomen", label: "Oberbauch" },
+  { id: "rectal", label: "Rektalbereich" },
+  { id: "vaginal", label: "Vaginalbereich" },
+  { id: "thigh_left", label: "Oberschenkel links" },
+  { id: "thigh_right", label: "Oberschenkel rechts" },
 ];
-const URINARY_FIELDS: { key: UrinaryFieldKey; label: string }[] = [
-  { key: "frequency", label: "Häufiger Harndrang" },
-  { key: "urgency", label: "Harndrang (Dringlichkeit)" },
-  { key: "dysuria", label: "Schmerzen beim Wasserlassen" },
+
+const SYMPTOM_ITEMS: { key: SymptomKey; label: string; description?: string }[] = [
+  { key: "dysmenorrhea", label: "Dysmenorrhoe" },
+  { key: "deepDyspareunia", label: "Tiefer Dyspareunie-Schmerz" },
+  { key: "pelvicPainNonMenses", label: "Beckenschmerz außerhalb der Menstruation" },
+  { key: "dyschezia", label: "Dyschezie" },
+  { key: "dysuria", label: "Dysurie" },
+  { key: "fatigue", label: "Fatigue" },
+  { key: "bloating", label: "Bloating" },
 ];
-const FIELD_COLORS: Record<string, string> = {
-  bloating: "#f97316",
-  constipation: "#f59e0b",
-  diarrhea: "#6366f1",
-  nausea: "#ec4899",
-  rectalPain: "#14b8a6",
-  frequency: "#0ea5e9",
-  urgency: "#9333ea",
-  dysuria: "#22c55e",
-  fatigue: "#e11d48",
-  mood: "#7c3aed",
-  sleep: "#fb7185",
+
+const PBAC_ITEMS = [
+  { id: "pad_light", label: "Binde (leicht gefärbt)", score: 1 },
+  { id: "pad_medium", label: "Binde (mittel)", score: 5 },
+  { id: "pad_heavy", label: "Binde (durchtränkt)", score: 20 },
+  { id: "tampon_light", label: "Tampon (leicht)", score: 1 },
+  { id: "tampon_medium", label: "Tampon (mittel)", score: 5 },
+  { id: "tampon_heavy", label: "Tampon (durchtränkt)", score: 10 },
+  { id: "clot_small", label: "Koagel <2 cm", score: 1 },
+  { id: "clot_large", label: "Koagel ≥2 cm", score: 5 },
+] as const;
+
+type PbacCounts = Record<(typeof PBAC_ITEMS)[number]["id"], number>;
+
+const PBAC_DEFAULT_COUNTS = PBAC_ITEMS.reduce<PbacCounts>((acc, item) => {
+  acc[item.id] = 0;
+  return acc;
+}, {} as PbacCounts);
+
+const BRISTOL_TYPES = [
+  { value: 1, label: "Typ 1" },
+  { value: 2, label: "Typ 2" },
+  { value: 3, label: "Typ 3" },
+  { value: 4, label: "Typ 4" },
+  { value: 5, label: "Typ 5" },
+  { value: 6, label: "Typ 6" },
+  { value: 7, label: "Typ 7" },
+] as const;
+
+const formatDate = (date: Date) => {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
 };
-const TRIGGERS = [
-  "Stress",
-  "Ovulation",
-  "Periode",
-  "Belastung",
-  "Kälte",
-  "Lebensmittel",
-  "Koffein",
-  "Milch",
-  "Gluten",
-  "Alkohol",
-  "Schlafmangel",
-];
-const NON_PHARM = [
-  "Wärmeanwendung",
-  "Ruhe",
-  "Dehnen oder Yoga",
-  "Transkutane elektrische Nervenstimulation",
-  "Spaziergang",
-  "Angepasste Ernährung",
-];
 
-interface MedicationEntry {
-  name: string;
-  dose: string;
-  relief: number;
-}
+const createEmptyDailyEntry = (date: string): DailyEntry => ({
+  date,
+  painNRS: 0,
+  painQuality: [],
+  painMapRegionIds: [],
+  bleeding: { isBleeding: false },
+  symptoms: {},
+  meds: [],
+  ovulation: {},
+});
 
-interface DailyEntry {
-  date: string;
-  pain: { score: number; locations: string[]; types: string[]; durationH: number };
-  bleeding: { level: string | undefined; clots: boolean };
-  gi: { bloating: number; constipation: number; diarrhea: number; nausea: number; rectalPain: number };
-  urinary: { frequency: number; urgency: number; dysuria: number };
-  fatigue: number;
-  mood: number;
-  dyspareunia: number;
-  sleep: number;
-  meds: MedicationEntry[];
-  nonPharm: string[];
-  triggers: string[];
-  workImpact: { missed: boolean; reducedHours: number };
-  cycle: { periodStart: boolean; cycleDay?: number };
-  note: string;
-}
+const createEmptyWeeklyEntry = (isoWeek: string): WeeklyEntry => ({
+  isoWeek,
+  function: {
+    wpaiAbsenteeismPct: undefined,
+    wpaiPresenteeismPct: undefined,
+    wpaiOverallPct: undefined,
+  },
+});
 
-const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-const toDateKey = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const fromDateKey = (s: string) => new Date(`${s}T00:00:00`);
-const uniq = (arr: string[]) => Array.from(new Set(arr));
-const avg = (arr: number[]) => (arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : 0);
+const createEmptyMonthlyEntry = (month: string): MonthlyEntry => ({
+  month,
+  qol: {},
+  mental: {},
+  promis: {},
+});
 
-function loadLS<T>(key: string, fb: T): T {
-  try {
-    if (typeof window === "undefined") return fb;
-    const r = window.localStorage.getItem(key);
-    return r ? JSON.parse(r) : fb;
-  } catch {
-    return fb;
-  }
-}
-
-function saveLS(key: string, v: unknown) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(key, JSON.stringify(v));
-}
-
-function emptyEntry(dateKey: string): DailyEntry {
-  return {
-    date: dateKey,
-    pain: { score: 0, locations: [], types: [], durationH: 0 },
-    bleeding: { level: "keine", clots: false },
-    gi: { bloating: 0, constipation: 0, diarrhea: 0, nausea: 0, rectalPain: 0 },
-    urinary: { frequency: 0, urgency: 0, dysuria: 0 },
-    fatigue: 0,
-    mood: 0,
-    dyspareunia: 0,
-    sleep: 3,
-    meds: [],
-    nonPharm: [],
-    triggers: [],
-    workImpact: { missed: false, reducedHours: 0 },
-    cycle: { periodStart: false, cycleDay: undefined },
-    note: "",
-  };
-}
-
-function usePersistentState<T>(key: string, initial: T) {
-  const fallbackRef = useRef(initial);
-  const [state, setState] = useState<T>(() => {
-    if (typeof window === "undefined") return fallbackRef.current;
-    return loadLS(key, fallbackRef.current);
+function useLocalStorageState<T>(key: string, defaultValue: T) {
+  const [value, setValue] = useState<T>(() => {
+    if (typeof window === "undefined") return defaultValue;
+    const stored = window.localStorage.getItem(key);
+    if (!stored) return defaultValue;
+    try {
+      return JSON.parse(stored) as T;
+    } catch {
+      return defaultValue;
+    }
   });
 
   useEffect(() => {
-    fallbackRef.current = initial;
-  }, [initial]);
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(key, JSON.stringify(value));
+  }, [key, value]);
 
-  useEffect(() => {
-    setState(() => {
-      if (typeof window === "undefined") return fallbackRef.current;
-      return loadLS(key, fallbackRef.current);
-    });
-  }, [key]);
-
-  useEffect(() => {
-    saveLS(key, state);
-  }, [key, state]);
-
-  return [state, setState] as const;
+  return [value, setValue] as const;
 }
 
-function computeCycleDay(dateKey: string, starts: string[]) {
-  const d = fromDateKey(dateKey);
-  const past = starts
-    .map(fromDateKey)
-    .filter((x) => x <= d)
-    .sort((a, b) => b.getTime() - a.getTime());
-  if (!past.length) return undefined;
-  const diff = (d.getTime() - past[0].getTime()) / 86400000;
-  return Math.round(diff) + 1;
-}
-
-function withinMonth(dateKey: string, y: number, m: number) {
-  const d = fromDateKey(dateKey);
-  return d.getFullYear() === y && d.getMonth() + 1 === m;
-}
-
-function monthBounds(y: number, m: number) {
-  return { start: new Date(y, m - 1, 1), end: new Date(y, m, 1) };
-}
-
-function monthLabel(y: number, m: number) {
-  return new Date(y, m - 1, 1).toLocaleDateString("de-DE", { month: "long", year: "numeric" });
-}
-
-function computeMonthlyStats(entries: any[], y: number, m: number) {
-  const data = entries.filter((e) => withinMonth(e.date, y, m));
-  const pains = data.map((e) => Number(e.pain?.score || 0));
-  const toNumber = (value: unknown) => (typeof value === "number" ? value : Number(value || 0));
-  const summarize = (values: number[], threshold: (value: number) => boolean) => {
-    const numeric = values.map((v) => (Number.isFinite(v) ? v : 0));
-    const max = numeric.length ? Math.max(...numeric) : 0;
-    return {
-      avg: avg(numeric),
-      max,
-      thresholdDays: numeric.filter((v) => threshold(v)).length,
-    };
-  };
-  const summarizeFields = (
-    fields: { key: string }[],
-    extractor: (entry: any, key: string) => number,
-    threshold: (value: number) => boolean
-  ) => {
-    return fields.reduce((acc, field) => {
-      const values = data.map((entry) => extractor(entry, field.key));
-      acc[field.key] = summarize(values, threshold);
-      return acc;
-    }, {} as Record<string, { avg: number; max: number; thresholdDays: number }>);
-  };
-  const sums = {
-    daysTracked: data.length,
-    avgPain: avg(pains),
-    maxPain: Math.max(0, ...pains),
-    flareDays: data.filter((e) => (e.pain?.score || 0) >= 6).length,
-  };
-  const by = { loc: {} as Record<string, number>, trig: {} as Record<string, number>, med: {} as Record<string, number[]> };
-  data.forEach((e) => {
-    (e.pain?.locations || []).forEach((l: string) => (by.loc[l] = (by.loc[l] || 0) + 1));
-    (e.triggers || []).forEach((t: string) => (by.trig[t] = (by.trig[t] || 0) + 1));
-    (e.meds || []).forEach((mEntry: any) => {
-      if (!mEntry.name) return;
-      (by.med[mEntry.name] = by.med[mEntry.name] || []).push(Number(mEntry.relief || 0));
-    });
-  });
-  const medReliefAvg = Object.entries(by.med).map(([name, arr]) => ({ name, value: avg(arr as number[]) }));
-  const giStats = summarizeFields(
-    GI_FIELDS,
-    (entry, key) => toNumber(entry.gi?.[key]),
-    (value) => value >= 2
-  );
-  const urinaryStats = summarizeFields(
-    URINARY_FIELDS,
-    (entry, key) => toNumber(entry.urinary?.[key]),
-    (value) => value >= 2
-  );
-  const fatigueStats = summarize(
-    data.map((entry) => toNumber(entry.fatigue)),
-    (value) => value >= 2
-  );
-  const moodStats = summarize(
-    data.map((entry) => toNumber(entry.mood)),
-    (value) => value <= -1
-  );
-  const sleepStats = summarize(
-    data.map((entry) => toNumber(entry.sleep)),
-    (value) => value <= 2
-  );
-  return {
-    ...sums,
-    byLocation: Object.entries(by.loc).map(([name, count]) => ({ name, count })),
-    byTrigger: Object.entries(by.trig).map(([name, count]) => ({ name, count })),
-    medReliefAvg,
-    giStats,
-    urinaryStats,
-    fatigueStats,
-    moodStats,
-    sleepStats,
-    raw: data,
-  };
-}
-
-function Section({
-  title,
-  children,
-  aside,
-  description,
-}: {
+function Section({ title, description, aside, children }: {
   title: string;
-  children: React.ReactNode;
-  aside?: React.ReactNode;
-  description?: React.ReactNode;
+  description?: string;
+  aside?: ReactNode;
+  children: ReactNode;
 }) {
   return (
-    <Card className="border border-zinc-200 bg-white shadow-sm rounded-2xl">
-      <CardHeader className="pb-2">
+    <Card className="border border-rose-100 bg-white shadow-sm">
+      <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <CardTitle className="font-semibold text-zinc-900 text-base">{title}</CardTitle>
-            {description && <p className="mt-1 text-sm text-zinc-600">{description}</p>}
+            <CardTitle className="text-base font-semibold text-rose-900">{title}</CardTitle>
+            {description && <p className="mt-1 text-sm text-rose-600">{description}</p>}
           </div>
           {aside}
         </div>
       </CardHeader>
-      <CardContent className="pt-0">{children}</CardContent>
+      <CardContent className="space-y-4">{children}</CardContent>
     </Card>
   );
 }
 
-function Chip({ label, active, onClick }: { label: string; active?: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-3 py-1 rounded-full text-sm border ${
-        active ? "bg-rose-100 border-rose-300 text-rose-800" : "bg-white border-zinc-200 text-zinc-700"
-      } hover:border-rose-400 transition`}
-    >
-      {label}
-    </button>
-  );
-}
-
-function SeverityPicker({ value, onChange }: { value: number; onChange: (n: number) => void }) {
-  return (
-    <div className="flex gap-2 flex-wrap">
-      {SEVERITY.map((l, i) => (
-        <Chip key={l} label={l} active={value === i} onClick={() => onChange(i)} />
-      ))}
-    </div>
-  );
-}
-
-function MultiSelectChips({
-  options,
-  value,
-  onChange,
-}: {
-  options: string[];
-  value: string[];
-  onChange: (v: string[]) => void;
-}) {
-  const toggle = (opt: string) => {
-    const s = new Set(value || []);
-    s.has(opt) ? s.delete(opt) : s.add(opt);
-    onChange(Array.from(s));
-  };
-  return (
-    <div className="flex gap-2 flex-wrap">
-      {options.map((o) => (
-        <Chip key={o} label={o} active={(value || []).includes(o)} onClick={() => toggle(o)} />
-      ))}
-    </div>
-  );
-}
-
-function NumberField({
+function ScoreInput({
   id,
   label,
   value,
@@ -354,1142 +178,1320 @@ function NumberField({
   min = 0,
   max = 10,
   step = 1,
-  suffix,
 }: {
   id: string;
   label: string;
   value: number;
-  onChange: (n: number) => void;
+  onChange: (value: number) => void;
   min?: number;
   max?: number;
   step?: number;
-  suffix?: string;
 }) {
   return (
-    <div className="grid gap-1">
+    <div className="grid gap-2">
       <Label htmlFor={id}>{label}</Label>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-4">
+        <Slider value={[value]} min={min} max={max} step={step} onValueChange={([v]) => onChange(v)} id={id} />
         <Input
-          id={id}
+          className="w-20"
           type="number"
+          inputMode="numeric"
           min={min}
           max={max}
           step={step}
           value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="w-28"
+          onChange={(event) => onChange(Number(event.target.value))}
         />
-        {suffix && <span className="text-sm text-zinc-600">{suffix}</span>}
       </div>
     </div>
   );
 }
 
-const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
-
-function sparklinePath(values: number[], range?: { min?: number; max?: number }) {
-  if (!values.length) return "";
-  const width = 100;
-  const height = 100;
-  const min =
-    range?.min !== undefined ? range.min : Math.min(...values.filter((v) => Number.isFinite(v)));
-  const max =
-    range?.max !== undefined ? range.max : Math.max(...values.filter((v) => Number.isFinite(v)));
-  const safeMin = Number.isFinite(min) ? min : 0;
-  const safeMax = Number.isFinite(max) ? max : 1;
-  const span = safeMax - safeMin || 1;
-
-  return values
-    .map((raw, index) => {
-      const value = Number.isFinite(raw) ? raw : 0;
-      const x = values.length === 1 ? width / 2 : (index / (values.length - 1)) * width;
-      const normalized = clamp01((value - safeMin) / span);
-      const y = height - normalized * height;
-      const command = index === 0 ? "M" : "L";
-      return `${command}${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(" ");
-}
-
-function KpiSquare({
-  label,
-  average,
-  max,
-  thresholdLabel,
-  thresholdValue,
-  fillAmount,
-  series,
-  valueRange,
+function MultiSelectChips({
+  options,
+  value,
+  onToggle,
 }: {
-  label: string;
-  average: number;
-  max: number;
-  thresholdLabel: string;
-  thresholdValue: number;
-  fillAmount: number;
-  series: number[];
-  valueRange?: { min?: number; max?: number };
+  options: { value: string; label: string }[];
+  value: string[];
+  onToggle: (next: string[]) => void;
 }) {
-  const fillPercent = Math.round(clamp01(fillAmount) * 100);
-  const path = sparklinePath(series, valueRange);
-
+  const toggle = (option: string) => {
+    const set = new Set(value);
+    if (set.has(option)) {
+      set.delete(option);
+    } else {
+      set.add(option);
+    }
+    onToggle(Array.from(set));
+  };
   return (
-    <div className="space-y-2">
-      <div
-        className="relative aspect-square w-full overflow-hidden rounded-2xl border border-rose-200 bg-white shadow-sm"
-        style={{
-          background: `linear-gradient(to top, rgba(244, 63, 94, 0.85) ${fillPercent}%, rgba(255, 255, 255, 0.95) ${fillPercent}%)`,
-        }}
-      >
-        <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full">
-          <path
-            d={path}
-            fill="none"
-            stroke="rgba(255, 255, 255, 0.85)"
-            strokeWidth={3}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-        <div className="absolute inset-0 flex flex-col justify-between p-3">
-          <div className="text-xs font-medium uppercase tracking-wide text-zinc-700/80">{label}</div>
-          <div>
-            <div className="text-2xl font-semibold text-zinc-900">{average.toFixed(1)}</div>
-            <div className="text-[11px] font-medium text-zinc-700/80">
-              Max {max} · {thresholdLabel}: {thresholdValue}
-            </div>
-          </div>
-        </div>
-      </div>
+    <div className="flex flex-wrap gap-2">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => toggle(option.value)}
+          className={cn(
+            "rounded-full border px-3 py-1 text-sm transition",
+            value.includes(option.value)
+              ? "border-rose-400 bg-rose-100 text-rose-700"
+              : "border-rose-100 bg-white text-rose-600 hover:border-rose-200"
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
     </div>
   );
 }
 
-export default function EndoTrackApp() {
-  const [entries, setEntries] = usePersistentState<DailyEntry[]>("endo.entries", []);
-  const [periodStarts, setPeriodStarts] = usePersistentState<string[]>("endo.periodStarts", []);
-  const [highContrast, setHighContrast] = usePersistentState<boolean>("endo.highContrast", true);
-  const [accent, setAccent] = usePersistentState<string>("endo.accent", "rose");
-
-  const today = useMemo(() => toDateKey(new Date()), []);
-  const [activeDate, setActiveDate] = useState<string>(today);
-  const current = useMemo(
-    () => entries.find((e) => e.date === activeDate) || emptyEntry(activeDate),
-    [entries, activeDate]
+function BodyMap({ value, onChange }: { value: string[]; onChange: (next: string[]) => void }) {
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      {BODY_REGIONS.map((region) => (
+        <button
+          key={region.id}
+          type="button"
+          onClick={() => {
+            const set = new Set(value);
+            if (set.has(region.id)) {
+              set.delete(region.id);
+            } else {
+              set.add(region.id);
+            }
+            onChange(Array.from(set));
+          }}
+          className={cn(
+            "rounded-lg border px-3 py-2 text-left text-sm transition",
+            value.includes(region.id)
+              ? "border-rose-400 bg-rose-100 text-rose-700"
+              : "border-rose-100 bg-rose-50 text-rose-600 hover:border-rose-300"
+          )}
+        >
+          {region.label}
+        </button>
+      ))}
+    </div>
   );
+}
+
+function computePbacScore(counts: PbacCounts) {
+  return PBAC_ITEMS.reduce((total, item) => total + counts[item.id] * item.score, 0);
+}
+
+function downloadFile(filename: string, contents: string, mime: string) {
+  const blob = new Blob([contents], { type: mime });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function toCsv(rows: Record<string, unknown>[]) {
+  if (!rows.length) return "";
+  const headers = Object.keys(rows[0]);
+  const csv = [headers.join(",")];
+  rows.forEach((row) => {
+    const values = headers.map((header) => {
+      const value = row[header];
+      if (value === null || value === undefined) return "";
+      if (Array.isArray(value)) {
+        return `"${value.join(";")}"`;
+      }
+      return typeof value === "string" ? `"${value.replace(/"/g, '""')}"` : String(value);
+    });
+    csv.push(values.join(","));
+  });
+  return csv.join("\n");
+}
+export default function HomePage() {
+  const today = formatDate(new Date());
+  const [dailyEntries, setDailyEntries] = useLocalStorageState<DailyEntry[]>("endo.daily.v2", []);
+  const [weeklyEntries, setWeeklyEntries] = useLocalStorageState<WeeklyEntry[]>("endo.weekly.v2", []);
+  const [monthlyEntries, setMonthlyEntries] = useLocalStorageState<MonthlyEntry[]>("endo.monthly.v2", []);
+
+  const [dailyDraft, setDailyDraft] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
+  const [pbacCounts, setPbacCounts] = useState<PbacCounts>({ ...PBAC_DEFAULT_COUNTS });
+  const [fsfiOptIn, setFsfiOptIn] = useState(false);
+  const [sensorsVisible, setSensorsVisible] = useState(false);
+  const [exploratoryVisible, setExploratoryVisible] = useState(false);
+  const [notesTagDraft, setNotesTagDraft] = useState("");
+  const [painQualityOther, setPainQualityOther] = useState("");
+
+  const [weeklyDraft, setWeeklyDraft] = useState<WeeklyEntry>(() => {
+    const now = new Date();
+    const target = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    const dayNr = (target.getUTCDay() + 6) % 7;
+    target.setUTCDate(target.getUTCDate() - dayNr + 3);
+    const firstThursday = new Date(Date.UTC(target.getUTCFullYear(), 0, 4));
+    const weekNumber =
+      1 + Math.round(((target.getTime() - firstThursday.getTime()) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
+    const isoWeek = `${target.getUTCFullYear()}-W${String(weekNumber).padStart(2, "0")}`;
+    return createEmptyWeeklyEntry(isoWeek);
+  });
+
+  const [monthlyDraft, setMonthlyDraft] = useState<MonthlyEntry>(() => {
+    const now = new Date();
+    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    return createEmptyMonthlyEntry(month);
+  });
+
+  const [issues, setIssues] = useState<ValidationIssue[]>([]);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
+
+  const pbacScore = useMemo(() => computePbacScore(pbacCounts), [pbacCounts]);
 
   useEffect(() => {
-    if (typeof document === "undefined") return;
-    document.documentElement.style.setProperty(
-      "--endo-accent",
-      accent === "rose" ? "#e11d48" : accent === "violet" ? "#7c3aed" : "#0891b2"
-    );
-    document.documentElement.style.setProperty("--endo-bg", highContrast ? "#fff1f2" : "#fff7f7");
-  }, [accent, highContrast]);
-
-  function mergeSection<T extends object>(base: T | undefined, patch: Partial<T> | undefined): T {
-    return { ...(base || ({} as T)), ...(patch || {}) };
-  }
-
-  function saveEntry(patch: Partial<DailyEntry>, options?: { date?: string; starts?: string[] }) {
-    const targetDate = options?.date ?? activeDate;
-    const effectiveStarts = options?.starts ?? periodStarts;
-
-    setEntries((prev) => {
-      const index = prev.findIndex((e) => e.date === targetDate);
-      const base = index >= 0 ? prev[index] : emptyEntry(targetDate);
-      const merged: DailyEntry = {
-        ...base,
-        ...patch,
-        pain: mergeSection(base.pain, patch.pain),
-        bleeding: mergeSection(base.bleeding, patch.bleeding),
-        gi: mergeSection(base.gi, patch.gi),
-        urinary: mergeSection(base.urinary, patch.urinary),
-        workImpact: mergeSection(base.workImpact, patch.workImpact),
-        cycle: mergeSection(base.cycle, patch.cycle),
-      };
-      merged.date = targetDate;
-      merged.cycle = {
-        ...merged.cycle,
-        cycleDay: patch.cycle?.cycleDay ?? computeCycleDay(targetDate, effectiveStarts),
-      };
-
-      const next = [...prev];
-      if (index >= 0) next[index] = merged;
-      else next.push(merged);
-      return next.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-    });
-  }
-
-  function addMed() {
-    const meds = [...(current.meds || [])];
-    meds.push({ name: "", dose: "", relief: 0 });
-    saveEntry({ meds });
-  }
-
-  function updateMed(i: number, patch: any) {
-    const meds = [...(current.meds || [])];
-    meds[i] = { ...meds[i], ...patch };
-    saveEntry({ meds });
-  }
-
-  function removeMed(i: number) {
-    const meds = [...(current.meds || [])];
-    meds.splice(i, 1);
-    saveEntry({ meds });
-  }
-
-  function markPeriodStart(dateKey: string) {
-    setPeriodStarts((prev) => {
-      const next = uniq([...(prev || []), dateKey]).sort();
-      const cycleDay = computeCycleDay(dateKey, next);
-      saveEntry({ cycle: { periodStart: true, cycleDay } }, { date: dateKey, starts: next });
-      return next;
-    });
-  }
-
-  function unmarkPeriodStart(dateKey: string) {
-    setPeriodStarts((prev) => {
-      const next = (prev || []).filter((d) => d !== dateKey);
-      const cycleDay = computeCycleDay(dateKey, next);
-      saveEntry({ cycle: { periodStart: false, cycleDay } }, { date: dateKey, starts: next });
-      return next;
-    });
-  }
-
-  function clearDay(dateKey: string) {
-    setEntries((prev) => prev.filter((e) => e.date !== dateKey));
-  }
-
-  const [repYear, setRepYear] = useState<number>(new Date().getFullYear());
-  const [repMonth, setRepMonth] = useState<number>(new Date().getMonth() + 1);
-  const stats = useMemo(() => computeMonthlyStats(entries, repYear, repMonth), [entries, repYear, repMonth]);
-  const timelineSeries = useMemo(() => {
-    const sorted = [...entries].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-    return {
-      gi: GI_FIELDS.reduce((acc, { key }) => {
-        acc[key] = sorted.map((entry) => Number(entry.gi?.[key] ?? 0));
-        return acc;
-      }, {} as Record<GIFieldKey, number[]>),
-      urinary: URINARY_FIELDS.reduce((acc, { key }) => {
-        acc[key] = sorted.map((entry) => Number(entry.urinary?.[key] ?? 0));
-        return acc;
-      }, {} as Record<UrinaryFieldKey, number[]>),
-      fatigue: sorted.map((entry) => Number(entry.fatigue ?? 0)),
-      mood: sorted.map((entry) => Number(entry.mood ?? 0)),
-      sleep: sorted.map((entry) => Number(entry.sleep ?? 0)),
-    };
-  }, [entries]);
-  const painSeries = useMemo(() => {
-    const { start, end } = monthBounds(repYear, repMonth);
-    const days: any[] = [];
-    for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
-      const key = toDateKey(d);
-      const entry = entries.find((x) => x.date === key);
-      days.push({ date: key.slice(-2), Schmerz: entry ? Number(entry.pain?.score || 0) : 0 });
+    if (dailyDraft.bleeding.isBleeding) {
+      setDailyDraft((prev) => ({
+        ...prev,
+        bleeding: { ...prev.bleeding, pbacScore, clots: prev.bleeding.clots ?? false },
+      }));
     }
-    return days;
-  }, [entries, repYear, repMonth]);
-  const giUrinarySeries = useMemo(() => {
-    const { start, end } = monthBounds(repYear, repMonth);
-    const days: any[] = [];
-    for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
-      const key = toDateKey(d);
-      const entry = entries.find((x) => x.date === key);
-      const gi: Partial<Record<GIFieldKey, number>> = entry?.gi ?? {};
-      const urinary: Partial<Record<UrinaryFieldKey, number>> = entry?.urinary ?? {};
-      days.push({
-        date: key.slice(-2),
-        ...Object.fromEntries(
-          GI_FIELDS.map(({ key: giKey, label }) => [label, Number(gi?.[giKey] ?? 0)])
-        ),
-        ...Object.fromEntries(
-          URINARY_FIELDS.map(({ key: urinaryKey, label }) => [label, Number(urinary?.[urinaryKey] ?? 0)])
-        ),
-      });
-    }
-    return days;
-  }, [entries, repYear, repMonth]);
-  const wellbeingSeries = useMemo(() => {
-    const { start, end } = monthBounds(repYear, repMonth);
-    const days: any[] = [];
-    for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
-      const key = toDateKey(d);
-      const entry = entries.find((x) => x.date === key);
-      days.push({
-        date: key.slice(-2),
-        Müdigkeit: entry ? Number(entry.fatigue || 0) : 0,
-        Stimmung: entry ? Number(entry.mood || 0) : 0,
-        Schlafqualität: entry ? Number(entry.sleep || 0) : 0,
-      });
-    }
-    return days;
-  }, [entries, repYear, repMonth]);
-  const kpiOverview = useMemo(
-    () => {
-      const items: {
-        id: string;
-        label: string;
-        metric: { avg: number; max: number; thresholdDays: number };
-        thresholdLabel: string;
-        fillAmount: number;
-        series: number[];
-        range?: { min?: number; max?: number };
-      }[] = [];
+  }, [pbacScore, dailyDraft.bleeding.isBleeding]);
 
-      GI_FIELDS.forEach(({ key, label }) => {
-        const metric = stats.giStats?.[key] || { avg: 0, max: 0, thresholdDays: 0 };
-        items.push({
-          id: `gi-${key}`,
-          label: `${label} (Ø)`,
-          metric,
-          thresholdLabel: "Belastete Tage (≥ mittel)",
-          fillAmount: metric.avg / 3,
-          series: timelineSeries.gi[key] || [],
-          range: { min: 0, max: 3 },
-        });
-      });
-
-      URINARY_FIELDS.forEach(({ key, label }) => {
-        const metric = stats.urinaryStats?.[key] || { avg: 0, max: 0, thresholdDays: 0 };
-        items.push({
-          id: `urinary-${key}`,
-          label: `${label} (Ø)`,
-          metric,
-          thresholdLabel: "Belastete Tage (≥ mittel)",
-          fillAmount: metric.avg / 3,
-          series: timelineSeries.urinary[key] || [],
-          range: { min: 0, max: 3 },
-        });
-      });
-
-      const fatigueMetric = stats.fatigueStats || { avg: 0, max: 0, thresholdDays: 0 };
-      items.push({
-        id: "fatigue",
-        label: "Müdigkeit (Ø)",
-        metric: fatigueMetric,
-        thresholdLabel: "Belastete Tage (≥ mittel)",
-        fillAmount: fatigueMetric.avg / 3,
-        series: timelineSeries.fatigue,
-        range: { min: 0, max: 3 },
-      });
-
-      const moodMetric = stats.moodStats || { avg: 0, max: 0, thresholdDays: 0 };
-      items.push({
-        id: "mood",
-        label: "Stimmung (Ø)",
-        metric: moodMetric,
-        thresholdLabel: "Tage ≤ schlecht",
-        fillAmount: Math.max(0, -moodMetric.avg) / 2,
-        series: timelineSeries.mood,
-        range: { min: -2, max: 2 },
-      });
-
-      const sleepMetric = stats.sleepStats || { avg: 0, max: 0, thresholdDays: 0 };
-      items.push({
-        id: "sleep",
-        label: "Schlafqualität (Ø)",
-        metric: sleepMetric,
-        thresholdLabel: "Nächte ≤2",
-        fillAmount: (5 - sleepMetric.avg) / 4,
-        series: timelineSeries.sleep,
-        range: { min: 1, max: 5 },
-      });
-
-      return items;
-    },
-    [stats, timelineSeries]
-  );
-
-  function exportData() {
-    if (typeof document === "undefined") return;
-    const blob = new Blob([JSON.stringify({ entries, periodStarts }, null, 2)], {
-      type: "application/json;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "endo-data.json";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
-
-  function importData(file: File) {
-    const reader = new FileReader();
-    reader.onload = (event: ProgressEvent<FileReader>) => {
-      try {
-        const content = event.target?.result;
-        if (!content || typeof content !== "string") return;
-        const parsed = JSON.parse(content);
-        if (parsed.entries) setEntries(parsed.entries);
-        if (parsed.periodStarts) setPeriodStarts(parsed.periodStarts);
-      } catch (err: any) {
-        alert("Import fehlgeschlagen: " + err.message);
-      }
-    };
-    reader.readAsText(file);
-  }
-
-  const copyReport = () => {
-    const text = makeTextReport(stats, repYear, repMonth);
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(text);
-    } else {
-      const textarea = document.createElement("textarea");
-      textarea.value = text;
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand("copy");
-      textarea.remove();
-    }
+  const handleAddTag = () => {
+    if (!notesTagDraft.trim()) return;
+    const tag = notesTagDraft.trim();
+    setDailyDraft((prev) => ({
+      ...prev,
+      notesTags: Array.from(new Set([...(prev.notesTags ?? []), tag])),
+    }));
+    setNotesTagDraft("");
   };
 
-  const cycleDay = useMemo(() => computeCycleDay(activeDate, periodStarts), [activeDate, periodStarts]);
-  const activeDateLabel = useMemo(() => {
-    const parsed = new Date(`${activeDate}T00:00:00`);
-    if (Number.isNaN(parsed.getTime())) return "";
-    return parsed.toLocaleDateString("de-DE", {
-      weekday: "long",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
+  const handleRemoveTag = (tag: string) => {
+    setDailyDraft((prev) => ({
+      ...prev,
+      notesTags: (prev.notesTags ?? []).filter((entry) => entry !== tag),
+    }));
+  };
+
+  const handleDailySubmit = () => {
+    const payload: DailyEntry = {
+      ...dailyDraft,
+      painQuality: dailyDraft.painQuality,
+      bleeding: dailyDraft.bleeding.isBleeding
+        ? { ...dailyDraft.bleeding, pbacScore, clots: dailyDraft.bleeding.clots }
+        : { isBleeding: false },
+      meds: dailyDraft.meds.filter((med) => med.name.trim().length > 0),
+      notesTags: painQualityOther
+        ? Array.from(
+            new Set([...(dailyDraft.notesTags ?? []), `Schmerz anders: ${painQualityOther.trim()}`])
+          )
+        : dailyDraft.notesTags,
+    };
+
+    const validationIssues = validateDailyEntry(payload);
+    setIssues(validationIssues);
+    if (validationIssues.length) {
+      setInfoMessage("Bitte prüfe die markierten Felder.");
+      return;
+    }
+
+    setDailyEntries((prev) => {
+      const filtered = prev.filter((entry) => entry.date !== payload.date);
+      return [...filtered, payload].sort((a, b) => a.date.localeCompare(b.date));
     });
-  }, [activeDate]);
-  const currentCycleStart = current.cycle?.periodStart ?? false;
-  const isActivePeriodStart = useMemo(
-    () => currentCycleStart || periodStarts.includes(activeDate),
-    [currentCycleStart, periodStarts, activeDate]
+
+    setInfoMessage("Tagescheck-in gespeichert.");
+    setDailyDraft(createEmptyDailyEntry(today));
+    setPbacCounts({ ...PBAC_DEFAULT_COUNTS });
+    setPainQualityOther("");
+    setNotesTagDraft("");
+    setFsfiOptIn(false);
+    setSensorsVisible(false);
+    setExploratoryVisible(false);
+    setIssues([]);
+  };
+
+  const handleWeeklySubmit = () => {
+    const validationIssues = validateWeeklyEntry(weeklyDraft);
+    setIssues(validationIssues);
+    if (validationIssues.length) {
+      setInfoMessage("WPAI-Eingaben prüfen.");
+      return;
+    }
+
+    setWeeklyEntries((prev) => {
+      const filtered = prev.filter((entry) => entry.isoWeek !== weeklyDraft.isoWeek);
+      return [...filtered, weeklyDraft].sort((a, b) => a.isoWeek.localeCompare(b.isoWeek));
+    });
+    setInfoMessage("WPAI-Werte gespeichert.");
+    setWeeklyDraft(createEmptyWeeklyEntry(weeklyDraft.isoWeek));
+    setIssues([]);
+  };
+
+  const handleMonthlySubmit = () => {
+    const validationIssues = validateMonthlyEntry(monthlyDraft);
+    setIssues(validationIssues);
+    if (validationIssues.length) {
+      setInfoMessage("Monatliche Fragebögen prüfen.");
+      return;
+    }
+
+    setMonthlyEntries((prev) => {
+      const filtered = prev.filter((entry) => entry.month !== monthlyDraft.month);
+      return [...filtered, monthlyDraft].sort((a, b) => a.month.localeCompare(b.month));
+    });
+    setInfoMessage("Monatsdaten gespeichert.");
+    setIssues([]);
+  };
+
+  const handleDailyImport = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    file.text().then((text) => {
+      try {
+        const json = JSON.parse(text) as DailyEntry[];
+        const valid = json.filter((entry) => validateDailyEntry(entry).length === 0);
+        setDailyEntries(valid);
+        setInfoMessage("Tagesdaten importiert.");
+      } catch {
+        setInfoMessage("Import fehlgeschlagen.");
+      }
+    });
+  };
+
+  const painTrendData = useMemo(
+    () =>
+      dailyEntries
+        .slice()
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .map((entry) => ({
+          date: entry.date,
+          pain: entry.painNRS,
+          pbac: entry.bleeding.pbacScore ?? 0,
+          sleep: entry.sleep?.quality ?? null,
+        })),
+    [dailyEntries]
   );
 
+  const renderIssuesForPath = (path: string) =>
+    issues.filter((issue) => issue.path === path).map((issue) => (
+      <p key={issue.message} className="text-xs text-rose-600">
+        {issue.message}
+      </p>
+    ));
+
+  const optionalSensorsLabel = sensorsVisible ? "Optional (Hilfsmittel) ausblenden" : "Optional (Hilfsmittel) einblenden";
+
   return (
-    <div className="bg-rose-50 min-h-[100dvh] text-zinc-900">
-      <style>{`.accent{color:var(--endo-accent)} .accent-bg{background:var(--endo-accent)}`}</style>
-      <div className="max-w-screen-sm mx-auto p-4 pb-24">
-        <header className="sticky top-0 z-40 bg-rose-50/90 border-b border-rose-100 mb-4">
-          <div className="px-4 py-3 flex items-center justify-between">
-            <div>
-              <h1 className="text-lg font-semibold tracking-tight">EndoTrack</h1>
-              <p className="text-xs text-rose-700/80">Minimalistisches Endometriose‑Tracking</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={exportData} aria-label="Daten exportieren">
-                <Download className="h-4 w-4" />
-              </Button>
-              <label className="cursor-pointer" aria-label="Daten importieren">
-                <Upload className="h-4 w-4" />
-                <input
-                  type="file"
-                  accept="application/json"
-                  onChange={(e) => e.target.files?.[0] && importData(e.target.files[0])}
-                  className="hidden"
-                />
-              </label>
-            </div>
-          </div>
+    <main className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8">
+      <header className="flex flex-col gap-2">
+        <h1 className="text-2xl font-semibold text-rose-900">Endometriose Symptomtracker</h1>
+        <p className="text-sm text-rose-700">
+          Kernmetriken ohne Hilfsmittel, optionale Sensorfelder nur auf Wunsch. Daten werden lokal gespeichert.
+        </p>
+        {infoMessage && <p className="text-sm font-medium text-rose-600">{infoMessage}</p>}
+      </header>
 
-          <div className="px-4 pb-2">
-            <Tabs defaultValue="today" className="w-full">
-              <TabsList className="w-full grid grid-cols-3 gap-2 pb-1">
-                <TabsTrigger className="px-3 py-2" value="today">
-                  Heute
-                </TabsTrigger>
-                <TabsTrigger className="px-3 py-2" value="history">
-                  Verlauf
-                </TabsTrigger>
-                <TabsTrigger className="px-3 py-2" value="report">
-                  Report
-                </TabsTrigger>
-              </TabsList>
+      <Tabs defaultValue="daily" className="w-full">
+        <TabsList className="grid w-full grid-cols-3 bg-rose-100 text-rose-700">
+          <TabsTrigger value="daily">Täglicher Check-in</TabsTrigger>
+          <TabsTrigger value="weekly">Wöchentlich</TabsTrigger>
+          <TabsTrigger value="monthly">Monatlich</TabsTrigger>
+        </TabsList>
 
-              <TabsContent value="today" className="mt-3">
-                <div className="space-y-4">
-                  <Section
-                    title="Datum und Zyklusübersicht"
-                    description="Lege das Datum fest, markiere Periodenstarts und verwalte deinen Tag."
-                    aside={
-                      activeDateLabel ? (
-                        <div className="hidden sm:flex items-center gap-2 text-sm font-medium text-rose-700">
-                          <Calendar className="h-4 w-4" />
-                          <span>{activeDateLabel}</span>
-                        </div>
-                      ) : null
-                    }
-                  >
-                    <div className="space-y-4">
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="grid gap-2">
-                          <Label htmlFor="day-picker">Datum wählen</Label>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Input
-                              id="day-picker"
-                              type="date"
-                              value={activeDate}
-                              onChange={(e) => setActiveDate(e.target.value)}
-                              className="h-9"
-                            />
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => setActiveDate(today)}
-                              disabled={activeDate === today}
-                            >
-                              Heute
-                            </Button>
-                          </div>
-                          {activeDateLabel && (
-                            <p className="text-xs text-zinc-500 sm:hidden">{activeDateLabel}</p>
-                          )}
-                        </div>
-                        <div className="grid gap-2">
-                          <Label>Zyklustag</Label>
-                          <Input readOnly value={cycleDay ? String(cycleDay) : "—"} className="h-9" />
-                          <p className="text-xs text-zinc-500">
-                            Der Wert richtet sich nach dem zuletzt markierten Periodenbeginn.
-                          </p>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="period-start-switch">Periode startete heute?</Label>
-                        <div className="flex flex-wrap items-center gap-3">
-                          <Switch
-                            id="period-start-switch"
-                            checked={isActivePeriodStart}
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                markPeriodStart(activeDate);
-                              } else {
-                                unmarkPeriodStart(activeDate);
-                              }
-                            }}
-                          />
-                          <Button size="sm" variant="secondary" onClick={() => markPeriodStart(activeDate)}>
-                            Periodenstart speichern
-                          </Button>
-                          {isActivePeriodStart && (
-                            <Badge variant="outline" className="border-rose-200 text-rose-800">
-                              Als Start markiert
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-xs text-zinc-500">
-                          Der Zyklustag wird automatisch angepasst, sobald ein neuer Start gesetzt wird.
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-2 pt-2">
-                        <Button variant="secondary" onClick={() => clearDay(activeDate)}>
-                          Tagesdaten zurücksetzen
-                        </Button>
-                      </div>
-                    </div>
-                  </Section>
-
-                  <div className="grid gap-4 lg:grid-cols-[1.65fr_1fr] xl:grid-cols-[1.75fr_1fr]">
-                    <div className="space-y-4">
-                      <Section
-                        title="Schmerzintensität (0–10)"
-                        description="Bewerte Stärke, Lokalisation und Qualität deines Schmerzes."
-                      >
-                        <div className="grid gap-4">
-                          <div className="flex items-center gap-4">
-                            <div className="w-full">
-                              <Slider
-                                value={[Number(current.pain?.score || 0)]}
-                                max={10}
-                                step={1}
-                                onValueChange={([v]) => saveEntry({ pain: { ...current.pain, score: v } })}
-                              />
-                            </div>
-                            <div className="w-16 text-center text-lg font-semibold">{current.pain?.score || 0}</div>
-                          </div>
-                          <div className="grid gap-3 md:grid-cols-2">
-                            <div className="grid gap-2">
-                              <Label>Schmerzorte</Label>
-                              <MultiSelectChips
-                                options={DEFAULT_LOCATIONS}
-                                value={current.pain?.locations || []}
-                                onChange={(v) => saveEntry({ pain: { ...current.pain, locations: v } })}
-                              />
-                            </div>
-                            <div className="grid gap-2">
-                              <Label>Schmerzcharakter</Label>
-                              <MultiSelectChips
-                                options={PAIN_TYPES}
-                                value={current.pain?.types || []}
-                                onChange={(v) => saveEntry({ pain: { ...current.pain, types: v } })}
-                              />
-                            </div>
-                          </div>
-                          <NumberField
-                            id="duration"
-                            label="Dauer (Stunden)"
-                            value={current.pain?.durationH || 0}
-                            onChange={(v) => saveEntry({ pain: { ...current.pain, durationH: v } })}
-                            min={0}
-                            max={24}
-                          />
-                        </div>
-                      </Section>
-
-                      <Section
-                        title="Blutung"
-                        description="Dokumentiere Stärke und mögliche Blutgerinnsel."
-                      >
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <div className="grid gap-2">
-                            <Label>Stärke der Blutung</Label>
-                            <Select
-                              value={current.bleeding?.level}
-                              onValueChange={(v) => saveEntry({ bleeding: { ...current.bleeding, level: v } })}
-                            >
-                              <SelectTrigger className="h-9">
-                                <SelectValue placeholder="Auswählen" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {BLEEDING_LEVELS.map((l) => (
-                                  <SelectItem key={l} value={l}>
-                                    {l}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="grid gap-2">
-                            <Label>Blutgerinnsel vorhanden?</Label>
-                            <div className="flex items-center gap-3">
-                              <Switch
-                                checked={current.bleeding?.clots || false}
-                                onCheckedChange={(v) => saveEntry({ bleeding: { ...current.bleeding, clots: v } })}
-                              />
-                              <span className="text-sm text-zinc-600">Ja oder Nein</span>
-                            </div>
-                          </div>
-                        </div>
-                      </Section>
-
-                      <Section
-                        title="Magen-Darm und Harnwege"
-                        description="Wie stark sind Verdauungs- oder Blasenbeschwerden?"
-                      >
-                        <div className="grid gap-4">
-                          <div className="grid gap-3 md:grid-cols-3">
-                            <div className="grid gap-1">
-                              <Label>Blähbauch</Label>
-                              <SeverityPicker
-                                value={current.gi?.bloating || 0}
-                                onChange={(v) => saveEntry({ gi: { ...current.gi, bloating: v } })}
-                              />
-                            </div>
-                            <div className="grid gap-1">
-                              <Label>Verstopfung</Label>
-                              <SeverityPicker
-                                value={current.gi?.constipation || 0}
-                                onChange={(v) => saveEntry({ gi: { ...current.gi, constipation: v } })}
-                              />
-                            </div>
-                            <div className="grid gap-1">
-                              <Label>Durchfall</Label>
-                              <SeverityPicker
-                                value={current.gi?.diarrhea || 0}
-                                onChange={(v) => saveEntry({ gi: { ...current.gi, diarrhea: v } })}
-                              />
-                            </div>
-                            <div className="grid gap-1">
-                              <Label>Übelkeit</Label>
-                              <SeverityPicker
-                                value={current.gi?.nausea || 0}
-                                onChange={(v) => saveEntry({ gi: { ...current.gi, nausea: v } })}
-                              />
-                            </div>
-                            <div className="grid gap-1">
-                              <Label>Rektaler Schmerz</Label>
-                              <SeverityPicker
-                                value={current.gi?.rectalPain || 0}
-                                onChange={(v) => saveEntry({ gi: { ...current.gi, rectalPain: v } })}
-                              />
-                            </div>
-                          </div>
-                          <div className="grid gap-3 md:grid-cols-3">
-                            <div className="grid gap-1">
-                              <Label>Häufiger Harndrang</Label>
-                              <SeverityPicker
-                                value={current.urinary?.frequency || 0}
-                                onChange={(v) => saveEntry({ urinary: { ...current.urinary, frequency: v } })}
-                              />
-                            </div>
-                            <div className="grid gap-1">
-                              <Label>Dringlichkeit beim Wasserlassen</Label>
-                              <SeverityPicker
-                                value={current.urinary?.urgency || 0}
-                                onChange={(v) => saveEntry({ urinary: { ...current.urinary, urgency: v } })}
-                              />
-                            </div>
-                            <div className="grid gap-1">
-                              <Label>Schmerzen beim Wasserlassen</Label>
-                              <SeverityPicker
-                                value={current.urinary?.dysuria || 0}
-                                onChange={(v) => saveEntry({ urinary: { ...current.urinary, dysuria: v } })}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </Section>
-
-                      <Section
-                        title="Alltag und unterstützende Maßnahmen"
-                        description="Wie beeinflussen die Symptome deinen Alltag und welche Hilfen nutzt du?"
-                      >
-                        <div className="grid gap-3 lg:grid-cols-2">
-                          <div className="grid gap-2">
-                            <Label>Müdigkeit</Label>
-                            <SeverityPicker value={current.fatigue || 0} onChange={(v) => saveEntry({ fatigue: v })} />
-                          </div>
-                          <div className="grid gap-2">
-                            <Label>Stimmung</Label>
-                            <Select value={String(current.mood || 0)} onValueChange={(v) => saveEntry({ mood: Number(v) })}>
-                              <SelectTrigger className="h-9">
-                                <SelectValue placeholder="Auswählen" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="-2">sehr schlecht</SelectItem>
-                                <SelectItem value="-1">schlecht</SelectItem>
-                                <SelectItem value="0">neutral</SelectItem>
-                                <SelectItem value="1">gut</SelectItem>
-                                <SelectItem value="2">sehr gut</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="grid gap-2">
-                            <Label>Dyspareunie</Label>
-                            <SeverityPicker value={current.dyspareunia || 0} onChange={(v) => saveEntry({ dyspareunia: v })} />
-                          </div>
-                          <NumberField
-                            id="sleep"
-                            label="Schlafqualität (1–5)"
-                            value={current.sleep || 3}
-                            min={1}
-                            max={5}
-                            onChange={(v) => saveEntry({ sleep: v })}
-                          />
-                          <div className="grid gap-2 lg:col-span-2">
-                            <Label>Mögliche Auslöser</Label>
-                            <MultiSelectChips options={TRIGGERS} value={current.triggers || []} onChange={(v) => saveEntry({ triggers: v })} />
-                          </div>
-                          <div className="grid gap-2 lg:col-span-2">
-                            <Label>Nicht-medikamentöse Maßnahmen</Label>
-                            <MultiSelectChips options={NON_PHARM} value={current.nonPharm || []} onChange={(v) => saveEntry({ nonPharm: v })} />
-                          </div>
-                        </div>
-                      </Section>
-                    </div>
-
-                    <div className="space-y-4">
-                      <Section
-                        title="Medikamente und Wirkung"
-                        description="Notiere, was du eingenommen hast und wie gut es geholfen hat."
-                        aside={<Button size="sm" onClick={addMed}>Medikament hinzufügen</Button>}
-                      >
-                        <div className="grid gap-3">
-                          {(current.meds || []).length === 0 && (
-                            <p className="text-sm text-zinc-600">Noch keine Einträge für heute.</p>
-                          )}
-                          {(current.meds || []).map((m: any, i: number) => (
-                            <div key={i} className="grid items-end gap-3 md:grid-cols-[2fr_1fr_1fr_auto]">
-                              <div className="grid gap-1">
-                                <Label>Bezeichnung</Label>
-                                <Input
-                                  value={m.name}
-                                  onChange={(e) => updateMed(i, { name: e.target.value })}
-                                  placeholder="Zum Beispiel Ibuprofen"
-                                />
-                              </div>
-                              <div className="grid gap-1">
-                                <Label>Dosierung</Label>
-                                <Input
-                                  value={m.dose}
-                                  onChange={(e) => updateMed(i, { dose: e.target.value })}
-                                  placeholder="Zum Beispiel 400 mg"
-                                />
-                              </div>
-                              <div className="grid gap-1">
-                                <Label>Erleichterung in Prozent</Label>
-                                <Input
-                                  type="number"
-                                  min={0}
-                                  max={100}
-                                  value={m.relief}
-                                  onChange={(e) => updateMed(i, { relief: Number(e.target.value) })}
-                                />
-                              </div>
-                              <div className="flex items-center justify-end">
-                                <Button variant="ghost" size="sm" onClick={() => removeMed(i)}>
-                                  Entfernen
-                                </Button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </Section>
-
-                      <Section
-                        title="Tagesnotiz"
-                        description="Halte Beobachtungen, Fragen oder wichtige Ereignisse fest."
-                      >
-                        <Textarea
-                          value={current.note || ""}
-                          onChange={(e) => saveEntry({ note: e.target.value })}
-                          placeholder="Freitext (optional)"
-                          className="min-h-[140px]"
-                        />
-                      </Section>
-                    </div>
-                  </div>
+        <TabsContent value="daily" className="space-y-6">
+          <Section
+            title="Tagescheck-in"
+            description="Schmerz → Körperkarte → Symptome → Blutung → Medikation → Schlaf → Darm/Blase → Notizen"
+            aside={<Badge className="bg-rose-200 text-rose-700">max. 60 Sekunden</Badge>}
+          >
+            <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+              <div className="space-y-6">
+                <div className="grid gap-4">
+                  <Label className="text-sm font-medium text-rose-800">Datum</Label>
+                  <Input
+                    type="date"
+                    value={dailyDraft.date}
+                    onChange={(event) => setDailyDraft({ ...dailyDraft, date: event.target.value })}
+                    className="w-48"
+                    max={today}
+                  />
+                  {renderIssuesForPath("date")}
                 </div>
-              </TabsContent>
-              <TabsContent value="history" className="mt-3">
-                <Section title="Letzte Einträge">
-                  <div className="grid gap-2">
-                    {entries
-                      .slice(-30)
-                      .reverse()
-                      .map((e: any) => (
-                        <div key={e.date} className="flex items-center justify-between border border-zinc-200 rounded-xl p-3">
-                          <div>
-                            <div className="font-medium">
-                              {new Date(e.date).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" })}
-                              {e.cycle?.cycleDay ? (
-                                <span className="ml-2 text-xs text-rose-700">ZT {e.cycle.cycleDay}</span>
-                              ) : null}
-                            </div>
-                            <div className="text-sm text-zinc-600">
-                              Schmerzwert: {e.pain?.score ?? 0} · Blutung: {e.bleeding?.level}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="border-rose-200 text-rose-800">
-                              {e.pain?.locations?.[0] || "—"}
-                            </Badge>
-                            <Button size="sm" variant="secondary" onClick={() => setActiveDate(e.date)}>
-                              Öffnen
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    {entries.length === 0 && <p className="text-sm text-zinc-600">Noch keine Daten – starte im Tab „Heute“.</p>}
+
+                <Section title="Schmerzintensität" description="Numerical Rating Scale (0–10, ganze Zahlen)">
+                  <ScoreInput
+                    id="pain-nrs"
+                    label="Schmerzstärke"
+                    value={dailyDraft.painNRS}
+                    onChange={(value) =>
+                      setDailyDraft((prev) => ({ ...prev, painNRS: Math.max(0, Math.min(10, Math.round(value))) }))
+                    }
+                  />
+                  {renderIssuesForPath("painNRS")}
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="grid gap-2">
+                      <Label>Schmerzcharakter</Label>
+                      <MultiSelectChips
+                        options={PAIN_QUALITIES.map((quality) => ({ value: quality, label: quality }))}
+                        value={dailyDraft.painQuality}
+                        onToggle={(next) =>
+                          setDailyDraft((prev) => ({ ...prev, painQuality: next as DailyEntry["painQuality"] }))
+                        }
+                      />
+                      {dailyDraft.painQuality.includes("anders") && (
+                        <Input
+                          className="mt-2"
+                          placeholder="Bitte Schmerzqualität beschreiben"
+                          value={painQualityOther}
+                          onChange={(event) => setPainQualityOther(event.target.value)}
+                        />
+                      )}
+                      {dailyDraft.painQuality.map((quality, index) => renderIssuesForPath(`painQuality[${index}]`))}
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>Schmerzorte (Body-Map)</Label>
+                      <BodyMap
+                        value={dailyDraft.painMapRegionIds}
+                        onChange={(next) => setDailyDraft((prev) => ({ ...prev, painMapRegionIds: next }))}
+                      />
+                      {renderIssuesForPath("painMapRegionIds")}
+                    </div>
                   </div>
                 </Section>
-              </TabsContent>
 
-              <TabsContent value="report" className="mt-3 print:block">
-                <div className="grid gap-3">
-                  <Section
-                    title="Monat wählen"
-                    aside={
+                <Section title="Typische Endo-Symptome" description="Jeweils Ja/Nein und Score 0–10">
+                  <div className="grid gap-4">
+                    {SYMPTOM_ITEMS.map((item) => {
+                      const symptom = dailyDraft.symptoms[item.key] ?? { present: false };
+                      return (
+                        <div key={item.key} className="rounded-lg border border-rose-100 bg-rose-50 p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="font-medium text-rose-800">{item.label}</p>
+                            <div className="flex items-center gap-2">
+                              <Label className="text-xs text-rose-600">vorhanden</Label>
+                              <Switch
+                                checked={symptom.present}
+                                onCheckedChange={(checked) =>
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    symptoms: {
+                                      ...prev.symptoms,
+                                      [item.key]: checked ? { present: true, score: symptom.score ?? 0 } : { present: false },
+                                    },
+                                  }))
+                                }
+                              />
+                            </div>
+                          </div>
+                          {symptom.present && (
+                            <div className="mt-3">
+                              <ScoreInput
+                                id={`symptom-${item.key}`}
+                                label="Schweregrad (0–10)"
+                                value={symptom.score ?? 0}
+                                onChange={(value) =>
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    symptoms: {
+                                      ...prev.symptoms,
+                                      [item.key]: {
+                                        present: true,
+                                        score: Math.max(0, Math.min(10, Math.round(value))),
+                                      },
+                                    },
+                                  }))
+                                }
+                              />
+                              {renderIssuesForPath(`symptoms.${item.key}.score`)}
+                            </div>
+                          )}
+                          {renderIssuesForPath(`symptoms.${item.key}.present`)}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Section>
+
+                <Section title="Blutung" description="PBAC nur bei aktiver Blutung">
+                  <div className="flex items-center gap-3">
+                    <Label>Aktive Blutung</Label>
+                    <Switch
+                      checked={dailyDraft.bleeding.isBleeding}
+                      onCheckedChange={(checked) => {
+                        setDailyDraft((prev) => ({
+                          ...prev,
+                          bleeding: checked
+                            ? { isBleeding: true, clots: prev.bleeding.clots ?? false, pbacScore }
+                            : { isBleeding: false },
+                        }));
+                        if (!checked) {
+                          setPbacCounts({ ...PBAC_DEFAULT_COUNTS });
+                        }
+                      }}
+                    />
+                  </div>
+
+                  {dailyDraft.bleeding.isBleeding && (
+                    <div className="grid gap-4">
+                      <p className="text-sm text-rose-700">
+                        PBAC-Miniwizard: Anzahl pro Tag eingeben, Score berechnet automatisch.
+                      </p>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {PBAC_ITEMS.map((item) => (
+                          <div key={item.id} className="grid gap-1">
+                            <Label htmlFor={item.id}>{item.label}</Label>
+                            <Input
+                              id={item.id}
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={pbacCounts[item.id]}
+                              onChange={(event) =>
+                                setPbacCounts((prev) => ({
+                                  ...prev,
+                                  [item.id]: Math.max(0, Math.round(Number(event.target.value) || 0)),
+                                }))
+                              }
+                            />
+                          </div>
+                        ))}
+                      </div>
                       <div className="flex items-center gap-2">
-                        <Select value={String(repMonth)} onValueChange={(v) => setRepMonth(Number(v))}>
-                          <SelectTrigger className="h-8 w-32">
-                            <SelectValue />
+                        <Label className="text-sm font-medium text-rose-700">PBAC-Score</Label>
+                        <span className="text-lg font-semibold text-rose-900">{pbacScore}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={dailyDraft.bleeding.clots ?? false}
+                          onCheckedChange={(checked) =>
+                            setDailyDraft((prev) => ({
+                              ...prev,
+                              bleeding: { ...prev.bleeding, clots: checked },
+                            }))
+                          }
+                        />
+                        <span className="text-sm text-rose-700">Koagel beobachtet</span>
+                      </div>
+                      {renderIssuesForPath("bleeding.pbacScore")}
+                    </div>
+                  )}
+                  {renderIssuesForPath("bleeding.clots")}
+                </Section>
+
+                <Section title="Medikation & Selbsthilfen" description="Tagesbezogen dokumentieren">
+                  <div className="grid gap-4">
+                    {dailyDraft.meds.map((med, index) => (
+                      <div key={index} className="grid gap-2 rounded-lg border border-rose-100 bg-rose-50 p-4">
+                        <div className="grid gap-1">
+                          <Label>Präparat</Label>
+                          <Input
+                            value={med.name}
+                            onChange={(event) => {
+                              const updated = [...dailyDraft.meds];
+                              updated[index] = { ...updated[index], name: event.target.value };
+                              setDailyDraft((prev) => ({ ...prev, meds: updated }));
+                            }}
+                          />
+                          {renderIssuesForPath(`meds[${index}].name`)}
+                        </div>
+                        <div className="grid gap-1 sm:grid-cols-2">
+                          <div>
+                            <Label>Dosis (mg)</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              value={med.doseMg ?? ""}
+                              onChange={(event) => {
+                                const updated = [...dailyDraft.meds];
+                                const nextValue = event.target.value ? Number(event.target.value) : undefined;
+                                updated[index] = { ...updated[index], doseMg: nextValue };
+                                setDailyDraft((prev) => ({ ...prev, meds: updated }));
+                              }}
+                            />
+                            {renderIssuesForPath(`meds[${index}].doseMg`)}
+                          </div>
+                          <div>
+                            <Label>Einnahmezeiten (HH:MM, kommasepariert)</Label>
+                            <Input
+                              placeholder="08:00, 14:00"
+                              value={(med.times ?? []).join(", ")}
+                              onChange={(event) => {
+                                const times = event.target.value
+                                  .split(",")
+                                  .map((value) => value.trim())
+                                  .filter(Boolean);
+                                const updated = [...dailyDraft.meds];
+                                updated[index] = { ...updated[index], times };
+                                setDailyDraft((prev) => ({ ...prev, meds: updated }));
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="text-xs text-rose-600"
+                            onClick={() => {
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                meds: prev.meds.filter((_, i) => i !== index),
+                              }));
+                            }}
+                          >
+                            Entfernen
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() =>
+                        setDailyDraft((prev) => ({
+                          ...prev,
+                          meds: [...prev.meds, { name: "", doseMg: undefined, times: [] }],
+                        }))
+                      }
+                    >
+                      + Medikament hinzufügen
+                    </Button>
+                    <div className="grid gap-1">
+                      <Label>Akut-/Rescue-Dosen heute</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={dailyDraft.rescueDosesCount ?? ""}
+                        onChange={(event) =>
+                          setDailyDraft((prev) => ({
+                            ...prev,
+                            rescueDosesCount: event.target.value ? Number(event.target.value) : undefined,
+                          }))
+                        }
+                      />
+                      {renderIssuesForPath("rescueDosesCount")}
+                    </div>
+                  </div>
+                </Section>
+
+                <Section title="Schlaf" description="optional, ohne Hilfsmittel">
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div>
+                      <Label>Schlafdauer (h)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={24}
+                        step={0.25}
+                        value={dailyDraft.sleep?.hours ?? ""}
+                        onChange={(event) =>
+                          setDailyDraft((prev) => ({
+                            ...prev,
+                            sleep: { ...(prev.sleep ?? {}), hours: event.target.value ? Number(event.target.value) : undefined },
+                          }))
+                        }
+                      />
+                      {renderIssuesForPath("sleep.hours")}
+                    </div>
+                    <div>
+                      <ScoreInput
+                        id="sleep-quality"
+                        label="Schlafqualität"
+                        value={dailyDraft.sleep?.quality ?? 0}
+                        onChange={(value) =>
+                          setDailyDraft((prev) => ({
+                            ...prev,
+                            sleep: {
+                              ...(prev.sleep ?? {}),
+                              quality: Math.max(0, Math.min(10, Math.round(value))),
+                            },
+                          }))
+                        }
+                      />
+                      {renderIssuesForPath("sleep.quality")}
+                    </div>
+                    <div>
+                      <Label>Aufwachphasen</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={dailyDraft.sleep?.awakenings ?? ""}
+                        onChange={(event) =>
+                          setDailyDraft((prev) => ({
+                            ...prev,
+                            sleep: {
+                              ...(prev.sleep ?? {}),
+                              awakenings: event.target.value ? Number(event.target.value) : undefined,
+                            },
+                          }))
+                        }
+                      />
+                      {renderIssuesForPath("sleep.awakenings")}
+                    </div>
+                  </div>
+                </Section>
+
+                <Section title="Darm & Blase" description="Situativ erfassbar">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="grid gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
+                      <p className="font-medium text-rose-800">Darm</p>
+                      <div>
+                        <Label>Bristol-Stuhlform</Label>
+                        <Select
+                          value={dailyDraft.gi?.bristolType ? String(dailyDraft.gi.bristolType) : ""}
+                          onValueChange={(value) =>
+                            setDailyDraft((prev) => ({
+                              ...prev,
+                              gi: {
+                                ...(prev.gi ?? {}),
+                                bristolType: value ? (Number(value) as 1 | 2 | 3 | 4 | 5 | 6 | 7) : undefined,
+                              },
+                            }))
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Auswählen" />
                           </SelectTrigger>
                           <SelectContent>
-                            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                              <SelectItem key={m} value={String(m)}>
-                                {new Date(2000, m - 1, 1).toLocaleDateString("de-DE", { month: "long" })}
+                            {BRISTOL_TYPES.map((item) => (
+                              <SelectItem key={item.value} value={String(item.value)}>
+                                {item.label}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
-                        <Input type="number" className="h-8 w-24" value={repYear} onChange={(e) => setRepYear(Number(e.target.value))} />
+                        {renderIssuesForPath("gi.bristolType")}
                       </div>
-                    }
-                  >
-                    <div className="flex gap-3 overflow-x-auto pb-2 md:grid md:grid-cols-4 md:gap-3 md:overflow-visible md:pb-0">
-                      <Card className="min-w-[12rem] md:min-w-0">
-                        <CardContent className="p-4">
-                          <div className="text-sm text-zinc-600">Tage dokumentiert</div>
-                          <div className="text-2xl font-semibold">{stats.daysTracked}</div>
-                        </CardContent>
-                      </Card>
-                      <Card className="min-w-[12rem] md:min-w-0">
-                        <CardContent className="p-4">
-                          <div className="text-sm text-zinc-600">Durchschnittlicher Schmerzwert</div>
-                          <div className="text-2xl font-semibold">{stats.avgPain}</div>
-                        </CardContent>
-                      </Card>
-                      <Card className="min-w-[12rem] md:min-w-0">
-                        <CardContent className="p-4">
-                          <div className="text-sm text-zinc-600">Maximaler Schmerzwert</div>
-                          <div className="text-2xl font-semibold">{stats.maxPain}</div>
-                        </CardContent>
-                      </Card>
-                      <Card className="min-w-[12rem] md:min-w-0">
-                        <CardContent className="p-4">
-                          <div className="text-sm text-zinc-600">Flare‑Tage (≥6)</div>
-                          <div className="text-2xl font-semibold">{stats.flareDays}</div>
-                        </CardContent>
-                      </Card>
+                      <ScoreInput
+                        id="bowel-pain"
+                        label="Darm-Schmerz"
+                        value={dailyDraft.gi?.bowelPain ?? 0}
+                        onChange={(value) =>
+                          setDailyDraft((prev) => ({
+                            ...prev,
+                            gi: {
+                              ...(prev.gi ?? {}),
+                              bowelPain: Math.max(0, Math.min(10, Math.round(value))),
+                            },
+                          }))
+                        }
+                      />
+                      {renderIssuesForPath("gi.bowelPain")}
                     </div>
-                    <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
-                      {kpiOverview.map((item) => (
-                        <KpiSquare
-                          key={item.id}
-                          label={item.label}
-                          average={item.metric.avg}
-                          max={item.metric.max}
-                          thresholdLabel={item.thresholdLabel}
-                          thresholdValue={item.metric.thresholdDays}
-                          fillAmount={item.fillAmount}
-                          series={item.series}
-                          valueRange={item.range}
+                    <div className="grid gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
+                      <p className="font-medium text-rose-800">Blase</p>
+                      <div className="grid gap-2">
+                        <Label>Miktionen / Tag</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={dailyDraft.urinary?.freqPerDay ?? ""}
+                          onChange={(event) =>
+                            setDailyDraft((prev) => ({
+                              ...prev,
+                              urinary: {
+                                ...(prev.urinary ?? {}),
+                                freqPerDay: event.target.value ? Number(event.target.value) : undefined,
+                              },
+                            }))
+                          }
                         />
-                      ))}
+                        {renderIssuesForPath("urinary.freqPerDay")}
+                      </div>
+                      <ScoreInput
+                        id="urinary-urgency"
+                        label="Harndrang"
+                        value={dailyDraft.urinary?.urgency ?? 0}
+                        onChange={(value) =>
+                          setDailyDraft((prev) => ({
+                            ...prev,
+                            urinary: {
+                              ...(prev.urinary ?? {}),
+                              urgency: Math.max(0, Math.min(10, Math.round(value))),
+                            },
+                          }))
+                        }
+                      />
+                      {renderIssuesForPath("urinary.urgency")}
+                      <ScoreInput
+                        id="urinary-pain"
+                        label="Schmerz beim Wasserlassen"
+                        value={dailyDraft.urinary?.pain ?? 0}
+                        onChange={(value) =>
+                          setDailyDraft((prev) => ({
+                            ...prev,
+                            urinary: {
+                              ...(prev.urinary ?? {}),
+                              pain: Math.max(0, Math.min(10, Math.round(value))),
+                            },
+                          }))
+                        }
+                      />
+                      {renderIssuesForPath("urinary.pain")}
                     </div>
-                  </Section>
+                  </div>
+                </Section>
 
-                  <Section title={`Schmerzverlauf – ${monthLabel(repYear, repMonth)}`}>
-                    <div className="h-56">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={painSeries} margin={{ left: 8, right: 8 }}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="date" tickMargin={8} />
-                          <YAxis domain={[0, 10]} />
-                          <Tooltip />
-                          <Line type="monotone" dataKey="Schmerz" stroke="var(--endo-accent)" dot={false} strokeWidth={3} />
-                        </LineChart>
-                      </ResponsiveContainer>
+                <Section title="Sexualfunktion (sensibles Opt-in)" description="FSFI nur bei aktivem Opt-in">
+                  <div className="flex items-center gap-3">
+                    <Switch checked={fsfiOptIn} onCheckedChange={setFsfiOptIn} />
+                    <span className="text-sm text-rose-700">
+                      FSFI-Eingabe aktivieren (Werte werden separat gespeichert)
+                    </span>
+                  </div>
+                  {fsfiOptIn && (
+                    <div className="grid gap-2">
+                      <Label>FSFI / FSFI-6 Gesamtscore</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={0.1}
+                        value={dailyDraft.sexual?.fsfiTotal ?? ""}
+                        onChange={(event) =>
+                          setDailyDraft((prev) => ({
+                            ...prev,
+                            sexual: {
+                              ...(prev.sexual ?? {}),
+                              fsfiTotal: event.target.value ? Number(event.target.value) : undefined,
+                            },
+                          }))
+                        }
+                      />
+                      {renderIssuesForPath("sexual.fsfiTotal")}
                     </div>
-                  </Section>
-                  <Section title={`Magen-Darm & Harnwege – ${monthLabel(repYear, repMonth)}`}>
-                    <div className="h-60">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={giUrinarySeries} margin={{ left: 8, right: 8 }}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="date" tickMargin={8} />
-                          <YAxis domain={[0, 3]} allowDecimals tickCount={4} />
-                          <Tooltip />
-                          {GI_FIELDS.map(({ key, label }) => (
-                            <Line
-                              key={`gi-line-${key}`}
-                              type="monotone"
-                              dataKey={label}
-                              stroke={FIELD_COLORS[key]}
-                              dot={false}
-                              strokeWidth={2}
-                            />
-                          ))}
-                          {URINARY_FIELDS.map(({ key, label }) => (
-                            <Line
-                              key={`urinary-line-${key}`}
-                              type="monotone"
-                              dataKey={label}
-                              stroke={FIELD_COLORS[key]}
-                              dot={false}
-                              strokeWidth={2}
-                            />
-                          ))}
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </Section>
-                  <Section title={`Energie, Stimmung & Schlaf – ${monthLabel(repYear, repMonth)}`}>
-                    <div className="h-60">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={wellbeingSeries} margin={{ left: 8, right: 8 }}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="date" tickMargin={8} />
-                          <YAxis domain={[-2, 5]} tickCount={8} />
-                          <Tooltip />
-                          <Line
-                            type="monotone"
-                            dataKey="Müdigkeit"
-                            stroke={FIELD_COLORS.fatigue}
-                            dot={false}
-                            strokeWidth={2}
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey="Stimmung"
-                            stroke={FIELD_COLORS.mood}
-                            dot={false}
-                            strokeWidth={2}
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey="Schlafqualität"
-                            stroke={FIELD_COLORS.sleep}
-                            dot={false}
-                            strokeWidth={2}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </Section>
+                  )}
+                </Section>
 
-                  <Section title="Kurzer Monatsreport (Text)">
-                    <Textarea readOnly value={makeTextReport(stats, repYear, repMonth)} className="min-h-40" />
-                    <div className="flex justify-end">
-                      <Button onClick={copyReport}>In Zwischenablage</Button>
+                <Section title="Notizen & Tags" description="Freitext oder wiederkehrende Muster markieren">
+                  <div className="grid gap-3">
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Neuer Tag"
+                        value={notesTagDraft}
+                        onChange={(event) => setNotesTagDraft(event.target.value)}
+                      />
+                      <Button type="button" variant="secondary" onClick={handleAddTag}>
+                        Hinzufügen
+                      </Button>
                     </div>
-                  </Section>
-                  <Section title="Zyklusstarts">
                     <div className="flex flex-wrap gap-2">
-                      {periodStarts.map((d) => (
-                        <Badge key={d} variant="outline" className="border-rose-200 text-rose-800">
-                          {new Date(d).toLocaleDateString("de-DE")}
+                      {(dailyDraft.notesTags ?? []).map((tag) => (
+                        <Badge key={tag} className="flex items-center gap-2 bg-rose-200 text-rose-700">
+                          {tag}
+                          <button type="button" onClick={() => handleRemoveTag(tag)} className="text-xs">
+                            ×
+                          </button>
                         </Badge>
                       ))}
                     </div>
-                    <div className="flex items-center gap-2 mt-3">
-                      <Input type="date" onChange={(e) => e.target.value && markPeriodStart(e.target.value)} />
-                      <Button onClick={() => setPeriodStarts([])} variant="secondary">
-                        Liste leeren
-                      </Button>
+                    <Textarea
+                      placeholder="Freitextnotizen"
+                      value={dailyDraft.notesFree ?? ""}
+                      onChange={(event) => setDailyDraft((prev) => ({ ...prev, notesFree: event.target.value }))}
+                    />
+                  </div>
+                </Section>
+
+                <Section
+                  title="Optionale Werte (Hilfsmittel nötig)"
+                  description="Standardmäßig ausgeblendet – Wearables, LH-Tests, BBT"
+                  aside={
+                    <Switch
+                      checked={sensorsVisible}
+                      onCheckedChange={setSensorsVisible}
+                      aria-label="Hilfsmittel-Optionen"
+                    />
+                  }
+                >
+                  <Button type="button" variant="secondary" onClick={() => setSensorsVisible((prev) => !prev)}>
+                    {optionalSensorsLabel}
+                  </Button>
+                  {sensorsVisible && (
+                    <div className="grid gap-4">
+                      <div className="grid gap-2 rounded-lg border border-rose-100 bg-rose-50 p-4">
+                        <p className="font-medium text-rose-800">Ovulation / LH-Tests</p>
+                        <div className="flex items-center gap-3">
+                          <Label>LH-Test durchgeführt</Label>
+                          <Switch
+                            checked={dailyDraft.ovulation?.lhTestDone ?? false}
+                            onCheckedChange={(checked) =>
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                ovulation: { ...(prev.ovulation ?? {}), lhTestDone: checked },
+                              }))
+                            }
+                          />
+                        </div>
+                        {(dailyDraft.ovulation?.lhTestDone ?? false) && (
+                          <div className="grid gap-2 md:grid-cols-3">
+                            <div className="flex items-center gap-3">
+                              <Label>Positiv</Label>
+                              <Switch
+                                checked={dailyDraft.ovulation?.lhPositive ?? false}
+                                onCheckedChange={(checked) =>
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    ovulation: { ...(prev.ovulation ?? {}), lhPositive: checked },
+                                  }))
+                                }
+                              />
+                            </div>
+                            <div>
+                              <Label>Testzeit (ISO)</Label>
+                              <Input
+                                type="datetime-local"
+                                value={dailyDraft.ovulation?.lhTime ?? ""}
+                                onChange={(event) =>
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    ovulation: { ...(prev.ovulation ?? {}), lhTime: event.target.value },
+                                  }))
+                                }
+                              />
+                              {renderIssuesForPath("ovulation.lhTime")}
+                            </div>
+                          </div>
+                        )}
+                        <div>
+                          <Label>Basaltemperatur (°C, morgens nüchtern)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min={34}
+                            max={38}
+                            value={dailyDraft.ovulation?.bbtCelsius ?? ""}
+                            onChange={(event) =>
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                ovulation: {
+                                  ...(prev.ovulation ?? {}),
+                                  bbtCelsius: event.target.value ? Number(event.target.value) : undefined,
+                                },
+                              }))
+                            }
+                          />
+                          {renderIssuesForPath("ovulation.bbtCelsius")}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-2 rounded-lg border border-rose-100 bg-rose-50 p-4">
+                        <p className="font-medium text-rose-800">Aktivität (Wearable/Smartphone)</p>
+                        <div className="grid gap-2 md:grid-cols-2">
+                          <div>
+                            <Label>Schritte</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={dailyDraft.activity?.steps ?? ""}
+                              onChange={(event) =>
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  activity: {
+                                    ...(prev.activity ?? {}),
+                                    steps: event.target.value ? Number(event.target.value) : undefined,
+                                  },
+                                }))
+                              }
+                            />
+                            {renderIssuesForPath("activity.steps")}
+                          </div>
+                          <div>
+                            <Label>Aktivminuten</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={dailyDraft.activity?.activeMinutes ?? ""}
+                              onChange={(event) =>
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  activity: {
+                                    ...(prev.activity ?? {}),
+                                    activeMinutes: event.target.value ? Number(event.target.value) : undefined,
+                                  },
+                                }))
+                              }
+                            />
+                            {renderIssuesForPath("activity.activeMinutes")}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-2 rounded-lg border border-rose-100 bg-rose-50 p-4">
+                        <div className="flex items-center justify-between">
+                          <p className="font-medium text-rose-800">HRV (Explorativ)</p>
+                          <Switch checked={exploratoryVisible} onCheckedChange={setExploratoryVisible} />
+                        </div>
+                        <p className="text-xs text-rose-600">
+                          HRV nur explorativ, kein Schmerzsurrogat. Wird nicht in Kerntrends angezeigt.
+                        </p>
+                        {exploratoryVisible && (
+                          <div>
+                            <Label>RMSSD (ms)</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              value={dailyDraft.exploratory?.hrvRmssdMs ?? ""}
+                              onChange={(event) =>
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  exploratory: {
+                                    ...(prev.exploratory ?? {}),
+                                    hrvRmssdMs: event.target.value ? Number(event.target.value) : undefined,
+                                  },
+                                }))
+                              }
+                            />
+                            {renderIssuesForPath("exploratory.hrvRmssdMs")}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-xs text-zinc-500 mt-2">Zyklustag wird automatisch aus letztem Start berechnet.</p>
-                  </Section>
-                  <Section title="Daten">
-                    <p className="text-sm text-zinc-600">
-                      Alle Daten bleiben lokal in deinem Browser (kein Server). Export/Import ermöglicht Gerätewechsel.
-                    </p>
-                    <div className="flex gap-2 mt-2">
-                      <Button onClick={exportData}>
-                        <Download className="h-4 w-4 mr-1" /> JSON-Datei exportieren
-                      </Button>
-                      <label className="inline-flex items-center gap-2 px-3 py-2 border rounded-md cursor-pointer hover:bg-zinc-50">
-                        <Upload className="h-4 w-4" /> JSON-Datei importieren
-                        <input
-                          type="file"
-                          accept="application/json"
-                          className="hidden"
-                          onChange={(e) => e.target.files?.[0] && importData(e.target.files[0])}
-                        />
-                      </label>
-                    </div>
-                  </Section>
-                  <Section title="Hinweis">
-                    <p className="text-sm text-zinc-700">
-                      Diese App dient der persönlichen Dokumentation von Symptomen (Schmerz, Blutung, Darm/Blase, Müdigkeit,
-                      Dyspareunie, Schlaf, Alltagseinfluss), Maßnahmen und möglichen Auslösern. Sie ersetzt keine ärztliche
-                      Diagnose oder Therapie.
-                    </p>
-                  </Section>
+                  )}
+                </Section>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button type="button" onClick={handleDailySubmit}>
+                    Tagesdaten speichern
+                  </Button>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm text-rose-600">
+                    <Upload size={16} />
+                    JSON importieren
+                    <input type="file" accept="application/json" className="hidden" onChange={handleDailyImport} />
+                  </label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() =>
+                      downloadFile(
+                        `endo-daily-${today}.json`,
+                        JSON.stringify(dailyEntries, null, 2),
+                        "application/json"
+                      )
+                    }
+                  >
+                    <Download size={16} className="mr-2" /> JSON Export
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() =>
+                      downloadFile(
+                        `endo-daily-${today}.csv`,
+                        toCsv(
+                          dailyEntries.map((entry) => ({
+                            date: entry.date,
+                            painNRS: entry.painNRS,
+                            painQuality: entry.painQuality.join(";"),
+                            painMapRegionIds: entry.painMapRegionIds.join(";"),
+                            pbacScore: entry.bleeding.pbacScore ?? "",
+                            dysmenorrheaScore: entry.symptoms.dysmenorrhea?.score ?? "",
+                            fatigueScore: entry.symptoms.fatigue?.score ?? "",
+                            sleepQuality: entry.sleep?.quality ?? "",
+                            urinaryPain: entry.urinary?.pain ?? "",
+                          }))
+                        ),
+                        "text/csv"
+                      )
+                    }
+                  >
+                    <Download size={16} className="mr-2" /> CSV Export
+                  </Button>
                 </div>
-              </TabsContent>
-            </Tabs>
-          </div>
-        </header>
-      </div>
-    </div>
+              </div>
+
+              <div className="space-y-4">
+                <Section title="Trend" description="Schmerz NRS & PBAC (Kernmetriken)">
+                  <div className="h-64 w-full">
+                    <ResponsiveContainer>
+                      <LineChart data={painTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                        <XAxis dataKey="date" stroke="#fb7185" tick={{ fontSize: 12 }} />
+                        <YAxis yAxisId="left" domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                        <YAxis yAxisId="right" orientation="right" stroke="#6366f1" tick={{ fontSize: 12 }} />
+                        <Tooltip />
+                        <Line type="monotone" dataKey="pain" stroke="#f43f5e" strokeWidth={2} yAxisId="left" />
+                        <Line type="monotone" dataKey="pbac" stroke="#6366f1" strokeWidth={2} yAxisId="right" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Section>
+
+                <Section title="Letzte Einträge" description="Kernmetriken kompakt">
+                  <div className="space-y-3">
+                    {dailyEntries
+                      .slice()
+                      .sort((a, b) => b.date.localeCompare(a.date))
+                      .slice(0, 7)
+                      .map((entry) => (
+                        <div key={entry.date} className="rounded-lg border border-rose-100 bg-rose-50 p-3 text-sm">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-rose-800">{entry.date}</span>
+                            <span className="text-rose-600">NRS {entry.painNRS}</span>
+                          </div>
+                          <div className="mt-1 flex flex-wrap gap-2 text-xs text-rose-700">
+                            <span>PBAC: {entry.bleeding.pbacScore ?? "–"}</span>
+                            <span>Schlafqualität: {entry.sleep?.quality ?? "–"}</span>
+                            <span>Blasenschmerz: {entry.urinary?.pain ?? "–"}</span>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </Section>
+              </div>
+            </div>
+          </Section>
+        </TabsContent>
+        <TabsContent value="weekly" className="space-y-6">
+          <Section
+            title="WPAI (7-Tage-Rückblick)"
+            description="Prozentwerte für Absenz, Präsenzminderung, Gesamtbeeinträchtigung"
+            aside={<Calendar size={16} className="text-rose-500" />}
+          >
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-2">
+                <Label>Kalenderwoche (ISO)</Label>
+                <Input
+                  value={weeklyDraft.isoWeek}
+                  onChange={(event) => setWeeklyDraft((prev) => ({ ...prev, isoWeek: event.target.value }))}
+                />
+                {renderIssuesForPath("isoWeek")}
+              </div>
+              <div className="grid gap-2">
+                <Label>Absenz (%)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={weeklyDraft.function?.wpaiAbsenteeismPct ?? ""}
+                  onChange={(event) =>
+                    setWeeklyDraft((prev) => ({
+                      ...prev,
+                      function: {
+                        ...(prev.function ?? {}),
+                        wpaiAbsenteeismPct: event.target.value ? Number(event.target.value) : undefined,
+                      },
+                    }))
+                  }
+                />
+                {renderIssuesForPath("function.wpaiAbsenteeismPct")}
+              </div>
+              <div className="grid gap-2">
+                <Label>Präsenzminderung (%)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={weeklyDraft.function?.wpaiPresenteeismPct ?? ""}
+                  onChange={(event) =>
+                    setWeeklyDraft((prev) => ({
+                      ...prev,
+                      function: {
+                        ...(prev.function ?? {}),
+                        wpaiPresenteeismPct: event.target.value ? Number(event.target.value) : undefined,
+                      },
+                    }))
+                  }
+                />
+                {renderIssuesForPath("function.wpaiPresenteeismPct")}
+              </div>
+              <div className="grid gap-2">
+                <Label>Gesamtbeeinträchtigung (%)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={weeklyDraft.function?.wpaiOverallPct ?? ""}
+                  onChange={(event) =>
+                    setWeeklyDraft((prev) => ({
+                      ...prev,
+                      function: {
+                        ...(prev.function ?? {}),
+                        wpaiOverallPct: event.target.value ? Number(event.target.value) : undefined,
+                      },
+                    }))
+                  }
+                />
+                {renderIssuesForPath("function.wpaiOverallPct")}
+              </div>
+            </div>
+            <div className="flex gap-3 pt-4">
+              <Button type="button" onClick={handleWeeklySubmit}>
+                Woche speichern
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() =>
+                  downloadFile(
+                    `endo-weekly-${today}.json`,
+                    JSON.stringify(weeklyEntries, null, 2),
+                    "application/json"
+                  )
+                }
+              >
+                <Download size={16} className="mr-2" /> Export
+              </Button>
+            </div>
+          </Section>
+          <Section title="Verlauf" description="WPAI Gesamtbeeinträchtigung">
+            <div className="h-64 w-full">
+              <ResponsiveContainer>
+                <LineChart data={weeklyEntries} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                  <XAxis dataKey="isoWeek" stroke="#fb7185" tick={{ fontSize: 12 }} />
+                  <YAxis domain={[0, 100]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="function.wpaiOverallPct" stroke="#f43f5e" strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </Section>
+        </TabsContent>
+
+        <TabsContent value="monthly" className="space-y-6">
+          <Section
+            title="Monatliche Fragebögen"
+            description="EHP-5, PHQ-9, GAD-7, optional PROMIS Short Forms"
+            aside={<Calendar size={16} className="text-rose-500" />}
+          >
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <Label>Monat (YYYY-MM)</Label>
+                <Input
+                  value={monthlyDraft.month}
+                  onChange={(event) => setMonthlyDraft((prev) => ({ ...prev, month: event.target.value }))}
+                />
+                {renderIssuesForPath("month")}
+              </div>
+              <div>
+                <Label>EHP-5 Gesamtscore</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={monthlyDraft.qol?.ehp5Total ?? ""}
+                  onChange={(event) =>
+                    setMonthlyDraft((prev) => ({
+                      ...prev,
+                      qol: { ...(prev.qol ?? {}), ehp5Total: event.target.value ? Number(event.target.value) : undefined },
+                    }))
+                  }
+                />
+                {renderIssuesForPath("qol.ehp5Total")}
+              </div>
+              <div>
+                <Label>PHQ-9</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={27}
+                  value={monthlyDraft.mental?.phq9 ?? ""}
+                  onChange={(event) =>
+                    setMonthlyDraft((prev) => ({
+                      ...prev,
+                      mental: { ...(prev.mental ?? {}), phq9: event.target.value ? Number(event.target.value) : undefined },
+                    }))
+                  }
+                />
+                {renderIssuesForPath("mental.phq9")}
+              </div>
+              <div>
+                <Label>GAD-7</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={21}
+                  value={monthlyDraft.mental?.gad7 ?? ""}
+                  onChange={(event) =>
+                    setMonthlyDraft((prev) => ({
+                      ...prev,
+                      mental: { ...(prev.mental ?? {}), gad7: event.target.value ? Number(event.target.value) : undefined },
+                    }))
+                  }
+                />
+                {renderIssuesForPath("mental.gad7")}
+              </div>
+              <div>
+                <Label>PROMIS Fatigue T-Score (optional)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={monthlyDraft.promis?.fatigueT ?? ""}
+                  onChange={(event) =>
+                    setMonthlyDraft((prev) => ({
+                      ...prev,
+                      promis: { ...(prev.promis ?? {}), fatigueT: event.target.value ? Number(event.target.value) : undefined },
+                    }))
+                  }
+                />
+                {renderIssuesForPath("promis.fatigueT")}
+              </div>
+              <div>
+                <Label>PROMIS Pain Interference T-Score (optional)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={monthlyDraft.promis?.painInterferenceT ?? ""}
+                  onChange={(event) =>
+                    setMonthlyDraft((prev) => ({
+                      ...prev,
+                      promis: {
+                        ...(prev.promis ?? {}),
+                        painInterferenceT: event.target.value ? Number(event.target.value) : undefined,
+                      },
+                    }))
+                  }
+                />
+                {renderIssuesForPath("promis.painInterferenceT")}
+              </div>
+            </div>
+            <div className="flex gap-3 pt-4">
+              <Button type="button" onClick={handleMonthlySubmit}>
+                Monat speichern
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() =>
+                  downloadFile(
+                    `endo-monthly-${today}.json`,
+                    JSON.stringify(monthlyEntries, null, 2),
+                    "application/json"
+                  )
+                }
+              >
+                <Download size={16} className="mr-2" /> Export
+              </Button>
+            </div>
+          </Section>
+          <Section title="Verlauf" description="EHP-5 & psychische Scores">
+            <div className="h-64 w-full">
+              <ResponsiveContainer>
+                <LineChart
+                  data={monthlyEntries.map((entry) => ({
+                    month: entry.month,
+                    ehp5: entry.qol?.ehp5Total ?? null,
+                    phq9: entry.mental?.phq9 ?? null,
+                    gad7: entry.mental?.gad7 ?? null,
+                  }))}
+                  margin={{ top: 16, right: 16, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                  <XAxis dataKey="month" stroke="#fb7185" tick={{ fontSize: 12 }} />
+                  <YAxis stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="ehp5" stroke="#f43f5e" strokeWidth={2} />
+                  <Line type="monotone" dataKey="phq9" stroke="#6366f1" strokeWidth={2} />
+                  <Line type="monotone" dataKey="gad7" stroke="#22c55e" strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </Section>
+        </TabsContent>
+      </Tabs>
+    </main>
   );
 }
-
-function makeTextReport(stats: any, y: number, m: number) {
-  const title = `Monatsreport ${monthLabel(y, m)}`;
-  const top = `Tage dokumentiert: ${stats.daysTracked}\nDurchschnittlicher Schmerzwert: ${stats.avgPain} | Höchster Schmerzwert: ${stats.maxPain} | Flare‑Tage (≥6): ${stats.flareDays}`;
-  const loc = stats.byLocation
-    ?.sort((a: any, b: any) => b.count - a.count)
-    .slice(0, 3)
-    .map((x: any) => `${x.name} (${x.count})`)
-    .join(", ");
-  const trig = stats.byTrigger
-    ?.sort((a: any, b: any) => b.count - a.count)
-    .slice(0, 5)
-    .map((x: any) => `${x.name} (${x.count})`)
-    .join(", ");
-  const meds = stats.medReliefAvg
-    ?.sort((a: any, b: any) => b.value - a.value)
-    .map((x: any) => `${x.name}: ~${x.value}%`)
-    .join("; ");
-  const summarizeSymptom = (label: string, metric: any, thresholdLabel: string) => {
-    if (!metric || stats.daysTracked === 0) return "";
-    const avgVal = Number.isFinite(metric.avg) ? Number(metric.avg).toFixed(1) : "0.0";
-    const maxVal = Number.isFinite(metric.max) ? metric.max : 0;
-    const thresholdVal = Number.isFinite(metric.thresholdDays) ? metric.thresholdDays : 0;
-    return `${label}: Ø ${avgVal} (Max ${maxVal}, ${thresholdLabel}: ${thresholdVal})`;
-  };
-  const giHighlights = (stats.giStats
-    ? GI_FIELDS.map(({ key, label }) => ({ label, metric: stats.giStats[key] }))
-        .filter((item) => item.metric)
-        .sort((a, b) => Number(b.metric.avg || 0) - Number(a.metric.avg || 0))
-        .slice(0, 3)
-        .map(({ label, metric }) => summarizeSymptom(label, metric, "Tage ≥ mittel"))
-        .filter(Boolean)
-    : []) as string[];
-  const urinaryHighlights = (stats.urinaryStats
-    ? URINARY_FIELDS.map(({ key, label }) => ({ label, metric: stats.urinaryStats[key] }))
-        .filter((item) => item.metric)
-        .sort((a, b) => Number(b.metric.avg || 0) - Number(a.metric.avg || 0))
-        .map(({ label, metric }) => summarizeSymptom(label, metric, "Tage ≥ mittel"))
-        .filter(Boolean)
-    : []) as string[];
-  const fatigueLine = summarizeSymptom("Müdigkeit", stats.fatigueStats, "Tage ≥ mittel");
-  const moodLine = summarizeSymptom("Stimmung", stats.moodStats, "Tage ≤ schlecht");
-  const sleepLine = summarizeSymptom("Schlafqualität", stats.sleepStats, "Nächte ≤2");
-  return [
-    title,
-    top,
-    loc ? `Häufigste Schmerzorte: ${loc}` : "",
-    trig ? `Häufigste Trigger: ${trig}` : "",
-    meds ? `Mittlere Erleichterung (Medikamente): ${meds}` : "",
-    giHighlights.length ? `Magen-Darm: ${giHighlights.join("; ")}` : "",
-    urinaryHighlights.length ? `Harnwege: ${urinaryHighlights.join("; ")}` : "",
-    fatigueLine,
-    moodLine,
-    sleepLine,
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-(function __ENDO_DEV_TESTS__() {
-  if (typeof window === "undefined") return;
-  try {
-    const mock = {
-      daysTracked: 5,
-      avgPain: 4.2,
-      maxPain: 9,
-      flareDays: 2,
-      byLocation: [
-        { name: "Uterus", count: 3 },
-        { name: "Kreuzbein", count: 2 },
-      ],
-      byTrigger: [
-        { name: "Stress", count: 3 },
-        { name: "Periode", count: 2 },
-      ],
-      medReliefAvg: [
-        { name: "Ibuprofen", value: 40 },
-        { name: "Wärme", value: 30 },
-      ],
-      giStats: {
-        bloating: { avg: 2.1, max: 3, thresholdDays: 3 },
-        constipation: { avg: 1.4, max: 3, thresholdDays: 1 },
-        diarrhea: { avg: 0.6, max: 2, thresholdDays: 0 },
-        nausea: { avg: 1.2, max: 2, thresholdDays: 1 },
-        rectalPain: { avg: 0.8, max: 2, thresholdDays: 0 },
-      },
-      urinaryStats: {
-        frequency: { avg: 1.1, max: 3, thresholdDays: 1 },
-        urgency: { avg: 0.7, max: 2, thresholdDays: 0 },
-        dysuria: { avg: 0.4, max: 1, thresholdDays: 0 },
-      },
-      fatigueStats: { avg: 2.3, max: 3, thresholdDays: 2 },
-      moodStats: { avg: -0.5, max: 2, thresholdDays: 2 },
-      sleepStats: { avg: 3.8, max: 5, thresholdDays: 1 },
-    } as any;
-    const txt = makeTextReport(mock, 2025, 10);
-    console.assert(txt.includes("Monatsreport"), "Report: Titel fehlt");
-    console.assert(
-      txt.includes("Durchschnittlicher Schmerzwert"),
-      "Report: Durchschnittlicher Schmerzwert fehlt"
-    );
-    console.assert(txt.split("\n").length >= 2, "Report: Zeilenumbrüche fehlen");
-    if (!(window as any).__ENDO_TEST_OUTPUT__) {
-      console.debug("[EndoTrack DEV TEST] makeTextReport OK:\n" + txt);
-      (window as any).__ENDO_TEST_OUTPUT__ = true;
-    }
-  } catch (err) {
-    console.warn("[EndoTrack DEV TEST] Fehler", err);
-  }
-})();
