@@ -9,6 +9,9 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  BarChart,
+  Bar,
+  Legend,
 } from "recharts";
 import { Calendar, Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -34,6 +37,13 @@ const DEFAULT_LOCATIONS = [
 const PAIN_TYPES = ["krampfartig", "stechend", "dumpf", "brennend", "ziehend"];
 const BLEEDING_LEVELS = ["keine", "Spotting", "leicht", "mittel", "stark"];
 const SEVERITY = ["keine", "leicht", "mittel", "stark"];
+const BLEEDING_COLORS: Record<string, string> = {
+  keine: "#f1f5f9",
+  Spotting: "#fde68a",
+  leicht: "#fb7185",
+  mittel: "#f43f5e",
+  stark: "#be123c",
+};
 type GIFieldKey = "bloating" | "constipation" | "diarrhea" | "nausea" | "rectalPain";
 type UrinaryFieldKey = "frequency" | "urgency" | "dysuria";
 const GI_FIELDS: { key: GIFieldKey; label: string }[] = [
@@ -221,6 +231,36 @@ function computeMonthlyStats(entries: any[], y: number, m: number) {
       return acc;
     }, {} as Record<string, { avg: number; max: number; thresholdDays: number }>);
   };
+  const bleedingCounts = BLEEDING_LEVELS.reduce((acc, level) => {
+    acc[level] = 0;
+    return acc;
+  }, {} as Record<string, number>);
+  let clotDays = 0;
+  const cycleDayPain = new Map<number, number[]>();
+  data.forEach((entry) => {
+    const level = entry?.bleeding?.level;
+    if (level && typeof bleedingCounts[level] === "number") {
+      bleedingCounts[level] = (bleedingCounts[level] || 0) + 1;
+    }
+    if (entry?.bleeding?.clots) {
+      clotDays += 1;
+    }
+    const cycleDay = Number(entry?.cycle?.cycleDay);
+    if (Number.isFinite(cycleDay) && cycleDay > 0) {
+      const value = Number(entry?.pain?.score || 0);
+      const existing = cycleDayPain.get(cycleDay) || [];
+      existing.push(value);
+      cycleDayPain.set(cycleDay, existing);
+    }
+  });
+  const cycleDayPainAvg = Array.from(cycleDayPain.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([cycleDay, values]) => ({
+      cycleDay,
+      avgPain: avg(values),
+      maxPain: values.length ? Math.max(...values) : 0,
+      count: values.length,
+    }));
   const sums = {
     daysTracked: data.length,
     avgPain: avg(pains),
@@ -269,6 +309,9 @@ function computeMonthlyStats(entries: any[], y: number, m: number) {
     fatigueStats,
     moodStats,
     sleepStats,
+    bleedingCounts,
+    bleedingClotDays: clotDays,
+    cycleDayPainAvg,
     raw: data,
   };
 }
@@ -529,6 +572,21 @@ export default function EndoTrackApp() {
     }
     return days;
   }, [entries, repYear, repMonth]);
+  const bleedingSeries = useMemo(() => {
+    if (!stats?.bleedingCounts) return [];
+    const point: Record<string, number | string> = { name: "Blutungstage" };
+    BLEEDING_LEVELS.forEach((level) => {
+      point[level] = stats.bleedingCounts?.[level] ?? 0;
+    });
+    return [point];
+  }, [stats]);
+  const cyclePainSeries = useMemo(() => {
+    return (stats?.cycleDayPainAvg || []).map((item: any) => ({
+      cycleDay: item.cycleDay,
+      avgPain: item.avgPain,
+      count: item.count,
+    }));
+  }, [stats]);
   const formatAverage = (metric?: { avg: number }) => (metric ? metric.avg.toFixed(1) : "0.0");
 
   function exportData() {
@@ -1119,6 +1177,56 @@ export default function EndoTrackApp() {
                     </div>
                   </Section>
 
+                  <Section
+                    title={`Blutungsprofil – ${monthLabel(repYear, repMonth)}`}
+                    description="Verteilung der dokumentierten Blutungsstärken im ausgewählten Monat."
+                  >
+                    <div className="h-56">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={bleedingSeries} margin={{ left: 8, right: 8 }}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" tickMargin={8} />
+                          <YAxis allowDecimals={false} />
+                          <Tooltip />
+                          <Legend />
+                          {BLEEDING_LEVELS.map((level) => (
+                            <Bar key={`bleeding-${level}`} dataKey={level} stackId="a" fill={BLEEDING_COLORS[level]} />
+                          ))}
+                        </BarChart>
+                      </ResponsiveContainer>
+                      <p className="mt-3 text-xs text-zinc-500">
+                        Blutgerinnsel dokumentiert an {stats.bleedingClotDays || 0} Tag(en).
+                      </p>
+                    </div>
+                  </Section>
+                  <Section
+                    title={`Zyklus & Schmerz – ${monthLabel(repYear, repMonth)}`}
+                    description="Durchschnittlicher Schmerzwert je Zyklustag (basierend auf vorhandenen Einträgen)."
+                  >
+                    <div className="h-56">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={cyclePainSeries} margin={{ left: 8, right: 8 }}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis
+                            dataKey="cycleDay"
+                            type="number"
+                            domain={["auto", "auto"]}
+                            tickMargin={8}
+                            allowDecimals={false}
+                            label={{ value: "Zyklustag", position: "insideBottom", offset: -6 }}
+                          />
+                          <YAxis domain={[0, 10]} />
+                          <Tooltip formatter={(value: any) => Number(value).toFixed(1)} labelFormatter={(label) => `ZT ${label}`} />
+                          <Line type="monotone" dataKey="avgPain" name="Ø Schmerz" stroke="var(--endo-accent)" dot />
+                        </LineChart>
+                      </ResponsiveContainer>
+                      {cyclePainSeries.length === 0 && (
+                        <p className="mt-3 text-xs text-zinc-500">
+                          Keine Zuordnung von Zyklustagen verfügbar. Markiere Periodenstarts, um diese Auswertung zu nutzen.
+                        </p>
+                      )}
+                    </div>
+                  </Section>
                   <Section title={`Schmerzverlauf – ${monthLabel(repYear, repMonth)}`}>
                     <div className="h-56">
                       <ResponsiveContainer width="100%" height="100%">
@@ -1273,6 +1381,26 @@ function makeTextReport(stats: any, y: number, m: number) {
     ?.sort((a: any, b: any) => b.value - a.value)
     .map((x: any) => `${x.name}: ~${x.value}%`)
     .join("; ");
+  const bleedingTotals = stats.bleedingCounts
+    ? Object.values(stats.bleedingCounts).reduce((sum: number, value: number) => sum + Number(value || 0), 0)
+    : 0;
+  const bleedingBreakdown = stats.bleedingCounts
+    ? BLEEDING_LEVELS.map((level) => `${level}: ${Number(stats.bleedingCounts?.[level] || 0)}`)
+        .filter((part) => !part.endsWith(" 0"))
+    : [];
+  const bleedingLine = bleedingTotals
+    ? `Blutungstage: ${bleedingTotals} (${bleedingBreakdown.join(", ")})` +
+      (stats.bleedingClotDays ? ` · Gerinnsel: ${stats.bleedingClotDays}` : "")
+    : stats.bleedingClotDays
+    ? `Gerinnsel dokumentiert an ${stats.bleedingClotDays} Tag(en)`
+    : "";
+  const cycleHighlights = (stats.cycleDayPainAvg || []).slice(0, 6).map((item: any) => {
+    const avgPain = Number.isFinite(item.avgPain) ? Number(item.avgPain).toFixed(1) : "0.0";
+    return `ZT ${item.cycleDay}: ${avgPain}`;
+  });
+  const cycleLine = cycleHighlights.length
+    ? `Schmerz nach Zyklustag (Ø): ${cycleHighlights.join(" | ")}`
+    : "";
   const summarizeSymptom = (label: string, metric: any, thresholdLabel: string) => {
     if (!metric || stats.daysTracked === 0) return "";
     const avgVal = Number.isFinite(metric.avg) ? Number(metric.avg).toFixed(1) : "0.0";
@@ -1304,6 +1432,8 @@ function makeTextReport(stats: any, y: number, m: number) {
     loc ? `Häufigste Schmerzorte: ${loc}` : "",
     trig ? `Häufigste Trigger: ${trig}` : "",
     meds ? `Mittlere Erleichterung (Medikamente): ${meds}` : "",
+    bleedingLine,
+    cycleLine,
     giHighlights.length ? `Magen-Darm: ${giHighlights.join("; ")}` : "",
     urinaryHighlights.length ? `Harnwege: ${urinaryHighlights.join("; ")}` : "",
     fatigueLine,
