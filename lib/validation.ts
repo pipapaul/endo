@@ -1,4 +1,62 @@
+import { z } from "zod";
+
 import { DailyEntry, MonthlyEntry, WeeklyEntry } from "./types";
+
+const zInt01 = z.number().int().min(0).max(10);
+const zNonNeg = z.number().int().min(0);
+
+const formatZodPath = (path: (string | number)[]) => {
+  if (!path.length) return "dailyEntry";
+  return path
+    .map((segment) => (typeof segment === "number" ? `[${segment}]` : segment))
+    .reduce((acc, segment) => {
+      if (!acc) return segment;
+      return segment.startsWith("[") ? `${acc}${segment}` : `${acc}.${segment}`;
+    }, "");
+};
+
+export const zDailyEntry = z
+  .object({
+    urinaryOpt: z
+      .object({
+        urgency: zInt01.optional(),
+        leaksCount: zNonNeg.optional(),
+        nocturia: zNonNeg.optional(),
+      })
+      .optional(),
+    headacheOpt: z
+      .object({
+        present: z.boolean().optional(),
+        nrs: zInt01.optional(),
+        aura: z.boolean().optional(),
+        meds: z
+          .array(
+            z.object({
+              name: z.string().min(1),
+              doseMg: zNonNeg.optional(),
+              time: z.string().optional(),
+            })
+          )
+          .optional(),
+      })
+      .optional()
+      .refine((value) => !value || !value.present || value.nrs !== undefined, {
+        message: "Bitte Kopfschmerz-Stärke (0–10) angeben",
+        path: ["headacheOpt", "nrs"],
+      }),
+    dizzinessOpt: z
+      .object({
+        present: z.boolean().optional(),
+        nrs: zInt01.optional(),
+        orthostatic: z.boolean().optional(),
+      })
+      .optional()
+      .refine((value) => !value || !value.present || value.nrs !== undefined, {
+        message: "Bitte Schwindel-Stärke (0–10) angeben",
+        path: ["dizzinessOpt", "nrs"],
+      }),
+  })
+  .passthrough();
 
 export interface ValidationIssue {
   path: string;
@@ -203,6 +261,13 @@ export function validateDailyEntry(entry: DailyEntry): ValidationIssue[] {
         issues.push({ path: "ovulation.bbtCelsius", message: "BBT muss mit zwei Nachkommastellen erfasst werden." });
       }
     }
+  }
+
+  const zodResult = zDailyEntry.safeParse(entry);
+  if (!zodResult.success) {
+    zodResult.error.issues.forEach((issue) => {
+      issues.push({ path: formatZodPath(issue.path), message: issue.message });
+    });
   }
 
   return issues;
