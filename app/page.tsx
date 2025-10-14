@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import {
   LineChart,
@@ -11,13 +11,17 @@ import {
   ResponsiveContainer,
   CartesianGrid,
   Legend,
+  BarChart,
+  Bar,
+  ScatterChart,
+  Scatter,
 } from "recharts";
 import type { TooltipProps } from "recharts";
 import { Calendar, Download, Upload } from "lucide-react";
 
-import { DailyEntry, MonthlyEntry, WeeklyEntry } from "@/lib/types";
+import { DailyEntry, FeatureFlags, MonthlyEntry, WeeklyEntry } from "@/lib/types";
 import { TERMS } from "@/lib/terms";
-import type { TermDescriptor } from "@/lib/terms";
+import type { ModuleTerms, TermDescriptor } from "@/lib/terms";
 import {
   validateDailyEntry,
   validateMonthlyEntry,
@@ -36,6 +40,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import Checkbox from "@/components/ui/checkbox";
 
 import { cn } from "@/lib/utils";
 
@@ -106,6 +111,9 @@ const PBAC_SATURATION_OPTIONS: { id: PbacSaturation; label: string }[] = [
 ];
 
 const PBAC_FLOODING_SCORE = 5;
+const HEAVY_BLEED_PBAC = 100;
+
+const isHeavyBleedToday = (entry: DailyEntry) => (entry.bleeding?.pbacScore ?? 0) >= HEAVY_BLEED_PBAC;
 
 const EHP5_ITEMS = [
   "Schmerz schränkt Alltagstätigkeiten ein",
@@ -351,6 +359,254 @@ function MultiSelectChips({
   );
 }
 
+const MODULE_TERMS: ModuleTerms = {
+  urinaryOpt: TERMS.urinaryOpt,
+  headacheOpt: TERMS.headacheOpt,
+  dizzinessOpt: TERMS.dizzinessOpt,
+};
+
+type HeadacheMed = NonNullable<NonNullable<DailyEntry["headacheOpt"]>["meds"]>[number];
+
+function ModuleToggleRow({
+  label,
+  tech,
+  help,
+  checked,
+  onCheckedChange,
+}: {
+  label: string;
+  tech?: string;
+  help: string;
+  checked: boolean;
+  onCheckedChange: (value: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-lg border border-rose-100 bg-rose-50 p-4">
+      <div className="flex items-center gap-2 text-sm font-medium text-rose-900">
+        <span>{label}</span>
+        <InfoTip tech={tech ?? label} help={help} />
+      </div>
+      <Switch checked={checked} onCheckedChange={onCheckedChange} />
+    </div>
+  );
+}
+
+function NrsInput({ id, value, onChange }: { id: string; value: number; onChange: (value: number) => void }) {
+  return (
+    <div className="flex items-center gap-4">
+      <Slider
+        id={id}
+        value={[value]}
+        min={0}
+        max={10}
+        step={1}
+        onValueChange={([next]) => onChange(Math.max(0, Math.min(10, Math.round(next))))}
+      />
+      <Input
+        className="w-20"
+        type="number"
+        inputMode="numeric"
+        min={0}
+        max={10}
+        step={1}
+        value={value}
+        onChange={(event) => {
+          const parsed = Number(event.target.value);
+          if (Number.isNaN(parsed)) {
+            onChange(0);
+            return;
+          }
+          onChange(Math.max(0, Math.min(10, Math.round(parsed))));
+        }}
+      />
+    </div>
+  );
+}
+
+function NumberField({
+  id,
+  value,
+  min = 0,
+  onChange,
+}: {
+  id: string;
+  value: number | undefined;
+  min?: number;
+  onChange: (value: number | undefined) => void;
+}) {
+  return (
+    <Input
+      id={id}
+      type="number"
+      min={min}
+      value={value ?? ""}
+      onChange={(event) => {
+        if (event.target.value === "") {
+          onChange(undefined);
+          return;
+        }
+        const parsed = Number(event.target.value);
+        if (Number.isNaN(parsed)) {
+          onChange(undefined);
+          return;
+        }
+        onChange(Math.max(min, Math.round(parsed)));
+      }}
+    />
+  );
+}
+
+function MedList({
+  items,
+  onChange,
+  renderIssues,
+}: {
+  items: HeadacheMed[];
+  onChange: (items: HeadacheMed[]) => void;
+  renderIssues?: (path: string) => ReactNode;
+}) {
+  const updateItem = (index: number, patch: Partial<HeadacheMed>) => {
+    const next = items.slice();
+    next[index] = { ...next[index], ...patch };
+    onChange(next);
+  };
+
+  return (
+    <div className="space-y-3">
+      {items.map((item, index) => (
+        <div key={index} className="space-y-2 rounded-lg border border-rose-100 bg-white p-3 text-sm text-rose-700">
+          <div className="grid gap-2 md:grid-cols-3">
+            <div>
+              <Label htmlFor={`headache-med-name-${index}`} className="text-xs text-rose-600">
+                Name
+              </Label>
+              <Input
+                id={`headache-med-name-${index}`}
+                value={item.name}
+                onChange={(event) => updateItem(index, { name: event.target.value })}
+              />
+              {renderIssues?.(`headacheOpt.meds[${index}].name`)}
+            </div>
+            <div>
+              <Label htmlFor={`headache-med-dose-${index}`} className="text-xs text-rose-600">
+                Dosis (mg)
+              </Label>
+              <Input
+                id={`headache-med-dose-${index}`}
+                type="number"
+                min={0}
+                value={item.doseMg ?? ""}
+                onChange={(event) =>
+                  updateItem(index, {
+                    doseMg: event.target.value === "" ? undefined : Math.max(0, Math.round(Number(event.target.value))),
+                  })
+                }
+              />
+              {renderIssues?.(`headacheOpt.meds[${index}].doseMg`)}
+            </div>
+            <div>
+              <Label htmlFor={`headache-med-time-${index}`} className="text-xs text-rose-600">
+                Uhrzeit (optional)
+              </Label>
+              <Input
+                id={`headache-med-time-${index}`}
+                placeholder="08:00"
+                value={item.time ?? ""}
+                onChange={(event) => updateItem(index, { time: event.target.value || undefined })}
+              />
+              {renderIssues?.(`headacheOpt.meds[${index}].time`)}
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-xs text-rose-600"
+              onClick={() => onChange(items.filter((_, i) => i !== index))}
+            >
+              Entfernen
+            </Button>
+          </div>
+        </div>
+      ))}
+      <Button
+        type="button"
+        variant="secondary"
+        onClick={() => onChange([...items, { name: "" } as HeadacheMed])}
+      >
+        + Mittel ergänzen
+      </Button>
+    </div>
+  );
+}
+
+function InlineNotice({ title, text }: { title: string; text: string }) {
+  return (
+    <div className="rounded-md border-l-4 border-amber-400 bg-amber-50 p-3 text-sm text-amber-800">
+      <p className="font-semibold text-amber-900">{title}</p>
+      <p className="mt-1 text-amber-700">{text}</p>
+    </div>
+  );
+}
+
+function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>): DailyEntry {
+  const clone: DailyEntry = { ...entry };
+  const extra = clone as Record<string, unknown>;
+
+  const urinaryOpt: NonNullable<DailyEntry["urinaryOpt"]> = { ...(entry.urinaryOpt ?? {}) };
+  if (typeof extra["urinary_urgency"] === "number") {
+    urinaryOpt.urgency = extra["urinary_urgency"] as number;
+  }
+  if (typeof extra["urinary_leaks"] === "number") {
+    urinaryOpt.leaksCount = extra["urinary_leaks"] as number;
+  }
+  if (typeof extra["urinary_nocturia"] === "number") {
+    urinaryOpt.nocturia = extra["urinary_nocturia"] as number;
+  }
+  if (Object.keys(urinaryOpt).length) {
+    clone.urinaryOpt = urinaryOpt;
+  }
+  delete extra["urinary_urgency"];
+  delete extra["urinary_leaks"];
+  delete extra["urinary_nocturia"];
+
+  const headacheOpt: NonNullable<DailyEntry["headacheOpt"]> = { ...(entry.headacheOpt ?? {}) };
+  if (typeof extra["headache_present"] === "boolean") {
+    headacheOpt.present = extra["headache_present"] as boolean;
+  }
+  if (typeof extra["headache_nrs"] === "number") {
+    headacheOpt.nrs = extra["headache_nrs"] as number;
+  }
+  if (typeof extra["headache_aura"] === "boolean") {
+    headacheOpt.aura = extra["headache_aura"] as boolean;
+  }
+  if (Object.keys(headacheOpt).length) {
+    clone.headacheOpt = headacheOpt;
+  }
+  delete extra["headache_present"];
+  delete extra["headache_nrs"];
+  delete extra["headache_aura"];
+
+  const dizzinessOpt: NonNullable<DailyEntry["dizzinessOpt"]> = { ...(entry.dizzinessOpt ?? {}) };
+  if (typeof extra["dizziness_present"] === "boolean") {
+    dizzinessOpt.present = extra["dizziness_present"] as boolean;
+  }
+  if (typeof extra["dizziness_nrs"] === "number") {
+    dizzinessOpt.nrs = extra["dizziness_nrs"] as number;
+  }
+  if (typeof extra["dizziness_orthostatic"] === "boolean") {
+    dizzinessOpt.orthostatic = extra["dizziness_orthostatic"] as boolean;
+  }
+  if (Object.keys(dizzinessOpt).length) {
+    clone.dizzinessOpt = dizzinessOpt;
+  }
+  delete extra["dizziness_present"];
+  delete extra["dizziness_nrs"];
+  delete extra["dizziness_orthostatic"];
+
+  return clone;
+}
+
 function BodyMap({ value, onChange }: { value: string[]; onChange: (next: string[]) => void }) {
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -550,6 +806,7 @@ export default function HomePage() {
   const [dailyEntries, setDailyEntries] = useLocalStorageState<DailyEntry[]>("endo.daily.v2", []);
   const [weeklyEntries, setWeeklyEntries] = useLocalStorageState<WeeklyEntry[]>("endo.weekly.v2", []);
   const [monthlyEntries, setMonthlyEntries] = useLocalStorageState<MonthlyEntry[]>("endo.monthly.v2", []);
+  const [featureFlags, setFeatureFlags] = useLocalStorageState<FeatureFlags>("endo.flags.v1", {});
 
   const [dailyDraft, setDailyDraft] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
   const [pbacCounts, setPbacCounts] = useState<PbacCounts>({ ...PBAC_DEFAULT_COUNTS });
@@ -586,12 +843,19 @@ export default function HomePage() {
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
+  const activeUrinary = Boolean(featureFlags.moduleUrinary);
+  const activeHeadache = Boolean(featureFlags.moduleHeadache);
+  const activeDizziness = Boolean(featureFlags.moduleDizziness);
+
   const pbacFlooding = dailyDraft.bleeding.flooding ?? false;
+  const pbacScore = useMemo(() => computePbacScore(pbacCounts, pbacFlooding), [pbacCounts, pbacFlooding]);
+  const currentPbacForNotice = dailyDraft.bleeding.isBleeding ? pbacScore : dailyDraft.bleeding.pbacScore ?? 0;
+  const showDizzinessNotice =
+    activeDizziness && dailyDraft.dizzinessOpt?.present && currentPbacForNotice >= HEAVY_BLEED_PBAC;
   const selectedPbacItem =
     pbacSelection.product && pbacSelection.saturation
       ? findPbacProductItem(pbacSelection.product, pbacSelection.saturation)
       : null;
-  const pbacScore = useMemo(() => computePbacScore(pbacCounts, pbacFlooding), [pbacCounts, pbacFlooding]);
   const wpaiAbsenteeism = weeklyDraft.function?.wpaiAbsenteeismPct;
   const wpaiPresenteeism = weeklyDraft.function?.wpaiPresenteeismPct;
   const wpaiOverall = weeklyDraft.function?.wpaiOverallPct ?? computeWpaiOverall(wpaiAbsenteeism, wpaiPresenteeism);
@@ -612,6 +876,50 @@ export default function HomePage() {
     }
   }, [pbacScore, dailyDraft.bleeding.isBleeding]);
 
+  useEffect(() => {
+    if (!activeUrinary) {
+      setDailyDraft((prev) => {
+        if (!prev.urinaryOpt) return prev;
+        return { ...prev, urinaryOpt: undefined };
+      });
+    }
+  }, [activeUrinary]);
+
+  useEffect(() => {
+    if (!activeHeadache) {
+      setDailyDraft((prev) => {
+        if (!prev.headacheOpt) return prev;
+        return { ...prev, headacheOpt: undefined };
+      });
+    }
+  }, [activeHeadache]);
+
+  useEffect(() => {
+    if (!activeDizziness) {
+      setDailyDraft((prev) => {
+        if (!prev.dizzinessOpt) return prev;
+        return { ...prev, dizzinessOpt: undefined };
+      });
+    }
+  }, [activeDizziness]);
+
+  const handleFeatureToggle = (key: keyof FeatureFlags, value: boolean) => {
+    setFeatureFlags((prev) => ({ ...prev, [key]: value }));
+    if (value) return;
+    setDailyDraft((prev) => {
+      if (key === "moduleUrinary" && prev.urinaryOpt) {
+        return { ...prev, urinaryOpt: undefined };
+      }
+      if (key === "moduleHeadache" && prev.headacheOpt) {
+        return { ...prev, headacheOpt: undefined };
+      }
+      if (key === "moduleDizziness" && prev.dizzinessOpt) {
+        return { ...prev, dizzinessOpt: undefined };
+      }
+      return prev;
+    });
+  };
+
   const handleAddTag = () => {
     if (!notesTagDraft.trim()) return;
     const tag = notesTagDraft.trim();
@@ -628,6 +936,42 @@ export default function HomePage() {
       notesTags: (prev.notesTags ?? []).filter((entry) => entry !== tag),
     }));
   };
+
+  const buildDailyExportRow = useCallback(
+    (entry: DailyEntry) => {
+      const symptomScores = Object.entries(entry.symptoms ?? {})
+        .map(([key, value]) => (value?.present && typeof value.score === "number" ? `${key}:${value.score}` : null))
+        .filter(Boolean)
+        .join(";");
+      const row: Record<string, unknown> = {
+        Datum: entry.date,
+        [`${TERMS.nrs.label} (NRS)`]: entry.painNRS,
+        Schmerzarten: entry.painQuality.join(";"),
+        "Schmerzorte (IDs)": entry.painMapRegionIds.join(";"),
+        [`${TERMS.pbac.label}`]: entry.bleeding.pbacScore ?? "",
+        "Symptom-Scores": symptomScores,
+        [`${TERMS.sleep_quality.label}`]: entry.sleep?.quality ?? "",
+        [`${TERMS.urinary_pain.label}`]: entry.urinary?.pain ?? "",
+      };
+      if (activeUrinary) {
+        row.urinary_urgency = entry.urinaryOpt?.urgency ?? "";
+        row.urinary_leaks = entry.urinaryOpt?.leaksCount ?? "";
+        row.urinary_nocturia = entry.urinaryOpt?.nocturia ?? "";
+      }
+      if (activeHeadache) {
+        row.headache_present = entry.headacheOpt?.present ?? false;
+        row.headache_nrs = entry.headacheOpt?.nrs ?? "";
+        row.headache_aura = entry.headacheOpt?.aura ?? false;
+      }
+      if (activeDizziness) {
+        row.dizziness_present = entry.dizzinessOpt?.present ?? false;
+        row.dizziness_nrs = entry.dizzinessOpt?.nrs ?? "";
+        row.dizziness_orthostatic = entry.dizzinessOpt?.orthostatic ?? false;
+      }
+      return row;
+    },
+    [activeUrinary, activeHeadache, activeDizziness]
+  );
 
   const goToPbacProduct = (product: PbacProduct, saturation: PbacSaturation) => {
     const item = findPbacProductItem(product, saturation);
@@ -730,6 +1074,65 @@ export default function HomePage() {
           )
         : dailyDraft.notesTags,
     };
+
+    if (!activeUrinary) {
+      delete (payload as { urinaryOpt?: DailyEntry["urinaryOpt"] }).urinaryOpt;
+    } else if (payload.urinaryOpt) {
+      const normalized: NonNullable<DailyEntry["urinaryOpt"]> = {};
+      if (typeof payload.urinaryOpt.urgency === "number") {
+        normalized.urgency = Math.max(0, Math.min(10, Math.round(payload.urinaryOpt.urgency)));
+      }
+      if (typeof payload.urinaryOpt.leaksCount === "number") {
+        normalized.leaksCount = Math.max(0, Math.round(payload.urinaryOpt.leaksCount));
+      }
+      if (typeof payload.urinaryOpt.nocturia === "number") {
+        normalized.nocturia = Math.max(0, Math.round(payload.urinaryOpt.nocturia));
+      }
+      payload.urinaryOpt = Object.keys(normalized).length ? normalized : undefined;
+      if (!payload.urinaryOpt) {
+        delete (payload as { urinaryOpt?: DailyEntry["urinaryOpt"] }).urinaryOpt;
+      }
+    }
+
+    if (!activeHeadache) {
+      delete (payload as { headacheOpt?: DailyEntry["headacheOpt"] }).headacheOpt;
+    } else if (payload.headacheOpt) {
+      const normalized: NonNullable<DailyEntry["headacheOpt"]> = {
+        present: Boolean(payload.headacheOpt.present),
+      };
+      if (normalized.present && typeof payload.headacheOpt.nrs === "number") {
+        normalized.nrs = Math.max(0, Math.min(10, Math.round(payload.headacheOpt.nrs)));
+      }
+      if (typeof payload.headacheOpt.aura === "boolean") {
+        normalized.aura = payload.headacheOpt.aura;
+      }
+      const meds = (payload.headacheOpt.meds ?? [])
+        .filter((med) => med.name.trim().length > 0)
+        .map((med) => ({
+          name: med.name.trim(),
+          doseMg: typeof med.doseMg === "number" ? Math.max(0, Math.round(med.doseMg)) : undefined,
+          time: med.time,
+        }));
+      if (meds.length) {
+        normalized.meds = meds;
+      }
+      payload.headacheOpt = normalized;
+    }
+
+    if (!activeDizziness) {
+      delete (payload as { dizzinessOpt?: DailyEntry["dizzinessOpt"] }).dizzinessOpt;
+    } else if (payload.dizzinessOpt) {
+      const normalized: NonNullable<DailyEntry["dizzinessOpt"]> = {
+        present: Boolean(payload.dizzinessOpt.present),
+      };
+      if (normalized.present && typeof payload.dizzinessOpt.nrs === "number") {
+        normalized.nrs = Math.max(0, Math.min(10, Math.round(payload.dizzinessOpt.nrs)));
+      }
+      if (typeof payload.dizzinessOpt.orthostatic === "boolean") {
+        normalized.orthostatic = payload.dizzinessOpt.orthostatic;
+      }
+      payload.dizzinessOpt = normalized;
+    }
 
     const validationIssues = validateDailyEntry(payload);
     setIssues(validationIssues);
@@ -836,8 +1239,12 @@ export default function HomePage() {
     if (!file) return;
     file.text().then((text) => {
       try {
-        const json = JSON.parse(text) as DailyEntry[];
-        const valid = json.filter((entry) => validateDailyEntry(entry).length === 0);
+        const parsed = JSON.parse(text);
+        if (!Array.isArray(parsed)) throw new Error("invalid");
+        const normalized = parsed
+          .filter((item): item is DailyEntry & Record<string, unknown> => typeof item === "object" && item !== null)
+          .map((item) => normalizeImportedDailyEntry(item));
+        const valid = normalized.filter((entry) => validateDailyEntry(entry).length === 0);
         setDailyEntries(valid);
         setInfoMessage("Tagesdaten importiert.");
       } catch {
@@ -893,6 +1300,36 @@ export default function HomePage() {
       if (commonSymptoms) {
         lines.push(`Häufige Symptome: ${commonSymptoms}`);
       }
+      if (activeUrinary && urinaryStats) {
+        if (urinaryStats.leakRate !== null) {
+          lines.push(`Blase/Drang – Tage mit Leckage: ${urinaryStats.leakRate.toFixed(1)}%`);
+        }
+        if (urinaryStats.avgUrgency !== null) {
+          lines.push(`Blase/Drang – Ø Harndrang: ${urinaryStats.avgUrgency.toFixed(1)}`);
+        }
+        if (urinaryStats.avgNocturia !== null) {
+          lines.push(`Blase/Drang – Ø Nocturia: ${urinaryStats.avgNocturia.toFixed(1)}`);
+        }
+      }
+      if (activeHeadache && headacheStats) {
+        if (headacheStats.avgPerMonth !== null) {
+          lines.push(`Kopfschmerz-/Migränetage pro Monat: ${headacheStats.avgPerMonth.toFixed(1)}`);
+        }
+        if (headacheStats.avgNrs !== null) {
+          lines.push(`Ø Kopfschmerz (0–10): ${headacheStats.avgNrs.toFixed(1)}`);
+        }
+      }
+      if (activeDizziness && dizzinessStats) {
+        if (dizzinessStats.avgPerMonth !== null) {
+          lines.push(`Schwindeltage pro Monat: ${dizzinessStats.avgPerMonth.toFixed(1)}`);
+        }
+        if (dizzinessStats.avgNrs !== null) {
+          lines.push(`Ø Schwindel (0–10): ${dizzinessStats.avgNrs.toFixed(1)}`);
+        }
+        lines.push(
+          `Schwindel an starken Blutungstagen: ${dizzinessStats.heavyDays}/${dizzinessStats.presentDays || 0}`
+        );
+      }
     } else {
       lines.push("Keine Tagesdaten im Zeitraum.");
     }
@@ -938,6 +1375,28 @@ export default function HomePage() {
       const term = TERMS[key];
       lines.push(`- ${term.label}: ${term.help}`);
     });
+
+    if (activeUrinary) {
+      lines.push(
+        `- ${MODULE_TERMS.urinaryOpt.urgency.label}: ${MODULE_TERMS.urinaryOpt.urgency.help}`,
+        `- ${MODULE_TERMS.urinaryOpt.leaksCount.label}: ${MODULE_TERMS.urinaryOpt.leaksCount.help}`,
+        `- ${MODULE_TERMS.urinaryOpt.nocturia.label}: ${MODULE_TERMS.urinaryOpt.nocturia.help}`
+      );
+    }
+    if (activeHeadache) {
+      lines.push(
+        `- ${MODULE_TERMS.headacheOpt.present.label}: ${MODULE_TERMS.headacheOpt.present.help}`,
+        `- ${MODULE_TERMS.headacheOpt.nrs.label}: ${MODULE_TERMS.headacheOpt.nrs.help}`,
+        `- ${MODULE_TERMS.headacheOpt.aura.label}: ${MODULE_TERMS.headacheOpt.aura.help}`
+      );
+    }
+    if (activeDizziness) {
+      lines.push(
+        `- ${MODULE_TERMS.dizzinessOpt.present.label}: ${MODULE_TERMS.dizzinessOpt.present.help}`,
+        `- ${MODULE_TERMS.dizzinessOpt.nrs.label}: ${MODULE_TERMS.dizzinessOpt.nrs.help}`,
+        `- ${MODULE_TERMS.dizzinessOpt.orthostatic.label}: ${MODULE_TERMS.dizzinessOpt.orthostatic.help}`
+      );
+    }
 
     const pdf = createPdfDocument(`Endo-Report ${months} Monate`, lines);
     downloadFile(`endo-report-${months}m.pdf`, pdf, "application/pdf");
@@ -1003,11 +1462,39 @@ export default function HomePage() {
   const cycleOverlay = useMemo(() => {
     const bucket = new Map<
       number,
-      { painSum: number; symptomSum: number; count: number; sleepSum: number; pbacSum: number; pbacCount: number }
+      {
+        painSum: number;
+        symptomSum: number;
+        count: number;
+        sleepSum: number;
+        pbacSum: number;
+        pbacCount: number;
+        urgencySum: number;
+        urgencyCount: number;
+        headacheSum: number;
+        headacheCount: number;
+        dizzinessSum: number;
+        dizzinessCount: number;
+      }
     >();
     annotatedDailyEntries.forEach(({ entry, cycleDay, symptomAverage }) => {
       if (!cycleDay) return;
-      const current = bucket.get(cycleDay) ?? { painSum: 0, symptomSum: 0, count: 0, sleepSum: 0, pbacSum: 0, pbacCount: 0 };
+      const current =
+        bucket.get(cycleDay) ??
+        {
+          painSum: 0,
+          symptomSum: 0,
+          count: 0,
+          sleepSum: 0,
+          pbacSum: 0,
+          pbacCount: 0,
+          urgencySum: 0,
+          urgencyCount: 0,
+          headacheSum: 0,
+          headacheCount: 0,
+          dizzinessSum: 0,
+          dizzinessCount: 0,
+        };
       current.painSum += entry.painNRS;
       current.count += 1;
       if (typeof symptomAverage === "number") {
@@ -1020,6 +1507,18 @@ export default function HomePage() {
         current.pbacSum += entry.bleeding.pbacScore;
         current.pbacCount += 1;
       }
+      if (typeof entry.urinaryOpt?.urgency === "number") {
+        current.urgencySum += entry.urinaryOpt.urgency;
+        current.urgencyCount += 1;
+      }
+      if (entry.headacheOpt?.present && typeof entry.headacheOpt.nrs === "number") {
+        current.headacheSum += entry.headacheOpt.nrs;
+        current.headacheCount += 1;
+      }
+      if (entry.dizzinessOpt?.present && typeof entry.dizzinessOpt.nrs === "number") {
+        current.dizzinessSum += entry.dizzinessOpt.nrs;
+        current.dizzinessCount += 1;
+      }
       bucket.set(cycleDay, current);
     });
     return Array.from(bucket.entries())
@@ -1030,6 +1529,9 @@ export default function HomePage() {
         symptomAvg: stats.symptomSum ? Number((stats.symptomSum / stats.count).toFixed(1)) : null,
         sleepAvg: stats.sleepSum ? Number((stats.sleepSum / stats.count).toFixed(1)) : null,
         pbacAvg: stats.pbacCount ? Number((stats.pbacSum / stats.pbacCount).toFixed(1)) : null,
+        urgencyAvg: stats.urgencyCount ? Number((stats.urgencySum / stats.urgencyCount).toFixed(1)) : null,
+        headacheAvg: stats.headacheCount ? Number((stats.headacheSum / stats.headacheCount).toFixed(1)) : null,
+        dizzinessAvg: stats.dizzinessCount ? Number((stats.dizzinessSum / stats.dizzinessCount).toFixed(1)) : null,
       }));
   }, [annotatedDailyEntries]);
 
@@ -1064,6 +1566,192 @@ export default function HomePage() {
     };
   }, [annotatedDailyEntries, dailyEntries]);
 
+  const dailyCsvRows = useMemo(
+    () => dailyEntries.map((entry) => buildDailyExportRow(entry)),
+    [dailyEntries, buildDailyExportRow]
+  );
+
+  const jsonExportData = useMemo(
+    () =>
+      dailyEntries.map((entry) => ({
+        ...entry,
+        urinary_urgency: activeUrinary ? entry.urinaryOpt?.urgency ?? null : undefined,
+        urinary_leaks: activeUrinary ? entry.urinaryOpt?.leaksCount ?? null : undefined,
+        urinary_nocturia: activeUrinary ? entry.urinaryOpt?.nocturia ?? null : undefined,
+        headache_present: activeHeadache ? entry.headacheOpt?.present ?? null : undefined,
+        headache_nrs: activeHeadache ? entry.headacheOpt?.nrs ?? null : undefined,
+        headache_aura: activeHeadache ? entry.headacheOpt?.aura ?? null : undefined,
+        dizziness_present: activeDizziness ? entry.dizzinessOpt?.present ?? null : undefined,
+        dizziness_nrs: activeDizziness ? entry.dizzinessOpt?.nrs ?? null : undefined,
+        dizziness_orthostatic: activeDizziness ? entry.dizzinessOpt?.orthostatic ?? null : undefined,
+      })),
+    [dailyEntries, activeUrinary, activeHeadache, activeDizziness]
+  );
+
+  const urinaryTrendData = useMemo(() => {
+    if (!activeUrinary) return [] as Array<{ date: string; cycleDay: number | null; urgency: number | null }>;
+    return annotatedDailyEntries.map(({ entry, cycleDay }) => ({
+      date: entry.date,
+      cycleDay,
+      urgency: typeof entry.urinaryOpt?.urgency === "number" ? entry.urinaryOpt.urgency : null,
+    }));
+  }, [annotatedDailyEntries, activeUrinary]);
+
+  const urinaryMonthlyRates = useMemo(() => {
+    if (!activeUrinary) return [] as Array<{ month: string; leakRate: number }>;
+    const bucket = new Map<string, { days: number; leakDays: number }>();
+    dailyEntries.forEach((entry) => {
+      if (!entry.urinaryOpt) return;
+      const month = entry.date.slice(0, 7);
+      const stats = bucket.get(month) ?? { days: 0, leakDays: 0 };
+      stats.days += 1;
+      if ((entry.urinaryOpt.leaksCount ?? 0) > 0) {
+        stats.leakDays += 1;
+      }
+      bucket.set(month, stats);
+    });
+    return Array.from(bucket.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([month, stats]) => ({
+        month,
+        leakRate: stats.days ? Number(((stats.leakDays / stats.days) * 100).toFixed(1)) : 0,
+      }));
+  }, [dailyEntries, activeUrinary]);
+
+  const urinaryStats = useMemo(() => {
+    if (!activeUrinary) return null;
+    const relevant = dailyEntries.filter((entry) => entry.urinaryOpt);
+    if (!relevant.length) return null;
+    const urgencyValues = relevant
+      .map((entry) => entry.urinaryOpt?.urgency)
+      .filter((value): value is number => typeof value === "number");
+    const nocturiaValues = relevant
+      .map((entry) => entry.urinaryOpt?.nocturia)
+      .filter((value): value is number => typeof value === "number");
+    const leakDays = relevant.filter((entry) => (entry.urinaryOpt?.leaksCount ?? 0) > 0).length;
+    return {
+      avgUrgency: urgencyValues.length
+        ? Number((urgencyValues.reduce((sum, value) => sum + value, 0) / urgencyValues.length).toFixed(1))
+        : null,
+      avgNocturia: nocturiaValues.length
+        ? Number((nocturiaValues.reduce((sum, value) => sum + value, 0) / nocturiaValues.length).toFixed(1))
+        : null,
+      leakRate: relevant.length ? Number(((leakDays / relevant.length) * 100).toFixed(1)) : null,
+    };
+  }, [activeUrinary, dailyEntries]);
+
+  const headacheTrendData = useMemo(() => {
+    if (!activeHeadache) return [] as Array<{ date: string; cycleDay: number | null; nrs: number | null }>;
+    return annotatedDailyEntries.map(({ entry, cycleDay }) => ({
+      date: entry.date,
+      cycleDay,
+      nrs:
+        entry.headacheOpt?.present && typeof entry.headacheOpt.nrs === "number" ? entry.headacheOpt.nrs : null,
+    }));
+  }, [annotatedDailyEntries, activeHeadache]);
+
+  const headacheMonthlyRates = useMemo(() => {
+    if (!activeHeadache) return [] as Array<{ month: string; rate: number }>;
+    const bucket = new Map<string, { days: number; headacheDays: number }>();
+    dailyEntries.forEach((entry) => {
+      if (!entry.headacheOpt) return;
+      const month = entry.date.slice(0, 7);
+      const stats = bucket.get(month) ?? { days: 0, headacheDays: 0 };
+      stats.days += 1;
+      if (entry.headacheOpt.present) {
+        stats.headacheDays += 1;
+      }
+      bucket.set(month, stats);
+    });
+    return Array.from(bucket.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([month, stats]) => ({
+        month,
+        rate: stats.days ? Number(((stats.headacheDays / stats.days) * 100).toFixed(1)) : 0,
+      }));
+  }, [dailyEntries, activeHeadache]);
+
+  const headacheStats = useMemo(() => {
+    if (!activeHeadache) return null;
+    const relevant = dailyEntries.filter((entry) => entry.headacheOpt);
+    if (!relevant.length) return null;
+    const months = new Map<string, { headacheDays: number }>();
+    let headacheDaysTotal = 0;
+    const nrsValues: number[] = [];
+    relevant.forEach((entry) => {
+      const month = entry.date.slice(0, 7);
+      const stats = months.get(month) ?? { headacheDays: 0 };
+      if (entry.headacheOpt?.present) {
+        stats.headacheDays += 1;
+        headacheDaysTotal += 1;
+        if (typeof entry.headacheOpt.nrs === "number") {
+          nrsValues.push(entry.headacheOpt.nrs);
+        }
+      }
+      months.set(month, stats);
+    });
+    const avgPerMonth = months.size ? Number((headacheDaysTotal / months.size).toFixed(1)) : null;
+    const avgNrs = nrsValues.length
+      ? Number((nrsValues.reduce((sum, value) => sum + value, 0) / nrsValues.length).toFixed(1))
+      : null;
+    return { avgPerMonth, avgNrs };
+  }, [activeHeadache, dailyEntries]);
+
+  const dizzinessTrendData = useMemo(() => {
+    if (!activeDizziness) return [] as Array<{ date: string; cycleDay: number | null; nrs: number | null }>;
+    return annotatedDailyEntries.map(({ entry, cycleDay }) => ({
+      date: entry.date,
+      cycleDay,
+      nrs:
+        entry.dizzinessOpt?.present && typeof entry.dizzinessOpt.nrs === "number" ? entry.dizzinessOpt.nrs : null,
+    }));
+  }, [annotatedDailyEntries, activeDizziness]);
+
+  const dizzinessScatterData = useMemo(() => {
+    if (!activeDizziness) return [] as Array<{ date: string; pbac: number; nrs: number }>;
+    return dailyEntries
+      .filter((entry) => entry.dizzinessOpt?.present && typeof entry.dizzinessOpt.nrs === "number")
+      .map((entry) => ({
+        date: entry.date,
+        pbac: entry.bleeding.pbacScore ?? 0,
+        nrs: entry.dizzinessOpt!.nrs!,
+      }));
+  }, [dailyEntries, activeDizziness]);
+
+  const dizzinessStats = useMemo(() => {
+    if (!activeDizziness) return null;
+    const relevant = dailyEntries.filter((entry) => entry.dizzinessOpt);
+    if (!relevant.length) return null;
+    const presentDays = relevant.filter((entry) => entry.dizzinessOpt?.present).length;
+    const nrsValues = relevant
+      .filter((entry) => entry.dizzinessOpt?.present && typeof entry.dizzinessOpt.nrs === "number")
+      .map((entry) => entry.dizzinessOpt!.nrs!);
+    const heavyDays = relevant.filter(
+      (entry) => entry.dizzinessOpt?.present && isHeavyBleedToday(entry)
+    ).length;
+    const months = new Map<string, { dizzinessDays: number }>();
+    relevant.forEach((entry) => {
+      if (!entry.dizzinessOpt) return;
+      const month = entry.date.slice(0, 7);
+      const stats = months.get(month) ?? { dizzinessDays: 0 };
+      if (entry.dizzinessOpt.present) {
+        stats.dizzinessDays += 1;
+      }
+      months.set(month, stats);
+    });
+    const avgPerMonth = months.size
+      ? Number(
+          (
+            Array.from(months.values()).reduce((sum, value) => sum + value.dizzinessDays, 0) / months.size
+          ).toFixed(1)
+        )
+      : null;
+    const avgNrs = nrsValues.length
+      ? Number((nrsValues.reduce((sum, value) => sum + value, 0) / nrsValues.length).toFixed(1))
+      : null;
+    return { avgPerMonth, avgNrs, presentDays, heavyDays };
+  }, [activeDizziness, dailyEntries]);
+
   return (
     <main className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8">
       <header className="flex flex-col gap-2">
@@ -1083,6 +1771,34 @@ export default function HomePage() {
         </TabsList>
 
         <TabsContent value="daily" className="space-y-6">
+          <Section
+            title="Optionale Module"
+            description="Aktiviere zusätzliche Kurzfelder. Standard bleibt schlank (Opt-in)."
+          >
+            <div className="grid gap-3 md:grid-cols-3">
+              <ModuleToggleRow
+                label="Blase/Drang (optional)"
+                tech={MODULE_TERMS.urinaryOpt.urgency.tech}
+                help={MODULE_TERMS.urinaryOpt.urgency.help}
+                checked={activeUrinary}
+                onCheckedChange={(checked) => handleFeatureToggle("moduleUrinary", checked)}
+              />
+              <ModuleToggleRow
+                label="Kopfschmerz/Migräne (optional)"
+                tech={MODULE_TERMS.headacheOpt.present.tech}
+                help={MODULE_TERMS.headacheOpt.present.help}
+                checked={activeHeadache}
+                onCheckedChange={(checked) => handleFeatureToggle("moduleHeadache", checked)}
+              />
+              <ModuleToggleRow
+                label="Schwindel (optional)"
+                tech={MODULE_TERMS.dizzinessOpt.present.tech}
+                help={MODULE_TERMS.dizzinessOpt.present.help}
+                checked={activeDizziness}
+                onCheckedChange={(checked) => handleFeatureToggle("moduleDizziness", checked)}
+              />
+            </div>
+          </Section>
           <Section
             title="Tagescheck-in"
             description="Schmerz → Körperkarte → Symptome → Blutung → Medikation → Schlaf → Darm/Blase → Notizen"
@@ -1743,6 +2459,225 @@ export default function HomePage() {
                   </div>
                 </Section>
 
+                {activeUrinary && (
+                  <Section title="Blase/Drang (Modul)" description="Fokus auf Drang und Leckagen (Opt-in)">
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div className="space-y-1">
+                        <Labeled
+                          label={MODULE_TERMS.urinaryOpt.urgency.label}
+                          tech={MODULE_TERMS.urinaryOpt.urgency.tech}
+                          help={MODULE_TERMS.urinaryOpt.urgency.help}
+                          htmlFor="urinary-opt-urgency"
+                        >
+                          <NrsInput
+                            id="urinary-opt-urgency"
+                            value={dailyDraft.urinaryOpt?.urgency ?? 0}
+                            onChange={(value) =>
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                urinaryOpt: { ...(prev.urinaryOpt ?? {}), urgency: value },
+                              }))
+                            }
+                          />
+                        </Labeled>
+                        {renderIssuesForPath("urinaryOpt.urgency")}
+                      </div>
+                      <div className="space-y-1">
+                        <Labeled
+                          label={MODULE_TERMS.urinaryOpt.leaksCount.label}
+                          tech={MODULE_TERMS.urinaryOpt.leaksCount.tech}
+                          help={MODULE_TERMS.urinaryOpt.leaksCount.help}
+                          htmlFor="urinary-opt-leaks"
+                        >
+                          <NumberField
+                            id="urinary-opt-leaks"
+                            value={dailyDraft.urinaryOpt?.leaksCount}
+                            onChange={(value) =>
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                urinaryOpt: { ...(prev.urinaryOpt ?? {}), leaksCount: value },
+                              }))
+                            }
+                          />
+                        </Labeled>
+                        {renderIssuesForPath("urinaryOpt.leaksCount")}
+                      </div>
+                      <div className="space-y-1">
+                        <Labeled
+                          label={MODULE_TERMS.urinaryOpt.nocturia.label}
+                          tech={MODULE_TERMS.urinaryOpt.nocturia.tech}
+                          help={MODULE_TERMS.urinaryOpt.nocturia.help}
+                          htmlFor="urinary-opt-nocturia"
+                        >
+                          <NumberField
+                            id="urinary-opt-nocturia"
+                            value={dailyDraft.urinaryOpt?.nocturia}
+                            onChange={(value) =>
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                urinaryOpt: { ...(prev.urinaryOpt ?? {}), nocturia: value },
+                              }))
+                            }
+                          />
+                        </Labeled>
+                        {renderIssuesForPath("urinaryOpt.nocturia")}
+                      </div>
+                    </div>
+                  </Section>
+                )}
+
+                {activeHeadache && (
+                  <Section title="Kopfschmerz/Migräne (Modul)" description="Nur wenn benötigt – Präsenz + Intensität">
+                    <div className="space-y-4">
+                      <label className="flex items-center gap-2 text-sm text-rose-800">
+                        <Checkbox
+                          checked={dailyDraft.headacheOpt?.present ?? false}
+                          onChange={(event) =>
+                            setDailyDraft((prev) => ({
+                              ...prev,
+                              headacheOpt: event.target.checked
+                                ? { ...(prev.headacheOpt ?? {}), present: true, nrs: prev.headacheOpt?.nrs ?? 0 }
+                                : { present: false },
+                            }))
+                          }
+                        />
+                        <span>{MODULE_TERMS.headacheOpt.present.label}</span>
+                        <InfoTip
+                          tech={MODULE_TERMS.headacheOpt.present.tech ?? MODULE_TERMS.headacheOpt.present.label}
+                          help={MODULE_TERMS.headacheOpt.present.help}
+                        />
+                      </label>
+                      {renderIssuesForPath("headacheOpt.present")}
+                      {dailyDraft.headacheOpt?.present && (
+                        <div className="space-y-3">
+                          <div className="space-y-1">
+                            <Labeled
+                              label={MODULE_TERMS.headacheOpt.nrs.label}
+                              tech={MODULE_TERMS.headacheOpt.nrs.tech}
+                              help={MODULE_TERMS.headacheOpt.nrs.help}
+                              htmlFor="headache-opt-nrs"
+                            >
+                              <NrsInput
+                                id="headache-opt-nrs"
+                                value={dailyDraft.headacheOpt?.nrs ?? 0}
+                                onChange={(value) =>
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    headacheOpt: { ...(prev.headacheOpt ?? {}), nrs: value },
+                                  }))
+                                }
+                              />
+                            </Labeled>
+                            {renderIssuesForPath("headacheOpt.nrs")}
+                          </div>
+                          <label className="flex items-center gap-2 text-sm text-rose-800">
+                            <Checkbox
+                              checked={dailyDraft.headacheOpt?.aura ?? false}
+                              onChange={(event) =>
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  headacheOpt: { ...(prev.headacheOpt ?? {}), aura: event.target.checked },
+                                }))
+                              }
+                            />
+                            <span>{MODULE_TERMS.headacheOpt.aura.label}</span>
+                            <InfoTip
+                              tech={MODULE_TERMS.headacheOpt.aura.tech ?? MODULE_TERMS.headacheOpt.aura.label}
+                              help={MODULE_TERMS.headacheOpt.aura.help}
+                            />
+                          </label>
+                          <MedList
+                            items={dailyDraft.headacheOpt?.meds ?? []}
+                            onChange={(items) =>
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                headacheOpt: { ...(prev.headacheOpt ?? {}), meds: items },
+                              }))
+                            }
+                            renderIssues={renderIssuesForPath}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </Section>
+                )}
+
+                {activeDizziness && (
+                  <Section title="Schwindel (Modul)" description="Präsenz, Stärke und Orthostatik">
+                    <div className="space-y-4">
+                      <label className="flex items-center gap-2 text-sm text-rose-800">
+                        <Checkbox
+                          checked={dailyDraft.dizzinessOpt?.present ?? false}
+                          onChange={(event) =>
+                            setDailyDraft((prev) => ({
+                              ...prev,
+                              dizzinessOpt: event.target.checked
+                                ? { ...(prev.dizzinessOpt ?? {}), present: true, nrs: prev.dizzinessOpt?.nrs ?? 0 }
+                                : { present: false },
+                            }))
+                          }
+                        />
+                        <span>{MODULE_TERMS.dizzinessOpt.present.label}</span>
+                        <InfoTip
+                          tech={MODULE_TERMS.dizzinessOpt.present.tech ?? MODULE_TERMS.dizzinessOpt.present.label}
+                          help={MODULE_TERMS.dizzinessOpt.present.help}
+                        />
+                      </label>
+                      {renderIssuesForPath("dizzinessOpt.present")}
+                      {dailyDraft.dizzinessOpt?.present && (
+                        <div className="space-y-3">
+                          {showDizzinessNotice && (
+                            <InlineNotice
+                              title="Schwindel an starken Blutungstagen"
+                              text="Mehrfacher Schwindel bei starker Blutung – ärztliche Abklärung (Eisenstatus) erwägen."
+                            />
+                          )}
+                          <div className="space-y-1">
+                            <Labeled
+                              label={MODULE_TERMS.dizzinessOpt.nrs.label}
+                              tech={MODULE_TERMS.dizzinessOpt.nrs.tech}
+                              help={MODULE_TERMS.dizzinessOpt.nrs.help}
+                              htmlFor="dizziness-opt-nrs"
+                            >
+                              <NrsInput
+                                id="dizziness-opt-nrs"
+                                value={dailyDraft.dizzinessOpt?.nrs ?? 0}
+                                onChange={(value) =>
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    dizzinessOpt: { ...(prev.dizzinessOpt ?? {}), nrs: value },
+                                  }))
+                                }
+                              />
+                            </Labeled>
+                            {renderIssuesForPath("dizzinessOpt.nrs")}
+                          </div>
+                          <label className="flex items-center gap-2 text-sm text-rose-800">
+                            <Checkbox
+                              checked={dailyDraft.dizzinessOpt?.orthostatic ?? false}
+                              onChange={(event) =>
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  dizzinessOpt: {
+                                    ...(prev.dizzinessOpt ?? {}),
+                                    orthostatic: event.target.checked,
+                                  },
+                                }))
+                              }
+                            />
+                            <span>{MODULE_TERMS.dizzinessOpt.orthostatic.label}</span>
+                            <InfoTip
+                              tech={MODULE_TERMS.dizzinessOpt.orthostatic.tech ?? MODULE_TERMS.dizzinessOpt.orthostatic.label}
+                              help={MODULE_TERMS.dizzinessOpt.orthostatic.help}
+                            />
+                          </label>
+                          {renderIssuesForPath("dizzinessOpt.orthostatic")}
+                        </div>
+                      )}
+                    </div>
+                  </Section>
+                )}
+
                 <Section title="Sexualfunktion (sensibles Opt-in)" description="FSFI wird nur nach Opt-in gezeigt">
                   <div className="flex items-center gap-3">
                     <Switch checked={fsfiOptIn} onCheckedChange={setFsfiOptIn} />
@@ -1981,7 +2916,7 @@ export default function HomePage() {
                     onClick={() =>
                       downloadFile(
                         `endo-daily-${today}.json`,
-                        JSON.stringify(dailyEntries, null, 2),
+                        JSON.stringify(jsonExportData, null, 2),
                         "application/json"
                       )
                     }
@@ -1994,23 +2929,7 @@ export default function HomePage() {
                     onClick={() =>
                       downloadFile(
                         `endo-daily-${today}.csv`,
-                        toCsv(
-                          dailyEntries.map((entry) => ({
-                            Datum: entry.date,
-                            [`${TERMS.nrs.label} (NRS)`]: entry.painNRS,
-                            Schmerzarten: entry.painQuality.join(";"),
-                            "Schmerzorte (IDs)": entry.painMapRegionIds.join(";"),
-                            [`${TERMS.pbac.label}`]: entry.bleeding.pbacScore ?? "",
-                            "Symptom-Scores": Object.entries(entry.symptoms ?? {})
-                              .map(([key, value]) =>
-                                value?.present && typeof value.score === "number" ? `${key}:${value.score}` : null
-                              )
-                              .filter(Boolean)
-                              .join(";"),
-                            [`${TERMS.sleep_quality.label}`]: entry.sleep?.quality ?? "",
-                            [`${TERMS.urinary_pain.label}`]: entry.urinary?.pain ?? "",
-                          }))
-                        ),
+                        toCsv(dailyCsvRows),
                         "text/csv"
                       )
                     }
@@ -2106,6 +3025,105 @@ export default function HomePage() {
                   </div>
                 </Section>
 
+                {activeUrinary && urinaryTrendData.length > 0 && (
+                  <Section title="Blase/Drang Verlauf" description="Harndrang-NRS (0–10) an aktiven Tagen">
+                    <div className="h-56 w-full">
+                      <ResponsiveContainer>
+                        <LineChart data={urinaryTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                          <XAxis dataKey="date" stroke="#fb7185" tick={{ fontSize: 12 }} />
+                          <YAxis domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                          <Tooltip />
+                          <Line type="monotone" dataKey="urgency" stroke="#f43f5e" strokeWidth={2} dot={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </Section>
+                )}
+
+                {activeUrinary && urinaryMonthlyRates.length > 0 && (
+                  <Section title="Leckage-Rate" description="Anteil Tage mit Leckage pro Monat">
+                    <div className="h-56 w-full">
+                      <ResponsiveContainer>
+                        <BarChart data={urinaryMonthlyRates} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                          <XAxis dataKey="month" stroke="#fb7185" tick={{ fontSize: 12 }} />
+                          <YAxis domain={[0, 100]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                          <Tooltip />
+                          <Bar dataKey="leakRate" fill="#fb7185" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </Section>
+                )}
+
+                {activeHeadache && headacheTrendData.length > 0 && (
+                  <Section title="Kopfschmerz/Migräne Verlauf" description="NRS nur an Kopfschmerztagen">
+                    <div className="h-56 w-full">
+                      <ResponsiveContainer>
+                        <LineChart data={headacheTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                          <XAxis dataKey="date" stroke="#fb7185" tick={{ fontSize: 12 }} />
+                          <YAxis domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                          <Tooltip />
+                          <Line type="monotone" dataKey="nrs" stroke="#f43f5e" strokeWidth={2} dot={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </Section>
+                )}
+
+                {activeHeadache && headacheMonthlyRates.length > 0 && (
+                  <Section title="Migränetage je Monat" description="Prozentualer Anteil mit Kopfschmerz/Migräne">
+                    <div className="h-56 w-full">
+                      <ResponsiveContainer>
+                        <BarChart data={headacheMonthlyRates} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                          <XAxis dataKey="month" stroke="#fb7185" tick={{ fontSize: 12 }} />
+                          <YAxis domain={[0, 100]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                          <Tooltip />
+                          <Bar dataKey="rate" fill="#fb7185" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </Section>
+                )}
+
+                {activeDizziness && dizzinessTrendData.length > 0 && (
+                  <Section title="Schwindel-Verlauf" description="NRS 0–10 an Schwindeltagen">
+                    <div className="h-56 w-full">
+                      <ResponsiveContainer>
+                        <LineChart data={dizzinessTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                          <XAxis dataKey="date" stroke="#fb7185" tick={{ fontSize: 12 }} />
+                          <YAxis domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                          <Tooltip />
+                          <Line type="monotone" dataKey="nrs" stroke="#f43f5e" strokeWidth={2} dot={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </Section>
+                )}
+
+                {activeDizziness && dizzinessScatterData.length > 0 && (
+                  <Section
+                    title="PBAC vs. Schwindel"
+                    description="Streudiagramm: Blutungsstärke (PBAC) vs. Schwindel-NRS"
+                  >
+                    <div className="h-56 w-full">
+                      <ResponsiveContainer>
+                        <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                          <XAxis type="number" dataKey="pbac" name="PBAC" stroke="#fb7185" tick={{ fontSize: 12 }} />
+                          <YAxis type="number" dataKey="nrs" name="Schwindel" domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                          <Tooltip cursor={{ strokeDasharray: "3 3" }} />
+                          <Scatter data={dizzinessScatterData} fill="#22c55e" />
+                        </ScatterChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </Section>
+                )}
+
                 <Section title="Letzte Einträge" description="Kernmetriken kompakt">
                   <div className="space-y-3">
                     {dailyEntries
@@ -2122,6 +3140,25 @@ export default function HomePage() {
                             <span>PBAC: {entry.bleeding.pbacScore ?? "–"}</span>
                             <span>Schlafqualität: {entry.sleep?.quality ?? "–"}</span>
                             <span>Blasenschmerz: {entry.urinary?.pain ?? "–"}</span>
+                            {activeUrinary && (
+                              <span>Harndrang (Modul): {entry.urinaryOpt?.urgency ?? "–"}</span>
+                            )}
+                            {activeHeadache && (
+                              <span>
+                                Kopfschmerz (Modul):
+                                {entry.headacheOpt?.present && typeof entry.headacheOpt.nrs === "number"
+                                  ? entry.headacheOpt.nrs
+                                  : "–"}
+                              </span>
+                            )}
+                            {activeDizziness && (
+                              <span>
+                                Schwindel (Modul):
+                                {entry.dizzinessOpt?.present && typeof entry.dizzinessOpt.nrs === "number"
+                                  ? entry.dizzinessOpt.nrs
+                                  : "–"}
+                              </span>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -2140,6 +3177,19 @@ export default function HomePage() {
                         <span>Symptome: {row.symptomAvg?.toFixed(1) ?? "–"}</span>
                         <span>{TERMS.sleep_quality.label}: {row.sleepAvg?.toFixed(1) ?? "–"}</span>
                         <span>{TERMS.pbac.label}: {row.pbacAvg?.toFixed(1) ?? "–"}</span>
+                        {activeUrinary && (
+                          <span>{MODULE_TERMS.urinaryOpt.urgency.label}: {row.urgencyAvg?.toFixed(1) ?? "–"}</span>
+                        )}
+                        {activeHeadache && (
+                          <span>
+                            {MODULE_TERMS.headacheOpt.nrs.label}: {row.headacheAvg?.toFixed(1) ?? "–"}
+                          </span>
+                        )}
+                        {activeDizziness && (
+                          <span>
+                            {MODULE_TERMS.dizzinessOpt.nrs.label}: {row.dizzinessAvg?.toFixed(1) ?? "–"}
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>

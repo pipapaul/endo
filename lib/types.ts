@@ -1,5 +1,11 @@
 export type ID = string;
 
+export interface FeatureFlags {
+  moduleUrinary?: boolean;
+  moduleHeadache?: boolean;
+  moduleDizziness?: boolean;
+}
+
 export interface DailyEntry {
   date: string; // ISO YYYY-MM-DD
   painNRS: number; // 0–10
@@ -36,6 +42,25 @@ export interface DailyEntry {
     lhPositive?: boolean; // optional, Hilfsmittel
     lhTime?: string; // ISO datetime
     bbtCelsius?: number; // optional, Hilfsmittel
+  };
+
+  urinaryOpt?: {
+    urgency?: number;
+    leaksCount?: number;
+    nocturia?: number;
+  };
+
+  headacheOpt?: {
+    present?: boolean;
+    nrs?: number;
+    aura?: boolean;
+    meds?: { name: string; doseMg?: number; time?: string }[];
+  };
+
+  dizzinessOpt?: {
+    present?: boolean;
+    nrs?: number;
+    orthostatic?: boolean;
   };
 
   notesTags?: string[];
