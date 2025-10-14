@@ -57,7 +57,7 @@ export const TERMS = {
     help: "Außergewöhnlich müde?",
   },
   bloating: { label: "Blähbauch", tech: "Bloating", help: "Bauch wirkt aufgebläht/gespannt" },
-  meds: { label: "Medikamente & Hilfen", help: "Name, Dosis, Uhrzeit" },
+  meds: { label: "Medikamente & Hilfen", help: "regelmäßige/ / geplante Medikamente" },
   rescue: { label: "Akut-/Rescue-Dosen", help: "Zusätzliche Einnahmen bei Bedarf" },
   sleep_hours: { label: "Schlafdauer (h)", help: "Gesamtschlaf letzte Nacht" },
   sleep_quality: { label: "Schlafqualität (0–10)", help: "Dein Gefühl nach dem Aufwachen" },
