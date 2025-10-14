@@ -1,30 +1,62 @@
 export interface TermDescriptor {
   label: string;
   help: string;
+  tech?: string;
   optional?: boolean;
   deviceNeeded?: string;
 }
 
 export const TERMS = {
-  nrs: { label: "Schmerz heute (0–10)", help: "0 = kein Schmerz, 10 = unerträglich" },
+  nrs: {
+    label: "Schmerz (0–10)",
+    tech: "NRS – Numerische Schmerzskala",
+    help: "0 = kein Schmerz, 10 = unerträglich",
+  },
   painQuality: { label: "Wie fühlt sich der Schmerz an?", help: "Mehrfachauswahl, z. B. krampfend, stechend" },
   bodyMap: { label: "Körperkarte", help: "Tippe an, wo es weh tut" },
-  bleeding_active: { label: "Periode aktiv?", help: "Heute Blutung vorhanden?" },
-  pbac: { label: "Blutungsstärke (PBAC)", help: "Bilderbasierter Score statt leicht/mittel/stark" },
-  clots: { label: "Blutklümpchen (Koagel)", help: "Sichtbare Klümpchen im Blut?" },
-  dysmenorrhea: { label: "Regelschmerzen", help: "Schmerz während der Periode" },
-  deepDyspareunia: { label: "Schmerzen beim Sex (tief)", help: "Schmerz bei tiefem Eindringen" },
+  bleeding_active: {
+    label: "Periode aktiv?",
+    tech: "Aktive Menstruationsblutung",
+    help: "Heute Blutung vorhanden?",
+  },
+  pbac: {
+    label: "Blutungsstärke",
+    tech: "PBAC – Piktorialer Blutungs-Assessment-Chart",
+    help: "Bilderbasierter Score statt leicht/mittel/stark",
+  },
+  clots: { label: "Blutklümpchen", tech: "Koagel", help: "Sichtbare Klümpchen im Blut?" },
+  flooding: {
+    label: "Flooding / Durchbruchblutung",
+    tech: "Flooding",
+    help: "Sehr starke Blutung: Produkt in <1 Stunde durchweicht (PBAC +5).",
+  },
+  dysmenorrhea: { label: "Regelschmerzen", tech: "Dysmenorrhoe", help: "Schmerz während der Periode" },
+  deepDyspareunia: {
+    label: "Schmerzen beim Sex (tief)",
+    tech: "Tiefe Dyspareunie",
+    help: "Schmerz bei tiefem Eindringen",
+  },
   pelvicPainNonMenses: {
-    label: "Beckenschmerz (außerhalb Periode)",
+    label: "Beckenschmerzen außerhalb der Periode",
+    tech: "Chronischer Beckenschmerz",
     help: "Unterbauch-/Beckenschmerz an anderen Tagen",
   },
-  dyschezia: { label: "Schmerzhafter Stuhlgang", help: "Schmerz oder Druck beim Toilettengang" },
+  dyschezia: {
+    label: "Schmerzhafter Stuhlgang",
+    tech: "Dyschezie",
+    help: "Schmerz oder Druck beim Toilettengang",
+  },
   dysuria: {
-    label: "Schmerz/Brennen beim Wasserlassen",
+    label: "Brennen/Schmerz beim Wasserlassen",
+    tech: "Dysurie",
     help: "Unangenehmes Gefühl beim Urinieren",
   },
-  fatigue: { label: "Erschöpfung/Müdigkeit", help: "Außergewöhnlich müde?" },
-  bloating: { label: "Blähbauch", help: "Bauch wirkt aufgebläht/gespannt" },
+  fatigue: {
+    label: "Erschöpfung/Müdigkeit",
+    tech: "Fatigue",
+    help: "Außergewöhnlich müde?",
+  },
+  bloating: { label: "Blähbauch", tech: "Bloating", help: "Bauch wirkt aufgebläht/gespannt" },
   meds: { label: "Medikamente & Hilfen", help: "Name, Dosis, Uhrzeit" },
   rescue: { label: "Akut-/Rescue-Dosen", help: "Zusätzliche Einnahmen bei Bedarf" },
   sleep_hours: { label: "Schlafdauer (h)", help: "Gesamtschlaf letzte Nacht" },
@@ -36,15 +68,27 @@ export const TERMS = {
   urinary_urgency: { label: "Harndrang (0–10)", help: "Starker Drang?" },
   urinary_pain: { label: "Schmerz beim Wasserlassen (0–10)", help: "Brennen/Stechen?" },
   fsfi: { label: "Sexuelle Funktion (FSFI)", help: "Kurzfragebogen zur Sexualität" },
-  ehp5: { label: "Lebensqualität (EHP-5)", help: "Kurzfragebogen zu Alltag & Beschwerden" },
+  ehp5: {
+    label: "Lebensqualität (EHP-5)",
+    tech: "EHP-5 – Endometriose Health Profile",
+    help: "Kurzfragebogen zu Alltag & Beschwerden",
+  },
   wpai_abs: { label: "Fehlzeiten % (WPAI)", help: "Wie viel Arbeit verpasst?" },
   wpai_pre: {
     label: "Anwesenheitsminderung % (WPAI)",
     help: "Wie stark beeinträchtigt bei Anwesenheit?",
   },
   wpai_overall: { label: "Gesamtbeeinträchtigung % (WPAI)", help: "Gesamtauswirkung" },
-  phq9: { label: "Stimmung (PHQ-9)", help: "Kurztest für depressive Symptome" },
-  gad7: { label: "Innere Unruhe/Angst (GAD-7)", help: "Kurztest für Angst" },
+  phq9: {
+    label: "Stimmung (PHQ-9)",
+    tech: "PHQ-9 – Depressionsscreening",
+    help: "Kurztest für depressive Symptome",
+  },
+  gad7: {
+    label: "Innere Unruhe/Angst (GAD-7)",
+    tech: "GAD-7 – Angstskala",
+    help: "Kurztest für Angst",
+  },
   promis_fatigue: { label: "PROMIS Erschöpfung (T-Score)", help: "Standardisierte Skala", optional: true },
   promis_painInt: {
     label: "PROMIS Schmerz-Einfluss (T-Score)",
