@@ -364,6 +364,15 @@ const MODULE_TERMS: ModuleTerms = {
   dizzinessOpt: TERMS.dizzinessOpt,
 };
 
+const SYMPTOM_MODULE_TOGGLES: Array<{
+  key: keyof FeatureFlags;
+  label: string;
+  term: TermDescriptor;
+}> = [
+  { key: "moduleHeadache", label: "Kopfschmerz/Migräne", term: MODULE_TERMS.headacheOpt.present },
+  { key: "moduleDizziness", label: "Schwindel", term: MODULE_TERMS.dizzinessOpt.present },
+];
+
 type HeadacheMed = NonNullable<NonNullable<DailyEntry["headacheOpt"]>["meds"]>[number];
 
 function ModuleToggleRow({
@@ -372,15 +381,22 @@ function ModuleToggleRow({
   help,
   checked,
   onCheckedChange,
+  className,
 }: {
   label: string;
   tech?: string;
   help: string;
   checked: boolean;
   onCheckedChange: (value: boolean) => void;
+  className?: string;
 }) {
   return (
-    <div className="flex items-center justify-between rounded-lg border border-rose-100 bg-rose-50 p-4">
+    <div
+      className={cn(
+        "flex items-center justify-between rounded-lg border border-rose-100 bg-rose-50 p-4",
+        className,
+      )}
+    >
       <div className="flex items-center gap-2 text-sm font-medium text-rose-900">
         <span>{label}</span>
         <InfoTip tech={tech ?? label} help={help} />
@@ -1771,34 +1787,6 @@ export default function HomePage() {
 
         <TabsContent value="daily" className="space-y-6">
           <Section
-            title="Optionale Module"
-            description="Aktiviere zusätzliche Kurzfelder. Standard bleibt schlank (Opt-in)."
-          >
-            <div className="grid gap-3 md:grid-cols-3">
-              <ModuleToggleRow
-                label="Blase/Drang (optional)"
-                tech={MODULE_TERMS.urinaryOpt.urgency.tech}
-                help={MODULE_TERMS.urinaryOpt.urgency.help}
-                checked={activeUrinary}
-                onCheckedChange={(checked) => handleFeatureToggle("moduleUrinary", checked)}
-              />
-              <ModuleToggleRow
-                label="Kopfschmerz/Migräne (optional)"
-                tech={MODULE_TERMS.headacheOpt.present.tech}
-                help={MODULE_TERMS.headacheOpt.present.help}
-                checked={activeHeadache}
-                onCheckedChange={(checked) => handleFeatureToggle("moduleHeadache", checked)}
-              />
-              <ModuleToggleRow
-                label="Schwindel (optional)"
-                tech={MODULE_TERMS.dizzinessOpt.present.tech}
-                help={MODULE_TERMS.dizzinessOpt.present.help}
-                checked={activeDizziness}
-                onCheckedChange={(checked) => handleFeatureToggle("moduleDizziness", checked)}
-              />
-            </div>
-          </Section>
-          <Section
             title="Tagescheck-in"
             description="Schmerz → Körperkarte → Symptome → Blutung → Medikation → Schlaf → Darm/Blase → Notizen"
             aside={<Badge className="bg-rose-200 text-rose-700">max. 60 Sekunden</Badge>}
@@ -1918,6 +1906,16 @@ export default function HomePage() {
                         </div>
                       );
                     })}
+                    {SYMPTOM_MODULE_TOGGLES.map((toggle) => (
+                      <ModuleToggleRow
+                        key={toggle.key}
+                        label={toggle.label}
+                        tech={toggle.term.tech}
+                        help={toggle.term.help}
+                        checked={Boolean(featureFlags[toggle.key])}
+                        onCheckedChange={(checked) => handleFeatureToggle(toggle.key, checked)}
+                      />
+                    ))}
                   </div>
                 </Section>
 
@@ -2454,6 +2452,14 @@ export default function HomePage() {
                         }
                       />
                       {renderIssuesForPath("urinary.pain")}
+                      <ModuleToggleRow
+                        label="Dranginkontinenz"
+                        tech={MODULE_TERMS.urinaryOpt.urgency.tech}
+                        help={MODULE_TERMS.urinaryOpt.urgency.help}
+                        checked={activeUrinary}
+                        onCheckedChange={(checked) => handleFeatureToggle("moduleUrinary", checked)}
+                        className="bg-white/60"
+                      />
                     </div>
                   </div>
                 </Section>
