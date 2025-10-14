@@ -34,6 +34,31 @@ const DEFAULT_LOCATIONS = [
 const PAIN_TYPES = ["krampfartig", "stechend", "dumpf", "brennend", "ziehend"];
 const BLEEDING_LEVELS = ["keine", "Spotting", "leicht", "mittel", "stark"];
 const SEVERITY = ["keine", "leicht", "mittel", "stark"];
+const GI_FIELDS = [
+  { key: "bloating", label: "Blähbauch" },
+  { key: "constipation", label: "Verstopfung" },
+  { key: "diarrhea", label: "Durchfall" },
+  { key: "nausea", label: "Übelkeit" },
+  { key: "rectalPain", label: "Rektaler Schmerz" },
+];
+const URINARY_FIELDS = [
+  { key: "frequency", label: "Häufiger Harndrang" },
+  { key: "urgency", label: "Harndrang (Dringlichkeit)" },
+  { key: "dysuria", label: "Schmerzen beim Wasserlassen" },
+];
+const FIELD_COLORS: Record<string, string> = {
+  bloating: "#f97316",
+  constipation: "#f59e0b",
+  diarrhea: "#6366f1",
+  nausea: "#ec4899",
+  rectalPain: "#14b8a6",
+  frequency: "#0ea5e9",
+  urgency: "#9333ea",
+  dysuria: "#22c55e",
+  fatigue: "#e11d48",
+  mood: "#7c3aed",
+  sleep: "#fb7185",
+};
 const TRIGGERS = [
   "Stress",
   "Ovulation",
@@ -173,6 +198,27 @@ function monthLabel(y: number, m: number) {
 function computeMonthlyStats(entries: any[], y: number, m: number) {
   const data = entries.filter((e) => withinMonth(e.date, y, m));
   const pains = data.map((e) => Number(e.pain?.score || 0));
+  const toNumber = (value: unknown) => (typeof value === "number" ? value : Number(value || 0));
+  const summarize = (values: number[], threshold: (value: number) => boolean) => {
+    const numeric = values.map((v) => (Number.isFinite(v) ? v : 0));
+    const max = numeric.length ? Math.max(...numeric) : 0;
+    return {
+      avg: avg(numeric),
+      max,
+      thresholdDays: numeric.filter((v) => threshold(v)).length,
+    };
+  };
+  const summarizeFields = (
+    fields: { key: string }[],
+    extractor: (entry: any, key: string) => number,
+    threshold: (value: number) => boolean
+  ) => {
+    return fields.reduce((acc, field) => {
+      const values = data.map((entry) => extractor(entry, field.key));
+      acc[field.key] = summarize(values, threshold);
+      return acc;
+    }, {} as Record<string, { avg: number; max: number; thresholdDays: number }>);
+  };
   const sums = {
     daysTracked: data.length,
     avgPain: avg(pains),
@@ -189,11 +235,38 @@ function computeMonthlyStats(entries: any[], y: number, m: number) {
     });
   });
   const medReliefAvg = Object.entries(by.med).map(([name, arr]) => ({ name, value: avg(arr as number[]) }));
+  const giStats = summarizeFields(
+    GI_FIELDS,
+    (entry, key) => toNumber(entry.gi?.[key]),
+    (value) => value >= 2
+  );
+  const urinaryStats = summarizeFields(
+    URINARY_FIELDS,
+    (entry, key) => toNumber(entry.urinary?.[key]),
+    (value) => value >= 2
+  );
+  const fatigueStats = summarize(
+    data.map((entry) => toNumber(entry.fatigue)),
+    (value) => value >= 2
+  );
+  const moodStats = summarize(
+    data.map((entry) => toNumber(entry.mood)),
+    (value) => value <= -1
+  );
+  const sleepStats = summarize(
+    data.map((entry) => toNumber(entry.sleep)),
+    (value) => value <= 2
+  );
   return {
     ...sums,
     byLocation: Object.entries(by.loc).map(([name, count]) => ({ name, count })),
     byTrigger: Object.entries(by.trig).map(([name, count]) => ({ name, count })),
     medReliefAvg,
+    giStats,
+    urinaryStats,
+    fatigueStats,
+    moodStats,
+    sleepStats,
     raw: data,
   };
 }
@@ -419,6 +492,40 @@ export default function EndoTrackApp() {
     }
     return days;
   }, [entries, repYear, repMonth]);
+  const giUrinarySeries = useMemo(() => {
+    const { start, end } = monthBounds(repYear, repMonth);
+    const days: any[] = [];
+    for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
+      const key = toDateKey(d);
+      const entry = entries.find((x) => x.date === key);
+      const gi = entry?.gi || {};
+      const urinary = entry?.urinary || {};
+      days.push({
+        date: key.slice(-2),
+        ...Object.fromEntries(GI_FIELDS.map(({ key: giKey, label }) => [label, Number(gi?.[giKey] || 0)])),
+        ...Object.fromEntries(
+          URINARY_FIELDS.map(({ key: urinaryKey, label }) => [label, Number(urinary?.[urinaryKey] || 0)])
+        ),
+      });
+    }
+    return days;
+  }, [entries, repYear, repMonth]);
+  const wellbeingSeries = useMemo(() => {
+    const { start, end } = monthBounds(repYear, repMonth);
+    const days: any[] = [];
+    for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
+      const key = toDateKey(d);
+      const entry = entries.find((x) => x.date === key);
+      days.push({
+        date: key.slice(-2),
+        Müdigkeit: entry ? Number(entry.fatigue || 0) : 0,
+        Stimmung: entry ? Number(entry.mood || 0) : 0,
+        Schlafqualität: entry ? Number(entry.sleep || 0) : 0,
+      });
+    }
+    return days;
+  }, [entries, repYear, repMonth]);
+  const formatAverage = (metric?: { avg: number }) => (metric ? metric.avg.toFixed(1) : "0.0");
 
   function exportData() {
     if (typeof document === "undefined") return;
@@ -949,6 +1056,63 @@ export default function EndoTrackApp() {
                         </CardContent>
                       </Card>
                     </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {GI_FIELDS.map(({ key, label }) => {
+                        const metric = stats.giStats?.[key] || { avg: 0, max: 0, thresholdDays: 0 };
+                        return (
+                          <Card key={`gi-${key}`}>
+                            <CardContent className="p-4">
+                              <div className="text-sm text-zinc-600">{label} (Ø)</div>
+                              <div className="text-2xl font-semibold">{metric.avg.toFixed(1)}</div>
+                              <div className="text-xs text-zinc-500 mt-1">
+                                Max: {metric.max} · Belastete Tage (≥ mittel): {metric.thresholdDays}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                      {URINARY_FIELDS.map(({ key, label }) => {
+                        const metric = stats.urinaryStats?.[key] || { avg: 0, max: 0, thresholdDays: 0 };
+                        return (
+                          <Card key={`urinary-${key}`}>
+                            <CardContent className="p-4">
+                              <div className="text-sm text-zinc-600">{label} (Ø)</div>
+                              <div className="text-2xl font-semibold">{metric.avg.toFixed(1)}</div>
+                              <div className="text-xs text-zinc-500 mt-1">
+                                Max: {metric.max} · Belastete Tage (≥ mittel): {metric.thresholdDays}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                      <Card>
+                        <CardContent className="p-4">
+                          <div className="text-sm text-zinc-600">Müdigkeit (Ø)</div>
+                          <div className="text-2xl font-semibold">{formatAverage(stats.fatigueStats)}</div>
+                          <div className="text-xs text-zinc-500 mt-1">
+                            Max: {stats.fatigueStats?.max ?? 0} · Belastete Tage (≥ mittel): {stats.fatigueStats?.thresholdDays ?? 0}
+                          </div>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardContent className="p-4">
+                          <div className="text-sm text-zinc-600">Stimmung (Ø)</div>
+                          <div className="text-2xl font-semibold">{formatAverage(stats.moodStats)}</div>
+                          <div className="text-xs text-zinc-500 mt-1">
+                            Max: {stats.moodStats?.max ?? 0} · Belastete Tage (≤ schlecht): {stats.moodStats?.thresholdDays ?? 0}
+                          </div>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardContent className="p-4">
+                          <div className="text-sm text-zinc-600">Schlafqualität (Ø)</div>
+                          <div className="text-2xl font-semibold">{formatAverage(stats.sleepStats)}</div>
+                          <div className="text-xs text-zinc-500 mt-1">
+                            Max: {stats.sleepStats?.max ?? 0} · Nächte ≤2: {stats.sleepStats?.thresholdDays ?? 0}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
                   </Section>
 
                   <Section title={`Schmerzverlauf – ${monthLabel(repYear, repMonth)}`}>
@@ -960,6 +1124,71 @@ export default function EndoTrackApp() {
                           <YAxis domain={[0, 10]} />
                           <Tooltip />
                           <Line type="monotone" dataKey="Schmerz" stroke="var(--endo-accent)" dot={false} strokeWidth={3} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </Section>
+                  <Section title={`Magen-Darm & Harnwege – ${monthLabel(repYear, repMonth)}`}>
+                    <div className="h-60">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={giUrinarySeries} margin={{ left: 8, right: 8 }}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="date" tickMargin={8} />
+                          <YAxis domain={[0, 3]} allowDecimals tickCount={4} />
+                          <Tooltip />
+                          {GI_FIELDS.map(({ key, label }) => (
+                            <Line
+                              key={`gi-line-${key}`}
+                              type="monotone"
+                              dataKey={label}
+                              stroke={FIELD_COLORS[key]}
+                              dot={false}
+                              strokeWidth={2}
+                            />
+                          ))}
+                          {URINARY_FIELDS.map(({ key, label }) => (
+                            <Line
+                              key={`urinary-line-${key}`}
+                              type="monotone"
+                              dataKey={label}
+                              stroke={FIELD_COLORS[key]}
+                              dot={false}
+                              strokeWidth={2}
+                            />
+                          ))}
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </Section>
+                  <Section title={`Energie, Stimmung & Schlaf – ${monthLabel(repYear, repMonth)}`}>
+                    <div className="h-60">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={wellbeingSeries} margin={{ left: 8, right: 8 }}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="date" tickMargin={8} />
+                          <YAxis domain={[-2, 5]} tickCount={8} />
+                          <Tooltip />
+                          <Line
+                            type="monotone"
+                            dataKey="Müdigkeit"
+                            stroke={FIELD_COLORS.fatigue}
+                            dot={false}
+                            strokeWidth={2}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="Stimmung"
+                            stroke={FIELD_COLORS.mood}
+                            dot={false}
+                            strokeWidth={2}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="Schlafqualität"
+                            stroke={FIELD_COLORS.sleep}
+                            dot={false}
+                            strokeWidth={2}
+                          />
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
@@ -1040,12 +1269,42 @@ function makeTextReport(stats: any, y: number, m: number) {
     ?.sort((a: any, b: any) => b.value - a.value)
     .map((x: any) => `${x.name}: ~${x.value}%`)
     .join("; ");
+  const summarizeSymptom = (label: string, metric: any, thresholdLabel: string) => {
+    if (!metric || stats.daysTracked === 0) return "";
+    const avgVal = Number.isFinite(metric.avg) ? Number(metric.avg).toFixed(1) : "0.0";
+    const maxVal = Number.isFinite(metric.max) ? metric.max : 0;
+    const thresholdVal = Number.isFinite(metric.thresholdDays) ? metric.thresholdDays : 0;
+    return `${label}: Ø ${avgVal} (Max ${maxVal}, ${thresholdLabel}: ${thresholdVal})`;
+  };
+  const giHighlights = (stats.giStats
+    ? GI_FIELDS.map(({ key, label }) => ({ label, metric: stats.giStats[key] }))
+        .filter((item) => item.metric)
+        .sort((a, b) => Number(b.metric.avg || 0) - Number(a.metric.avg || 0))
+        .slice(0, 3)
+        .map(({ label, metric }) => summarizeSymptom(label, metric, "Tage ≥ mittel"))
+        .filter(Boolean)
+    : []) as string[];
+  const urinaryHighlights = (stats.urinaryStats
+    ? URINARY_FIELDS.map(({ key, label }) => ({ label, metric: stats.urinaryStats[key] }))
+        .filter((item) => item.metric)
+        .sort((a, b) => Number(b.metric.avg || 0) - Number(a.metric.avg || 0))
+        .map(({ label, metric }) => summarizeSymptom(label, metric, "Tage ≥ mittel"))
+        .filter(Boolean)
+    : []) as string[];
+  const fatigueLine = summarizeSymptom("Müdigkeit", stats.fatigueStats, "Tage ≥ mittel");
+  const moodLine = summarizeSymptom("Stimmung", stats.moodStats, "Tage ≤ schlecht");
+  const sleepLine = summarizeSymptom("Schlafqualität", stats.sleepStats, "Nächte ≤2");
   return [
     title,
     top,
     loc ? `Häufigste Schmerzorte: ${loc}` : "",
     trig ? `Häufigste Trigger: ${trig}` : "",
     meds ? `Mittlere Erleichterung (Medikamente): ${meds}` : "",
+    giHighlights.length ? `Magen-Darm: ${giHighlights.join("; ")}` : "",
+    urinaryHighlights.length ? `Harnwege: ${urinaryHighlights.join("; ")}` : "",
+    fatigueLine,
+    moodLine,
+    sleepLine,
   ]
     .filter(Boolean)
     .join("\n");
@@ -1071,6 +1330,21 @@ function makeTextReport(stats: any, y: number, m: number) {
         { name: "Ibuprofen", value: 40 },
         { name: "Wärme", value: 30 },
       ],
+      giStats: {
+        bloating: { avg: 2.1, max: 3, thresholdDays: 3 },
+        constipation: { avg: 1.4, max: 3, thresholdDays: 1 },
+        diarrhea: { avg: 0.6, max: 2, thresholdDays: 0 },
+        nausea: { avg: 1.2, max: 2, thresholdDays: 1 },
+        rectalPain: { avg: 0.8, max: 2, thresholdDays: 0 },
+      },
+      urinaryStats: {
+        frequency: { avg: 1.1, max: 3, thresholdDays: 1 },
+        urgency: { avg: 0.7, max: 2, thresholdDays: 0 },
+        dysuria: { avg: 0.4, max: 1, thresholdDays: 0 },
+      },
+      fatigueStats: { avg: 2.3, max: 3, thresholdDays: 2 },
+      moodStats: { avg: -0.5, max: 2, thresholdDays: 2 },
+      sleepStats: { avg: 3.8, max: 5, thresholdDays: 1 },
     } as any;
     const txt = makeTextReport(mock, 2025, 10);
     console.assert(txt.includes("Monatsreport"), "Report: Titel fehlt");
