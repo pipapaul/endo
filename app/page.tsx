@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   LineChart,
   Line,
@@ -122,12 +122,22 @@ function emptyEntry(dateKey: string): DailyEntry {
 }
 
 function usePersistentState<T>(key: string, initial: T) {
-  const [state, setState] = useState<T>(initial);
+  const fallbackRef = useRef(initial);
+  const [state, setState] = useState<T>(() => {
+    if (typeof window === "undefined") return fallbackRef.current;
+    return loadLS(key, fallbackRef.current);
+  });
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    setState(loadLS(key, initial));
-  }, [key, initial]);
+    fallbackRef.current = initial;
+  }, [initial]);
+
+  useEffect(() => {
+    setState(() => {
+      if (typeof window === "undefined") return fallbackRef.current;
+      return loadLS(key, fallbackRef.current);
+    });
+  }, [key]);
 
   useEffect(() => {
     saveLS(key, state);
