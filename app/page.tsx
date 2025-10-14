@@ -10,13 +10,11 @@ import {
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
-  Legend,
 } from "recharts";
 import type { TooltipProps } from "recharts";
 import { Calendar, Download, Upload } from "lucide-react";
 
 import { DailyEntry, MonthlyEntry, WeeklyEntry } from "@/lib/types";
-import { TERMS, type TermKey, type TermDescriptor } from "@/lib/terms";
 import {
   validateDailyEntry,
   validateMonthlyEntry,
@@ -59,14 +57,14 @@ const BODY_REGIONS: { id: string; label: string }[] = [
   { id: "thigh_right", label: "Oberschenkel rechts" },
 ];
 
-const SYMPTOM_ITEMS: { key: SymptomKey; termKey: TermKey }[] = [
-  { key: "dysmenorrhea", termKey: "dysmenorrhea" },
-  { key: "deepDyspareunia", termKey: "deepDyspareunia" },
-  { key: "pelvicPainNonMenses", termKey: "pelvicPainNonMenses" },
-  { key: "dyschezia", termKey: "dyschezia" },
-  { key: "dysuria", termKey: "dysuria" },
-  { key: "fatigue", termKey: "fatigue" },
-  { key: "bloating", termKey: "bloating" },
+const SYMPTOM_ITEMS: { key: SymptomKey; label: string; description?: string }[] = [
+  { key: "dysmenorrhea", label: "Dysmenorrhoe" },
+  { key: "deepDyspareunia", label: "Tiefer Dyspareunie-Schmerz" },
+  { key: "pelvicPainNonMenses", label: "Beckenschmerz außerhalb der Menstruation" },
+  { key: "dyschezia", label: "Dyschezie" },
+  { key: "dysuria", label: "Dysurie" },
+  { key: "fatigue", label: "Fatigue" },
+  { key: "bloating", label: "Bloating" },
 ];
 
 const PBAC_ITEMS = [
@@ -173,36 +171,6 @@ function Section({ title, description, aside, children }: {
   );
 }
 
-function HelpIcon({ text }: { text: string }) {
-  return (
-    <span
-      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-rose-100 text-xs font-semibold text-rose-600"
-      role="img"
-      aria-label={`Info: ${text}`}
-      title={text}
-    >
-      ⓘ
-    </span>
-  );
-}
-
-function FieldLabel({ termKey, htmlFor }: { termKey: TermKey; htmlFor?: string }) {
-  const term: TermDescriptor = TERMS[termKey];
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Label htmlFor={htmlFor} className="text-sm font-medium text-rose-800">
-        {term.label}
-      </Label>
-      {term.optional && (
-        <Badge className="bg-amber-100 text-amber-800">
-          {term.deviceNeeded ? `Optional (Hilfsmittel nötig: ${term.deviceNeeded})` : "Optional"}
-        </Badge>
-      )}
-      <HelpIcon text={term.help} />
-    </div>
-  );
-}
-
 function ScoreInput({
   id,
   label,
@@ -224,7 +192,7 @@ function ScoreInput({
 }) {
   return (
     <div className="grid gap-2">
-      {termKey ? <FieldLabel termKey={termKey} htmlFor={id} /> : <Label htmlFor={id}>{label}</Label>}
+      <Label htmlFor={id}>{label}</Label>
       <div className="flex items-center gap-4">
         <Slider value={[value]} min={min} max={max} step={step} onValueChange={([v]) => onChange(v)} id={id} />
         <Input
@@ -315,30 +283,6 @@ function computePbacScore(counts: PbacCounts) {
   return PBAC_ITEMS.reduce((total, item) => total + counts[item.id] * item.score, 0);
 }
 
-function ChartTooltip({ active, payload }: TooltipProps<number, string>) {
-  if (!active || !payload?.length) return null;
-  const data = payload[0].payload as {
-    date: string;
-    cycleDay: number | null;
-    weekday: string;
-    pain: number;
-    pbac: number | null;
-    symptomAverage: number | null;
-    sleepQuality: number | null;
-  };
-  return (
-    <div className="rounded-lg border border-rose-200 bg-white p-3 text-xs text-rose-700 shadow-sm">
-      <p className="font-semibold text-rose-800">{data.date}</p>
-      <p>Zyklustag: {data.cycleDay ?? "–"}</p>
-      <p>Wochentag: {data.weekday}</p>
-      <p>{TERMS.nrs.label}: {data.pain}</p>
-      <p>{TERMS.pbac.label}: {data.pbac ?? "–"}</p>
-      <p>Symptom-Schnitt: {data.symptomAverage?.toFixed(1) ?? "–"}</p>
-      <p>{TERMS.sleep_quality.label}: {data.sleepQuality ?? "–"}</p>
-    </div>
-  );
-}
-
 function downloadFile(filename: string, contents: string, mime: string) {
   const blob = new Blob([contents], { type: mime });
   const link = document.createElement("a");
@@ -365,75 +309,6 @@ function toCsv(rows: Record<string, unknown>[]) {
   });
   return csv.join("\n");
 }
-
-function escapePdfText(text: string) {
-  return text.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
-}
-
-function createPdfDocument(title: string, lines: string[]) {
-  const contentLines = [title, "", ...lines];
-  const textContent = contentLines
-    .map((line, index) => `${index === 0 ? "" : "T* "}(${escapePdfText(line || " ")}) Tj`)
-    .join("\n");
-  const streamBody = `BT\n/F1 12 Tf\n14 TL\n1 0 0 1 50 780 Tm\n${textContent}\nET`;
-  const header = "%PDF-1.3\n";
-  const objects = [
-    "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
-    "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
-    "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj",
-    `4 0 obj << /Length ${streamBody.length} >> stream\n${streamBody}\nendstream endobj`,
-    "5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj",
-  ];
-  let offset = header.length;
-  const offsets: number[] = [];
-  const body = objects
-    .map((obj) => {
-      offsets.push(offset);
-      const chunk = `${obj}\n`;
-      offset += chunk.length;
-      return chunk;
-    })
-    .join("");
-  const xrefStart = offset;
-  const xrefEntries = offsets
-    .map((value) => `${value.toString().padStart(10, "0")} 00000 n `)
-    .join("\n");
-  const xref = `xref\n0 6\n0000000000 65535 f \n${xrefEntries}\n`;
-  const trailer = `trailer << /Size 6 /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
-  return `${header}${body}${xref}${trailer}`;
-}
-
-function isoWeekToDate(isoWeek: string) {
-  const match = isoWeek.match(/^(\d{4})-W(\d{2})$/);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const week = Number(match[2]);
-  const fourthJan = new Date(Date.UTC(year, 0, 4));
-  const dayOfWeek = fourthJan.getUTCDay() || 7;
-  const monday = new Date(fourthJan);
-  monday.setUTCDate(fourthJan.getUTCDate() - (dayOfWeek - 1) + (week - 1) * 7);
-  return monday;
-}
-
-function monthToDate(month: string) {
-  const match = month.match(/^(\d{4})-(\d{2})$/);
-  if (!match) return null;
-  return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1));
-}
-
-function computePearson(pairs: { x: number; y: number }[]) {
-  if (pairs.length < 2) return null;
-  const n = pairs.length;
-  const sumX = pairs.reduce((sum, pair) => sum + pair.x, 0);
-  const sumY = pairs.reduce((sum, pair) => sum + pair.y, 0);
-  const sumX2 = pairs.reduce((sum, pair) => sum + pair.x * pair.x, 0);
-  const sumY2 = pairs.reduce((sum, pair) => sum + pair.y * pair.y, 0);
-  const sumXY = pairs.reduce((sum, pair) => sum + pair.x * pair.y, 0);
-  const numerator = n * sumXY - sumX * sumY;
-  const denominator = Math.sqrt((n * sumX2 - sumX ** 2) * (n * sumY2 - sumY ** 2));
-  if (!denominator) return null;
-  return numerator / denominator;
-}
 export default function HomePage() {
   const today = formatDate(new Date());
   const [dailyEntries, setDailyEntries] = useLocalStorageState<DailyEntry[]>("endo.daily.v2", []);
@@ -442,13 +317,11 @@ export default function HomePage() {
 
   const [dailyDraft, setDailyDraft] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
   const [pbacCounts, setPbacCounts] = useState<PbacCounts>({ ...PBAC_DEFAULT_COUNTS });
-  const [pbacStep, setPbacStep] = useState(1);
   const [fsfiOptIn, setFsfiOptIn] = useState(false);
   const [sensorsVisible, setSensorsVisible] = useState(false);
   const [exploratoryVisible, setExploratoryVisible] = useState(false);
   const [notesTagDraft, setNotesTagDraft] = useState("");
   const [painQualityOther, setPainQualityOther] = useState("");
-  const [trendXAxisMode, setTrendXAxisMode] = useState<"date" | "cycleDay">("date");
 
   const [weeklyDraft, setWeeklyDraft] = useState<WeeklyEntry>(() => {
     const now = new Date();
@@ -585,149 +458,18 @@ export default function HomePage() {
     });
   };
 
-  const handleReportDownload = (months: number) => {
-    const threshold = new Date();
-    threshold.setHours(0, 0, 0, 0);
-    threshold.setMonth(threshold.getMonth() - months);
-    const thresholdIso = formatDate(threshold);
-    const thresholdMonth = thresholdIso.slice(0, 7);
-    const dailyFiltered = dailyEntries.filter((entry) => entry.date >= thresholdIso);
-    const weeklyFiltered = weeklyEntries.filter((entry) => {
-      const start = isoWeekToDate(entry.isoWeek);
-      if (!start) return false;
-      return formatDate(start) >= thresholdIso;
-    });
-    const monthlyFiltered = monthlyEntries.filter((entry) => entry.month >= thresholdMonth);
-
-    const lines: string[] = [];
-    lines.push(`Zeitraum: ${thresholdIso} bis ${today}`);
-    lines.push(`Tagesdatensätze: ${dailyFiltered.length}`);
-    if (dailyFiltered.length) {
-      const avgPain = dailyFiltered.reduce((sum, entry) => sum + entry.painNRS, 0) / dailyFiltered.length;
-      const maxPbac = dailyFiltered.reduce((max, entry) => Math.max(max, entry.bleeding.pbacScore ?? 0), 0);
-      const sleepValues = dailyFiltered
-        .map((entry) => entry.sleep?.quality)
-        .filter((value): value is number => typeof value === "number");
-      const avgSleep = sleepValues.length
-        ? sleepValues.reduce((sum, value) => sum + value, 0) / sleepValues.length
-        : null;
-      const symptomCounts = new Map<string, number>();
-      dailyFiltered.forEach((entry) => {
-        Object.entries(entry.symptoms ?? {}).forEach(([key, value]) => {
-          if (value?.present) {
-            symptomCounts.set(key, (symptomCounts.get(key) ?? 0) + 1);
-          }
-        });
-      });
-      const commonSymptoms = Array.from(symptomCounts.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 3)
-        .map(([key, count]) => `${key}: ${count} Tage`)
-        .join(", ");
-      lines.push(`Ø ${TERMS.nrs.label}: ${avgPain.toFixed(1)}`);
-      lines.push(`Max ${TERMS.pbac.label}: ${maxPbac}`);
-      if (avgSleep !== null) {
-        lines.push(`Ø ${TERMS.sleep_quality.label}: ${avgSleep.toFixed(1)}`);
-      }
-      if (commonSymptoms) {
-        lines.push(`Häufige Symptome: ${commonSymptoms}`);
-      }
-    } else {
-      lines.push("Keine Tagesdaten im Zeitraum.");
-    }
-
-    if (weeklyFiltered.length) {
-      const latest = weeklyFiltered[weeklyFiltered.length - 1];
-      lines.push(
-        `Letzte WPAI-Werte: Absenz ${latest.function?.wpaiAbsenteeismPct ?? "–"}% | Präsenzminderung ${latest.function?.wpaiPresenteeismPct ?? "–"}% | Gesamt ${latest.function?.wpaiOverallPct ?? "–"}%`
-      );
-    } else {
-      lines.push("Keine WPAI-Werte im Zeitraum.");
-    }
-
-    if (monthlyFiltered.length) {
-      const latest = monthlyFiltered[monthlyFiltered.length - 1];
-      lines.push(`${TERMS.ehp5.label}: ${latest.qol?.ehp5Total ?? "–"}`);
-      lines.push(`${TERMS.phq9.label}: ${latest.mental?.phq9 ?? "–"}`);
-      lines.push(`${TERMS.gad7.label}: ${latest.mental?.gad7 ?? "–"}`);
-      if (latest.promis?.fatigueT !== undefined) {
-        lines.push(`${TERMS.promis_fatigue.label}: ${latest.promis.fatigueT}`);
-      }
-      if (latest.promis?.painInterferenceT !== undefined) {
-        lines.push(`${TERMS.promis_painInt.label}: ${latest.promis.painInterferenceT}`);
-      }
-    } else {
-      lines.push("Keine monatlichen Fragebögen im Zeitraum.");
-    }
-
-    lines.push("", "Glossar:");
-    const glossaryKeys: TermKey[] = [
-      "nrs",
-      "pbac",
-      "wpai_abs",
-      "wpai_pre",
-      "wpai_overall",
-      "ehp5",
-      "phq9",
-      "gad7",
-      "promis_fatigue",
-      "promis_painInt",
-    ];
-    glossaryKeys.forEach((key) => {
-      const term = TERMS[key];
-      lines.push(`- ${term.label}: ${term.help}`);
-    });
-
-    const pdf = createPdfDocument(`Endo-Report ${months} Monate`, lines);
-    downloadFile(`endo-report-${months}m.pdf`, pdf, "application/pdf");
-  };
-
-  const annotatedDailyEntries = useMemo(() => {
-    const sorted = dailyEntries.slice().sort((a, b) => a.date.localeCompare(b.date));
-    let cycleDay: number | null = null;
-    let previousDate: Date | null = null;
-    let previousBleeding = false;
-    return sorted.map((entry) => {
-      const currentDate = new Date(entry.date);
-      const diffDays = previousDate
-        ? Math.round((currentDate.getTime() - previousDate.getTime()) / 86_400_000)
-        : 0;
-      if (cycleDay !== null && diffDays > 0) {
-        cycleDay += diffDays;
-      }
-      const isBleeding = entry.bleeding.isBleeding;
-      const bleedingStartsToday = isBleeding && (!previousBleeding || diffDays > 1 || cycleDay === null);
-      if (bleedingStartsToday) {
-        cycleDay = 1;
-      }
-      const assignedCycleDay = cycleDay;
-      const weekday = currentDate.toLocaleDateString("de-DE", { weekday: "short" });
-      const symptomScores = Object.values(entry.symptoms ?? {}).flatMap((symptom) => {
-        if (!symptom || !symptom.present) return [] as number[];
-        return typeof symptom.score === "number" ? [symptom.score] : [];
-      });
-      const symptomAverage = symptomScores.length
-        ? symptomScores.reduce((sum, value) => sum + value, 0) / symptomScores.length
-        : null;
-      previousDate = currentDate;
-      previousBleeding = isBleeding;
-      return { entry, cycleDay: assignedCycleDay, weekday, symptomAverage };
-    });
-  }, [dailyEntries]);
-
   const painTrendData = useMemo(
     () =>
-      annotatedDailyEntries.map(({ entry, cycleDay, weekday, symptomAverage }) => ({
-        date: entry.date,
-        cycleDay,
-        cycleLabel: cycleDay ? `ZT ${cycleDay}` : "–",
-        weekday,
-        pain: entry.painNRS,
-        pbac: entry.bleeding.pbacScore ?? null,
-        symptomAverage,
-        sleepQuality: entry.sleep?.quality ?? null,
-      })),
-    [annotatedDailyEntries]
+      dailyEntries
+        .slice()
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .map((entry) => ({
+          date: entry.date,
+          pain: entry.painNRS,
+          pbac: entry.bleeding.pbacScore ?? 0,
+          sleep: entry.sleep?.quality ?? null,
+        })),
+    [dailyEntries]
   );
 
   const renderIssuesForPath = (path: string) =>
@@ -739,70 +481,13 @@ export default function HomePage() {
 
   const optionalSensorsLabel = sensorsVisible ? "Optional (Hilfsmittel) ausblenden" : "Optional (Hilfsmittel) einblenden";
 
-  const cycleOverlay = useMemo(() => {
-    const bucket = new Map<number, { painSum: number; symptomSum: number; count: number; sleepSum: number }>();
-    annotatedDailyEntries.forEach(({ entry, cycleDay, symptomAverage }) => {
-      if (!cycleDay) return;
-      const current = bucket.get(cycleDay) ?? { painSum: 0, symptomSum: 0, count: 0, sleepSum: 0 };
-      current.painSum += entry.painNRS;
-      current.count += 1;
-      if (typeof symptomAverage === "number") {
-        current.symptomSum += symptomAverage;
-      }
-      if (typeof entry.sleep?.quality === "number") {
-        current.sleepSum += entry.sleep.quality;
-      }
-      bucket.set(cycleDay, current);
-    });
-    return Array.from(bucket.entries())
-      .sort((a, b) => a[0] - b[0])
-      .map(([cycleDay, stats]) => ({
-        cycleDay,
-        painAvg: Number((stats.painSum / stats.count).toFixed(1)),
-        symptomAvg: stats.symptomSum ? Number((stats.symptomSum / stats.count).toFixed(1)) : null,
-        sleepAvg: stats.sleepSum ? Number((stats.sleepSum / stats.count).toFixed(1)) : null,
-      }));
-  }, [annotatedDailyEntries]);
-
-  const weekdayOverlay = useMemo(() => {
-    const order = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-    const bucket = new Map<string, { painSum: number; count: number }>();
-    annotatedDailyEntries.forEach(({ entry, weekday }) => {
-      if (!weekday) return;
-      const current = bucket.get(weekday) ?? { painSum: 0, count: 0 };
-      current.painSum += entry.painNRS;
-      current.count += 1;
-      bucket.set(weekday, current);
-    });
-    return order
-      .filter((day) => bucket.has(day))
-      .map((day) => {
-        const stats = bucket.get(day)!;
-        return { weekday: day, painAvg: Number((stats.painSum / stats.count).toFixed(1)) };
-      });
-  }, [annotatedDailyEntries]);
-
-  const correlations = useMemo(() => {
-    const sleepPairs = annotatedDailyEntries
-      .map(({ entry }) => ({ x: entry.sleep?.quality, y: entry.painNRS }))
-      .filter((pair): pair is { x: number; y: number } => typeof pair.x === "number");
-    const stepsPairs = dailyEntries
-      .filter((entry) => typeof entry.activity?.steps === "number")
-      .map((entry) => ({ x: entry.activity!.steps as number, y: entry.painNRS }));
-    return {
-      sleep: { r: computePearson(sleepPairs), n: sleepPairs.length },
-      steps: { r: computePearson(stepsPairs), n: stepsPairs.length },
-    };
-  }, [annotatedDailyEntries, dailyEntries]);
-
   return (
     <main className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8">
       <header className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold text-rose-900">Endometriose Symptomtracker</h1>
         <p className="text-sm text-rose-700">
-          Kernmetriken ohne Hilfsmittel, optionale Sensorfelder nur auf Wunsch.
+          Kernmetriken ohne Hilfsmittel, optionale Sensorfelder nur auf Wunsch. Daten werden lokal gespeichert.
         </p>
-        <p className="text-xs text-rose-500">Keine Telemetrie. Daten bleiben im Browser (Local Storage) – Export jederzeit als JSON/CSV/PDF.</p>
         {infoMessage && <p className="text-sm font-medium text-rose-600">{infoMessage}</p>}
       </header>
 
@@ -833,14 +518,10 @@ export default function HomePage() {
                   {renderIssuesForPath("date")}
                 </div>
 
-                <Section
-                  title={`${TERMS.nrs.label} (NRS)`}
-                  description="Numerische Schmerzskala 0–10 – ganzzahlige Eingabe"
-                >
+                <Section title="Schmerzintensität" description="Numerical Rating Scale (0–10, ganze Zahlen)">
                   <ScoreInput
                     id="pain-nrs"
-                    label={TERMS.nrs.label}
-                    termKey="nrs"
+                    label="Schmerzstärke"
                     value={dailyDraft.painNRS}
                     onChange={(value) =>
                       setDailyDraft((prev) => ({ ...prev, painNRS: Math.max(0, Math.min(10, Math.round(value))) }))
@@ -849,7 +530,7 @@ export default function HomePage() {
                   {renderIssuesForPath("painNRS")}
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="grid gap-2">
-                      <FieldLabel termKey="painQuality" />
+                      <Label>Schmerzcharakter</Label>
                       <MultiSelectChips
                         options={PAIN_QUALITIES.map((quality) => ({ value: quality, label: quality }))}
                         value={dailyDraft.painQuality}
@@ -860,15 +541,15 @@ export default function HomePage() {
                       {dailyDraft.painQuality.includes("anders") && (
                         <Input
                           className="mt-2"
-                          placeholder="Beschreibe den Schmerz"
+                          placeholder="Bitte Schmerzqualität beschreiben"
                           value={painQualityOther}
                           onChange={(event) => setPainQualityOther(event.target.value)}
                         />
                       )}
-                      {dailyDraft.painQuality.map((_, index) => renderIssuesForPath(`painQuality[${index}]`))}
+                      {dailyDraft.painQuality.map((quality, index) => renderIssuesForPath(`painQuality[${index}]`))}
                     </div>
                     <div className="grid gap-2">
-                      <FieldLabel termKey="bodyMap" />
+                      <Label>Schmerzorte (Body-Map)</Label>
                       <BodyMap
                         value={dailyDraft.painMapRegionIds}
                         onChange={(next) => setDailyDraft((prev) => ({ ...prev, painMapRegionIds: next }))}
@@ -878,21 +559,14 @@ export default function HomePage() {
                   </div>
                 </Section>
 
-                <Section
-                  title="Typische Endometriose-Symptome"
-                  description="Je Symptom: Ja/Nein plus Stärke auf der 0–10 Skala"
-                >
+                <Section title="Typische Endo-Symptome" description="Jeweils Ja/Nein und Score 0–10">
                   <div className="grid gap-4">
                     {SYMPTOM_ITEMS.map((item) => {
                       const symptom = dailyDraft.symptoms[item.key] ?? { present: false };
-                      const term = TERMS[item.termKey];
                       return (
                         <div key={item.key} className="rounded-lg border border-rose-100 bg-rose-50 p-4">
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <p className="font-medium text-rose-800">{term.label}</p>
-                              <HelpIcon text={term.help} />
-                            </div>
+                            <p className="font-medium text-rose-800">{item.label}</p>
                             <div className="flex items-center gap-2">
                               <Label className="text-xs text-rose-600">vorhanden</Label>
                               <Switch
@@ -913,7 +587,7 @@ export default function HomePage() {
                             <div className="mt-3">
                               <ScoreInput
                                 id={`symptom-${item.key}`}
-                                label={`${term.label} – Stärke (0–10)`}
+                                label="Schweregrad (0–10)"
                                 value={symptom.score ?? 0}
                                 onChange={(value) =>
                                   setDailyDraft((prev) => ({
@@ -938,132 +612,79 @@ export default function HomePage() {
                   </div>
                 </Section>
 
-                <Section
-                  title={`${TERMS.bleeding_active.label} & ${TERMS.pbac.label}`}
-                  description="PBAC nur bei aktiver Blutung – Schritt-für-Schritt"
-                >
-                  <div className="flex flex-wrap items-center gap-3">
-                    <FieldLabel termKey="bleeding_active" />
+                <Section title="Blutung" description="PBAC nur bei aktiver Blutung">
+                  <div className="flex items-center gap-3">
+                    <Label>Aktive Blutung</Label>
                     <Switch
                       checked={dailyDraft.bleeding.isBleeding}
                       onCheckedChange={(checked) => {
-                        setDailyDraft((prev) =>
-                          checked
-                            ? { ...prev, bleeding: { isBleeding: true, clots: prev.bleeding.clots ?? false, pbacScore } }
-                            : { ...prev, bleeding: { isBleeding: false } }
-                        );
+                        setDailyDraft((prev) => ({
+                          ...prev,
+                          bleeding: checked
+                            ? { isBleeding: true, clots: prev.bleeding.clots ?? false, pbacScore }
+                            : { isBleeding: false },
+                        }));
                         if (!checked) {
                           setPbacCounts({ ...PBAC_DEFAULT_COUNTS });
-                          setPbacStep(1);
                         }
                       }}
                     />
                   </div>
+
                   {dailyDraft.bleeding.isBleeding && (
-                    <div className="space-y-4">
-                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                        <span>PBAC-Wizard • Schritt {pbacStep} von 3</span>
-                        <span>Score wird automatisch berechnet</span>
-                      </div>
-                      {pbacStep === 1 && (
-                        <div className="space-y-3">
-                          <FieldLabel termKey="pbac" />
-                          <p className="text-sm text-rose-600">
-                            Binden- und Tampon-Größe samt Sättigung: Trage ein, wie viele Produkte du heute genutzt hast.
-                          </p>
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            {PBAC_ITEMS.map((item) => (
-                              <div key={item.id} className="grid gap-1">
-                                <Label htmlFor={item.id}>{item.label}</Label>
-                                <Input
-                                  id={item.id}
-                                  type="number"
-                                  min={0}
-                                  step={1}
-                                  value={pbacCounts[item.id]}
-                                  onChange={(event) =>
-                                    setPbacCounts((prev) => ({
-                                      ...prev,
-                                      [item.id]: Math.max(0, Math.round(Number(event.target.value) || 0)),
-                                    }))
-                                  }
-                                />
-                              </div>
-                            ))}
-                          </div>
-                          <div className="flex justify-end">
-                            <Button type="button" onClick={() => setPbacStep(2)}>
-                              Weiter zu Koageln
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                      {pbacStep === 2 && (
-                        <div className="space-y-3">
-                          <FieldLabel termKey="clots" />
-                          <div className="flex items-center gap-3">
-                            <Switch
-                              checked={dailyDraft.bleeding.clots ?? false}
-                              onCheckedChange={(checked) =>
-                                setDailyDraft((prev) => ({
+                    <div className="grid gap-4">
+                      <p className="text-sm text-rose-700">
+                        PBAC-Miniwizard: Anzahl pro Tag eingeben, Score berechnet automatisch.
+                      </p>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {PBAC_ITEMS.map((item) => (
+                          <div key={item.id} className="grid gap-1">
+                            <Label htmlFor={item.id}>{item.label}</Label>
+                            <Input
+                              id={item.id}
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={pbacCounts[item.id]}
+                              onChange={(event) =>
+                                setPbacCounts((prev) => ({
                                   ...prev,
-                                  bleeding: { ...prev.bleeding, clots: checked },
+                                  [item.id]: Math.max(0, Math.round(Number(event.target.value) || 0)),
                                 }))
                               }
                             />
-                            <span className="text-sm text-rose-700">Koagel heute beobachtet?</span>
                           </div>
-                          <div className="flex justify-between">
-                            <Button type="button" variant="ghost" onClick={() => setPbacStep(1)}>
-                              Zurück
-                            </Button>
-                            <Button type="button" onClick={() => setPbacStep(3)}>
-                              Score anzeigen
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                      {pbacStep === 3 && (
-                        <div className="space-y-3">
-                          <div className="rounded-lg border border-rose-100 bg-rose-50 p-4">
-                            <p className="text-sm font-semibold text-rose-800">PBAC-Score für heute</p>
-                            <p className="text-3xl font-bold text-rose-900">{pbacScore}</p>
-                            <p className="mt-2 text-xs text-rose-600">
-                              Richtwerte: ≥100 weist auf starke Blutung hin – besprich Auffälligkeiten mit deinem Behandlungsteam.
-                            </p>
-                          </div>
-                          <div className="flex flex-wrap gap-2 text-xs text-rose-700">
-                            {PBAC_ITEMS.filter((item) => pbacCounts[item.id] > 0).map((item) => (
-                              <span key={item.id} className="rounded bg-white px-2 py-1">
-                                {pbacCounts[item.id]} × {item.label}
-                              </span>
-                            ))}
-                          </div>
-                          <div className="flex justify-between">
-                            <Button type="button" variant="ghost" onClick={() => setPbacStep(2)}>
-                              Zurück
-                            </Button>
-                            <Button type="button" onClick={() => setPbacStep(1)}>
-                              Anpassen
-                            </Button>
-                          </div>
-                        </div>
-                      )}
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Label className="text-sm font-medium text-rose-700">PBAC-Score</Label>
+                        <span className="text-lg font-semibold text-rose-900">{pbacScore}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={dailyDraft.bleeding.clots ?? false}
+                          onCheckedChange={(checked) =>
+                            setDailyDraft((prev) => ({
+                              ...prev,
+                              bleeding: { ...prev.bleeding, clots: checked },
+                            }))
+                          }
+                        />
+                        <span className="text-sm text-rose-700">Koagel beobachtet</span>
+                      </div>
                       {renderIssuesForPath("bleeding.pbacScore")}
-                      {renderIssuesForPath("bleeding.clots")}
                     </div>
                   )}
+                  {renderIssuesForPath("bleeding.clots")}
                 </Section>
 
-                <Section title={TERMS.meds.label} description="Eingenommene Medikamente & Hilfen des Tages">
+                <Section title="Medikation & Selbsthilfen" description="Tagesbezogen dokumentieren">
                   <div className="grid gap-4">
-                    <FieldLabel termKey="meds" />
                     {dailyDraft.meds.map((med, index) => (
                       <div key={index} className="grid gap-2 rounded-lg border border-rose-100 bg-rose-50 p-4">
                         <div className="grid gap-1">
-                          <Label htmlFor={`med-name-${index}`}>Präparat / Hilfe</Label>
+                          <Label>Präparat</Label>
                           <Input
-                            id={`med-name-${index}`}
                             value={med.name}
                             onChange={(event) => {
                               const updated = [...dailyDraft.meds];
@@ -1075,9 +696,8 @@ export default function HomePage() {
                         </div>
                         <div className="grid gap-1 sm:grid-cols-2">
                           <div>
-                            <Label htmlFor={`med-dose-${index}`}>Dosis (mg)</Label>
+                            <Label>Dosis (mg)</Label>
                             <Input
-                              id={`med-dose-${index}`}
                               type="number"
                               min={0}
                               value={med.doseMg ?? ""}
@@ -1091,9 +711,8 @@ export default function HomePage() {
                             {renderIssuesForPath(`meds[${index}].doseMg`)}
                           </div>
                           <div>
-                            <Label htmlFor={`med-times-${index}`}>Einnahmezeiten (HH:MM, kommasepariert)</Label>
+                            <Label>Einnahmezeiten (HH:MM, kommasepariert)</Label>
                             <Input
-                              id={`med-times-${index}`}
                               placeholder="08:00, 14:00"
                               value={(med.times ?? []).join(", ")}
                               onChange={(event) => {
@@ -1135,12 +754,11 @@ export default function HomePage() {
                         }))
                       }
                     >
-                      + Medikament oder Hilfe ergänzen
+                      + Medikament hinzufügen
                     </Button>
-                    <div className="grid gap-2">
-                      <FieldLabel termKey="rescue" htmlFor="rescue-count" />
+                    <div className="grid gap-1">
+                      <Label>Akut-/Rescue-Dosen heute</Label>
                       <Input
-                        id="rescue-count"
                         type="number"
                         min={0}
                         step={1}
@@ -1157,12 +775,11 @@ export default function HomePage() {
                   </div>
                 </Section>
 
-                <Section title="Schlaf" description="Kurzabfrage ohne Hilfsmittel">
+                <Section title="Schlaf" description="optional, ohne Hilfsmittel">
                   <div className="grid gap-4 md:grid-cols-3">
                     <div>
-                      <FieldLabel termKey="sleep_hours" htmlFor="sleep-hours" />
+                      <Label>Schlafdauer (h)</Label>
                       <Input
-                        id="sleep-hours"
                         type="number"
                         min={0}
                         max={24}
@@ -1180,8 +797,7 @@ export default function HomePage() {
                     <div>
                       <ScoreInput
                         id="sleep-quality"
-                        label={TERMS.sleep_quality.label}
-                        termKey="sleep_quality"
+                        label="Schlafqualität"
                         value={dailyDraft.sleep?.quality ?? 0}
                         onChange={(value) =>
                           setDailyDraft((prev) => ({
@@ -1196,9 +812,8 @@ export default function HomePage() {
                       {renderIssuesForPath("sleep.quality")}
                     </div>
                     <div>
-                      <FieldLabel termKey="awakenings" htmlFor="sleep-awakenings" />
+                      <Label>Aufwachphasen</Label>
                       <Input
-                        id="sleep-awakenings"
                         type="number"
                         min={0}
                         step={1}
@@ -1223,7 +838,7 @@ export default function HomePage() {
                     <div className="grid gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
                       <p className="font-medium text-rose-800">Darm</p>
                       <div>
-                        <FieldLabel termKey="bristol" />
+                        <Label>Bristol-Stuhlform</Label>
                         <Select
                           value={dailyDraft.gi?.bristolType ? String(dailyDraft.gi.bristolType) : ""}
                           onValueChange={(value) =>
@@ -1251,8 +866,7 @@ export default function HomePage() {
                       </div>
                       <ScoreInput
                         id="bowel-pain"
-                        label={TERMS.bowelPain.label}
-                        termKey="bowelPain"
+                        label="Darm-Schmerz"
                         value={dailyDraft.gi?.bowelPain ?? 0}
                         onChange={(value) =>
                           setDailyDraft((prev) => ({
@@ -1269,9 +883,8 @@ export default function HomePage() {
                     <div className="grid gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
                       <p className="font-medium text-rose-800">Blase</p>
                       <div className="grid gap-2">
-                        <FieldLabel termKey="urinary_freq" htmlFor="urinary-frequency" />
+                        <Label>Miktionen / Tag</Label>
                         <Input
-                          id="urinary-frequency"
                           type="number"
                           min={0}
                           step={1}
@@ -1290,8 +903,7 @@ export default function HomePage() {
                       </div>
                       <ScoreInput
                         id="urinary-urgency"
-                        label={TERMS.urinary_urgency.label}
-                        termKey="urinary_urgency"
+                        label="Harndrang"
                         value={dailyDraft.urinary?.urgency ?? 0}
                         onChange={(value) =>
                           setDailyDraft((prev) => ({
@@ -1306,8 +918,7 @@ export default function HomePage() {
                       {renderIssuesForPath("urinary.urgency")}
                       <ScoreInput
                         id="urinary-pain"
-                        label={TERMS.urinary_pain.label}
-                        termKey="urinary_pain"
+                        label="Schmerz beim Wasserlassen"
                         value={dailyDraft.urinary?.pain ?? 0}
                         onChange={(value) =>
                           setDailyDraft((prev) => ({
@@ -1324,7 +935,7 @@ export default function HomePage() {
                   </div>
                 </Section>
 
-                <Section title="Sexualfunktion (sensibles Opt-in)" description="FSFI wird nur nach Opt-in gezeigt">
+                <Section title="Sexualfunktion (sensibles Opt-in)" description="FSFI nur bei aktivem Opt-in">
                   <div className="flex items-center gap-3">
                     <Switch checked={fsfiOptIn} onCheckedChange={setFsfiOptIn} />
                     <span className="text-sm text-rose-700">
@@ -1333,9 +944,8 @@ export default function HomePage() {
                   </div>
                   {fsfiOptIn && (
                     <div className="grid gap-2">
-                      <FieldLabel termKey="fsfi" htmlFor="fsfi-score" />
+                      <Label>FSFI / FSFI-6 Gesamtscore</Label>
                       <Input
-                        id="fsfi-score"
                         type="number"
                         min={0}
                         step={0.1}
@@ -1358,9 +968,7 @@ export default function HomePage() {
                 <Section title="Notizen & Tags" description="Freitext oder wiederkehrende Muster markieren">
                   <div className="grid gap-3">
                     <div className="flex gap-2">
-                      <FieldLabel termKey="notesTags" htmlFor="notes-tag-input" />
                       <Input
-                        id="notes-tag-input"
                         placeholder="Neuer Tag"
                         value={notesTagDraft}
                         onChange={(event) => setNotesTagDraft(event.target.value)}
@@ -1379,9 +987,7 @@ export default function HomePage() {
                         </Badge>
                       ))}
                     </div>
-                    <FieldLabel termKey="notesFree" htmlFor="notes-free" />
                     <Textarea
-                      id="notes-free"
                       placeholder="Freitextnotizen"
                       value={dailyDraft.notesFree ?? ""}
                       onChange={(event) => setDailyDraft((prev) => ({ ...prev, notesFree: event.target.value }))}
@@ -1408,7 +1014,7 @@ export default function HomePage() {
                       <div className="grid gap-2 rounded-lg border border-rose-100 bg-rose-50 p-4">
                         <p className="font-medium text-rose-800">Ovulation / LH-Tests</p>
                         <div className="flex items-center gap-3">
-                          <FieldLabel termKey="opk_done" />
+                          <Label>LH-Test durchgeführt</Label>
                           <Switch
                             checked={dailyDraft.ovulation?.lhTestDone ?? false}
                             onCheckedChange={(checked) =>
@@ -1422,7 +1028,7 @@ export default function HomePage() {
                         {(dailyDraft.ovulation?.lhTestDone ?? false) && (
                           <div className="grid gap-2 md:grid-cols-3">
                             <div className="flex items-center gap-3">
-                              <FieldLabel termKey="opk_positive" />
+                              <Label>Positiv</Label>
                               <Switch
                                 checked={dailyDraft.ovulation?.lhPositive ?? false}
                                 onCheckedChange={(checked) =>
@@ -1450,7 +1056,7 @@ export default function HomePage() {
                           </div>
                         )}
                         <div>
-                          <FieldLabel termKey="bbt" />
+                          <Label>Basaltemperatur (°C, morgens nüchtern)</Label>
                           <Input
                             type="number"
                             step="0.01"
@@ -1475,9 +1081,8 @@ export default function HomePage() {
                         <p className="font-medium text-rose-800">Aktivität (Wearable/Smartphone)</p>
                         <div className="grid gap-2 md:grid-cols-2">
                           <div>
-                            <FieldLabel termKey="steps" htmlFor="activity-steps" />
+                            <Label>Schritte</Label>
                             <Input
-                              id="activity-steps"
                               type="number"
                               min={0}
                               step={1}
@@ -1495,9 +1100,8 @@ export default function HomePage() {
                             {renderIssuesForPath("activity.steps")}
                           </div>
                           <div>
-                            <FieldLabel termKey="activeMinutes" htmlFor="activity-minutes" />
+                            <Label>Aktivminuten</Label>
                             <Input
-                              id="activity-minutes"
                               type="number"
                               min={0}
                               step={1}
@@ -1519,11 +1123,7 @@ export default function HomePage() {
 
                       <div className="grid gap-2 rounded-lg border border-rose-100 bg-rose-50 p-4">
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium text-rose-800">{TERMS.hrv.label}</p>
-                            <HelpIcon text={TERMS.hrv.help} />
-                            <Badge className="bg-amber-100 text-amber-800">Optional (Hilfsmittel nötig: {TERMS.hrv.deviceNeeded})</Badge>
-                          </div>
+                          <p className="font-medium text-rose-800">HRV (Explorativ)</p>
                           <Switch checked={exploratoryVisible} onCheckedChange={setExploratoryVisible} />
                         </div>
                         <p className="text-xs text-rose-600">
@@ -1531,7 +1131,7 @@ export default function HomePage() {
                         </p>
                         {exploratoryVisible && (
                           <div>
-                            <FieldLabel termKey="hrv" />
+                            <Label>RMSSD (ms)</Label>
                             <Input
                               type="number"
                               min={0}
@@ -1584,19 +1184,15 @@ export default function HomePage() {
                         `endo-daily-${today}.csv`,
                         toCsv(
                           dailyEntries.map((entry) => ({
-                            Datum: entry.date,
-                            [`${TERMS.nrs.label} (NRS)`]: entry.painNRS,
-                            Schmerzarten: entry.painQuality.join(";"),
-                            "Schmerzorte (IDs)": entry.painMapRegionIds.join(";"),
-                            [`${TERMS.pbac.label}`]: entry.bleeding.pbacScore ?? "",
-                            "Symptom-Scores": Object.entries(entry.symptoms ?? {})
-                              .map(([key, value]) =>
-                                value?.present && typeof value.score === "number" ? `${key}:${value.score}` : null
-                              )
-                              .filter(Boolean)
-                              .join(";"),
-                            [`${TERMS.sleep_quality.label}`]: entry.sleep?.quality ?? "",
-                            [`${TERMS.urinary_pain.label}`]: entry.urinary?.pain ?? "",
+                            date: entry.date,
+                            painNRS: entry.painNRS,
+                            painQuality: entry.painQuality.join(";"),
+                            painMapRegionIds: entry.painMapRegionIds.join(";"),
+                            pbacScore: entry.bleeding.pbacScore ?? "",
+                            dysmenorrheaScore: entry.symptoms.dysmenorrhea?.score ?? "",
+                            fatigueScore: entry.symptoms.fatigue?.score ?? "",
+                            sleepQuality: entry.sleep?.quality ?? "",
+                            urinaryPain: entry.urinary?.pain ?? "",
                           }))
                         ),
                         "text/csv"
@@ -1605,90 +1201,21 @@ export default function HomePage() {
                   >
                     <Download size={16} className="mr-2" /> CSV Export
                   </Button>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {[3, 6, 12].map((months) => (
-                      <Button key={months} type="button" variant="outline" onClick={() => handleReportDownload(months)}>
-                        {months} Monate PDF
-                      </Button>
-                    ))}
-                  </div>
                 </div>
               </div>
 
               <div className="space-y-4">
-                <Section
-                  title="Trend"
-                  description={`${TERMS.nrs.label}, ${TERMS.pbac.label} sowie Symptom- und Schlafverlauf`}
-                >
-                  <div className="flex justify-end gap-2 text-xs text-rose-600">
-                    <span>Achse:</span>
-                    <Button
-                      type="button"
-                      variant={trendXAxisMode === "date" ? "secondary" : "ghost"}
-                      size="sm"
-                      onClick={() => setTrendXAxisMode("date")}
-                    >
-                      Datum
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={trendXAxisMode === "cycleDay" ? "secondary" : "ghost"}
-                      size="sm"
-                      onClick={() => setTrendXAxisMode("cycleDay")}
-                    >
-                      Zyklustag
-                    </Button>
-                  </div>
+                <Section title="Trend" description="Schmerz NRS & PBAC (Kernmetriken)">
                   <div className="h-64 w-full">
                     <ResponsiveContainer>
                       <LineChart data={painTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                        <XAxis
-                          dataKey={trendXAxisMode === "date" ? "date" : "cycleLabel"}
-                          stroke="#fb7185"
-                          tick={{ fontSize: 12 }}
-                        />
+                        <XAxis dataKey="date" stroke="#fb7185" tick={{ fontSize: 12 }} />
                         <YAxis yAxisId="left" domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                        <YAxis yAxisId="right" orientation="right" domain={[0, 300]} stroke="#6366f1" tick={{ fontSize: 12 }} />
-                        <Tooltip content={<ChartTooltip />} />
-                        <Legend wrapperStyle={{ fontSize: 12 }} />
-                        <Line
-                          type="monotone"
-                          dataKey="pain"
-                          stroke="#f43f5e"
-                          strokeWidth={2}
-                          name={`${TERMS.nrs.label} (NRS)`}
-                          yAxisId="left"
-                          dot={false}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="pbac"
-                          stroke="#6366f1"
-                          strokeWidth={2}
-                          name={`${TERMS.pbac.label}`}
-                          yAxisId="right"
-                          connectNulls={false}
-                          dot={false}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="symptomAverage"
-                          stroke="#f97316"
-                          strokeWidth={1.5}
-                          name="Symptom-Schnitt"
-                          yAxisId="left"
-                          dot={false}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="sleepQuality"
-                          stroke="#22c55e"
-                          strokeWidth={1.5}
-                          name={TERMS.sleep_quality.label}
-                          yAxisId="left"
-                          dot={false}
-                        />
+                        <YAxis yAxisId="right" orientation="right" stroke="#6366f1" tick={{ fontSize: 12 }} />
+                        <Tooltip />
+                        <Line type="monotone" dataKey="pain" stroke="#f43f5e" strokeWidth={2} yAxisId="left" />
+                        <Line type="monotone" dataKey="pbac" stroke="#6366f1" strokeWidth={2} yAxisId="right" />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
@@ -1715,58 +1242,14 @@ export default function HomePage() {
                       ))}
                   </div>
                 </Section>
-                <Section title="Zyklus-Overlay" description="Durchschnittswerte je Zyklustag">
-                  <div className="max-h-64 space-y-2 overflow-y-auto text-xs text-rose-700">
-                    {cycleOverlay.length === 0 && <p className="text-rose-500">Noch keine Zyklusdaten.</p>}
-                    {cycleOverlay.map((row) => (
-                      <div
-                        key={row.cycleDay}
-                        className="flex items-center justify-between rounded border border-rose-100 bg-rose-50 px-2 py-1"
-                      >
-                        <span className="font-semibold text-rose-800">ZT {row.cycleDay}</span>
-                        <span>{TERMS.nrs.label}: {row.painAvg.toFixed(1)}</span>
-                        <span>Symptome: {row.symptomAvg?.toFixed(1) ?? "–"}</span>
-                        <span>{TERMS.sleep_quality.label}: {row.sleepAvg?.toFixed(1) ?? "–"}</span>
-                      </div>
-                    ))}
-                  </div>
-                </Section>
-                <Section title="Wochentag-Overlay" description="Durchschnittlicher NRS nach Wochentag">
-                  <div className="grid grid-cols-2 gap-2 text-xs text-rose-700 sm:grid-cols-4">
-                    {weekdayOverlay.map((row) => (
-                      <div key={row.weekday} className="rounded border border-rose-100 bg-rose-50 px-2 py-1">
-                        <p className="font-semibold text-rose-800">{row.weekday}</p>
-                        <p>{TERMS.nrs.label}: {row.painAvg.toFixed(1)}</p>
-                      </div>
-                    ))}
-                  </div>
-                </Section>
-                <Section
-                  title="Explorative Korrelationen"
-                  description="Lokal berechnete Pearson-r Werte – keine medizinische Bewertung"
-                >
-                  <div className="space-y-2 text-xs text-rose-700">
-                    <p>
-                      Schlafqualität ↔ Schmerz: {correlations.sleep.r !== null ? correlations.sleep.r.toFixed(2) : "–"} (n=
-                      {correlations.sleep.n})
-                    </p>
-                    <p>
-                      Schritte ↔ Schmerz: {correlations.steps.r !== null ? correlations.steps.r.toFixed(2) : "–"} (n=
-                      {correlations.steps.n})
-                    </p>
-                    <p className="text-[10px] text-rose-500">
-                      Hinweis: nur zur Orientierung, Daten verlassen den Browser nicht.
-                    </p>
-                  </div>
-                </Section>
               </div>
             </div>
           </Section>
         </TabsContent>
         <TabsContent value="weekly" className="space-y-6">
           <Section
-            title={`${TERMS.wpai_overall.label} (WPAI – 7-Tage-Rückblick)`}
-            description="Prozentwerte für Fehlzeiten, Präsenzminderung und Gesamtbeeinträchtigung"
+            title="WPAI (7-Tage-Rückblick)"
+            description="Prozentwerte für Absenz, Präsenzminderung, Gesamtbeeinträchtigung"
             aside={<Calendar size={16} className="text-rose-500" />}
           >
             <div className="grid gap-4 md:grid-cols-2">
@@ -1779,9 +1262,8 @@ export default function HomePage() {
                 {renderIssuesForPath("isoWeek")}
               </div>
               <div className="grid gap-2">
-                <FieldLabel termKey="wpai_abs" htmlFor="wpai-abs" />
+                <Label>Absenz (%)</Label>
                 <Input
-                  id="wpai-abs"
                   type="number"
                   min={0}
                   max={100}
@@ -1799,9 +1281,8 @@ export default function HomePage() {
                 {renderIssuesForPath("function.wpaiAbsenteeismPct")}
               </div>
               <div className="grid gap-2">
-                <FieldLabel termKey="wpai_pre" htmlFor="wpai-pre" />
+                <Label>Präsenzminderung (%)</Label>
                 <Input
-                  id="wpai-pre"
                   type="number"
                   min={0}
                   max={100}
@@ -1819,9 +1300,8 @@ export default function HomePage() {
                 {renderIssuesForPath("function.wpaiPresenteeismPct")}
               </div>
               <div className="grid gap-2">
-                <FieldLabel termKey="wpai_overall" htmlFor="wpai-overall" />
+                <Label>Gesamtbeeinträchtigung (%)</Label>
                 <Input
-                  id="wpai-overall"
                   type="number"
                   min={0}
                   max={100}
@@ -1856,26 +1336,6 @@ export default function HomePage() {
               >
                 <Download size={16} className="mr-2" /> Export
               </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() =>
-                  downloadFile(
-                    `endo-weekly-${today}.csv`,
-                    toCsv(
-                      weeklyEntries.map((entry) => ({
-                        Kalenderwoche: entry.isoWeek,
-                        [`${TERMS.wpai_abs.label}`]: entry.function?.wpaiAbsenteeismPct ?? "",
-                        [`${TERMS.wpai_pre.label}`]: entry.function?.wpaiPresenteeismPct ?? "",
-                        [`${TERMS.wpai_overall.label}`]: entry.function?.wpaiOverallPct ?? "",
-                      }))
-                    ),
-                    "text/csv"
-                  )
-                }
-              >
-                <Download size={16} className="mr-2" /> CSV
-              </Button>
             </div>
           </Section>
           <Section title="Verlauf" description="WPAI Gesamtbeeinträchtigung">
@@ -1886,13 +1346,7 @@ export default function HomePage() {
                   <XAxis dataKey="isoWeek" stroke="#fb7185" tick={{ fontSize: 12 }} />
                   <YAxis domain={[0, 100]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
                   <Tooltip />
-                  <Line
-                    type="monotone"
-                    dataKey="function.wpaiOverallPct"
-                    stroke="#f43f5e"
-                    strokeWidth={2}
-                    name={TERMS.wpai_overall.label}
-                  />
+                  <Line type="monotone" dataKey="function.wpaiOverallPct" stroke="#f43f5e" strokeWidth={2} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -1902,7 +1356,7 @@ export default function HomePage() {
         <TabsContent value="monthly" className="space-y-6">
           <Section
             title="Monatliche Fragebögen"
-            description="Lebensqualität (EHP-5), Stimmung (PHQ-9), Angst (GAD-7) und optionale PROMIS-T-Scores"
+            description="EHP-5, PHQ-9, GAD-7, optional PROMIS Short Forms"
             aside={<Calendar size={16} className="text-rose-500" />}
           >
             <div className="grid gap-4 md:grid-cols-2">
@@ -1915,9 +1369,8 @@ export default function HomePage() {
                 {renderIssuesForPath("month")}
               </div>
               <div>
-                <FieldLabel termKey="ehp5" htmlFor="ehp5-total" />
+                <Label>EHP-5 Gesamtscore</Label>
                 <Input
-                  id="ehp5-total"
                   type="number"
                   min={0}
                   value={monthlyDraft.qol?.ehp5Total ?? ""}
@@ -1931,9 +1384,8 @@ export default function HomePage() {
                 {renderIssuesForPath("qol.ehp5Total")}
               </div>
               <div>
-                <FieldLabel termKey="phq9" htmlFor="phq9-score" />
+                <Label>PHQ-9</Label>
                 <Input
-                  id="phq9-score"
                   type="number"
                   min={0}
                   max={27}
@@ -1948,9 +1400,8 @@ export default function HomePage() {
                 {renderIssuesForPath("mental.phq9")}
               </div>
               <div>
-                <FieldLabel termKey="gad7" htmlFor="gad7-score" />
+                <Label>GAD-7</Label>
                 <Input
-                  id="gad7-score"
                   type="number"
                   min={0}
                   max={21}
@@ -1965,9 +1416,8 @@ export default function HomePage() {
                 {renderIssuesForPath("mental.gad7")}
               </div>
               <div>
-                <FieldLabel termKey="promis_fatigue" htmlFor="promis-fatigue" />
+                <Label>PROMIS Fatigue T-Score (optional)</Label>
                 <Input
-                  id="promis-fatigue"
                   type="number"
                   min={0}
                   max={100}
@@ -1982,9 +1432,8 @@ export default function HomePage() {
                 {renderIssuesForPath("promis.fatigueT")}
               </div>
               <div>
-                <FieldLabel termKey="promis_painInt" htmlFor="promis-pain" />
+                <Label>PROMIS Pain Interference T-Score (optional)</Label>
                 <Input
-                  id="promis-pain"
                   type="number"
                   min={0}
                   max={100}
@@ -2019,28 +1468,6 @@ export default function HomePage() {
               >
                 <Download size={16} className="mr-2" /> Export
               </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() =>
-                  downloadFile(
-                    `endo-monthly-${today}.csv`,
-                    toCsv(
-                      monthlyEntries.map((entry) => ({
-                        Monat: entry.month,
-                        [`${TERMS.ehp5.label}`]: entry.qol?.ehp5Total ?? "",
-                        [`${TERMS.phq9.label}`]: entry.mental?.phq9 ?? "",
-                        [`${TERMS.gad7.label}`]: entry.mental?.gad7 ?? "",
-                        [`${TERMS.promis_fatigue.label}`]: entry.promis?.fatigueT ?? "",
-                        [`${TERMS.promis_painInt.label}`]: entry.promis?.painInterferenceT ?? "",
-                      }))
-                    ),
-                    "text/csv"
-                  )
-                }
-              >
-                <Download size={16} className="mr-2" /> CSV
-              </Button>
             </div>
           </Section>
           <Section title="Verlauf" description="EHP-5 & psychische Scores">
@@ -2059,10 +1486,9 @@ export default function HomePage() {
                   <XAxis dataKey="month" stroke="#fb7185" tick={{ fontSize: 12 }} />
                   <YAxis stroke="#f43f5e" tick={{ fontSize: 12 }} />
                   <Tooltip />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Line type="monotone" dataKey="ehp5" stroke="#f43f5e" strokeWidth={2} name={TERMS.ehp5.label} />
-                  <Line type="monotone" dataKey="phq9" stroke="#6366f1" strokeWidth={2} name={TERMS.phq9.label} />
-                  <Line type="monotone" dataKey="gad7" stroke="#22c55e" strokeWidth={2} name={TERMS.gad7.label} />
+                  <Line type="monotone" dataKey="ehp5" stroke="#f43f5e" strokeWidth={2} />
+                  <Line type="monotone" dataKey="phq9" stroke="#6366f1" strokeWidth={2} />
+                  <Line type="monotone" dataKey="gad7" stroke="#22c55e" strokeWidth={2} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
