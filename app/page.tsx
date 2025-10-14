@@ -23,12 +23,12 @@ import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 
 const DEFAULT_LOCATIONS = [
-  "Unterbauch li.",
-  "Unterbauch re.",
+  "Unterbauch links",
+  "Unterbauch rechts",
   "Uterus",
   "Kreuzbein",
-  "Rektal",
-  "Vaginal",
+  "Rektalbereich",
+  "Vaginalbereich",
   "Oberschenkel",
 ];
 const PAIN_TYPES = ["krampfartig", "stechend", "dumpf", "brennend", "ziehend"];
@@ -47,7 +47,38 @@ const TRIGGERS = [
   "Alkohol",
   "Schlafmangel",
 ];
-const NON_PHARM = ["Wärme", "Ruhe", "Dehnen/Yoga", "TENS", "Spaziergang", "Ernährung"];
+const NON_PHARM = [
+  "Wärmeanwendung",
+  "Ruhe",
+  "Dehnen oder Yoga",
+  "Transkutane elektrische Nervenstimulation",
+  "Spaziergang",
+  "Angepasste Ernährung",
+];
+
+interface MedicationEntry {
+  name: string;
+  dose: string;
+  relief: number;
+}
+
+interface DailyEntry {
+  date: string;
+  pain: { score: number; locations: string[]; types: string[]; durationH: number };
+  bleeding: { level: string | undefined; clots: boolean };
+  gi: { bloating: number; constipation: number; diarrhea: number; nausea: number; rectalPain: number };
+  urinary: { frequency: number; urgency: number; dysuria: number };
+  fatigue: number;
+  mood: number;
+  dyspareunia: number;
+  sleep: number;
+  meds: MedicationEntry[];
+  nonPharm: string[];
+  triggers: string[];
+  workImpact: { missed: boolean; reducedHours: number };
+  cycle: { periodStart: boolean; cycleDay?: number };
+  note: string;
+}
 
 const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
 const toDateKey = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -70,7 +101,7 @@ function saveLS(key: string, v: unknown) {
   window.localStorage.setItem(key, JSON.stringify(v));
 }
 
-function emptyEntry(dateKey: string) {
+function emptyEntry(dateKey: string): DailyEntry {
   return {
     date: dateKey,
     pain: { score: 0, locations: [], types: [], durationH: 0 },
@@ -87,7 +118,7 @@ function emptyEntry(dateKey: string) {
     workImpact: { missed: false, reducedHours: 0 },
     cycle: { periodStart: false, cycleDay: undefined },
     note: "",
-  } as const;
+  };
 }
 
 function usePersistentState<T>(key: string, initial: T) {
@@ -161,16 +192,21 @@ function Section({
   title,
   children,
   aside,
+  description,
 }: {
   title: string;
   children: React.ReactNode;
   aside?: React.ReactNode;
+  description?: React.ReactNode;
 }) {
   return (
     <Card className="border border-zinc-200 bg-white shadow-sm rounded-2xl">
       <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="font-semibold text-zinc-900 text-base">{title}</CardTitle>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <CardTitle className="font-semibold text-zinc-900 text-base">{title}</CardTitle>
+            {description && <p className="mt-1 text-sm text-zinc-600">{description}</p>}
+          </div>
           {aside}
         </div>
       </CardHeader>
@@ -265,7 +301,7 @@ function NumberField({
 }
 
 export default function EndoTrackApp() {
-  const [entries, setEntries] = usePersistentState<any[]>("endo.entries", []);
+  const [entries, setEntries] = usePersistentState<DailyEntry[]>("endo.entries", []);
   const [periodStarts, setPeriodStarts] = usePersistentState<string[]>("endo.periodStarts", []);
   const [highContrast, setHighContrast] = usePersistentState<boolean>("endo.highContrast", true);
   const [accent, setAccent] = usePersistentState<string>("endo.accent", "rose");
@@ -286,48 +322,72 @@ export default function EndoTrackApp() {
     document.documentElement.style.setProperty("--endo-bg", highContrast ? "#fff1f2" : "#fff7f7");
   }, [accent, highContrast]);
 
-  function upsertEntry(next: any) {
-    setEntries((prev) => {
-      const i = prev.findIndex((e) => e.date === next.date);
-      const arr = [...prev];
-      if (i >= 0) arr[i] = next;
-      else arr.push(next);
-      return arr.sort((a, b) => (a.date < b.date ? -1 : 1));
-    });
+  function mergeSection<T extends object>(base: T | undefined, patch: Partial<T> | undefined): T {
+    return { ...(base || ({} as T)), ...(patch || {}) };
   }
 
-  function saveCurrent(partial: any) {
-    const merged = { ...current, ...partial };
-    merged.cycle = {
-      ...merged.cycle,
-      cycleDay: computeCycleDay(merged.date, periodStarts),
-    };
-    upsertEntry(merged);
+  function saveEntry(patch: Partial<DailyEntry>, options?: { date?: string; starts?: string[] }) {
+    const targetDate = options?.date ?? activeDate;
+    const effectiveStarts = options?.starts ?? periodStarts;
+
+    setEntries((prev) => {
+      const index = prev.findIndex((e) => e.date === targetDate);
+      const base = index >= 0 ? prev[index] : emptyEntry(targetDate);
+      const merged: DailyEntry = {
+        ...base,
+        ...patch,
+        pain: mergeSection(base.pain, patch.pain),
+        bleeding: mergeSection(base.bleeding, patch.bleeding),
+        gi: mergeSection(base.gi, patch.gi),
+        urinary: mergeSection(base.urinary, patch.urinary),
+        workImpact: mergeSection(base.workImpact, patch.workImpact),
+        cycle: mergeSection(base.cycle, patch.cycle),
+      };
+      merged.date = targetDate;
+      merged.cycle = {
+        ...merged.cycle,
+        cycleDay: computeCycleDay(targetDate, effectiveStarts),
+      };
+
+      const next = [...prev];
+      if (index >= 0) next[index] = merged;
+      else next.push(merged);
+      return next.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    });
   }
 
   function addMed() {
     const meds = [...(current.meds || [])];
     meds.push({ name: "", dose: "", relief: 0 });
-    saveCurrent({ meds });
+    saveEntry({ meds });
   }
 
   function updateMed(i: number, patch: any) {
     const meds = [...(current.meds || [])];
     meds[i] = { ...meds[i], ...patch };
-    saveCurrent({ meds });
+    saveEntry({ meds });
   }
 
   function removeMed(i: number) {
     const meds = [...(current.meds || [])];
     meds.splice(i, 1);
-    saveCurrent({ meds });
+    saveEntry({ meds });
   }
 
   function markPeriodStart(dateKey: string) {
-    const set = uniq([...(periodStarts || []), dateKey]).sort();
-    setPeriodStarts(set);
-    if (dateKey === current.date)
-      saveCurrent({ cycle: { ...current.cycle, periodStart: true } });
+    setPeriodStarts((prev) => {
+      const next = uniq([...(prev || []), dateKey]).sort();
+      saveEntry({ cycle: { periodStart: true } }, { date: dateKey, starts: next });
+      return next;
+    });
+  }
+
+  function unmarkPeriodStart(dateKey: string) {
+    setPeriodStarts((prev) => {
+      const next = (prev || []).filter((d) => d !== dateKey);
+      saveEntry({ cycle: { periodStart: false } }, { date: dateKey, starts: next });
+      return next;
+    });
   }
 
   function clearDay(dateKey: string) {
@@ -393,6 +453,23 @@ export default function EndoTrackApp() {
     }
   };
 
+  const cycleDay = useMemo(() => computeCycleDay(activeDate, periodStarts), [activeDate, periodStarts]);
+  const activeDateLabel = useMemo(() => {
+    const parsed = new Date(`${activeDate}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return "";
+    return parsed.toLocaleDateString("de-DE", {
+      weekday: "long",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  }, [activeDate]);
+  const currentCycleStart = current.cycle?.periodStart ?? false;
+  const isActivePeriodStart = useMemo(
+    () => currentCycleStart || periodStarts.includes(activeDate),
+    [currentCycleStart, periodStarts, activeDate]
+  );
+
   return (
     <div className="bg-rose-50 min-h-[100dvh] text-zinc-900">
       <style>{`.accent{color:var(--endo-accent)} .accent-bg{background:var(--endo-accent)}`}</style>
@@ -421,7 +498,7 @@ export default function EndoTrackApp() {
 
           <div className="px-4 pb-2">
             <Tabs defaultValue="today" className="w-full">
-              <TabsList className="grid grid-cols-4">
+              <TabsList className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <TabsTrigger value="today">Heute</TabsTrigger>
                 <TabsTrigger value="history">Verlauf</TabsTrigger>
                 <TabsTrigger value="report">Report</TabsTrigger>
@@ -429,276 +506,350 @@ export default function EndoTrackApp() {
               </TabsList>
 
               <TabsContent value="today" className="mt-3">
-                <div className="grid gap-3">
+                <div className="space-y-4">
                   <Section
-                    title="Datum & Zyklus"
+                    title="Datum und Zyklusübersicht"
+                    description="Lege das Datum fest, markiere Periodenstarts und verwalte deinen Tag."
                     aside={
-                      <div className="flex items-center gap-2 text-sm">
-                        <Calendar className="h-4 w-4 text-rose-700" />
-                        <Input type="date" value={activeDate} onChange={(e) => setActiveDate(e.target.value)} className="h-8" />
-                      </div>
+                      activeDateLabel ? (
+                        <div className="hidden sm:flex items-center gap-2 text-sm font-medium text-rose-700">
+                          <Calendar className="h-4 w-4" />
+                          <span>{activeDateLabel}</span>
+                        </div>
+                      ) : null
                     }
                   >
-                    <div className="grid sm:grid-cols-3 gap-3 items-end">
-                      <div className="grid gap-1">
-                        <Label>Zyklustag</Label>
-                        <Input readOnly value={computeCycleDay(activeDate, periodStarts) || "—"} className="h-9" />
+                    <div className="space-y-4">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="grid gap-2">
+                          <Label htmlFor="day-picker">Datum wählen</Label>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Input
+                              id="day-picker"
+                              type="date"
+                              value={activeDate}
+                              onChange={(e) => setActiveDate(e.target.value)}
+                              className="h-9"
+                            />
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => setActiveDate(today)}
+                              disabled={activeDate === today}
+                            >
+                              Heute
+                            </Button>
+                          </div>
+                          {activeDateLabel && (
+                            <p className="text-xs text-zinc-500 sm:hidden">{activeDateLabel}</p>
+                          )}
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Zyklustag</Label>
+                          <Input readOnly value={cycleDay ? String(cycleDay) : "—"} className="h-9" />
+                          <p className="text-xs text-zinc-500">
+                            Der Wert richtet sich nach dem zuletzt markierten Periodenbeginn.
+                          </p>
+                        </div>
                       </div>
-                      <div className="grid gap-1">
-                        <Label>Periode startete heute?</Label>
-                        <div className="flex items-center gap-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="period-start-switch">Periode startete heute?</Label>
+                        <div className="flex flex-wrap items-center gap-3">
                           <Switch
-                            checked={current.cycle?.periodStart || false}
-                            onCheckedChange={(v) => {
-                              saveCurrent({ cycle: { ...current.cycle, periodStart: v } });
-                              if (v) markPeriodStart(activeDate);
+                            id="period-start-switch"
+                            checked={isActivePeriodStart}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                markPeriodStart(activeDate);
+                              } else {
+                                unmarkPeriodStart(activeDate);
+                              }
                             }}
                           />
                           <Button size="sm" variant="secondary" onClick={() => markPeriodStart(activeDate)}>
-                            Starttag
+                            Periodenstart speichern
                           </Button>
+                          {isActivePeriodStart && (
+                            <Badge variant="outline" className="border-rose-200 text-rose-800">
+                              Als Start markiert
+                            </Badge>
+                          )}
                         </div>
+                        <p className="text-xs text-zinc-500">
+                          Der Zyklustag wird automatisch angepasst, sobald ein neuer Start gesetzt wird.
+                        </p>
                       </div>
-                      <div className="grid gap-1">
-                        <Label>Notiz</Label>
-                        <Input
+                      <div className="flex flex-wrap gap-2 pt-2">
+                        <Button variant="secondary" onClick={() => clearDay(activeDate)}>
+                          Tagesdaten zurücksetzen
+                        </Button>
+                      </div>
+                    </div>
+                  </Section>
+
+                  <div className="grid gap-4 lg:grid-cols-[1.65fr_1fr] xl:grid-cols-[1.75fr_1fr]">
+                    <div className="space-y-4">
+                      <Section
+                        title="Schmerzintensität (0–10)"
+                        description="Bewerte Stärke, Lokalisation und Qualität deines Schmerzes."
+                      >
+                        <div className="grid gap-4">
+                          <div className="flex items-center gap-4">
+                            <div className="w-full">
+                              <Slider
+                                value={[Number(current.pain?.score || 0)]}
+                                max={10}
+                                step={1}
+                                onValueChange={([v]) => saveEntry({ pain: { ...current.pain, score: v } })}
+                              />
+                            </div>
+                            <div className="w-16 text-center text-lg font-semibold">{current.pain?.score || 0}</div>
+                          </div>
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <div className="grid gap-2">
+                              <Label>Schmerzorte</Label>
+                              <MultiSelectChips
+                                options={DEFAULT_LOCATIONS}
+                                value={current.pain?.locations || []}
+                                onChange={(v) => saveEntry({ pain: { ...current.pain, locations: v } })}
+                              />
+                            </div>
+                            <div className="grid gap-2">
+                              <Label>Schmerzcharakter</Label>
+                              <MultiSelectChips
+                                options={PAIN_TYPES}
+                                value={current.pain?.types || []}
+                                onChange={(v) => saveEntry({ pain: { ...current.pain, types: v } })}
+                              />
+                            </div>
+                          </div>
+                          <NumberField
+                            id="duration"
+                            label="Dauer (Stunden)"
+                            value={current.pain?.durationH || 0}
+                            onChange={(v) => saveEntry({ pain: { ...current.pain, durationH: v } })}
+                            min={0}
+                            max={24}
+                          />
+                        </div>
+                      </Section>
+
+                      <Section
+                        title="Blutung"
+                        description="Dokumentiere Stärke und mögliche Blutgerinnsel."
+                      >
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="grid gap-2">
+                            <Label>Stärke der Blutung</Label>
+                            <Select
+                              value={current.bleeding?.level}
+                              onValueChange={(v) => saveEntry({ bleeding: { ...current.bleeding, level: v } })}
+                            >
+                              <SelectTrigger className="h-9">
+                                <SelectValue placeholder="Auswählen" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {BLEEDING_LEVELS.map((l) => (
+                                  <SelectItem key={l} value={l}>
+                                    {l}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="grid gap-2">
+                            <Label>Blutgerinnsel vorhanden?</Label>
+                            <div className="flex items-center gap-3">
+                              <Switch
+                                checked={current.bleeding?.clots || false}
+                                onCheckedChange={(v) => saveEntry({ bleeding: { ...current.bleeding, clots: v } })}
+                              />
+                              <span className="text-sm text-zinc-600">Ja oder Nein</span>
+                            </div>
+                          </div>
+                        </div>
+                      </Section>
+
+                      <Section
+                        title="Magen-Darm und Harnwege"
+                        description="Wie stark sind Verdauungs- oder Blasenbeschwerden?"
+                      >
+                        <div className="grid gap-4">
+                          <div className="grid gap-3 md:grid-cols-3">
+                            <div className="grid gap-1">
+                              <Label>Blähbauch</Label>
+                              <SeverityPicker
+                                value={current.gi?.bloating || 0}
+                                onChange={(v) => saveEntry({ gi: { ...current.gi, bloating: v } })}
+                              />
+                            </div>
+                            <div className="grid gap-1">
+                              <Label>Verstopfung</Label>
+                              <SeverityPicker
+                                value={current.gi?.constipation || 0}
+                                onChange={(v) => saveEntry({ gi: { ...current.gi, constipation: v } })}
+                              />
+                            </div>
+                            <div className="grid gap-1">
+                              <Label>Durchfall</Label>
+                              <SeverityPicker
+                                value={current.gi?.diarrhea || 0}
+                                onChange={(v) => saveEntry({ gi: { ...current.gi, diarrhea: v } })}
+                              />
+                            </div>
+                            <div className="grid gap-1">
+                              <Label>Übelkeit</Label>
+                              <SeverityPicker
+                                value={current.gi?.nausea || 0}
+                                onChange={(v) => saveEntry({ gi: { ...current.gi, nausea: v } })}
+                              />
+                            </div>
+                            <div className="grid gap-1">
+                              <Label>Rektaler Schmerz</Label>
+                              <SeverityPicker
+                                value={current.gi?.rectalPain || 0}
+                                onChange={(v) => saveEntry({ gi: { ...current.gi, rectalPain: v } })}
+                              />
+                            </div>
+                          </div>
+                          <div className="grid gap-3 md:grid-cols-3">
+                            <div className="grid gap-1">
+                              <Label>Häufiger Harndrang</Label>
+                              <SeverityPicker
+                                value={current.urinary?.frequency || 0}
+                                onChange={(v) => saveEntry({ urinary: { ...current.urinary, frequency: v } })}
+                              />
+                            </div>
+                            <div className="grid gap-1">
+                              <Label>Dringlichkeit beim Wasserlassen</Label>
+                              <SeverityPicker
+                                value={current.urinary?.urgency || 0}
+                                onChange={(v) => saveEntry({ urinary: { ...current.urinary, urgency: v } })}
+                              />
+                            </div>
+                            <div className="grid gap-1">
+                              <Label>Schmerzen beim Wasserlassen</Label>
+                              <SeverityPicker
+                                value={current.urinary?.dysuria || 0}
+                                onChange={(v) => saveEntry({ urinary: { ...current.urinary, dysuria: v } })}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </Section>
+
+                      <Section
+                        title="Alltag und unterstützende Maßnahmen"
+                        description="Wie beeinflussen die Symptome deinen Alltag und welche Hilfen nutzt du?"
+                      >
+                        <div className="grid gap-3 lg:grid-cols-2">
+                          <div className="grid gap-2">
+                            <Label>Müdigkeit</Label>
+                            <SeverityPicker value={current.fatigue || 0} onChange={(v) => saveEntry({ fatigue: v })} />
+                          </div>
+                          <div className="grid gap-2">
+                            <Label>Stimmung</Label>
+                            <Select value={String(current.mood || 0)} onValueChange={(v) => saveEntry({ mood: Number(v) })}>
+                              <SelectTrigger className="h-9">
+                                <SelectValue placeholder="Auswählen" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="-2">sehr schlecht</SelectItem>
+                                <SelectItem value="-1">schlecht</SelectItem>
+                                <SelectItem value="0">neutral</SelectItem>
+                                <SelectItem value="1">gut</SelectItem>
+                                <SelectItem value="2">sehr gut</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="grid gap-2">
+                            <Label>Dyspareunie</Label>
+                            <SeverityPicker value={current.dyspareunia || 0} onChange={(v) => saveEntry({ dyspareunia: v })} />
+                          </div>
+                          <NumberField
+                            id="sleep"
+                            label="Schlafqualität (1–5)"
+                            value={current.sleep || 3}
+                            min={1}
+                            max={5}
+                            onChange={(v) => saveEntry({ sleep: v })}
+                          />
+                          <div className="grid gap-2 lg:col-span-2">
+                            <Label>Mögliche Auslöser</Label>
+                            <MultiSelectChips options={TRIGGERS} value={current.triggers || []} onChange={(v) => saveEntry({ triggers: v })} />
+                          </div>
+                          <div className="grid gap-2 lg:col-span-2">
+                            <Label>Nicht-medikamentöse Maßnahmen</Label>
+                            <MultiSelectChips options={NON_PHARM} value={current.nonPharm || []} onChange={(v) => saveEntry({ nonPharm: v })} />
+                          </div>
+                        </div>
+                      </Section>
+                    </div>
+
+                    <div className="space-y-4">
+                      <Section
+                        title="Medikamente und Wirkung"
+                        description="Notiere, was du eingenommen hast und wie gut es geholfen hat."
+                        aside={<Button size="sm" onClick={addMed}>Medikament hinzufügen</Button>}
+                      >
+                        <div className="grid gap-3">
+                          {(current.meds || []).length === 0 && (
+                            <p className="text-sm text-zinc-600">Noch keine Einträge für heute.</p>
+                          )}
+                          {(current.meds || []).map((m: any, i: number) => (
+                            <div key={i} className="grid items-end gap-3 md:grid-cols-[2fr_1fr_1fr_auto]">
+                              <div className="grid gap-1">
+                                <Label>Bezeichnung</Label>
+                                <Input
+                                  value={m.name}
+                                  onChange={(e) => updateMed(i, { name: e.target.value })}
+                                  placeholder="Zum Beispiel Ibuprofen"
+                                />
+                              </div>
+                              <div className="grid gap-1">
+                                <Label>Dosierung</Label>
+                                <Input
+                                  value={m.dose}
+                                  onChange={(e) => updateMed(i, { dose: e.target.value })}
+                                  placeholder="Zum Beispiel 400 mg"
+                                />
+                              </div>
+                              <div className="grid gap-1">
+                                <Label>Erleichterung in Prozent</Label>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  value={m.relief}
+                                  onChange={(e) => updateMed(i, { relief: Number(e.target.value) })}
+                                />
+                              </div>
+                              <div className="flex items-center justify-end">
+                                <Button variant="ghost" size="sm" onClick={() => removeMed(i)}>
+                                  Entfernen
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </Section>
+
+                      <Section
+                        title="Tagesnotiz"
+                        description="Halte Beobachtungen, Fragen oder wichtige Ereignisse fest."
+                      >
+                        <Textarea
                           value={current.note || ""}
-                          onChange={(e) => saveCurrent({ note: e.target.value })}
+                          onChange={(e) => saveEntry({ note: e.target.value })}
                           placeholder="Freitext (optional)"
+                          className="min-h-[140px]"
                         />
-                      </div>
+                      </Section>
                     </div>
-                  </Section>
-
-                  <Section title="Schmerz (0–10)">
-                    <div className="grid gap-3">
-                      <div className="flex items-center gap-4">
-                        <div className="w-full">
-                          <Slider
-                            value={[Number(current.pain?.score || 0)]}
-                            max={10}
-                            step={1}
-                            onValueChange={([v]) => saveCurrent({ pain: { ...current.pain, score: v } })}
-                          />
-                        </div>
-                        <div className="w-12 text-center text-lg font-semibold">{current.pain?.score || 0}</div>
-                      </div>
-                      <div className="grid gap-2">
-                        <Label>Schmerzorte</Label>
-                        <MultiSelectChips
-                          options={DEFAULT_LOCATIONS}
-                          value={current.pain?.locations || []}
-                          onChange={(v) => saveCurrent({ pain: { ...current.pain, locations: v } })}
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label>Art</Label>
-                        <MultiSelectChips
-                          options={PAIN_TYPES}
-                          value={current.pain?.types || []}
-                          onChange={(v) => saveCurrent({ pain: { ...current.pain, types: v } })}
-                        />
-                      </div>
-                      <NumberField
-                        id="duration"
-                        label="Dauer (Std.)"
-                        value={current.pain?.durationH || 0}
-                        onChange={(v) => saveCurrent({ pain: { ...current.pain, durationH: v } })}
-                        min={0}
-                        max={24}
-                      />
-                    </div>
-                  </Section>
-
-                  <Section title="Blutung">
-                    <div className="grid sm:grid-cols-3 gap-3">
-                      <div className="grid gap-1">
-                        <Label>Stärke</Label>
-                        <Select
-                          value={current.bleeding?.level}
-                          onValueChange={(v) => saveCurrent({ bleeding: { ...current.bleeding, level: v } })}
-                        >
-                          <SelectTrigger className="h-9">
-                            <SelectValue placeholder="Wählen…" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {BLEEDING_LEVELS.map((l) => (
-                              <SelectItem key={l} value={l}>
-                                {l}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="grid gap-1">
-                        <Label>Koagel</Label>
-                        <div className="flex items-center gap-3">
-                          <Switch
-                            checked={current.bleeding?.clots || false}
-                            onCheckedChange={(v) => saveCurrent({ bleeding: { ...current.bleeding, clots: v } })}
-                          />
-                          <span className="text-sm text-zinc-600">ja/nein</span>
-                        </div>
-                      </div>
-                    </div>
-                  </Section>
-
-                  <Section title="Magen‑Darm & Harnwege">
-                    <div className="grid sm:grid-cols-3 gap-3">
-                      <div className="grid gap-1">
-                        <Label>Blähbauch</Label>
-                        <SeverityPicker
-                          value={current.gi?.bloating || 0}
-                          onChange={(v) => saveCurrent({ gi: { ...current.gi, bloating: v } })}
-                        />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label>Verstopfung</Label>
-                        <SeverityPicker
-                          value={current.gi?.constipation || 0}
-                          onChange={(v) => saveCurrent({ gi: { ...current.gi, constipation: v } })}
-                        />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label>Durchfall</Label>
-                        <SeverityPicker
-                          value={current.gi?.diarrhea || 0}
-                          onChange={(v) => saveCurrent({ gi: { ...current.gi, diarrhea: v } })}
-                        />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label>Übelkeit</Label>
-                        <SeverityPicker
-                          value={current.gi?.nausea || 0}
-                          onChange={(v) => saveCurrent({ gi: { ...current.gi, nausea: v } })}
-                        />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label>Rektaler Schmerz</Label>
-                        <SeverityPicker
-                          value={current.gi?.rectalPain || 0}
-                          onChange={(v) => saveCurrent({ gi: { ...current.gi, rectalPain: v } })}
-                        />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label>Häufigkeit</Label>
-                        <SeverityPicker
-                          value={current.urinary?.frequency || 0}
-                          onChange={(v) => saveCurrent({ urinary: { ...current.urinary, frequency: v } })}
-                        />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label>Drang</Label>
-                        <SeverityPicker
-                          value={current.urinary?.urgency || 0}
-                          onChange={(v) => saveCurrent({ urinary: { ...current.urinary, urgency: v } })}
-                        />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label>Dysurie</Label>
-                        <SeverityPicker
-                          value={current.urinary?.dysuria || 0}
-                          onChange={(v) => saveCurrent({ urinary: { ...current.urinary, dysuria: v } })}
-                        />
-                      </div>
-                    </div>
-                  </Section>
-
-                  <Section title="Alltag & Maßnahmen">
-                    <div className="grid sm:grid-cols-3 gap-3">
-                      <div className="grid gap-1">
-                        <Label>Müdigkeit</Label>
-                        <SeverityPicker value={current.fatigue || 0} onChange={(v) => saveCurrent({ fatigue: v })} />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label>Stimmung</Label>
-                        <Select value={String(current.mood || 0)} onValueChange={(v) => saveCurrent({ mood: Number(v) })}>
-                          <SelectTrigger className="h-9">
-                            <SelectValue placeholder="Auswahl" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="-2">sehr schlecht</SelectItem>
-                            <SelectItem value="-1">schlecht</SelectItem>
-                            <SelectItem value="0">neutral</SelectItem>
-                            <SelectItem value="1">gut</SelectItem>
-                            <SelectItem value="2">sehr gut</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="grid gap-1">
-                        <Label>Dyspareunie</Label>
-                        <SeverityPicker value={current.dyspareunia || 0} onChange={(v) => saveCurrent({ dyspareunia: v })} />
-                      </div>
-                      <NumberField
-                        id="sleep"
-                        label="Schlaf (1–5)"
-                        value={current.sleep || 3}
-                        min={1}
-                        max={5}
-                        onChange={(v) => saveCurrent({ sleep: v })}
-                      />
-                      <div className="grid gap-1">
-                        <Label>Auslöser</Label>
-                        <MultiSelectChips options={TRIGGERS} value={current.triggers || []} onChange={(v) => saveCurrent({ triggers: v })} />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label>Nicht‑medikamentös</Label>
-                        <MultiSelectChips options={NON_PHARM} value={current.nonPharm || []} onChange={(v) => saveCurrent({ nonPharm: v })} />
-                      </div>
-                    </div>
-                  </Section>
-
-                  <Section title="Medikamente & Wirkung" aside={<Button size="sm" onClick={addMed}>+ Hinzufügen</Button>}>
-                    <div className="grid gap-3">
-                      {(current.meds || []).length === 0 && <p className="text-sm text-zinc-600">Noch keine Einträge.</p>}
-                      {(current.meds || []).map((m: any, i: number) => (
-                        <div key={i} className="grid sm:grid-cols-12 gap-2 items-end">
-                          <div className="sm:col-span-4 grid gap-1">
-                            <Label>Name</Label>
-                            <Input
-                              value={m.name}
-                              onChange={(e) => updateMed(i, { name: e.target.value })}
-                              placeholder="z.B. Ibuprofen"
-                            />
-                          </div>
-                          <div className="sm:col-span-3 grid gap-1">
-                            <Label>Dosis</Label>
-                            <Input
-                              value={m.dose || ""}
-                              onChange={(e) => updateMed(i, { dose: e.target.value })}
-                              placeholder="mg / Zeitpunkt"
-                            />
-                          </div>
-                          <div className="sm:col-span-4 grid gap-1">
-                            <Label>Erleichterung (%)</Label>
-                            <Slider
-                              value={[Number(m.relief || 0)]}
-                              max={100}
-                              step={5}
-                              onValueChange={([v]) => updateMed(i, { relief: v })}
-                            />
-                          </div>
-                          <div className="sm:col-span-1">
-                            <Button variant="ghost" size="sm" onClick={() => removeMed(i)}>
-                              Entf.
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </Section>
-
-                  <div className="flex justify-between">
-                    <Button variant="secondary" onClick={() => clearDay(activeDate)}>
-                      Tag leeren
-                    </Button>
-                    <Button className="accent-bg text-white" onClick={() => saveCurrent({})}>
-                      Speichern
-                    </Button>
                   </div>
                 </div>
               </TabsContent>
-
               <TabsContent value="history" className="mt-3">
                 <Section title="Letzte Einträge">
                   <div className="grid gap-2">
@@ -715,7 +866,7 @@ export default function EndoTrackApp() {
                               ) : null}
                             </div>
                             <div className="text-sm text-zinc-600">
-                              Schmerz: {e.pain?.score ?? 0} · Blutung: {e.bleeding?.level}
+                              Schmerzwert: {e.pain?.score ?? 0} · Blutung: {e.bleeding?.level}
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
@@ -764,13 +915,13 @@ export default function EndoTrackApp() {
                       </Card>
                       <Card>
                         <CardContent className="p-4">
-                          <div className="text-sm text-zinc-600">Ø Schmerz</div>
+                          <div className="text-sm text-zinc-600">Durchschnittlicher Schmerzwert</div>
                           <div className="text-2xl font-semibold">{stats.avgPain}</div>
                         </CardContent>
                       </Card>
                       <Card>
                         <CardContent className="p-4">
-                          <div className="text-sm text-zinc-600">Max. Schmerz</div>
+                          <div className="text-sm text-zinc-600">Maximaler Schmerzwert</div>
                           <div className="text-2xl font-semibold">{stats.maxPain}</div>
                         </CardContent>
                       </Card>
@@ -853,10 +1004,10 @@ export default function EndoTrackApp() {
                     </p>
                     <div className="flex gap-2 mt-2">
                       <Button onClick={exportData}>
-                        <Download className="h-4 w-4 mr-1" /> Export JSON
+                        <Download className="h-4 w-4 mr-1" /> JSON-Datei exportieren
                       </Button>
                       <label className="inline-flex items-center gap-2 px-3 py-2 border rounded-md cursor-pointer hover:bg-zinc-50">
-                        <Upload className="h-4 w-4" /> Import JSON
+                        <Upload className="h-4 w-4" /> JSON-Datei importieren
                         <input
                           type="file"
                           accept="application/json"
@@ -886,7 +1037,7 @@ export default function EndoTrackApp() {
 
 function makeTextReport(stats: any, y: number, m: number) {
   const title = `Monatsreport ${monthLabel(y, m)}`;
-  const top = `Tage dokumentiert: ${stats.daysTracked}\nØ Schmerz: ${stats.avgPain} | Max: ${stats.maxPain} | Flare‑Tage (≥6): ${stats.flareDays}`;
+  const top = `Tage dokumentiert: ${stats.daysTracked}\nDurchschnittlicher Schmerzwert: ${stats.avgPain} | Höchster Schmerzwert: ${stats.maxPain} | Flare‑Tage (≥6): ${stats.flareDays}`;
   const loc = stats.byLocation
     ?.sort((a: any, b: any) => b.count - a.count)
     .slice(0, 3)
@@ -935,7 +1086,10 @@ function makeTextReport(stats: any, y: number, m: number) {
     } as any;
     const txt = makeTextReport(mock, 2025, 10);
     console.assert(txt.includes("Monatsreport"), "Report: Titel fehlt");
-    console.assert(txt.includes("Ø Schmerz"), "Report: Ø Schmerz fehlt");
+    console.assert(
+      txt.includes("Durchschnittlicher Schmerzwert"),
+      "Report: Durchschnittlicher Schmerzwert fehlt"
+    );
     console.assert(txt.split("\n").length >= 2, "Report: Zeilenumbrüche fehlen");
     if (!(window as any).__ENDO_TEST_OUTPUT__) {
       console.debug("[EndoTrack DEV TEST] makeTextReport OK:\n" + txt);
