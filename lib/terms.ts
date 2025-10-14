@@ -133,7 +133,68 @@ export const TERMS = {
   },
   notesTags: { label: "Schlagworte/Trigger", help: "Kurze Begriffe für Muster & Filter" },
   notesFree: { label: "Notizen", help: "Freier Text für Besonderheiten" },
-} satisfies Record<string, TermDescriptor>;
+  urinaryOpt: {
+    urgency: {
+      label: "Harndrang (0–10)",
+      tech: "Dranginkontinenz/LUTS",
+      help: "0 = kein, 10 = sehr stark",
+    },
+    leaksCount: {
+      label: "Ungewollter Urinverlust",
+      tech: "Inkontinenz-Episoden",
+      help: "Anzahl Leckagen heute",
+    },
+    nocturia: {
+      label: "Nächtliche Toilettengänge",
+      tech: "Nykturie",
+      help: "Wie oft nachts urinieren?",
+    },
+  },
+  headacheOpt: {
+    present: {
+      label: "Kopfschmerz/Migräne heute?",
+      tech: "Migräne",
+      help: "Zyklusabhängig möglich",
+    },
+    nrs: {
+      label: "Schmerz (0–10)",
+      tech: "NRS",
+      help: "0 = kein, 10 = unerträglich",
+    },
+    aura: {
+      label: "Aura (Ja/Nein)",
+      tech: "Migraine with aura",
+      help: "z. B. Flimmern/Sehausfälle",
+    },
+  },
+  dizzinessOpt: {
+    present: {
+      label: "Schwindel heute?",
+      tech: "Vertigo/Dizziness",
+      help: "Schwankschwindel/Benommenheit",
+    },
+    nrs: {
+      label: "Schwindelstärke (0–10)",
+      tech: "NRS",
+      help: "0 = kein, 10 = sehr stark",
+    },
+    orthostatic: {
+      label: "Beim Aufstehen ausgelöst?",
+      tech: "Orthostatische Intoleranz",
+      help: "tritt beim Aufstehen auf",
+    },
+  },
+} as const;
 
-export type TermKey = keyof typeof TERMS;
+type TermsDefinition = typeof TERMS;
+
+export type TermKey = {
+  [K in keyof TermsDefinition]: TermsDefinition[K] extends TermDescriptor ? K : never;
+}[keyof TermsDefinition];
+
+export type ModuleTerms = {
+  urinaryOpt: TermsDefinition["urinaryOpt"];
+  headacheOpt: TermsDefinition["headacheOpt"];
+  dizzinessOpt: TermsDefinition["dizzinessOpt"];
+};
 
