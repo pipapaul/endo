@@ -45,6 +45,12 @@ export function validateDailyEntry(entry: DailyEntry): ValidationIssue[] {
         message: "PBAC-Score muss bei aktiver Blutung als nicht-negative Zahl vorliegen.",
       });
     }
+    if (entry.bleeding.clots !== undefined && typeof entry.bleeding.clots !== "boolean") {
+      issues.push({ path: "bleeding.clots", message: "Koagel-Angabe muss Ja/Nein sein." });
+    }
+    if (entry.bleeding.flooding !== undefined && typeof entry.bleeding.flooding !== "boolean") {
+      issues.push({ path: "bleeding.flooding", message: "Flooding muss als Ja/Nein erfasst werden." });
+    }
   } else {
     if (entry.bleeding.pbacScore !== undefined) {
       issues.push({
@@ -56,6 +62,12 @@ export function validateDailyEntry(entry: DailyEntry): ValidationIssue[] {
       issues.push({
         path: "bleeding.clots",
         message: "Koagel dürfen nur bei aktiver Blutung dokumentiert werden.",
+      });
+    }
+    if (entry.bleeding.flooding !== undefined) {
+      issues.push({
+        path: "bleeding.flooding",
+        message: "Flooding darf nur bei aktiver Blutung dokumentiert werden.",
       });
     }
   }
@@ -225,25 +237,59 @@ export function validateMonthlyEntry(entry: MonthlyEntry): ValidationIssue[] {
     issues.push({ path: "month", message: "Monat muss im Format YYYY-MM angegeben werden." });
   }
 
-  if (entry.qol?.ehp5Total !== undefined && (!Number.isFinite(entry.qol.ehp5Total) || entry.qol.ehp5Total < 0)) {
-    issues.push({ path: "qol.ehp5Total", message: "EHP-5 Gesamtscore muss eine nicht-negative Zahl sein." });
-  }
-
-  if (entry.qol?.ehp5Subscales) {
-    Object.entries(entry.qol.ehp5Subscales).forEach(([key, value]) => {
-      if (!Number.isFinite(value) || value < 0) {
-        issues.push({ path: `qol.ehp5Subscales.${key}`, message: "Subskalen müssen nicht-negative Zahlen sein." });
+  if (entry.qol?.ehp5Items) {
+    if (entry.qol.ehp5Items.length !== 5) {
+      issues.push({ path: "qol.ehp5Items", message: "EHP-5 benötigt fünf Items (0–4)." });
+    }
+    entry.qol.ehp5Items.forEach((value, index) => {
+      if (value !== undefined && (!Number.isInteger(value) || value < 0 || value > 4)) {
+        issues.push({ path: `qol.ehp5Items[${index}]`, message: "EHP-5 Items müssen Werte von 0 bis 4 nutzen." });
       }
     });
   }
+  if (entry.qol?.ehp5Total !== undefined && (!Number.isInteger(entry.qol.ehp5Total) || entry.qol.ehp5Total < 0 || entry.qol.ehp5Total > 20)) {
+    issues.push({ path: "qol.ehp5Total", message: "EHP-5 Gesamtscore muss zwischen 0 und 20 liegen." });
+  }
+  if (
+    entry.qol?.ehp5Transformed !== undefined &&
+    (!Number.isFinite(entry.qol.ehp5Transformed) || entry.qol.ehp5Transformed < 0 || entry.qol.ehp5Transformed > 100)
+  ) {
+    issues.push({ path: "qol.ehp5Transformed", message: "EHP-5 Transform muss zwischen 0 und 100 liegen." });
+  }
 
   if (entry.mental) {
-    const { phq9, gad7 } = entry.mental;
+    const { phq9, gad7, phq9Items, gad7Items, phq9Severity, gad7Severity } = entry.mental;
+    if (phq9Items) {
+      if (phq9Items.length !== 9) {
+        issues.push({ path: "mental.phq9Items", message: "PHQ-9 benötigt neun Items (0–3)." });
+      }
+      phq9Items.forEach((value, index) => {
+        if (value !== undefined && (!Number.isInteger(value) || value < 0 || value > 3)) {
+          issues.push({ path: `mental.phq9Items[${index}]`, message: "PHQ-9 Items müssen Werte von 0 bis 3 nutzen." });
+        }
+      });
+    }
     if (phq9 !== undefined && (!Number.isInteger(phq9) || phq9 < 0 || phq9 > 27)) {
       issues.push({ path: "mental.phq9", message: "PHQ-9 muss zwischen 0 und 27 liegen." });
     }
+    if (phq9Severity && !["mild", "moderat", "hoch"].includes(phq9Severity)) {
+      issues.push({ path: "mental.phq9Severity", message: "PHQ-9 Ampel muss mild/moderat/hoch sein." });
+    }
+    if (gad7Items) {
+      if (gad7Items.length !== 7) {
+        issues.push({ path: "mental.gad7Items", message: "GAD-7 benötigt sieben Items (0–3)." });
+      }
+      gad7Items.forEach((value, index) => {
+        if (value !== undefined && (!Number.isInteger(value) || value < 0 || value > 3)) {
+          issues.push({ path: `mental.gad7Items[${index}]`, message: "GAD-7 Items müssen Werte von 0 bis 3 nutzen." });
+        }
+      });
+    }
     if (gad7 !== undefined && (!Number.isInteger(gad7) || gad7 < 0 || gad7 > 21)) {
       issues.push({ path: "mental.gad7", message: "GAD-7 muss zwischen 0 und 21 liegen." });
+    }
+    if (gad7Severity && !["mild", "moderat", "hoch"].includes(gad7Severity)) {
+      issues.push({ path: "mental.gad7Severity", message: "GAD-7 Ampel muss mild/moderat/hoch sein." });
     }
   }
 

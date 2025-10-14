@@ -9,6 +9,7 @@ export interface DailyEntry {
     isBleeding: boolean;
     pbacScore?: number; // >=0 when isBleeding
     clots?: boolean;
+    flooding?: boolean;
   };
   symptoms: {
     dysmenorrhea?: { present: boolean; score?: number };
@@ -52,7 +53,14 @@ export interface WeeklyEntry {
 
 export interface MonthlyEntry {
   month: string; // YYYY-MM
-  qol?: { ehp5Total?: number; ehp5Subscales?: Record<string, number> };
-  mental?: { phq9?: number; gad7?: number };
+  qol?: { ehp5Items?: (number | undefined)[]; ehp5Total?: number; ehp5Transformed?: number };
+  mental?: {
+    phq9Items?: (number | undefined)[];
+    phq9?: number;
+    phq9Severity?: "mild" | "moderat" | "hoch";
+    gad7Items?: (number | undefined)[];
+    gad7?: number;
+    gad7Severity?: "mild" | "moderat" | "hoch";
+  };
   promis?: { fatigueT?: number; painInterferenceT?: number };
 }

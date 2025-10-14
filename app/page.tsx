@@ -24,6 +24,8 @@ import {
   validateWeeklyEntry,
   type ValidationIssue,
 } from "@/lib/validation";
+import InfoTip from "@/components/InfoTip";
+import { Labeled } from "@/components/Labeled";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -71,18 +73,72 @@ const SYMPTOM_ITEMS: { key: SymptomKey; termKey: TermKey }[] = [
   { key: "bloating", termKey: "bloating" },
 ];
 
-const PBAC_ITEMS = [
-  { id: "pad_light", label: "Binde (leicht gefärbt)", score: 1 },
-  { id: "pad_medium", label: "Binde (mittel)", score: 5 },
-  { id: "pad_heavy", label: "Binde (durchtränkt)", score: 20 },
-  { id: "tampon_light", label: "Tampon (leicht)", score: 1 },
-  { id: "tampon_medium", label: "Tampon (mittel)", score: 5 },
-  { id: "tampon_heavy", label: "Tampon (durchtränkt)", score: 10 },
+const PBAC_PRODUCT_ITEMS = [
+  { id: "pad_light", label: "Binde – leicht", score: 1, product: "pad", saturation: "light" },
+  { id: "pad_medium", label: "Binde – mittel", score: 5, product: "pad", saturation: "medium" },
+  { id: "pad_heavy", label: "Binde – stark", score: 20, product: "pad", saturation: "heavy" },
+  { id: "tampon_light", label: "Tampon – leicht", score: 1, product: "tampon", saturation: "light" },
+  { id: "tampon_medium", label: "Tampon – mittel", score: 5, product: "tampon", saturation: "medium" },
+  { id: "tampon_heavy", label: "Tampon – stark", score: 10, product: "tampon", saturation: "heavy" },
+] as const;
+
+const PBAC_CLOT_ITEMS = [
   { id: "clot_small", label: "Koagel <2 cm", score: 1 },
   { id: "clot_large", label: "Koagel ≥2 cm", score: 5 },
 ] as const;
 
+const PBAC_ITEMS = [...PBAC_PRODUCT_ITEMS, ...PBAC_CLOT_ITEMS] as const;
+
+type PbacProductItem = (typeof PBAC_PRODUCT_ITEMS)[number];
+type PbacProduct = PbacProductItem["product"];
+type PbacSaturation = PbacProductItem["saturation"];
 type PbacCounts = Record<(typeof PBAC_ITEMS)[number]["id"], number>;
+
+const PBAC_PRODUCT_OPTIONS: { id: PbacProduct; label: string }[] = [
+  { id: "pad", label: "Binde" },
+  { id: "tampon", label: "Tampon" },
+];
+
+const PBAC_SATURATION_OPTIONS: { id: PbacSaturation; label: string }[] = [
+  { id: "light", label: "leicht" },
+  { id: "medium", label: "mittel" },
+  { id: "heavy", label: "stark" },
+];
+
+const PBAC_FLOODING_SCORE = 5;
+
+const EHP5_ITEMS = [
+  "Schmerz schränkt Alltagstätigkeiten ein",
+  "Arbeit oder Studium litten unter Beschwerden",
+  "Emotionale Belastung durch Endometriose",
+  "Beziehungen und soziale Aktivitäten beeinflusst",
+  "Energielevel/Erschöpfung im Alltag",
+] as const;
+
+const PHQ9_ITEMS = [
+  "Wenig Interesse oder Freude an Tätigkeiten",
+  "Niedergeschlagen, deprimiert oder hoffnungslos",
+  "Einschlaf- oder Durchschlafprobleme bzw. zu viel Schlaf",
+  "Müdigkeit oder Energiemangel",
+  "Appetitmangel oder übermäßiges Essen",
+  "Schlechtes Gefühl über sich selbst oder das Gefühl, versagt zu haben",
+  "Schwierigkeiten, sich zu konzentrieren (z. B. Zeitung lesen, Fernsehen)",
+  "Bewegungs- oder Sprechverlangsamung bzw. Unruhe",
+  "Gedanken, dass es besser wäre, tot zu sein oder sich selbst Schaden zuzufügen",
+] as const;
+
+const GAD7_ITEMS = [
+  "Nervosität, innere Unruhe oder Anspannung",
+  "Unfähigkeit, Sorgen zu kontrollieren",
+  "Übermäßige Sorgen über verschiedene Dinge",
+  "Schwierigkeit, sich zu entspannen",
+  "Ruhelosigkeit, so dass man nicht still sitzen kann",
+  "Leicht reizbar oder verärgert",
+  "Angst, dass etwas Schlimmes passieren könnte",
+] as const;
+
+const SCALE_OPTIONS_0_4 = [0, 1, 2, 3, 4] as const;
+const SCALE_OPTIONS_0_3 = [0, 1, 2, 3] as const;
 
 const PBAC_DEFAULT_COUNTS = PBAC_ITEMS.reduce<PbacCounts>((acc, item) => {
   acc[item.id] = 0;
@@ -175,32 +231,31 @@ function Section({ title, description, aside, children }: {
   );
 }
 
-function HelpIcon({ text }: { text: string }) {
+function TermField({ termKey, htmlFor, children }: { termKey: TermKey; htmlFor?: string; children: ReactNode }) {
+  const term: TermDescriptor = TERMS[termKey];
+  const meta = term.optional ? (
+    <Badge className="bg-amber-100 text-amber-800">
+      {term.deviceNeeded ? `Optional (Hilfsmittel nötig: ${term.deviceNeeded})` : "Optional"}
+    </Badge>
+  ) : null;
   return (
-    <span
-      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-rose-100 text-xs font-semibold text-rose-600"
-      role="img"
-      aria-label={`Info: ${text}`}
-      title={text}
-    >
-      ⓘ
-    </span>
+    <Labeled label={term.label} tech={term.tech} help={term.help} htmlFor={htmlFor} meta={meta}>
+      {children}
+    </Labeled>
   );
 }
 
-function FieldLabel({ termKey, htmlFor }: { termKey: TermKey; htmlFor?: string }) {
+function TermHeadline({ termKey }: { termKey: TermKey }) {
   const term: TermDescriptor = TERMS[termKey];
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Label htmlFor={htmlFor} className="text-sm font-medium text-rose-800">
-        {term.label}
-      </Label>
-      {term.optional && (
+    <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-rose-900">
+      <span>{term.label}</span>
+      {term.optional ? (
         <Badge className="bg-amber-100 text-amber-800">
           {term.deviceNeeded ? `Optional (Hilfsmittel nötig: ${term.deviceNeeded})` : "Optional"}
         </Badge>
-      )}
-      <HelpIcon text={term.help} />
+      ) : null}
+      {term.help ? <InfoTip tech={term.tech ?? term.label} help={term.help} /> : null}
     </div>
   );
 }
@@ -209,6 +264,8 @@ function ScoreInput({
   id,
   label,
   termKey,
+  tech,
+  help,
   value,
   onChange,
   min = 0,
@@ -218,29 +275,40 @@ function ScoreInput({
   id: string;
   label: string;
   termKey?: TermKey;
+  tech?: string;
+  help?: string;
   value: number;
   onChange: (value: number) => void;
   min?: number;
   max?: number;
   step?: number;
 }) {
-  return (
-    <div className="grid gap-2">
-      {termKey ? <FieldLabel termKey={termKey} htmlFor={id} /> : <Label htmlFor={id}>{label}</Label>}
-      <div className="flex items-center gap-4">
-        <Slider value={[value]} min={min} max={max} step={step} onValueChange={([v]) => onChange(v)} id={id} />
-        <Input
-          className="w-20"
-          type="number"
-          inputMode="numeric"
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          onChange={(event) => onChange(Number(event.target.value))}
-        />
-      </div>
+  const content = (
+    <div className="flex items-center gap-4">
+      <Slider value={[value]} min={min} max={max} step={step} onValueChange={([v]) => onChange(v)} id={id} />
+      <Input
+        className="w-20"
+        type="number"
+        inputMode="numeric"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
     </div>
+  );
+  if (termKey) {
+    return (
+      <TermField termKey={termKey} htmlFor={id}>
+        {content}
+      </TermField>
+    );
+  }
+  return (
+    <Labeled label={label} tech={tech} help={help} htmlFor={id}>
+      {content}
+    </Labeled>
   );
 }
 
@@ -313,8 +381,49 @@ function BodyMap({ value, onChange }: { value: string[]; onChange: (next: string
   );
 }
 
-function computePbacScore(counts: PbacCounts) {
-  return PBAC_ITEMS.reduce((total, item) => total + counts[item.id] * item.score, 0);
+function computePbacScore(counts: PbacCounts, flooding: boolean) {
+  const base = PBAC_ITEMS.reduce((total, item) => total + counts[item.id] * item.score, 0);
+  return base + (flooding ? PBAC_FLOODING_SCORE : 0);
+}
+
+function findPbacProductItem(product: PbacProduct, saturation: PbacSaturation) {
+  return PBAC_PRODUCT_ITEMS.find((item) => item.product === product && item.saturation === saturation);
+}
+
+function computeWpaiOverall(absenteeism?: number, presenteeism?: number) {
+  if (typeof absenteeism !== "number" || typeof presenteeism !== "number") return undefined;
+  const abs = Math.max(0, Math.min(100, absenteeism));
+  const pre = Math.max(0, Math.min(100, presenteeism));
+  const absFraction = abs / 100;
+  const preFraction = pre / 100;
+  const overall = Math.round((absFraction + (1 - absFraction) * preFraction) * 100);
+  return Math.min(overall, 100);
+}
+
+type SeverityLevel = "mild" | "moderat" | "hoch";
+
+function mapPhqSeverity(score?: number): SeverityLevel | undefined {
+  if (typeof score !== "number") return undefined;
+  if (score >= 15) return "hoch";
+  if (score >= 5) return "moderat";
+  return "mild";
+}
+
+function mapGadSeverity(score?: number): SeverityLevel | undefined {
+  if (typeof score !== "number") return undefined;
+  if (score >= 15) return "hoch";
+  if (score >= 5) return "moderat";
+  return "mild";
+}
+
+function severityBadgeClass(level: SeverityLevel) {
+  if (level === "hoch") return "bg-rose-200 text-rose-800";
+  if (level === "moderat") return "bg-amber-200 text-amber-800";
+  return "bg-emerald-200 text-emerald-800";
+}
+
+function severityLabel(level: SeverityLevel) {
+  return level.charAt(0).toUpperCase() + level.slice(1);
 }
 
 function ChartTooltip({ active, payload }: TooltipProps<number, string>) {
@@ -445,6 +554,10 @@ export default function HomePage() {
   const [dailyDraft, setDailyDraft] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
   const [pbacCounts, setPbacCounts] = useState<PbacCounts>({ ...PBAC_DEFAULT_COUNTS });
   const [pbacStep, setPbacStep] = useState(1);
+  const [pbacSelection, setPbacSelection] = useState<{ product: PbacProduct | null; saturation: PbacSaturation | null }>(
+    () => ({ product: null, saturation: null })
+  );
+  const [pbacCountDraft, setPbacCountDraft] = useState("0");
   const [fsfiOptIn, setFsfiOptIn] = useState(false);
   const [sensorsVisible, setSensorsVisible] = useState(false);
   const [exploratoryVisible, setExploratoryVisible] = useState(false);
@@ -473,13 +586,28 @@ export default function HomePage() {
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
-  const pbacScore = useMemo(() => computePbacScore(pbacCounts), [pbacCounts]);
+  const pbacFlooding = dailyDraft.bleeding.flooding ?? false;
+  const selectedPbacItem =
+    pbacSelection.product && pbacSelection.saturation
+      ? findPbacProductItem(pbacSelection.product, pbacSelection.saturation)
+      : null;
+  const pbacScore = useMemo(() => computePbacScore(pbacCounts, pbacFlooding), [pbacCounts, pbacFlooding]);
+  const wpaiAbsenteeism = weeklyDraft.function?.wpaiAbsenteeismPct;
+  const wpaiPresenteeism = weeklyDraft.function?.wpaiPresenteeismPct;
+  const wpaiOverall = weeklyDraft.function?.wpaiOverallPct ?? computeWpaiOverall(wpaiAbsenteeism, wpaiPresenteeism);
+  const phqSeverity = monthlyDraft.mental?.phq9Severity ?? mapPhqSeverity(monthlyDraft.mental?.phq9);
+  const gadSeverity = monthlyDraft.mental?.gad7Severity ?? mapGadSeverity(monthlyDraft.mental?.gad7);
 
   useEffect(() => {
     if (dailyDraft.bleeding.isBleeding) {
       setDailyDraft((prev) => ({
         ...prev,
-        bleeding: { ...prev.bleeding, pbacScore, clots: prev.bleeding.clots ?? false },
+        bleeding: {
+          ...prev.bleeding,
+          pbacScore,
+          clots: prev.bleeding.clots ?? false,
+          flooding: prev.bleeding.flooding ?? false,
+        },
       }));
     }
   }, [pbacScore, dailyDraft.bleeding.isBleeding]);
@@ -501,12 +629,99 @@ export default function HomePage() {
     }));
   };
 
+  const goToPbacProduct = (product: PbacProduct, saturation: PbacSaturation) => {
+    const item = findPbacProductItem(product, saturation);
+    if (!item) return;
+    setPbacSelection({ product, saturation });
+    setPbacCountDraft(String(pbacCounts[item.id] ?? 0));
+    setPbacStep(3);
+  };
+
+  const commitPbacCount = () => {
+    if (!selectedPbacItem) return;
+    const parsed = Math.max(0, Math.round(Number(pbacCountDraft) || 0));
+    setPbacCounts((prev) => {
+      if (prev[selectedPbacItem.id] === parsed) {
+        return prev;
+      }
+      return { ...prev, [selectedPbacItem.id]: parsed };
+    });
+    setPbacCountDraft(String(parsed));
+  };
+
+  const handleEhp5ItemChange = (index: number, value: number | undefined) => {
+    setMonthlyDraft((prev) => {
+      const currentItems = prev.qol?.ehp5Items ?? Array(EHP5_ITEMS.length).fill(undefined);
+      const nextItems = [...currentItems];
+      nextItems[index] = value;
+      const total = nextItems.reduce((sum, entry) => (typeof entry === "number" ? sum + entry : sum), 0);
+      const allAnswered = nextItems.every((entry) => typeof entry === "number");
+      const transformed = allAnswered ? Math.round((total / (EHP5_ITEMS.length * 4)) * 100) : undefined;
+      return {
+        ...prev,
+        qol: {
+          ...(prev.qol ?? {}),
+          ehp5Items: nextItems,
+          ehp5Total: allAnswered ? total : undefined,
+          ehp5Transformed: transformed,
+        },
+      };
+    });
+  };
+
+  const handlePhqItemChange = (index: number, value: number | undefined) => {
+    setMonthlyDraft((prev) => {
+      const currentMental = prev.mental ?? {};
+      const currentItems = currentMental.phq9Items ?? Array(PHQ9_ITEMS.length).fill(undefined);
+      const nextItems = [...currentItems];
+      nextItems[index] = value;
+      const total = nextItems.reduce((sum, entry) => (typeof entry === "number" ? sum + entry : sum), 0);
+      const allAnswered = nextItems.every((entry) => typeof entry === "number");
+      const computedTotal = allAnswered ? total : undefined;
+      return {
+        ...prev,
+        mental: {
+          ...currentMental,
+          phq9Items: nextItems,
+          phq9: computedTotal,
+          phq9Severity: mapPhqSeverity(computedTotal),
+        },
+      };
+    });
+  };
+
+  const handleGadItemChange = (index: number, value: number | undefined) => {
+    setMonthlyDraft((prev) => {
+      const currentMental = prev.mental ?? {};
+      const currentItems = currentMental.gad7Items ?? Array(GAD7_ITEMS.length).fill(undefined);
+      const nextItems = [...currentItems];
+      nextItems[index] = value;
+      const total = nextItems.reduce((sum, entry) => (typeof entry === "number" ? sum + entry : sum), 0);
+      const allAnswered = nextItems.every((entry) => typeof entry === "number");
+      const computedTotal = allAnswered ? total : undefined;
+      return {
+        ...prev,
+        mental: {
+          ...currentMental,
+          gad7Items: nextItems,
+          gad7: computedTotal,
+          gad7Severity: mapGadSeverity(computedTotal),
+        },
+      };
+    });
+  };
+
   const handleDailySubmit = () => {
     const payload: DailyEntry = {
       ...dailyDraft,
       painQuality: dailyDraft.painQuality,
       bleeding: dailyDraft.bleeding.isBleeding
-        ? { ...dailyDraft.bleeding, pbacScore, clots: dailyDraft.bleeding.clots }
+        ? {
+            isBleeding: true,
+            pbacScore,
+            clots: dailyDraft.bleeding.clots ?? false,
+            flooding: dailyDraft.bleeding.flooding ?? false,
+          }
         : { isBleeding: false },
       meds: dailyDraft.meds.filter((med) => med.name.trim().length > 0),
       notesTags: painQualityOther
@@ -540,7 +755,22 @@ export default function HomePage() {
   };
 
   const handleWeeklySubmit = () => {
-    const validationIssues = validateWeeklyEntry(weeklyDraft);
+    const payloadFunction = weeklyDraft.function
+      ? { ...weeklyDraft.function }
+      : undefined;
+    if (payloadFunction) {
+      const computedOverall = computeWpaiOverall(
+        payloadFunction.wpaiAbsenteeismPct,
+        payloadFunction.wpaiPresenteeismPct
+      );
+      if (computedOverall !== undefined) {
+        payloadFunction.wpaiOverallPct = computedOverall;
+      } else {
+        delete payloadFunction.wpaiOverallPct;
+      }
+    }
+    const payload: WeeklyEntry = { ...weeklyDraft, function: payloadFunction };
+    const validationIssues = validateWeeklyEntry(payload);
     setIssues(validationIssues);
     if (validationIssues.length) {
       setInfoMessage("WPAI-Eingaben prüfen.");
@@ -548,16 +778,45 @@ export default function HomePage() {
     }
 
     setWeeklyEntries((prev) => {
-      const filtered = prev.filter((entry) => entry.isoWeek !== weeklyDraft.isoWeek);
-      return [...filtered, weeklyDraft].sort((a, b) => a.isoWeek.localeCompare(b.isoWeek));
+      const filtered = prev.filter((entry) => entry.isoWeek !== payload.isoWeek);
+      return [...filtered, payload].sort((a, b) => a.isoWeek.localeCompare(b.isoWeek));
     });
     setInfoMessage("WPAI-Werte gespeichert.");
-    setWeeklyDraft(createEmptyWeeklyEntry(weeklyDraft.isoWeek));
+    setWeeklyDraft(createEmptyWeeklyEntry(payload.isoWeek));
     setIssues([]);
   };
 
   const handleMonthlySubmit = () => {
-    const validationIssues = validateMonthlyEntry(monthlyDraft);
+    const payload: MonthlyEntry = { ...monthlyDraft };
+    if (payload.qol) {
+      const items = payload.qol.ehp5Items ?? Array(EHP5_ITEMS.length).fill(undefined);
+      const total = items.reduce((sum, entry) => (typeof entry === "number" ? sum + entry : sum), 0);
+      const allAnswered = items.every((entry) => typeof entry === "number");
+      payload.qol = {
+        ...payload.qol,
+        ehp5Items: items,
+        ehp5Total: allAnswered ? total : undefined,
+        ehp5Transformed: allAnswered ? Math.round((total / (EHP5_ITEMS.length * 4)) * 100) : undefined,
+      };
+    }
+    if (payload.mental) {
+      const phqItems = payload.mental.phq9Items ?? Array(PHQ9_ITEMS.length).fill(undefined);
+      const phqAllAnswered = phqItems.every((entry) => typeof entry === "number");
+      const phqTotal = phqItems.reduce((sum, entry) => (typeof entry === "number" ? sum + entry : sum), 0);
+      const gadItems = payload.mental.gad7Items ?? Array(GAD7_ITEMS.length).fill(undefined);
+      const gadAllAnswered = gadItems.every((entry) => typeof entry === "number");
+      const gadTotal = gadItems.reduce((sum, entry) => (typeof entry === "number" ? sum + entry : sum), 0);
+      payload.mental = {
+        ...payload.mental,
+        phq9Items: phqItems,
+        phq9: phqAllAnswered ? phqTotal : undefined,
+        phq9Severity: mapPhqSeverity(phqAllAnswered ? phqTotal : undefined),
+        gad7Items: gadItems,
+        gad7: gadAllAnswered ? gadTotal : undefined,
+        gad7Severity: mapGadSeverity(gadAllAnswered ? gadTotal : undefined),
+      };
+    }
+    const validationIssues = validateMonthlyEntry(payload);
     setIssues(validationIssues);
     if (validationIssues.length) {
       setInfoMessage("Monatliche Fragebögen prüfen.");
@@ -565,8 +824,8 @@ export default function HomePage() {
     }
 
     setMonthlyEntries((prev) => {
-      const filtered = prev.filter((entry) => entry.month !== monthlyDraft.month);
-      return [...filtered, monthlyDraft].sort((a, b) => a.month.localeCompare(b.month));
+      const filtered = prev.filter((entry) => entry.month !== payload.month);
+      return [...filtered, payload].sort((a, b) => a.month.localeCompare(b.month));
     });
     setInfoMessage("Monatsdaten gespeichert.");
     setIssues([]);
@@ -742,10 +1001,13 @@ export default function HomePage() {
   const optionalSensorsLabel = sensorsVisible ? "Optional (Hilfsmittel) ausblenden" : "Optional (Hilfsmittel) einblenden";
 
   const cycleOverlay = useMemo(() => {
-    const bucket = new Map<number, { painSum: number; symptomSum: number; count: number; sleepSum: number }>();
+    const bucket = new Map<
+      number,
+      { painSum: number; symptomSum: number; count: number; sleepSum: number; pbacSum: number; pbacCount: number }
+    >();
     annotatedDailyEntries.forEach(({ entry, cycleDay, symptomAverage }) => {
       if (!cycleDay) return;
-      const current = bucket.get(cycleDay) ?? { painSum: 0, symptomSum: 0, count: 0, sleepSum: 0 };
+      const current = bucket.get(cycleDay) ?? { painSum: 0, symptomSum: 0, count: 0, sleepSum: 0, pbacSum: 0, pbacCount: 0 };
       current.painSum += entry.painNRS;
       current.count += 1;
       if (typeof symptomAverage === "number") {
@@ -753,6 +1015,10 @@ export default function HomePage() {
       }
       if (typeof entry.sleep?.quality === "number") {
         current.sleepSum += entry.sleep.quality;
+      }
+      if (typeof entry.bleeding.pbacScore === "number") {
+        current.pbacSum += entry.bleeding.pbacScore;
+        current.pbacCount += 1;
       }
       bucket.set(cycleDay, current);
     });
@@ -763,6 +1029,7 @@ export default function HomePage() {
         painAvg: Number((stats.painSum / stats.count).toFixed(1)),
         symptomAvg: stats.symptomSum ? Number((stats.symptomSum / stats.count).toFixed(1)) : null,
         sleepAvg: stats.sleepSum ? Number((stats.sleepSum / stats.count).toFixed(1)) : null,
+        pbacAvg: stats.pbacCount ? Number((stats.pbacSum / stats.pbacCount).toFixed(1)) : null,
       }));
   }, [annotatedDailyEntries]);
 
@@ -850,33 +1117,32 @@ export default function HomePage() {
                   />
                   {renderIssuesForPath("painNRS")}
                   <div className="grid gap-4 md:grid-cols-2">
-                    <div className="grid gap-2">
-                      <FieldLabel termKey="painQuality" />
-                      <MultiSelectChips
-                        options={PAIN_QUALITIES.map((quality) => ({ value: quality, label: quality }))}
-                        value={dailyDraft.painQuality}
-                        onToggle={(next) =>
-                          setDailyDraft((prev) => ({ ...prev, painQuality: next as DailyEntry["painQuality"] }))
-                        }
-                      />
-                      {dailyDraft.painQuality.includes("anders") && (
-                        <Input
-                          className="mt-2"
-                          placeholder="Beschreibe den Schmerz"
-                          value={painQualityOther}
-                          onChange={(event) => setPainQualityOther(event.target.value)}
+                    <TermField termKey="painQuality">
+                      <div className="space-y-2">
+                        <MultiSelectChips
+                          options={PAIN_QUALITIES.map((quality) => ({ value: quality, label: quality }))}
+                          value={dailyDraft.painQuality}
+                          onToggle={(next) =>
+                            setDailyDraft((prev) => ({ ...prev, painQuality: next as DailyEntry["painQuality"] }))
+                          }
                         />
-                      )}
+                        {dailyDraft.painQuality.includes("anders") && (
+                          <Input
+                            placeholder="Beschreibe den Schmerz"
+                            value={painQualityOther}
+                            onChange={(event) => setPainQualityOther(event.target.value)}
+                          />
+                        )}
+                      </div>
                       {dailyDraft.painQuality.map((_, index) => renderIssuesForPath(`painQuality[${index}]`))}
-                    </div>
-                    <div className="grid gap-2">
-                      <FieldLabel termKey="bodyMap" />
+                    </TermField>
+                    <TermField termKey="bodyMap">
                       <BodyMap
                         value={dailyDraft.painMapRegionIds}
                         onChange={(next) => setDailyDraft((prev) => ({ ...prev, painMapRegionIds: next }))}
                       />
                       {renderIssuesForPath("painMapRegionIds")}
-                    </div>
+                    </TermField>
                   </div>
                 </Section>
 
@@ -887,13 +1153,13 @@ export default function HomePage() {
                   <div className="grid gap-4">
                     {SYMPTOM_ITEMS.map((item) => {
                       const symptom = dailyDraft.symptoms[item.key] ?? { present: false };
-                      const term = TERMS[item.termKey];
+                      const term: TermDescriptor = TERMS[item.termKey];
                       return (
                         <div key={item.key} className="rounded-lg border border-rose-100 bg-rose-50 p-4">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
                               <p className="font-medium text-rose-800">{term.label}</p>
-                              <HelpIcon text={term.help} />
+                              <InfoTip tech={term.tech ?? term.label} help={term.help} />
                             </div>
                             <div className="flex items-center gap-2">
                               <Label className="text-xs text-rose-600">vorhanden</Label>
@@ -940,23 +1206,22 @@ export default function HomePage() {
                   </div>
                 </Section>
 
-                <Section
-                  title={`${TERMS.bleeding_active.label} & ${TERMS.pbac.label}`}
-                  description="PBAC nur bei aktiver Blutung – Schritt-für-Schritt"
-                >
+                <Section title={`${TERMS.bleeding_active.label} & ${TERMS.pbac.label}`}>
                   <div className="flex flex-wrap items-center gap-3">
-                    <FieldLabel termKey="bleeding_active" />
+                    <TermHeadline termKey="bleeding_active" />
                     <Switch
                       checked={dailyDraft.bleeding.isBleeding}
                       onCheckedChange={(checked) => {
                         setDailyDraft((prev) =>
                           checked
-                            ? { ...prev, bleeding: { isBleeding: true, clots: prev.bleeding.clots ?? false, pbacScore } }
+                            ? { ...prev, bleeding: { isBleeding: true, clots: false, flooding: false, pbacScore } }
                             : { ...prev, bleeding: { isBleeding: false } }
                         );
                         if (!checked) {
                           setPbacCounts({ ...PBAC_DEFAULT_COUNTS });
                           setPbacStep(1);
+                          setPbacSelection({ product: null, saturation: null });
+                          setPbacCountDraft("0");
                         }
                       }}
                     />
@@ -964,102 +1229,257 @@ export default function HomePage() {
                   {dailyDraft.bleeding.isBleeding && (
                     <div className="space-y-4">
                       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                        <span>PBAC-Wizard • Schritt {pbacStep} von 3</span>
-                        <span>Score wird automatisch berechnet</span>
+                        <span>PBAC-Wizard • Schritt {pbacStep} von 5</span>
+                        <span>Aktueller Score: {pbacScore}</span>
                       </div>
                       {pbacStep === 1 && (
                         <div className="space-y-3">
-                          <FieldLabel termKey="pbac" />
-                          <p className="text-sm text-rose-600">
-                            Binden- und Tampon-Größe samt Sättigung: Trage ein, wie viele Produkte du heute genutzt hast.
-                          </p>
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            {PBAC_ITEMS.map((item) => (
-                              <div key={item.id} className="grid gap-1">
-                                <Label htmlFor={item.id}>{item.label}</Label>
-                                <Input
-                                  id={item.id}
-                                  type="number"
-                                  min={0}
-                                  step={1}
-                                  value={pbacCounts[item.id]}
-                                  onChange={(event) =>
-                                    setPbacCounts((prev) => ({
-                                      ...prev,
-                                      [item.id]: Math.max(0, Math.round(Number(event.target.value) || 0)),
-                                    }))
-                                  }
-                                />
-                              </div>
+                          <TermHeadline termKey="pbac" />
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {PBAC_PRODUCT_OPTIONS.map((option) => (
+                              <button
+                                key={option.id}
+                                type="button"
+                                onClick={() => {
+                                  setPbacSelection({ product: option.id, saturation: null });
+                                  setPbacStep(2);
+                                }}
+                                className={cn(
+                                  "rounded border px-3 py-2 text-left text-sm transition",
+                                  pbacSelection.product === option.id
+                                    ? "border-rose-400 bg-rose-100 text-rose-700"
+                                    : "border-rose-100 bg-white text-rose-600 hover:border-rose-300"
+                                )}
+                              >
+                                {option.label}
+                              </button>
                             ))}
-                          </div>
-                          <div className="flex justify-end">
-                            <Button type="button" onClick={() => setPbacStep(2)}>
-                              Weiter zu Koageln
-                            </Button>
                           </div>
                         </div>
                       )}
                       {pbacStep === 2 && (
                         <div className="space-y-3">
-                          <FieldLabel termKey="clots" />
-                          <div className="flex items-center gap-3">
-                            <Switch
-                              checked={dailyDraft.bleeding.clots ?? false}
-                              onCheckedChange={(checked) =>
-                                setDailyDraft((prev) => ({
-                                  ...prev,
-                                  bleeding: { ...prev.bleeding, clots: checked },
-                                }))
-                              }
-                            />
-                            <span className="text-sm text-rose-700">Koagel heute beobachtet?</span>
+                          <TermHeadline termKey="pbac" />
+                          <div className="grid grid-cols-3 gap-2">
+                            {PBAC_SATURATION_OPTIONS.map((option) => (
+                              <button
+                                key={option.id}
+                                type="button"
+                                disabled={!pbacSelection.product}
+                                onClick={() => pbacSelection.product && goToPbacProduct(pbacSelection.product, option.id)}
+                                className={cn(
+                                  "rounded border px-3 py-2 text-sm transition",
+                                  pbacSelection.saturation === option.id
+                                    ? "border-rose-400 bg-rose-100 text-rose-700"
+                                    : "border-rose-100 bg-white text-rose-600 hover:border-rose-300",
+                                  !pbacSelection.product ? "opacity-50" : ""
+                                )}
+                              >
+                                {option.label}
+                              </button>
+                            ))}
                           </div>
-                          <div className="flex justify-between">
+                          <div className="flex justify-start">
                             <Button type="button" variant="ghost" onClick={() => setPbacStep(1)}>
                               Zurück
                             </Button>
-                            <Button type="button" onClick={() => setPbacStep(3)}>
-                              Score anzeigen
-                            </Button>
                           </div>
                         </div>
                       )}
-                      {pbacStep === 3 && (
-                        <div className="space-y-3">
-                          <div className="rounded-lg border border-rose-100 bg-rose-50 p-4">
-                            <p className="text-sm font-semibold text-rose-800">PBAC-Score für heute</p>
-                            <p className="text-3xl font-bold text-rose-900">{pbacScore}</p>
-                            <p className="mt-2 text-xs text-rose-600">
-                              Richtwerte: ≥100 weist auf starke Blutung hin – besprich Auffälligkeiten mit deinem Behandlungsteam.
-                            </p>
-                          </div>
-                          <div className="flex flex-wrap gap-2 text-xs text-rose-700">
-                            {PBAC_ITEMS.filter((item) => pbacCounts[item.id] > 0).map((item) => (
-                              <span key={item.id} className="rounded bg-white px-2 py-1">
-                                {pbacCounts[item.id]} × {item.label}
-                              </span>
-                            ))}
-                          </div>
-                          <div className="flex justify-between">
+                      {pbacStep === 3 && selectedPbacItem && (
+                        <div className="space-y-4">
+                          <Labeled
+                            label={`Anzahl ${selectedPbacItem.label}`}
+                            tech={TERMS.pbac.tech}
+                            help={TERMS.pbac.help}
+                            htmlFor="pbac-count"
+                          >
+                            <Input
+                              id="pbac-count"
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={pbacCountDraft}
+                              onChange={(event) => setPbacCountDraft(event.target.value)}
+                            />
+                          </Labeled>
+                          <div className="flex flex-wrap items-center gap-2">
                             <Button type="button" variant="ghost" onClick={() => setPbacStep(2)}>
                               Zurück
                             </Button>
-                            <Button type="button" onClick={() => setPbacStep(1)}>
-                              Anpassen
+                            <div className="ml-auto flex flex-wrap gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => {
+                                  commitPbacCount();
+                                  setPbacSelection({ product: null, saturation: null });
+                                  setPbacCountDraft("0");
+                                  setPbacStep(1);
+                                }}
+                              >
+                                Weiteres Produkt
+                              </Button>
+                              <Button
+                                type="button"
+                                onClick={() => {
+                                  commitPbacCount();
+                                  setPbacStep(4);
+                                }}
+                              >
+                                Weiter zu Koageln
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="space-y-2 rounded border border-rose-100 bg-rose-50 p-3 text-xs text-rose-700">
+                            <p className="font-semibold text-rose-800">Bisher erfasste Produkte</p>
+                            {PBAC_PRODUCT_ITEMS.some((item) => pbacCounts[item.id] > 0) ? (
+                              PBAC_PRODUCT_ITEMS.map((item) =>
+                                pbacCounts[item.id] > 0 ? (
+                                  <div key={item.id} className="flex items-center justify-between">
+                                    <span>
+                                      {pbacCounts[item.id]} × {item.label}
+                                    </span>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-auto px-2 py-0 text-xs text-rose-600"
+                                      onClick={() => goToPbacProduct(item.product, item.saturation)}
+                                    >
+                                      Bearbeiten
+                                    </Button>
+                                  </div>
+                                ) : null
+                              )
+                            ) : (
+                              <p className="text-rose-500">Noch keine Produkte dokumentiert.</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {pbacStep === 4 && (
+                        <div className="space-y-3">
+                          <TermHeadline termKey="clots" />
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {PBAC_CLOT_ITEMS.map((item) => (
+                              <Labeled
+                                key={item.id}
+                                label={item.label}
+                                tech={TERMS.clots.tech}
+                                help={TERMS.clots.help}
+                                htmlFor={item.id}
+                              >
+                            <Input
+                              id={item.id}
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={String(pbacCounts[item.id] ?? 0)}
+                              onChange={(event) => {
+                                const nextValue = Math.max(0, Math.round(Number(event.target.value) || 0));
+                                const updatedCounts: PbacCounts = { ...pbacCounts, [item.id]: nextValue };
+                                setPbacCounts(updatedCounts);
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  bleeding: {
+                                    ...prev.bleeding,
+                                    clots: (updatedCounts.clot_small ?? 0) + (updatedCounts.clot_large ?? 0) > 0,
+                                  },
+                                }));
+                              }}
+                            />
+                          </Labeled>
+                        ))}
+                          </div>
+                          <div className="flex justify-between">
+                            <Button type="button" variant="ghost" onClick={() => setPbacStep(3)}>
+                              Zurück
+                            </Button>
+                            <Button type="button" onClick={() => setPbacStep(5)}>
+                              Weiter zu Flooding
                             </Button>
                           </div>
                         </div>
                       )}
-                      {renderIssuesForPath("bleeding.pbacScore")}
-                      {renderIssuesForPath("bleeding.clots")}
+                      {pbacStep === 5 && (
+                        <div className="space-y-3">
+                          <TermField termKey="flooding">
+                            <div className="flex items-center gap-3">
+                              <Switch
+                                checked={pbacFlooding}
+                                onCheckedChange={(checked) =>
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    bleeding: { ...prev.bleeding, flooding: checked },
+                                  }))
+                                }
+                              />
+                              <span className="text-sm text-rose-700">Flooding heute beobachtet?</span>
+                            </div>
+                            {renderIssuesForPath("bleeding.flooding")}
+                          </TermField>
+                          <div className="space-y-2 rounded border border-rose-100 bg-rose-50 p-3 text-xs text-rose-700">
+                            <p className="font-semibold text-rose-800">PBAC-Zusammenfassung</p>
+                            <p className="text-sm">Score heute: {pbacScore}</p>
+                            <div className="space-y-1">
+                              {PBAC_PRODUCT_ITEMS.filter((item) => pbacCounts[item.id] > 0).map((item) => (
+                                <div key={item.id} className="flex items-center justify-between">
+                                  <span>
+                                    {pbacCounts[item.id]} × {item.label}
+                                  </span>
+                                  <span className="font-semibold text-rose-800">+{pbacCounts[item.id] * item.score}</span>
+                                </div>
+                              ))}
+                              {PBAC_CLOT_ITEMS.filter((item) => pbacCounts[item.id] > 0).map((item) => (
+                                <div key={item.id} className="flex items-center justify-between">
+                                  <span>
+                                    {pbacCounts[item.id]} × {item.label}
+                                  </span>
+                                  <span className="font-semibold text-rose-800">+{pbacCounts[item.id] * item.score}</span>
+                                </div>
+                              ))}
+                              {pbacFlooding ? (
+                                <div className="flex items-center justify-between">
+                                  <span>Flooding</span>
+                                  <span className="font-semibold text-rose-800">+{PBAC_FLOODING_SCORE}</span>
+                                </div>
+                              ) : null}
+                              {PBAC_PRODUCT_ITEMS.every((item) => pbacCounts[item.id] === 0) &&
+                              PBAC_CLOT_ITEMS.every((item) => pbacCounts[item.id] === 0) &&
+                              !pbacFlooding ? (
+                                <p className="text-rose-500">Noch keine PBAC-Daten erfasst.</p>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="flex justify-between">
+                            <Button type="button" variant="ghost" onClick={() => setPbacStep(4)}>
+                              Zurück
+                            </Button>
+                            <Button
+                              type="button"
+                              onClick={() => {
+                                setPbacStep(1);
+                                setPbacSelection({ product: null, saturation: null });
+                                setPbacCountDraft("0");
+                              }}
+                            >
+                              Wizard schließen
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                      <div className="space-y-1 text-xs text-rose-600">
+                        {renderIssuesForPath("bleeding.pbacScore")}
+                        {renderIssuesForPath("bleeding.clots")}
+                      </div>
                     </div>
                   )}
                 </Section>
 
                 <Section title={TERMS.meds.label} description="Eingenommene Medikamente & Hilfen des Tages">
                   <div className="grid gap-4">
-                    <FieldLabel termKey="meds" />
+                    <TermHeadline termKey="meds" />
                     {dailyDraft.meds.map((med, index) => (
                       <div key={index} className="grid gap-2 rounded-lg border border-rose-100 bg-rose-50 p-4">
                         <div className="grid gap-1">
@@ -1140,29 +1560,29 @@ export default function HomePage() {
                       + Medikament oder Hilfe ergänzen
                     </Button>
                     <div className="grid gap-2">
-                      <FieldLabel termKey="rescue" htmlFor="rescue-count" />
-                      <Input
-                        id="rescue-count"
-                        type="number"
-                        min={0}
-                        step={1}
-                        value={dailyDraft.rescueDosesCount ?? ""}
-                        onChange={(event) =>
-                          setDailyDraft((prev) => ({
-                            ...prev,
-                            rescueDosesCount: event.target.value ? Number(event.target.value) : undefined,
-                          }))
-                        }
-                      />
-                      {renderIssuesForPath("rescueDosesCount")}
+                      <TermField termKey="rescue" htmlFor="rescue-count">
+                        <Input
+                          id="rescue-count"
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={dailyDraft.rescueDosesCount ?? ""}
+                          onChange={(event) =>
+                            setDailyDraft((prev) => ({
+                              ...prev,
+                              rescueDosesCount: event.target.value ? Number(event.target.value) : undefined,
+                            }))
+                          }
+                        />
+                        {renderIssuesForPath("rescueDosesCount")}
+                      </TermField>
                     </div>
                   </div>
                 </Section>
 
                 <Section title="Schlaf" description="Kurzabfrage ohne Hilfsmittel">
                   <div className="grid gap-4 md:grid-cols-3">
-                    <div>
-                      <FieldLabel termKey="sleep_hours" htmlFor="sleep-hours" />
+                    <TermField termKey="sleep_hours" htmlFor="sleep-hours">
                       <Input
                         id="sleep-hours"
                         type="number"
@@ -1178,7 +1598,7 @@ export default function HomePage() {
                         }
                       />
                       {renderIssuesForPath("sleep.hours")}
-                    </div>
+                    </TermField>
                     <div>
                       <ScoreInput
                         id="sleep-quality"
@@ -1197,8 +1617,7 @@ export default function HomePage() {
                       />
                       {renderIssuesForPath("sleep.quality")}
                     </div>
-                    <div>
-                      <FieldLabel termKey="awakenings" htmlFor="sleep-awakenings" />
+                    <TermField termKey="awakenings" htmlFor="sleep-awakenings">
                       <Input
                         id="sleep-awakenings"
                         type="number"
@@ -1216,7 +1635,7 @@ export default function HomePage() {
                         }
                       />
                       {renderIssuesForPath("sleep.awakenings")}
-                    </div>
+                    </TermField>
                   </div>
                 </Section>
 
@@ -1224,8 +1643,7 @@ export default function HomePage() {
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="grid gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
                       <p className="font-medium text-rose-800">Darm</p>
-                      <div>
-                        <FieldLabel termKey="bristol" />
+                      <TermField termKey="bristol">
                         <Select
                           value={dailyDraft.gi?.bristolType ? String(dailyDraft.gi.bristolType) : ""}
                           onValueChange={(value) =>
@@ -1250,7 +1668,7 @@ export default function HomePage() {
                           </SelectContent>
                         </Select>
                         {renderIssuesForPath("gi.bristolType")}
-                      </div>
+                      </TermField>
                       <ScoreInput
                         id="bowel-pain"
                         label={TERMS.bowelPain.label}
@@ -1270,8 +1688,7 @@ export default function HomePage() {
                     </div>
                     <div className="grid gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
                       <p className="font-medium text-rose-800">Blase</p>
-                      <div className="grid gap-2">
-                        <FieldLabel termKey="urinary_freq" htmlFor="urinary-frequency" />
+                      <TermField termKey="urinary_freq" htmlFor="urinary-frequency">
                         <Input
                           id="urinary-frequency"
                           type="number"
@@ -1289,7 +1706,7 @@ export default function HomePage() {
                           }
                         />
                         {renderIssuesForPath("urinary.freqPerDay")}
-                      </div>
+                      </TermField>
                       <ScoreInput
                         id="urinary-urgency"
                         label={TERMS.urinary_urgency.label}
@@ -1334,8 +1751,7 @@ export default function HomePage() {
                     </span>
                   </div>
                   {fsfiOptIn && (
-                    <div className="grid gap-2">
-                      <FieldLabel termKey="fsfi" htmlFor="fsfi-score" />
+                    <TermField termKey="fsfi" htmlFor="fsfi-score">
                       <Input
                         id="fsfi-score"
                         type="number"
@@ -1353,24 +1769,25 @@ export default function HomePage() {
                         }
                       />
                       {renderIssuesForPath("sexual.fsfiTotal")}
-                    </div>
+                    </TermField>
                   )}
                 </Section>
 
                 <Section title="Notizen & Tags" description="Freitext oder wiederkehrende Muster markieren">
                   <div className="grid gap-3">
-                    <div className="flex gap-2">
-                      <FieldLabel termKey="notesTags" htmlFor="notes-tag-input" />
-                      <Input
-                        id="notes-tag-input"
-                        placeholder="Neuer Tag"
-                        value={notesTagDraft}
-                        onChange={(event) => setNotesTagDraft(event.target.value)}
-                      />
-                      <Button type="button" variant="secondary" onClick={handleAddTag}>
-                        Hinzufügen
-                      </Button>
-                    </div>
+                    <TermField termKey="notesTags" htmlFor="notes-tag-input">
+                      <div className="flex flex-wrap gap-2">
+                        <Input
+                          id="notes-tag-input"
+                          placeholder="Neuer Tag"
+                          value={notesTagDraft}
+                          onChange={(event) => setNotesTagDraft(event.target.value)}
+                        />
+                        <Button type="button" variant="secondary" onClick={handleAddTag}>
+                          Hinzufügen
+                        </Button>
+                      </div>
+                    </TermField>
                     <div className="flex flex-wrap gap-2">
                       {(dailyDraft.notesTags ?? []).map((tag) => (
                         <Badge key={tag} className="flex items-center gap-2 bg-rose-200 text-rose-700">
@@ -1381,13 +1798,14 @@ export default function HomePage() {
                         </Badge>
                       ))}
                     </div>
-                    <FieldLabel termKey="notesFree" htmlFor="notes-free" />
-                    <Textarea
-                      id="notes-free"
-                      placeholder="Freitextnotizen"
-                      value={dailyDraft.notesFree ?? ""}
-                      onChange={(event) => setDailyDraft((prev) => ({ ...prev, notesFree: event.target.value }))}
-                    />
+                    <TermField termKey="notesFree" htmlFor="notes-free">
+                      <Textarea
+                        id="notes-free"
+                        placeholder="Freitextnotizen"
+                        value={dailyDraft.notesFree ?? ""}
+                        onChange={(event) => setDailyDraft((prev) => ({ ...prev, notesFree: event.target.value }))}
+                      />
+                    </TermField>
                   </div>
                 </Section>
 
@@ -1410,7 +1828,7 @@ export default function HomePage() {
                       <div className="grid gap-2 rounded-lg border border-rose-100 bg-rose-50 p-4">
                         <p className="font-medium text-rose-800">Ovulation / LH-Tests</p>
                         <div className="flex items-center gap-3">
-                          <FieldLabel termKey="opk_done" />
+                          <TermHeadline termKey="opk_done" />
                           <Switch
                             checked={dailyDraft.ovulation?.lhTestDone ?? false}
                             onCheckedChange={(checked) =>
@@ -1424,7 +1842,7 @@ export default function HomePage() {
                         {(dailyDraft.ovulation?.lhTestDone ?? false) && (
                           <div className="grid gap-2 md:grid-cols-3">
                             <div className="flex items-center gap-3">
-                              <FieldLabel termKey="opk_positive" />
+                              <TermHeadline termKey="opk_positive" />
                               <Switch
                                 checked={dailyDraft.ovulation?.lhPositive ?? false}
                                 onCheckedChange={(checked) =>
@@ -1451,8 +1869,7 @@ export default function HomePage() {
                             </div>
                           </div>
                         )}
-                        <div>
-                          <FieldLabel termKey="bbt" />
+                        <TermField termKey="bbt">
                           <Input
                             type="number"
                             step="0.01"
@@ -1470,14 +1887,13 @@ export default function HomePage() {
                             }
                           />
                           {renderIssuesForPath("ovulation.bbtCelsius")}
-                        </div>
+                        </TermField>
                       </div>
 
                       <div className="grid gap-2 rounded-lg border border-rose-100 bg-rose-50 p-4">
                         <p className="font-medium text-rose-800">Aktivität (Wearable/Smartphone)</p>
                         <div className="grid gap-2 md:grid-cols-2">
-                          <div>
-                            <FieldLabel termKey="steps" htmlFor="activity-steps" />
+                          <TermField termKey="steps" htmlFor="activity-steps">
                             <Input
                               id="activity-steps"
                               type="number"
@@ -1495,9 +1911,8 @@ export default function HomePage() {
                               }
                             />
                             {renderIssuesForPath("activity.steps")}
-                          </div>
-                          <div>
-                            <FieldLabel termKey="activeMinutes" htmlFor="activity-minutes" />
+                          </TermField>
+                          <TermField termKey="activeMinutes" htmlFor="activity-minutes">
                             <Input
                               id="activity-minutes"
                               type="number"
@@ -1515,25 +1930,20 @@ export default function HomePage() {
                               }
                             />
                             {renderIssuesForPath("activity.activeMinutes")}
-                          </div>
+                          </TermField>
                         </div>
                       </div>
 
                       <div className="grid gap-2 rounded-lg border border-rose-100 bg-rose-50 p-4">
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium text-rose-800">{TERMS.hrv.label}</p>
-                            <HelpIcon text={TERMS.hrv.help} />
-                            <Badge className="bg-amber-100 text-amber-800">Optional (Hilfsmittel nötig: {TERMS.hrv.deviceNeeded})</Badge>
-                          </div>
+                          <TermHeadline termKey="hrv" />
                           <Switch checked={exploratoryVisible} onCheckedChange={setExploratoryVisible} />
                         </div>
                         <p className="text-xs text-rose-600">
                           HRV nur explorativ, kein Schmerzsurrogat. Wird nicht in Kerntrends angezeigt.
                         </p>
                         {exploratoryVisible && (
-                          <div>
-                            <FieldLabel termKey="hrv" />
+                          <TermField termKey="hrv">
                             <Input
                               type="number"
                               min={0}
@@ -1549,7 +1959,7 @@ export default function HomePage() {
                               }
                             />
                             {renderIssuesForPath("exploratory.hrvRmssdMs")}
-                          </div>
+                          </TermField>
                         )}
                       </div>
                     </div>
@@ -1729,6 +2139,7 @@ export default function HomePage() {
                         <span>{TERMS.nrs.label}: {row.painAvg.toFixed(1)}</span>
                         <span>Symptome: {row.symptomAvg?.toFixed(1) ?? "–"}</span>
                         <span>{TERMS.sleep_quality.label}: {row.sleepAvg?.toFixed(1) ?? "–"}</span>
+                        <span>{TERMS.pbac.label}: {row.pbacAvg?.toFixed(1) ?? "–"}</span>
                       </div>
                     ))}
                   </div>
@@ -1772,74 +2183,77 @@ export default function HomePage() {
             aside={<Calendar size={16} className="text-rose-500" />}
           >
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="grid gap-2">
-                <Label>Kalenderwoche (ISO)</Label>
+              <Labeled label="Kalenderwoche (ISO)" htmlFor="iso-week">
                 <Input
+                  id="iso-week"
                   value={weeklyDraft.isoWeek}
                   onChange={(event) => setWeeklyDraft((prev) => ({ ...prev, isoWeek: event.target.value }))}
                 />
                 {renderIssuesForPath("isoWeek")}
-              </div>
-              <div className="grid gap-2">
-                <FieldLabel termKey="wpai_abs" htmlFor="wpai-abs" />
+              </Labeled>
+              <TermField termKey="wpai_abs" htmlFor="wpai-abs">
                 <Input
                   id="wpai-abs"
                   type="number"
                   min={0}
                   max={100}
                   value={weeklyDraft.function?.wpaiAbsenteeismPct ?? ""}
-                  onChange={(event) =>
-                    setWeeklyDraft((prev) => ({
-                      ...prev,
-                      function: {
-                        ...(prev.function ?? {}),
-                        wpaiAbsenteeismPct: event.target.value ? Number(event.target.value) : undefined,
-                      },
-                    }))
-                  }
+                  onChange={(event) => {
+                    const value = event.target.value ? Number(event.target.value) : undefined;
+                    setWeeklyDraft((prev) => {
+                      const nextFunction = { ...(prev.function ?? {}), wpaiAbsenteeismPct: value };
+                      const computed = computeWpaiOverall(value, nextFunction.wpaiPresenteeismPct);
+                      if (computed !== undefined) {
+                        nextFunction.wpaiOverallPct = computed;
+                      } else {
+                        delete nextFunction.wpaiOverallPct;
+                      }
+                      return { ...prev, function: nextFunction };
+                    });
+                  }}
                 />
                 {renderIssuesForPath("function.wpaiAbsenteeismPct")}
-              </div>
-              <div className="grid gap-2">
-                <FieldLabel termKey="wpai_pre" htmlFor="wpai-pre" />
+              </TermField>
+              <TermField termKey="wpai_pre" htmlFor="wpai-pre">
                 <Input
                   id="wpai-pre"
                   type="number"
                   min={0}
                   max={100}
                   value={weeklyDraft.function?.wpaiPresenteeismPct ?? ""}
-                  onChange={(event) =>
-                    setWeeklyDraft((prev) => ({
-                      ...prev,
-                      function: {
-                        ...(prev.function ?? {}),
-                        wpaiPresenteeismPct: event.target.value ? Number(event.target.value) : undefined,
-                      },
-                    }))
-                  }
+                  onChange={(event) => {
+                    const value = event.target.value ? Number(event.target.value) : undefined;
+                    setWeeklyDraft((prev) => {
+                      const nextFunction = { ...(prev.function ?? {}), wpaiPresenteeismPct: value };
+                      const computed = computeWpaiOverall(nextFunction.wpaiAbsenteeismPct, value);
+                      if (computed !== undefined) {
+                        nextFunction.wpaiOverallPct = computed;
+                      } else {
+                        delete nextFunction.wpaiOverallPct;
+                      }
+                      return { ...prev, function: nextFunction };
+                    });
+                  }}
                 />
                 {renderIssuesForPath("function.wpaiPresenteeismPct")}
-              </div>
-              <div className="grid gap-2">
-                <FieldLabel termKey="wpai_overall" htmlFor="wpai-overall" />
+              </TermField>
+              <TermField termKey="wpai_overall" htmlFor="wpai-overall">
                 <Input
                   id="wpai-overall"
                   type="number"
                   min={0}
                   max={100}
                   value={weeklyDraft.function?.wpaiOverallPct ?? ""}
-                  onChange={(event) =>
-                    setWeeklyDraft((prev) => ({
-                      ...prev,
-                      function: {
-                        ...(prev.function ?? {}),
-                        wpaiOverallPct: event.target.value ? Number(event.target.value) : undefined,
-                      },
-                    }))
-                  }
+                  readOnly
                 />
                 {renderIssuesForPath("function.wpaiOverallPct")}
-              </div>
+              </TermField>
+            </div>
+            <div className="rounded-lg border border-rose-100 bg-rose-50 p-4 text-sm text-rose-700">
+              <p className="font-semibold text-rose-800">WPAI-Zusammenfassung</p>
+              <p>Fehlzeiten: {wpaiAbsenteeism ?? "–"}%</p>
+              <p>Präsenzminderung: {wpaiPresenteeism ?? "–"}%</p>
+              <p>Gesamt (Formel): {wpaiOverall ?? "–"}%</p>
             </div>
             <div className="flex gap-3 pt-4">
               <Button type="button" onClick={handleWeeklySubmit}>
@@ -1907,101 +2321,194 @@ export default function HomePage() {
             description="Lebensqualität (EHP-5), Stimmung (PHQ-9), Angst (GAD-7) und optionale PROMIS-T-Scores"
             aside={<Calendar size={16} className="text-rose-500" />}
           >
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <Label>Monat (YYYY-MM)</Label>
+            <div className="grid gap-6">
+              <Labeled label="Monat (YYYY-MM)" htmlFor="monthly-month">
                 <Input
+                  id="monthly-month"
+                  type="month"
                   value={monthlyDraft.month}
                   onChange={(event) => setMonthlyDraft((prev) => ({ ...prev, month: event.target.value }))}
                 />
                 {renderIssuesForPath("month")}
+              </Labeled>
+              <div className="grid gap-6 lg:grid-cols-2">
+                <div className="space-y-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
+                  <TermHeadline termKey="ehp5" />
+                  <p className="text-xs text-rose-600">{TERMS.ehp5.help}</p>
+                  {EHP5_ITEMS.map((item, index) => {
+                    const value = monthlyDraft.qol?.ehp5Items?.[index];
+                    const selectValue = value !== undefined ? String(value) : "unset";
+                    return (
+                      <Labeled
+                        key={item}
+                        label={`EHP-5 ${index + 1}: ${item}`}
+                        tech="Antwort 0–4"
+                        help="0 = gar nicht, 4 = immer"
+                        htmlFor={`ehp5-${index}`}
+                      >
+                        <Select
+                          value={selectValue}
+                          onValueChange={(val) => handleEhp5ItemChange(index, val === "unset" ? undefined : Number(val))}
+                        >
+                          <SelectTrigger id={`ehp5-${index}`}>
+                            <SelectValue placeholder="0–4 auswählen" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unset">Keine Angabe</SelectItem>
+                            {SCALE_OPTIONS_0_4.map((option) => (
+                              <SelectItem key={option} value={String(option)}>
+                                {option}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {renderIssuesForPath(`qol.ehp5Items[${index}]`)}
+                      </Labeled>
+                    );
+                  })}
+                  <div className="rounded border border-rose-100 bg-white p-3 text-sm text-rose-700">
+                    <p>Summe: {monthlyDraft.qol?.ehp5Total ?? "–"}</p>
+                    <p>Transform (0–100): {monthlyDraft.qol?.ehp5Transformed ?? "–"}</p>
+                    <div className="space-y-1 text-xs text-rose-600">
+                      {renderIssuesForPath("qol.ehp5Total")}
+                      {renderIssuesForPath("qol.ehp5Transformed")}
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
+                  <TermHeadline termKey="phq9" />
+                  <p className="text-xs text-rose-600">{TERMS.phq9.help}</p>
+                  {PHQ9_ITEMS.map((item, index) => {
+                    const value = monthlyDraft.mental?.phq9Items?.[index];
+                    const selectValue = value !== undefined ? String(value) : "unset";
+                    return (
+                      <Labeled
+                        key={item}
+                        label={`PHQ-9 ${index + 1}: ${item}`}
+                        tech="Antwort 0–3"
+                        help="0 = überhaupt nicht, 3 = fast jeden Tag"
+                        htmlFor={`phq-${index}`}
+                      >
+                        <Select
+                          value={selectValue}
+                          onValueChange={(val) => handlePhqItemChange(index, val === "unset" ? undefined : Number(val))}
+                        >
+                          <SelectTrigger id={`phq-${index}`}>
+                            <SelectValue placeholder="0–3 auswählen" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unset">Keine Angabe</SelectItem>
+                            {SCALE_OPTIONS_0_3.map((option) => (
+                              <SelectItem key={option} value={String(option)}>
+                                {option}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {renderIssuesForPath(`mental.phq9Items[${index}]`)}
+                      </Labeled>
+                    );
+                  })}
+                  <div className="flex items-center justify-between rounded border border-rose-100 bg-white p-3 text-sm text-rose-700">
+                    <div>
+                      <p>Summe: {monthlyDraft.mental?.phq9 ?? "–"}</p>
+                      <div className="space-y-1 text-xs text-rose-600">
+                        {renderIssuesForPath("mental.phq9")}
+                        {renderIssuesForPath("mental.phq9Severity")}
+                      </div>
+                    </div>
+                    {phqSeverity ? (
+                      <Badge className={cn("text-xs", severityBadgeClass(phqSeverity))}>{severityLabel(phqSeverity)}</Badge>
+                    ) : null}
+                  </div>
+                </div>
               </div>
-              <div>
-                <FieldLabel termKey="ehp5" htmlFor="ehp5-total" />
-                <Input
-                  id="ehp5-total"
-                  type="number"
-                  min={0}
-                  value={monthlyDraft.qol?.ehp5Total ?? ""}
-                  onChange={(event) =>
-                    setMonthlyDraft((prev) => ({
-                      ...prev,
-                      qol: { ...(prev.qol ?? {}), ehp5Total: event.target.value ? Number(event.target.value) : undefined },
-                    }))
-                  }
-                />
-                {renderIssuesForPath("qol.ehp5Total")}
-              </div>
-              <div>
-                <FieldLabel termKey="phq9" htmlFor="phq9-score" />
-                <Input
-                  id="phq9-score"
-                  type="number"
-                  min={0}
-                  max={27}
-                  value={monthlyDraft.mental?.phq9 ?? ""}
-                  onChange={(event) =>
-                    setMonthlyDraft((prev) => ({
-                      ...prev,
-                      mental: { ...(prev.mental ?? {}), phq9: event.target.value ? Number(event.target.value) : undefined },
-                    }))
-                  }
-                />
-                {renderIssuesForPath("mental.phq9")}
-              </div>
-              <div>
-                <FieldLabel termKey="gad7" htmlFor="gad7-score" />
-                <Input
-                  id="gad7-score"
-                  type="number"
-                  min={0}
-                  max={21}
-                  value={monthlyDraft.mental?.gad7 ?? ""}
-                  onChange={(event) =>
-                    setMonthlyDraft((prev) => ({
-                      ...prev,
-                      mental: { ...(prev.mental ?? {}), gad7: event.target.value ? Number(event.target.value) : undefined },
-                    }))
-                  }
-                />
-                {renderIssuesForPath("mental.gad7")}
-              </div>
-              <div>
-                <FieldLabel termKey="promis_fatigue" htmlFor="promis-fatigue" />
-                <Input
-                  id="promis-fatigue"
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={monthlyDraft.promis?.fatigueT ?? ""}
-                  onChange={(event) =>
-                    setMonthlyDraft((prev) => ({
-                      ...prev,
-                      promis: { ...(prev.promis ?? {}), fatigueT: event.target.value ? Number(event.target.value) : undefined },
-                    }))
-                  }
-                />
-                {renderIssuesForPath("promis.fatigueT")}
-              </div>
-              <div>
-                <FieldLabel termKey="promis_painInt" htmlFor="promis-pain" />
-                <Input
-                  id="promis-pain"
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={monthlyDraft.promis?.painInterferenceT ?? ""}
-                  onChange={(event) =>
-                    setMonthlyDraft((prev) => ({
-                      ...prev,
-                      promis: {
-                        ...(prev.promis ?? {}),
-                        painInterferenceT: event.target.value ? Number(event.target.value) : undefined,
-                      },
-                    }))
-                  }
-                />
-                {renderIssuesForPath("promis.painInterferenceT")}
+              <div className="grid gap-6 lg:grid-cols-2">
+                <div className="space-y-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
+                  <TermHeadline termKey="gad7" />
+                  <p className="text-xs text-rose-600">{TERMS.gad7.help}</p>
+                  {GAD7_ITEMS.map((item, index) => {
+                    const value = monthlyDraft.mental?.gad7Items?.[index];
+                    const selectValue = value !== undefined ? String(value) : "unset";
+                    return (
+                      <Labeled
+                        key={item}
+                        label={`GAD-7 ${index + 1}: ${item}`}
+                        tech="Antwort 0–3"
+                        help="0 = überhaupt nicht, 3 = fast jeden Tag"
+                        htmlFor={`gad-${index}`}
+                      >
+                        <Select
+                          value={selectValue}
+                          onValueChange={(val) => handleGadItemChange(index, val === "unset" ? undefined : Number(val))}
+                        >
+                          <SelectTrigger id={`gad-${index}`}>
+                            <SelectValue placeholder="0–3 auswählen" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unset">Keine Angabe</SelectItem>
+                            {SCALE_OPTIONS_0_3.map((option) => (
+                              <SelectItem key={option} value={String(option)}>
+                                {option}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {renderIssuesForPath(`mental.gad7Items[${index}]`)}
+                      </Labeled>
+                    );
+                  })}
+                  <div className="flex items-center justify-between rounded border border-rose-100 bg-white p-3 text-sm text-rose-700">
+                    <div>
+                      <p>Summe: {monthlyDraft.mental?.gad7 ?? "–"}</p>
+                      <div className="space-y-1 text-xs text-rose-600">
+                        {renderIssuesForPath("mental.gad7")}
+                        {renderIssuesForPath("mental.gad7Severity")}
+                      </div>
+                    </div>
+                    {gadSeverity ? (
+                      <Badge className={cn("text-xs", severityBadgeClass(gadSeverity))}>{severityLabel(gadSeverity)}</Badge>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="space-y-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
+                  <p className="font-medium text-rose-800">PROMIS T-Scores</p>
+                  <TermField termKey="promis_fatigue" htmlFor="promis-fatigue">
+                    <Input
+                      id="promis-fatigue"
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={monthlyDraft.promis?.fatigueT ?? ""}
+                      onChange={(event) =>
+                        setMonthlyDraft((prev) => ({
+                          ...prev,
+                          promis: { ...(prev.promis ?? {}), fatigueT: event.target.value ? Number(event.target.value) : undefined },
+                        }))
+                      }
+                    />
+                    {renderIssuesForPath("promis.fatigueT")}
+                  </TermField>
+                  <TermField termKey="promis_painInt" htmlFor="promis-pain">
+                    <Input
+                      id="promis-pain"
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={monthlyDraft.promis?.painInterferenceT ?? ""}
+                      onChange={(event) =>
+                        setMonthlyDraft((prev) => ({
+                          ...prev,
+                          promis: {
+                            ...(prev.promis ?? {}),
+                            painInterferenceT: event.target.value ? Number(event.target.value) : undefined,
+                          },
+                        }))
+                      }
+                    />
+                    {renderIssuesForPath("promis.painInterferenceT")}
+                  </TermField>
+                </div>
               </div>
             </div>
             <div className="flex gap-3 pt-4">
@@ -2030,9 +2537,12 @@ export default function HomePage() {
                     toCsv(
                       monthlyEntries.map((entry) => ({
                         Monat: entry.month,
-                        [`${TERMS.ehp5.label}`]: entry.qol?.ehp5Total ?? "",
+                        [`${TERMS.ehp5.label} Summe`]: entry.qol?.ehp5Total ?? "",
+                        [`${TERMS.ehp5.label} Transform`]: entry.qol?.ehp5Transformed ?? "",
                         [`${TERMS.phq9.label}`]: entry.mental?.phq9 ?? "",
+                        [`${TERMS.phq9.label} Ampel`]: entry.mental?.phq9Severity ?? "",
                         [`${TERMS.gad7.label}`]: entry.mental?.gad7 ?? "",
+                        [`${TERMS.gad7.label} Ampel`]: entry.mental?.gad7Severity ?? "",
                         [`${TERMS.promis_fatigue.label}`]: entry.promis?.fatigueT ?? "",
                         [`${TERMS.promis_painInt.label}`]: entry.promis?.painInterferenceT ?? "",
                       }))
