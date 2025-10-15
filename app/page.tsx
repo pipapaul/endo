@@ -892,12 +892,38 @@ export default function HomePage() {
   }, [pbacScore, dailyDraft.bleeding.isBleeding]);
 
   useEffect(() => {
-    if (!activeUrinary) {
+    if (activeUrinary) {
       setDailyDraft((prev) => {
-        if (!prev.urinaryOpt) return prev;
-        return { ...prev, urinaryOpt: undefined };
+        const urgency = prev.urinary?.urgency;
+        if (urgency === undefined || prev.urinaryOpt?.urgency !== undefined) {
+          return prev;
+        }
+        const nextUrinary = { ...(prev.urinary ?? {}) };
+        delete nextUrinary.urgency;
+        const cleanedUrinary = Object.keys(nextUrinary).length ? nextUrinary : undefined;
+        return {
+          ...prev,
+          urinary: cleanedUrinary,
+          urinaryOpt: { ...(prev.urinaryOpt ?? {}), urgency },
+        };
       });
+      return;
     }
+
+    setDailyDraft((prev) => {
+      if (!prev.urinaryOpt) return prev;
+      const nextUrinaryOpt = { ...prev.urinaryOpt };
+      const urgency = nextUrinaryOpt.urgency;
+      delete nextUrinaryOpt.urgency;
+      const cleanedOpt = Object.keys(nextUrinaryOpt).length ? nextUrinaryOpt : undefined;
+      const nextUrinary =
+        urgency !== undefined ? { ...(prev.urinary ?? {}), urgency } : prev.urinary;
+      return {
+        ...prev,
+        urinary: nextUrinary,
+        urinaryOpt: cleanedOpt,
+      };
+    });
   }, [activeUrinary]);
 
   useEffect(() => {
@@ -922,8 +948,8 @@ export default function HomePage() {
     setFeatureFlags((prev) => ({ ...prev, [key]: value }));
     if (value) return;
     setDailyDraft((prev) => {
-      if (key === "moduleUrinary" && prev.urinaryOpt) {
-        return { ...prev, urinaryOpt: undefined };
+      if (key === "moduleUrinary") {
+        return prev;
       }
       if (key === "moduleHeadache" && prev.headacheOpt) {
         return { ...prev, headacheOpt: undefined };
@@ -2400,7 +2426,17 @@ export default function HomePage() {
                       {renderIssuesForPath("gi.bowelPain")}
                     </div>
                     <div className="grid gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
-                      <p className="font-medium text-rose-800">Blase</p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-medium text-rose-800">Blase</p>
+                        <ModuleToggleRow
+                          label="Dranginkontinenz"
+                          tech={MODULE_TERMS.urinaryOpt.urgency.tech}
+                          help={MODULE_TERMS.urinaryOpt.urgency.help}
+                          checked={activeUrinary}
+                          onCheckedChange={(checked) => handleFeatureToggle("moduleUrinary", checked)}
+                          className="bg-white/60"
+                        />
+                      </div>
                       <TermField termKey="urinary_freq" htmlFor="urinary-frequency">
                         <Input
                           id="urinary-frequency"
@@ -2420,22 +2456,31 @@ export default function HomePage() {
                         />
                         {renderIssuesForPath("urinary.freqPerDay")}
                       </TermField>
-                      <ScoreInput
-                        id="urinary-urgency"
-                        label={TERMS.urinary_urgency.label}
-                        termKey="urinary_urgency"
-                        value={dailyDraft.urinary?.urgency ?? 0}
-                        onChange={(value) =>
-                          setDailyDraft((prev) => ({
-                            ...prev,
-                            urinary: {
-                              ...(prev.urinary ?? {}),
-                              urgency: Math.max(0, Math.min(10, Math.round(value))),
-                            },
-                          }))
-                        }
-                      />
-                      {renderIssuesForPath("urinary.urgency")}
+                      {activeUrinary ? (
+                        <InlineNotice
+                          title="Harndrang im Modul"
+                          text="Spezifische Harndrang- und Leckagewerte findest du unten im Dranginkontinenz-Modul."
+                        />
+                      ) : (
+                        <>
+                          <ScoreInput
+                            id="urinary-urgency"
+                            label={TERMS.urinary_urgency.label}
+                            termKey="urinary_urgency"
+                            value={dailyDraft.urinary?.urgency ?? 0}
+                            onChange={(value) =>
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                urinary: {
+                                  ...(prev.urinary ?? {}),
+                                  urgency: Math.max(0, Math.min(10, Math.round(value))),
+                                },
+                              }))
+                            }
+                          />
+                          {renderIssuesForPath("urinary.urgency")}
+                        </>
+                      )}
                       <ScoreInput
                         id="urinary-pain"
                         label={TERMS.urinary_pain.label}
@@ -2452,14 +2497,6 @@ export default function HomePage() {
                         }
                       />
                       {renderIssuesForPath("urinary.pain")}
-                      <ModuleToggleRow
-                        label="Dranginkontinenz"
-                        tech={MODULE_TERMS.urinaryOpt.urgency.tech}
-                        help={MODULE_TERMS.urinaryOpt.urgency.help}
-                        checked={activeUrinary}
-                        onCheckedChange={(checked) => handleFeatureToggle("moduleUrinary", checked)}
-                        className="bg-white/60"
-                      />
                     </div>
                   </div>
                 </Section>
