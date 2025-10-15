@@ -1,373 +1,152 @@
 import { z } from "zod";
 
-import { DailyEntry, MonthlyEntry, WeeklyEntry } from "./types";
-
-const zInt01 = z.number().int().min(0).max(10);
-const zNonNeg = z.number().int().min(0);
-
-const formatZodPath = (path: (string | number)[]) => {
-  if (!path.length) return "dailyEntry";
-  return path
-    .map((segment) => (typeof segment === "number" ? `[${segment}]` : segment))
-    .reduce((acc, segment) => {
-      if (!acc) return segment;
-      return segment.startsWith("[") ? `${acc}${segment}` : `${acc}.${segment}`;
-    }, "");
-};
-
-export const zDailyEntry = z
-  .object({
-    urinaryOpt: z
-      .object({
-        urgency: zInt01.optional(),
-        leaksCount: zNonNeg.optional(),
-        nocturia: zNonNeg.optional(),
-      })
-      .optional(),
-    headacheOpt: z
-      .object({
-        present: z.boolean().optional(),
-        nrs: zInt01.optional(),
-        aura: z.boolean().optional(),
-        meds: z
-          .array(
-            z.object({
-              name: z.string().min(1),
-              doseMg: zNonNeg.optional(),
-              time: z.string().optional(),
-            })
-          )
-          .optional(),
-      })
-      .optional()
-      .refine((value) => !value || !value.present || value.nrs !== undefined, {
-        message: "Bitte Kopfschmerz-Stärke (0–10) angeben",
-        path: ["headacheOpt", "nrs"],
-      }),
-    dizzinessOpt: z
-      .object({
-        present: z.boolean().optional(),
-        nrs: zInt01.optional(),
-        orthostatic: z.boolean().optional(),
-      })
-      .optional()
-      .refine((value) => !value || !value.present || value.nrs !== undefined, {
-        message: "Bitte Schwindel-Stärke (0–10) angeben",
-        path: ["dizzinessOpt", "nrs"],
-      }),
-  })
-  .passthrough();
+import type { DayEntry, MonthEntry, WeekEntry } from "./types";
 
 export interface ValidationIssue {
   path: string;
   message: string;
 }
 
-const intRange = (value: number | undefined, min: number, max: number) =>
-  typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
+const nrsSchema = z.number().int().min(0).max(10);
+const isoDate = /^\d{4}-\d{2}-\d{2}$/;
+const isoMonth = /^\d{4}-\d{2}$/;
+const isoWeek = /^\d{4}-W\d{2}$/;
 
-const nonNegative = (value: number | undefined) => typeof value === "number" && value >= 0;
+const pbacProductSchema = z.object({
+  kind: z.enum(["pad", "tampon", "cup"]),
+  fill: z.enum(["low", "mid", "high"]),
+  quantity: z.number().int().min(1).optional(),
+});
 
-export function validateDailyEntry(entry: DailyEntry): ValidationIssue[] {
-  const issues: ValidationIssue[] = [];
+const dayEntrySchema = z.object({
+  id: z.string().min(1),
+  date: z.string().regex(isoDate),
+  mode: z.enum(["quick", "detail"]),
+  nrs: nrsSchema.optional(),
+  pbac: z
+    .object({
+      products: z.array(pbacProductSchema),
+      clots: z.enum(["none", "small", "large"]).optional(),
+      flooding: z.boolean().optional(),
+      dayScore: z.number().int().min(0),
+    })
+    .optional(),
+  zones: z.array(z.string()).optional(),
+  symptoms: z
+    .array(
+      z.object({
+        id: z.string(),
+        label: z.string(),
+        intensity: nrsSchema,
+      })
+    )
+    .max(6)
+    .optional(),
+  medication: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string().min(1),
+        dose: z.string().max(120).optional(),
+        ts: z.number().int().min(0),
+      })
+    )
+    .optional(),
+  sleep: nrsSchema.optional(),
+  bowel: z
+    .object({
+      bristol: z.number().int().min(1).max(7).optional(),
+      dyschezia: z.boolean().optional(),
+    })
+    .optional(),
+  bladder: z
+    .object({
+      dysuria: z.boolean().optional(),
+    })
+    .optional(),
+  triggerTags: z.array(z.string()).optional(),
+  helped: z.array(z.string()).optional(),
+  notes: z.string().max(500).optional(),
+  createdAt: z.number().int().min(0),
+  updatedAt: z.number().int().min(0),
+});
 
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(entry.date)) {
-    issues.push({ path: "date", message: "Datum muss im Format YYYY-MM-DD vorliegen." });
-  }
+const weekEntrySchema = z.object({
+  id: z.string(),
+  isoWeek: z.string().regex(isoWeek),
+  helped: z.array(z.string()).optional(),
+  triggerTags: z.array(z.string()).optional(),
+  interventions: z
+    .array(
+      z.object({
+        id: z.string(),
+        label: z.string(),
+        helpfulness: nrsSchema,
+      })
+    )
+    .optional(),
+  notes: z.string().max(500).optional(),
+  createdAt: z.number().int().min(0),
+  updatedAt: z.number().int().min(0),
+});
 
-  if (!intRange(entry.painNRS, 0, 10)) {
-    issues.push({
-      path: "painNRS",
-      message: "Schmerzintensität muss als ganze Zahl zwischen 0 und 10 erfasst werden.",
-    });
-  }
+const monthEntrySchema = z.object({
+  id: z.string(),
+  month: z.string().regex(isoMonth),
+  pbacTotal: z.number().int().min(0).optional(),
+  ehp5: z.array(z.number().int().min(0).max(4)).length(5).optional(),
+  createdAt: z.number().int().min(0),
+  updatedAt: z.number().int().min(0),
+});
 
-  const allowedPainQuality = new Set(["krampfend", "stechend", "brennend", "dumpf", "ziehend", "anders"]);
-  entry.painQuality.forEach((quality, index) => {
-    if (!allowedPainQuality.has(quality)) {
+const formatPath = (segments: (string | number)[]) =>
+  segments
+    .map((segment) => (typeof segment === "number" ? `[${segment}]` : segment))
+    .join(".")
+    .replace(/\.\[/g, "[");
+
+export function validateDayEntry(entry: DayEntry): ValidationIssue[] {
+  const result = dayEntrySchema.safeParse(entry);
+  if (result.success) {
+    const issues: ValidationIssue[] = [];
+    if (entry.pbac && entry.pbac.dayScore > 100) {
       issues.push({
-        path: `painQuality[${index}]`,
-        message: "Ungültige Schmerzqualität ausgewählt.",
+        path: "pbac.dayScore",
+        message: "PBAC-Wert prüfen: über 100 gilt als starke Blutung.",
       });
     }
-  });
-
-  if (!Array.isArray(entry.painMapRegionIds)) {
-    issues.push({ path: "painMapRegionIds", message: "Schmerzorte müssen als Liste gespeichert werden." });
-  }
-
-  if (entry.bleeding.isBleeding) {
-    if (!nonNegative(entry.bleeding.pbacScore)) {
-      issues.push({
-        path: "bleeding.pbacScore",
-        message: "PBAC-Score muss bei aktiver Blutung als nicht-negative Zahl vorliegen.",
-      });
-    }
-    if (entry.bleeding.clots !== undefined && typeof entry.bleeding.clots !== "boolean") {
-      issues.push({ path: "bleeding.clots", message: "Koagel-Angabe muss Ja/Nein sein." });
-    }
-    if (entry.bleeding.flooding !== undefined && typeof entry.bleeding.flooding !== "boolean") {
-      issues.push({ path: "bleeding.flooding", message: "Flooding muss als Ja/Nein erfasst werden." });
-    }
-  } else {
-    if (entry.bleeding.pbacScore !== undefined) {
-      issues.push({
-        path: "bleeding.pbacScore",
-        message: "PBAC-Score darf nur angegeben werden, wenn eine Blutung vorliegt.",
-      });
-    }
-    if (entry.bleeding.clots !== undefined) {
-      issues.push({
-        path: "bleeding.clots",
-        message: "Koagel dürfen nur bei aktiver Blutung dokumentiert werden.",
-      });
-    }
-    if (entry.bleeding.flooding !== undefined) {
-      issues.push({
-        path: "bleeding.flooding",
-        message: "Flooding darf nur bei aktiver Blutung dokumentiert werden.",
-      });
-    }
-  }
-
-  const symptomKeys = [
-    "dysmenorrhea",
-    "deepDyspareunia",
-    "pelvicPainNonMenses",
-    "dyschezia",
-    "dysuria",
-    "fatigue",
-    "bloating",
-  ] as const;
-
-  symptomKeys.forEach((key) => {
-    const symptom = entry.symptoms[key];
-    if (!symptom) return;
-    if (typeof symptom.present !== "boolean") {
-      issues.push({ path: `symptoms.${key}.present`, message: "Symptom muss mit Ja/Nein erfasst werden." });
-    }
-    if (symptom.present) {
-      if (!intRange(symptom.score, 0, 10)) {
+    if (entry.nrs !== undefined && entry.nrs >= 9) {
+      const hasRescueMed = (entry.medication ?? []).some((med) => /rescue|schmerz/i.test(med.name));
+      if (!hasRescueMed) {
         issues.push({
-          path: `symptoms.${key}.score`,
-          message: "Symptomschwere muss als ganze Zahl zwischen 0 und 10 erfasst werden.",
+          path: "medication",
+          message: "Sehr starke Schmerzen? Hol dir Hilfe, wenn du unsicher bist.",
         });
       }
-    } else if (symptom.score !== undefined) {
-      issues.push({
-        path: `symptoms.${key}.score`,
-        message: "Wenn das Symptom nicht vorliegt, darf kein Score angegeben werden.",
-      });
     }
-  });
-
-  entry.meds.forEach((med, index) => {
-    if (!med.name) {
-      issues.push({ path: `meds[${index}].name`, message: "Medikament benötigt eine Bezeichnung." });
-    }
-    if (med.doseMg !== undefined && (!Number.isFinite(med.doseMg) || med.doseMg < 0)) {
-      issues.push({
-        path: `meds[${index}].doseMg`,
-        message: "Dosen müssen als nicht-negative Zahl in mg angegeben werden.",
-      });
-    }
-  });
-
-  if (entry.rescueDosesCount !== undefined && !Number.isInteger(entry.rescueDosesCount)) {
-    issues.push({ path: "rescueDosesCount", message: "Anzahl der Akutdosen muss eine Ganzzahl sein." });
+    return issues;
   }
 
-  if (entry.sleep) {
-    const { hours, quality, awakenings } = entry.sleep;
-    if (hours !== undefined && (hours < 0 || hours > 24)) {
-      issues.push({ path: "sleep.hours", message: "Schlafdauer muss zwischen 0 und 24 Stunden liegen." });
-    }
-    if (quality !== undefined && !intRange(quality, 0, 10)) {
-      issues.push({ path: "sleep.quality", message: "Schlafqualität muss 0–10 (Ganzzahl) sein." });
-    }
-    if (awakenings !== undefined && (!Number.isInteger(awakenings) || awakenings < 0)) {
-      issues.push({
-        path: "sleep.awakenings",
-        message: "Nächtliche Aufwachphasen müssen als nicht-negative Ganzzahl erfasst werden.",
-      });
-    }
-  }
-
-  if (entry.gi) {
-    if (entry.gi.bristolType !== undefined && ![1, 2, 3, 4, 5, 6, 7].includes(entry.gi.bristolType)) {
-      issues.push({ path: "gi.bristolType", message: "Bristol-Score muss zwischen 1 und 7 liegen." });
-    }
-    if (entry.gi.bowelPain !== undefined && !intRange(entry.gi.bowelPain, 0, 10)) {
-      issues.push({ path: "gi.bowelPain", message: "Darm-Schmerz muss 0–10 (Ganzzahl) sein." });
-    }
-  }
-
-  if (entry.urinary) {
-    const { freqPerDay, urgency, pain } = entry.urinary;
-    if (freqPerDay !== undefined && (!Number.isInteger(freqPerDay) || freqPerDay < 0)) {
-      issues.push({
-        path: "urinary.freqPerDay",
-        message: "Miktionen/Tag müssen als nicht-negative Ganzzahl erfasst werden.",
-      });
-    }
-    if (urgency !== undefined && !intRange(urgency, 0, 10)) {
-      issues.push({ path: "urinary.urgency", message: "Drang muss 0–10 (Ganzzahl) sein." });
-    }
-    if (pain !== undefined && !intRange(pain, 0, 10)) {
-      issues.push({ path: "urinary.pain", message: "Blasenschmerz muss 0–10 (Ganzzahl) sein." });
-    }
-  }
-
-  if (entry.sexual?.fsfiTotal !== undefined && (!Number.isFinite(entry.sexual.fsfiTotal) || entry.sexual.fsfiTotal < 0)) {
-    issues.push({
-      path: "sexual.fsfiTotal",
-      message: "FSFI-Werte müssen als nicht-negative Zahl angegeben werden.",
-    });
-  }
-
-  if (entry.activity) {
-    if (entry.activity.steps !== undefined && (!Number.isInteger(entry.activity.steps) || entry.activity.steps < 0)) {
-      issues.push({ path: "activity.steps", message: "Schritte müssen als nicht-negative Ganzzahl angegeben werden." });
-    }
-    if (
-      entry.activity.activeMinutes !== undefined &&
-      (!Number.isInteger(entry.activity.activeMinutes) || entry.activity.activeMinutes < 0)
-    ) {
-      issues.push({
-        path: "activity.activeMinutes",
-        message: "Aktivminuten müssen als nicht-negative Ganzzahl angegeben werden.",
-      });
-    }
-  }
-
-  if (entry.exploratory?.hrvRmssdMs !== undefined && (!Number.isFinite(entry.exploratory.hrvRmssdMs) || entry.exploratory.hrvRmssdMs < 0)) {
-    issues.push({
-      path: "exploratory.hrvRmssdMs",
-      message: "HRV (RMSSD) muss als nicht-negative Zahl vorliegen.",
-    });
-  }
-
-  if (entry.ovulation) {
-    if (entry.ovulation.lhTime && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(entry.ovulation.lhTime)) {
-      issues.push({ path: "ovulation.lhTime", message: "LH-Test-Zeit muss ISO-Datetime sein." });
-    }
-    if (entry.ovulation.bbtCelsius !== undefined) {
-      const value = entry.ovulation.bbtCelsius;
-      const rounded = Math.round(value * 100) / 100;
-      if (!Number.isFinite(value) || value < 34 || value > 38) {
-        issues.push({ path: "ovulation.bbtCelsius", message: "BBT muss zwischen 34.00 °C und 38.00 °C liegen." });
-      }
-      if (Math.abs(value - rounded) > 1e-6) {
-        issues.push({ path: "ovulation.bbtCelsius", message: "BBT muss mit zwei Nachkommastellen erfasst werden." });
-      }
-    }
-  }
-
-  const zodResult = zDailyEntry.safeParse(entry);
-  if (!zodResult.success) {
-    zodResult.error.issues.forEach((issue) => {
-      issues.push({ path: formatZodPath(issue.path), message: issue.message });
-    });
-  }
-
-  return issues;
+  return result.error.issues.map((issue) => ({
+    path: formatPath(issue.path),
+    message: issue.message,
+  }));
 }
 
-export function validateWeeklyEntry(entry: WeeklyEntry): ValidationIssue[] {
-  const issues: ValidationIssue[] = [];
-  if (!/^\d{4}-W\d{2}$/.test(entry.isoWeek)) {
-    issues.push({ path: "isoWeek", message: "Kalenderwoche muss im Format JJJJ-WXX angegeben werden." });
-  }
-
-  if (entry.function) {
-    const { wpaiAbsenteeismPct, wpaiPresenteeismPct, wpaiOverallPct } = entry.function;
-    const inRange = (v: number | undefined) => typeof v === "number" && v >= 0 && v <= 100;
-    if (wpaiAbsenteeismPct !== undefined && !inRange(wpaiAbsenteeismPct)) {
-      issues.push({ path: "function.wpaiAbsenteeismPct", message: "WPAI Absenzen müssen 0–100 % sein." });
-    }
-    if (wpaiPresenteeismPct !== undefined && !inRange(wpaiPresenteeismPct)) {
-      issues.push({ path: "function.wpaiPresenteeismPct", message: "WPAI Präsenzminderung muss 0–100 % sein." });
-    }
-    if (wpaiOverallPct !== undefined && !inRange(wpaiOverallPct)) {
-      issues.push({ path: "function.wpaiOverallPct", message: "WPAI Gesamtbeeinträchtigung muss 0–100 % sein." });
-    }
-  }
-
-  return issues;
+export function validateWeekEntry(entry: WeekEntry): ValidationIssue[] {
+  const result = weekEntrySchema.safeParse(entry);
+  if (result.success) return [];
+  return result.error.issues.map((issue) => ({
+    path: formatPath(issue.path),
+    message: issue.message,
+  }));
 }
 
-export function validateMonthlyEntry(entry: MonthlyEntry): ValidationIssue[] {
-  const issues: ValidationIssue[] = [];
-  if (!/^\d{4}-\d{2}$/.test(entry.month)) {
-    issues.push({ path: "month", message: "Monat muss im Format YYYY-MM angegeben werden." });
-  }
-
-  if (entry.qol?.ehp5Items) {
-    if (entry.qol.ehp5Items.length !== 5) {
-      issues.push({ path: "qol.ehp5Items", message: "EHP-5 benötigt fünf Items (0–4)." });
-    }
-    entry.qol.ehp5Items.forEach((value, index) => {
-      if (value !== undefined && (!Number.isInteger(value) || value < 0 || value > 4)) {
-        issues.push({ path: `qol.ehp5Items[${index}]`, message: "EHP-5 Items müssen Werte von 0 bis 4 nutzen." });
-      }
-    });
-  }
-  if (entry.qol?.ehp5Total !== undefined && (!Number.isInteger(entry.qol.ehp5Total) || entry.qol.ehp5Total < 0 || entry.qol.ehp5Total > 20)) {
-    issues.push({ path: "qol.ehp5Total", message: "EHP-5 Gesamtscore muss zwischen 0 und 20 liegen." });
-  }
-  if (
-    entry.qol?.ehp5Transformed !== undefined &&
-    (!Number.isFinite(entry.qol.ehp5Transformed) || entry.qol.ehp5Transformed < 0 || entry.qol.ehp5Transformed > 100)
-  ) {
-    issues.push({ path: "qol.ehp5Transformed", message: "EHP-5 Transform muss zwischen 0 und 100 liegen." });
-  }
-
-  if (entry.mental) {
-    const { phq9, gad7, phq9Items, gad7Items, phq9Severity, gad7Severity } = entry.mental;
-    if (phq9Items) {
-      if (phq9Items.length !== 9) {
-        issues.push({ path: "mental.phq9Items", message: "PHQ-9 benötigt neun Items (0–3)." });
-      }
-      phq9Items.forEach((value, index) => {
-        if (value !== undefined && (!Number.isInteger(value) || value < 0 || value > 3)) {
-          issues.push({ path: `mental.phq9Items[${index}]`, message: "PHQ-9 Items müssen Werte von 0 bis 3 nutzen." });
-        }
-      });
-    }
-    if (phq9 !== undefined && (!Number.isInteger(phq9) || phq9 < 0 || phq9 > 27)) {
-      issues.push({ path: "mental.phq9", message: "PHQ-9 muss zwischen 0 und 27 liegen." });
-    }
-    if (phq9Severity && !["mild", "moderat", "hoch"].includes(phq9Severity)) {
-      issues.push({ path: "mental.phq9Severity", message: "PHQ-9 Ampel muss mild/moderat/hoch sein." });
-    }
-    if (gad7Items) {
-      if (gad7Items.length !== 7) {
-        issues.push({ path: "mental.gad7Items", message: "GAD-7 benötigt sieben Items (0–3)." });
-      }
-      gad7Items.forEach((value, index) => {
-        if (value !== undefined && (!Number.isInteger(value) || value < 0 || value > 3)) {
-          issues.push({ path: `mental.gad7Items[${index}]`, message: "GAD-7 Items müssen Werte von 0 bis 3 nutzen." });
-        }
-      });
-    }
-    if (gad7 !== undefined && (!Number.isInteger(gad7) || gad7 < 0 || gad7 > 21)) {
-      issues.push({ path: "mental.gad7", message: "GAD-7 muss zwischen 0 und 21 liegen." });
-    }
-    if (gad7Severity && !["mild", "moderat", "hoch"].includes(gad7Severity)) {
-      issues.push({ path: "mental.gad7Severity", message: "GAD-7 Ampel muss mild/moderat/hoch sein." });
-    }
-  }
-
-  if (entry.promis) {
-    const { fatigueT, painInterferenceT } = entry.promis;
-    const validT = (v: number | undefined) => typeof v === "number" && v >= 0 && v <= 100;
-    if (fatigueT !== undefined && !validT(fatigueT)) {
-      issues.push({ path: "promis.fatigueT", message: "PROMIS Fatigue T-Score muss zwischen 0 und 100 liegen." });
-    }
-    if (painInterferenceT !== undefined && !validT(painInterferenceT)) {
-      issues.push({ path: "promis.painInterferenceT", message: "PROMIS Pain Interference T-Score muss zwischen 0 und 100 liegen." });
-    }
-  }
-
-  return issues;
+export function validateMonthEntry(entry: MonthEntry): ValidationIssue[] {
+  const result = monthEntrySchema.safeParse(entry);
+  if (result.success) return [];
+  return result.error.issues.map((issue) => ({
+    path: formatPath(issue.path),
+    message: issue.message,
+  }));
 }
