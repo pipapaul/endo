@@ -52,7 +52,7 @@ export default function HomePage() {
 
   const steps = state.context.steps;
   const currentStep = steps[state.context.currentIndex];
-  const answers = state.context.answers;
+  const answers = state.context.answers as Partial<DayEntry>;
   const progress = steps.length > 1 ? (state.context.currentIndex / (steps.length - 1)) * 100 : 0;
 
   const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
