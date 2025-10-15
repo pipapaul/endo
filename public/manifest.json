@@ -1,0 +1,17 @@
+{
+  "name": "EndoTrack",
+  "short_name": "Endo",
+  "display": "standalone",
+  "start_url": "/",
+  "scope": "/",
+  "background_color": "#fff1f2",
+  "theme_color": "#e11d48",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "128x128 192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
