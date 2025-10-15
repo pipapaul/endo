@@ -18,7 +18,7 @@ import {
 
 import { computeCorrelations } from "@/lib/logic/correlations";
 import type { DayEntry, MonthEntry } from "@/lib/types";
-import microcopy from "@/lib/i18n/de.json" assert { type: "json" };
+import microcopy from "@/lib/i18n/de.json";
 
 interface TrendChartsProps {
   dayEntries: DayEntry[];

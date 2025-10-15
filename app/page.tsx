@@ -16,7 +16,7 @@ import { SleepScale } from "@/components/SleepScale";
 import { SymptomPicker } from "@/components/SymptomPicker";
 import { Tooltip } from "@/components/Tooltip";
 import { TrendCharts } from "@/components/TrendCharts";
-import microcopy from "@/lib/i18n/de.json" assert { type: "json" };
+import microcopy from "@/lib/i18n/de.json";
 import { useEndoData } from "@/lib/hooks/useEndoData";
 import { entryFlowMachine } from "@/lib/state/entryFlowMachine";
 import type { BodyZoneId, DayEntry, FlowMode, Nrs } from "@/lib/types";

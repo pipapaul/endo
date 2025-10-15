@@ -15,6 +15,8 @@ const bristolInfo: Record<1 | 2 | 3 | 4 | 5 | 6 | 7, { label: string; hint: stri
   7: { label: "Typ 7", hint: "Wässrig" },
 };
 
+const bristolKeys = [1, 2, 3, 4, 5, 6, 7] as const satisfies ReadonlyArray<keyof typeof bristolInfo>;
+
 export function BristolCards({ value, onChange }: BristolCardsProps) {
   return (
     <section className="space-y-3">
@@ -23,7 +25,7 @@ export function BristolCards({ value, onChange }: BristolCardsProps) {
         <p className="text-sm text-slate-600">Optional: Wähle den Stuhltyp.</p>
       </header>
       <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Bristol Stool Chart">
-        {(Object.keys(bristolInfo) as Array<1 | 2 | 3 | 4 | 5 | 6 | 7>).map((key) => (
+        {bristolKeys.map((key) => (
           <button
             key={key}
             type="button"

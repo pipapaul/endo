@@ -2,7 +2,7 @@
 
 import { useId, useState } from "react";
 
-import microcopy from "@/lib/i18n/de.json" assert { type: "json" };
+import microcopy from "@/lib/i18n/de.json";
 
 interface TooltipProps {
   term: keyof typeof microcopy;
