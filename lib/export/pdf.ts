@@ -96,7 +96,8 @@ export async function generatePdf({ type, dayEntries, monthEntries, monthsBack =
   }
 
   const bytes = await pdf.save();
-  return new Blob([bytes], { type: "application/pdf" });
+  const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  return new Blob([arrayBuffer], { type: "application/pdf" });
 }
 
 function daysBetween(dateString: string, now: Date) {
