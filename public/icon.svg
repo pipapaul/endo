@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">EndoTrack Symbol</title>
+  <desc id="desc">Abstraktes Tropfen-Symbol in warmen Rottönen</desc>
+  <defs>
+    <linearGradient id="g" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#f97316" />
+      <stop offset="50%" stop-color="#ec4899" />
+      <stop offset="100%" stop-color="#be123c" />
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="#fff1f2" />
+  <path d="M64 12c18 20 30 38 30 56 0 18-13 32-30 32s-30-14-30-32c0-18 12-36 30-56z" fill="url(#g)" />
+  <circle cx="64" cy="70" r="18" fill="#fff" fill-opacity="0.35" />
+</svg>
