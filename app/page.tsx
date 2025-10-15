@@ -19,7 +19,7 @@ import { TrendCharts } from "@/components/TrendCharts";
 import microcopy from "@/lib/i18n/de.json" assert { type: "json" };
 import { useEndoData } from "@/lib/hooks/useEndoData";
 import { entryFlowMachine } from "@/lib/state/entryFlowMachine";
-import type { DayEntry, FlowMode, Nrs } from "@/lib/types";
+import type { BodyZoneId, DayEntry, FlowMode, Nrs } from "@/lib/types";
 import { validateDayEntry } from "@/lib/validation";
 
 const tabs = [
@@ -339,7 +339,12 @@ function WizardStep({ stepId, answers, onAnswer, mode }: WizardStepProps) {
     case "pbac":
       return <PbacMini value={answers.pbac} onChange={(value) => onAnswer("pbac", value)} />;
     case "zones":
-      return <BodyMapSimple selected={(answers.zones as string[]) ?? []} onChange={(zones) => onAnswer("zones", zones)} />;
+      return (
+        <BodyMapSimple
+          selected={(answers.zones as BodyZoneId[]) ?? []}
+          onChange={(zones) => onAnswer("zones", zones)}
+        />
+      );
     case "symptoms":
       return <SymptomPicker value={(answers.symptoms as DayEntry["symptoms"]) ?? []} onChange={(value) => onAnswer("symptoms", value)} max={mode === "quick" ? 2 : 5} />;
     case "medication":
