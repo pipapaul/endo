@@ -1,9 +1,9 @@
 name: Build static site (Next 14, output: export)
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch: {}      # manuell startbar
   push:
-    branches: [ main ]
+    branches: [ main ]       # optional: auf Push bauen
 
 jobs:
   build:
@@ -12,11 +12,13 @@ jobs:
       NEXT_TELEMETRY_DISABLED: 1
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '20'   # Next >=13 braucht mind. 18
 
       - name: Install deps
         run: |
@@ -28,13 +30,14 @@ jobs:
 
       - name: Build (Static export via next.config.mjs)
         run: |
+          # Vorausgesetzt: next.config.mjs hat: output: 'export'
           if npm run -s | grep -q "^  build$"; then
             npm run build
           else
             npx next build
           fi
-          echo "OUT DIR:"
-          ls -la out || (echo "⚠️ out/ nicht gefunden" && exit 1)
+          echo "== out/ Inhalt =="
+          ls -la out || (echo "⚠️ out/ nicht gefunden – prüfe next.config.mjs" && exit 1)
 
       - name: Upload artifact (out/)
         uses: actions/upload-artifact@v4
@@ -42,7 +45,7 @@ jobs:
           name: site-out
           path: out
 
-      - name: ZIP out/ (optional)
+      - name: ZIP out/
         run: |
           cd out
           zip -r ../site-out.zip .
