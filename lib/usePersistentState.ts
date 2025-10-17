@@ -1,0 +1,108 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import {
+  ensureMigratedFromLocalStorage,
+  getItem,
+  getStorageDriverName,
+  setItem,
+  StorageDriver,
+  storageSupported,
+} from "./persistence";
+
+export type PersistentStateMeta = {
+  ready: boolean;
+  driver: StorageDriver;
+  error: string | null;
+  driverLabel: string;
+};
+
+export function usePersistentState<T>(key: string, defaultValue: T) {
+  const [value, setValue] = useState<T>(defaultValue);
+  const [ready, setReady] = useState(false);
+  const [driver, setDriver] = useState<StorageDriver>(storageSupported() ? "indexeddb" : "unavailable");
+  const [error, setError] = useState<string | null>(null);
+  const valueRef = useRef(value);
+
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const migrationDriver = await ensureMigratedFromLocalStorage();
+        if (cancelled) return;
+        setDriver(migrationDriver);
+        const result = await getItem<T>(key);
+        if (cancelled) return;
+        if (result.driver !== migrationDriver) {
+          setDriver(result.driver);
+        }
+        if (result.value !== undefined) {
+          setValue(result.value);
+        }
+        setReady(true);
+        setError(null);
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Persistenter Zustand konnte nicht geladen werden", error);
+        setDriver(storageSupported() ? "memory" : "unavailable");
+        setError((error as Error).message ?? "Unbekannter Speicherfehler");
+        setReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [key]);
+
+  useEffect(() => {
+    if (!ready) return;
+    if (driver === "unavailable") return;
+    if (typeof window === "undefined") return;
+    let cancelled = false;
+    let attempts = 0;
+
+    const persist = () => {
+      attempts += 1;
+      setItem(key, valueRef.current)
+        .then((currentDriver) => {
+          if (cancelled) return;
+          setDriver(currentDriver);
+          setError(null);
+        })
+        .catch((persistError: unknown) => {
+          if (cancelled) return;
+          console.error("Speichern in IndexedDB fehlgeschlagen", persistError);
+          setError((persistError as Error).message ?? "Speichern fehlgeschlagen");
+          if (attempts < 3 && driver === "indexeddb") {
+            window.setTimeout(persist, 300 * attempts);
+          } else {
+            setDriver("memory");
+          }
+        });
+    };
+
+    persist();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [driver, key, ready, value]);
+
+  const meta: PersistentStateMeta = useMemo(
+    () => ({
+      ready,
+      driver,
+      error,
+      driverLabel: getStorageDriverName(driver),
+    }),
+    [driver, error, ready]
+  );
+
+  return [value, setValue, meta] as const;
+}

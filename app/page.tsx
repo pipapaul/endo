@@ -18,12 +18,17 @@ import {
 } from "recharts";
 import type { TooltipProps } from "recharts";
 import {
+  AlertTriangle,
   Calendar,
   CalendarDays,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Download,
+  HardDrive,
+  Home,
+  ShieldCheck,
+  Smartphone,
   Upload,
 } from "lucide-react";
 
@@ -51,8 +56,24 @@ import { Badge } from "@/components/ui/badge";
 import Checkbox from "@/components/ui/checkbox";
 
 import { cn } from "@/lib/utils";
+import { touchLastActive } from "@/lib/persistence";
+import { usePersistentState } from "@/lib/usePersistentState";
 
 type SymptomKey = keyof DailyEntry["symptoms"];
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+}
+
+type BackupPayload = {
+  version: number;
+  exportedAt: string;
+  dailyEntries: DailyEntry[];
+  weeklyEntries: WeeklyEntry[];
+  monthlyEntries: MonthlyEntry[];
+  featureFlags: FeatureFlags;
+};
 
 const PAIN_QUALITIES: DailyEntry["painQuality"] = [
   "krampfend",
@@ -212,26 +233,6 @@ const createEmptyMonthlyEntry = (month: string): MonthlyEntry => ({
   mental: {},
   promis: {},
 });
-
-function useLocalStorageState<T>(key: string, defaultValue: T) {
-  const [value, setValue] = useState<T>(() => {
-    if (typeof window === "undefined") return defaultValue;
-    const stored = window.localStorage.getItem(key);
-    if (!stored) return defaultValue;
-    try {
-      return JSON.parse(stored) as T;
-    } catch {
-      return defaultValue;
-    }
-  });
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(key, JSON.stringify(value));
-  }, [key, value]);
-
-  return [value, setValue] as const;
-}
 
 function Section({ title, description, aside, children }: {
   title: string;
@@ -639,6 +640,70 @@ function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>
   return clone;
 }
 
+function normalizeImportedWeeklyEntry(entry: WeeklyEntry & Record<string, unknown>): WeeklyEntry {
+  const normalized: WeeklyEntry = {
+    isoWeek: typeof entry.isoWeek === "string" ? entry.isoWeek : "",
+  };
+  if (entry.function && typeof entry.function === "object") {
+    const fn = entry.function as Record<string, unknown>;
+    normalized.function = {
+      wpaiAbsenteeismPct:
+        typeof fn.wpaiAbsenteeismPct === "number" ? (fn.wpaiAbsenteeismPct as number) : undefined,
+      wpaiPresenteeismPct:
+        typeof fn.wpaiPresenteeismPct === "number" ? (fn.wpaiPresenteeismPct as number) : undefined,
+      wpaiOverallPct: typeof fn.wpaiOverallPct === "number" ? (fn.wpaiOverallPct as number) : undefined,
+    };
+  }
+  return normalized;
+}
+
+function normalizeImportedMonthlyEntry(entry: MonthlyEntry & Record<string, unknown>): MonthlyEntry {
+  const normalized: MonthlyEntry = {
+    month: typeof entry.month === "string" ? entry.month : "",
+  };
+  if (entry.qol && typeof entry.qol === "object") {
+    const qol = entry.qol as Record<string, unknown>;
+    normalized.qol = {
+      ehp5Items: Array.isArray(qol.ehp5Items)
+        ? (qol.ehp5Items as Array<number | undefined>).map((value) =>
+            typeof value === "number" ? value : undefined
+          )
+        : undefined,
+      ehp5Total: typeof qol.ehp5Total === "number" ? (qol.ehp5Total as number) : undefined,
+      ehp5Transformed:
+        typeof qol.ehp5Transformed === "number" ? (qol.ehp5Transformed as number) : undefined,
+    };
+  }
+  if (entry.mental && typeof entry.mental === "object") {
+    const mental = entry.mental as Record<string, unknown>;
+    normalized.mental = {
+      phq9Items: Array.isArray(mental.phq9Items)
+        ? (mental.phq9Items as Array<number | undefined>).map((value) =>
+            typeof value === "number" ? value : undefined
+          )
+        : undefined,
+      phq9: typeof mental.phq9 === "number" ? (mental.phq9 as number) : undefined,
+      phq9Severity: typeof mental.phq9Severity === "string" ? (mental.phq9Severity as SeverityLevel) : undefined,
+      gad7Items: Array.isArray(mental.gad7Items)
+        ? (mental.gad7Items as Array<number | undefined>).map((value) =>
+            typeof value === "number" ? value : undefined
+          )
+        : undefined,
+      gad7: typeof mental.gad7 === "number" ? (mental.gad7 as number) : undefined,
+      gad7Severity: typeof mental.gad7Severity === "string" ? (mental.gad7Severity as SeverityLevel) : undefined,
+    };
+  }
+  if (entry.promis && typeof entry.promis === "object") {
+    const promis = entry.promis as Record<string, unknown>;
+    normalized.promis = {
+      fatigueT: typeof promis.fatigueT === "number" ? (promis.fatigueT as number) : undefined,
+      painInterferenceT:
+        typeof promis.painInterferenceT === "number" ? (promis.painInterferenceT as number) : undefined,
+    };
+  }
+  return normalized;
+}
+
 function BodyMap({ value, onChange }: { value: string[]; onChange: (next: string[]) => void }) {
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -835,10 +900,18 @@ function computePearson(pairs: { x: number; y: number }[]) {
 }
 export default function HomePage() {
   const today = formatDate(new Date());
-  const [dailyEntries, setDailyEntries] = useLocalStorageState<DailyEntry[]>("endo.daily.v2", []);
-  const [weeklyEntries, setWeeklyEntries] = useLocalStorageState<WeeklyEntry[]>("endo.weekly.v2", []);
-  const [monthlyEntries, setMonthlyEntries] = useLocalStorageState<MonthlyEntry[]>("endo.monthly.v2", []);
-  const [featureFlags, setFeatureFlags] = useLocalStorageState<FeatureFlags>("endo.flags.v1", {});
+  const [dailyEntries, setDailyEntries, dailyStorage] = usePersistentState<DailyEntry[]>("endo.daily.v2", []);
+  const [weeklyEntries, setWeeklyEntries, weeklyStorage] = usePersistentState<WeeklyEntry[]>("endo.weekly.v2", []);
+  const [monthlyEntries, setMonthlyEntries, monthlyStorage] = usePersistentState<MonthlyEntry[]>("endo.monthly.v2", []);
+  const [featureFlags, setFeatureFlags, featureStorage] = usePersistentState<FeatureFlags>("endo.flags.v1", {});
+
+  const storageMetas = [dailyStorage, weeklyStorage, monthlyStorage, featureStorage];
+  const storageReady = storageMetas.every((meta) => meta.ready);
+  const storageErrors = storageMetas.map((meta) => meta.error).filter(Boolean) as string[];
+  const storageDrivers = Array.from(new Set(storageMetas.map((meta) => meta.driverLabel)));
+  const usesIndexedDb = storageMetas.every((meta) => meta.driver === "indexeddb");
+  const hasMemoryFallback = storageMetas.some((meta) => meta.driver === "memory");
+  const storageUnavailable = storageMetas.some((meta) => meta.driver === "unavailable");
 
   const [dailyDraft, setDailyDraft] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
   const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
@@ -876,6 +949,11 @@ export default function HomePage() {
 
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [persisted, setPersisted] = useState<boolean | null>(null);
+  const [persistWarning, setPersistWarning] = useState<string | null>(null);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [showInstallHint, setShowInstallHint] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
 
   const isDailyDirty = useMemo(
     () => JSON.stringify(dailyDraft) !== JSON.stringify(lastSavedDailySnapshot),
@@ -886,6 +964,128 @@ export default function HomePage() {
     () => dailyEntries.some((entry) => entry.date === dailyDraft.date),
     [dailyEntries, dailyDraft.date]
   );
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("storage" in navigator) || !navigator.storage) {
+      setPersisted(null);
+      setPersistWarning("Persistent Storage API nicht verfügbar.");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const alreadyPersisted = await navigator.storage.persisted();
+        if (cancelled) return;
+        setPersisted(alreadyPersisted);
+        if (alreadyPersisted) {
+          setPersistWarning(null);
+          return;
+        }
+        if (typeof navigator.storage.persist === "function") {
+          const granted = await navigator.storage.persist();
+          if (cancelled) return;
+          setPersisted(granted);
+          setPersistWarning(granted ? null : "Persistente Speicherung konnte nicht aktiviert werden.");
+        } else {
+          setPersistWarning("Persistent Storage API unterstützt kein persist().");
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setPersisted(false);
+        setPersistWarning((error as Error).message ?? "Persistente Speicherung nicht möglich.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!("serviceWorker" in navigator)) return;
+    if (!window.isSecureContext && window.location.hostname !== "localhost") return;
+    navigator.serviceWorker
+      .register("/sw.js")
+      .catch((error) => console.warn("Service Worker Registrierung fehlgeschlagen", error));
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const nav = window.navigator as Navigator & { standalone?: boolean };
+
+    const updateStandalone = () => {
+      const standalone = Boolean(window.matchMedia?.("(display-mode: standalone)").matches || nav.standalone);
+      setIsStandalone(standalone);
+      if (!standalone) {
+        setShowInstallHint(true);
+      }
+    };
+
+    updateStandalone();
+
+    const media = window.matchMedia?.("(display-mode: standalone)");
+    const handleMediaChange = () => updateStandalone();
+    if (media) {
+      if (typeof media.addEventListener === "function") {
+        media.addEventListener("change", handleMediaChange);
+      } else if (typeof media.addListener === "function") {
+        media.addListener(handleMediaChange);
+      }
+    }
+
+    const handleBeforeInstall = (event: Event) => {
+      event.preventDefault();
+      const promptEvent = event as BeforeInstallPromptEvent;
+      setInstallPrompt(promptEvent);
+      setShowInstallHint(true);
+    };
+    const handleInstalled = () => {
+      setInstallPrompt(null);
+      setShowInstallHint(false);
+      updateStandalone();
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstall);
+    window.addEventListener("appinstalled", handleInstalled);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
+      window.removeEventListener("appinstalled", handleInstalled);
+      if (media) {
+        if (typeof media.removeEventListener === "function") {
+          media.removeEventListener("change", handleMediaChange);
+        } else if (typeof media.removeListener === "function") {
+          media.removeListener(handleMediaChange);
+        }
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    let lastWrite = 0;
+    const performTouch = () => {
+      const now = Date.now();
+      if (now - lastWrite < 60000) return;
+      lastWrite = now;
+      touchLastActive(now).catch((error) => console.warn("Keepalive fehlgeschlagen", error));
+    };
+    const pointerHandler = () => performTouch();
+    const keyHandler = () => performTouch();
+    const visibilityHandler = () => {
+      if (document.visibilityState === "visible") {
+        performTouch();
+      }
+    };
+    document.addEventListener("pointerdown", pointerHandler, { passive: true });
+    document.addEventListener("keydown", keyHandler);
+    document.addEventListener("visibilitychange", visibilityHandler);
+    return () => {
+      document.removeEventListener("pointerdown", pointerHandler);
+      document.removeEventListener("keydown", keyHandler);
+      document.removeEventListener("visibilitychange", visibilityHandler);
+    };
+  }, []);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -1373,22 +1573,113 @@ export default function HomePage() {
   };
 
   const handleDailyImport = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    file.text().then((text) => {
-      try {
-        const parsed = JSON.parse(text);
-        if (!Array.isArray(parsed)) throw new Error("invalid");
-        const normalized = parsed
-          .filter((item): item is DailyEntry & Record<string, unknown> => typeof item === "object" && item !== null)
-          .map((item) => normalizeImportedDailyEntry(item));
-        const valid = normalized.filter((entry) => validateDailyEntry(entry).length === 0);
-        setDailyEntries(valid);
-        setInfoMessage("Tagesdaten importiert.");
-      } catch {
-        setInfoMessage("Import fehlgeschlagen.");
-      }
-    });
+    const input = event.target;
+    const file = input.files?.[0];
+    if (!file) {
+      input.value = "";
+      return;
+    }
+    file
+      .text()
+      .then((text) => {
+        try {
+          const parsed = JSON.parse(text);
+          if (!Array.isArray(parsed)) throw new Error("invalid");
+          const normalized = parsed
+            .filter((item): item is DailyEntry & Record<string, unknown> => typeof item === "object" && item !== null)
+            .map((item) => normalizeImportedDailyEntry(item));
+          const invalid = normalized.filter((entry) => validateDailyEntry(entry).length > 0);
+          if (invalid.length) throw new Error("invalid");
+          setDailyEntries(normalized);
+          setInfoMessage("Tagesdaten importiert.");
+        } catch {
+          setInfoMessage("Import fehlgeschlagen.");
+        }
+      })
+      .finally(() => {
+        input.value = "";
+      });
+  };
+
+  const handleBackupExport = () => {
+    downloadFile(
+      `endo-backup-${today}.json`,
+      JSON.stringify(backupPayload, null, 2),
+      "application/json"
+    );
+  };
+
+  const handleBackupImport = (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.target;
+    const file = input.files?.[0];
+    if (!file) {
+      input.value = "";
+      return;
+    }
+    file
+      .text()
+      .then((text) => {
+        try {
+          const parsed = JSON.parse(text) as Partial<BackupPayload>;
+          if (!parsed || typeof parsed !== "object") throw new Error("invalid");
+          if (!Array.isArray(parsed.dailyEntries) || !Array.isArray(parsed.weeklyEntries) || !Array.isArray(parsed.monthlyEntries)) {
+            throw new Error("invalid");
+          }
+          const normalizedDaily = parsed.dailyEntries
+            .filter((item): item is DailyEntry & Record<string, unknown> => typeof item === "object" && item !== null)
+            .map((item) => normalizeImportedDailyEntry(item));
+          if (normalizedDaily.some((entry) => validateDailyEntry(entry).length > 0)) {
+            throw new Error("invalid");
+          }
+          const normalizedWeekly = parsed.weeklyEntries
+            .filter((item): item is WeeklyEntry & Record<string, unknown> => typeof item === "object" && item !== null)
+            .map((item) => normalizeImportedWeeklyEntry(item));
+          if (normalizedWeekly.some((entry) => validateWeeklyEntry(entry).length > 0)) {
+            throw new Error("invalid");
+          }
+          const normalizedMonthly = parsed.monthlyEntries
+            .filter((item): item is MonthlyEntry & Record<string, unknown> => typeof item === "object" && item !== null)
+            .map((item) => normalizeImportedMonthlyEntry(item));
+          if (normalizedMonthly.some((entry) => validateMonthlyEntry(entry).length > 0)) {
+            throw new Error("invalid");
+          }
+          const flagsSource = parsed.featureFlags ?? {};
+          const normalizedFlags: FeatureFlags = {};
+          if (flagsSource && typeof flagsSource === "object") {
+            if (typeof (flagsSource as FeatureFlags).moduleUrinary === "boolean") {
+              normalizedFlags.moduleUrinary = (flagsSource as FeatureFlags).moduleUrinary;
+            }
+            if (typeof (flagsSource as FeatureFlags).moduleHeadache === "boolean") {
+              normalizedFlags.moduleHeadache = (flagsSource as FeatureFlags).moduleHeadache;
+            }
+            if (typeof (flagsSource as FeatureFlags).moduleDizziness === "boolean") {
+              normalizedFlags.moduleDizziness = (flagsSource as FeatureFlags).moduleDizziness;
+            }
+          }
+
+          setDailyEntries(normalizedDaily);
+          setWeeklyEntries(normalizedWeekly);
+          setMonthlyEntries(normalizedMonthly);
+          setFeatureFlags(normalizedFlags);
+          setInfoMessage("Backup importiert.");
+        } catch {
+          setInfoMessage("Backup-Import fehlgeschlagen.");
+        }
+      })
+      .finally(() => {
+        input.value = "";
+      });
+  };
+
+  const handleInstallClick = () => {
+    if (!installPrompt) return;
+    installPrompt
+      .prompt()
+      .catch(() => undefined)
+      .then(() => installPrompt.userChoice.catch(() => undefined))
+      .finally(() => {
+        setInstallPrompt(null);
+      });
   };
 
   const handleReportDownload = (months: number) => {
@@ -1726,6 +2017,18 @@ export default function HomePage() {
     [dailyEntries, activeUrinary, activeHeadache, activeDizziness]
   );
 
+  const backupPayload = useMemo<BackupPayload>(
+    () => ({
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      dailyEntries,
+      weeklyEntries,
+      monthlyEntries,
+      featureFlags,
+    }),
+    [dailyEntries, weeklyEntries, monthlyEntries, featureFlags]
+  );
+
   const urinaryTrendData = useMemo(() => {
     if (!activeUrinary) return [] as Array<{ date: string; cycleDay: number | null; urgency: number | null }>;
     return annotatedDailyEntries.map(({ entry, cycleDay }) => ({
@@ -1890,6 +2193,33 @@ export default function HomePage() {
     return { avgPerMonth, avgNrs, presentDays, heavyDays };
   }, [activeDizziness, dailyEntries]);
 
+  const storageStatusMessages = useMemo(() => {
+    const messages = new Set<string>();
+    if (!storageReady) {
+      messages.add("Speicher wird initialisiert …");
+    }
+    storageErrors.forEach((message) => {
+      if (message) messages.add(message);
+    });
+    if (hasMemoryFallback) {
+      messages.add("IndexedDB blockiert – Speicherung aktuell nur temporär.");
+    }
+    if (storageUnavailable) {
+      messages.add("Browser erlaubt keinen Zugriff auf persistente Speicherung.");
+    }
+    if (persistWarning) {
+      messages.add(persistWarning);
+    }
+    return Array.from(messages);
+  }, [hasMemoryFallback, persistWarning, storageErrors, storageReady, storageUnavailable]);
+
+  const storageDriverText = storageDrivers.length ? storageDrivers.join(", ") : "unbekannt";
+  const persistedLabel =
+    persisted === true ? "dauerhaft aktiv" : persisted === false ? "nicht dauerhaft" : "Status unbekannt";
+  const persistedBadgeClass =
+    persisted === true ? "bg-emerald-100 text-emerald-700" : persisted === false ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600";
+  const installHintVisible = showInstallHint && !isStandalone;
+
   return (
     <main className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8">
       <header className="flex flex-col gap-2">
@@ -1897,9 +2227,57 @@ export default function HomePage() {
         <p className="text-sm text-rose-700">
           Kernmetriken ohne Hilfsmittel, optionale Sensorfelder nur auf Wunsch.
         </p>
-        <p className="text-xs text-rose-500">Keine Telemetrie. Daten bleiben im Browser (Local Storage) – Export jederzeit als JSON/CSV/PDF.</p>
+        <p className="text-xs text-rose-500">Keine Telemetrie. Daten bleiben im Browser (IndexedDB) – Export jederzeit als JSON/CSV/PDF.</p>
         {infoMessage && <p className="text-sm font-medium text-rose-600">{infoMessage}</p>}
       </header>
+
+      <div className="space-y-3 rounded-lg border border-rose-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-wrap items-center gap-3 text-sm text-rose-700">
+            <span className="flex items-center gap-2 font-medium text-rose-800">
+              <HardDrive className="h-4 w-4 text-rose-500" /> Speicher: {storageDriverText}
+            </span>
+            <span className={cn("flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold", persistedBadgeClass)}>
+              <ShieldCheck className="h-3.5 w-3.5" /> {persistedLabel}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" className="text-rose-700" onClick={handleBackupExport}>
+              <Download className="mr-2 h-4 w-4" /> Daten exportieren
+            </Button>
+            <label className="flex cursor-pointer items-center gap-2 rounded-md border border-rose-200 px-3 py-2 text-sm text-rose-700 hover:bg-rose-50">
+              <Upload className="h-4 w-4" /> Daten importieren
+              <input type="file" accept="application/json" className="hidden" onChange={handleBackupImport} />
+            </label>
+          </div>
+        </div>
+        {storageStatusMessages.length > 0 && (
+          <div className="space-y-1 text-xs text-amber-700">
+            {storageStatusMessages.map((message) => (
+              <div key={message} className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-500" />
+                <span>{message}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {installHintVisible && (
+          <div className="flex flex-col gap-2 rounded-md bg-rose-50 p-3 text-xs text-rose-700 sm:flex-row sm:items-center sm:justify-between">
+            <span className="flex items-center gap-2 font-medium text-rose-700">
+              <Smartphone className="h-4 w-4 text-rose-500" /> Zum Home-Bildschirm hinzufügen für Offline-Nutzung.
+            </span>
+            {installPrompt ? (
+              <Button type="button" size="sm" onClick={handleInstallClick} className="self-start sm:self-auto">
+                <Home className="mr-2 h-4 w-4" /> Installieren
+              </Button>
+            ) : (
+              <span className="rounded-full bg-rose-100 px-3 py-1 text-[11px] font-medium text-rose-600">
+                Im Browser-Menü „Zum Home-Bildschirm“ wählen.
+              </span>
+            )}
+          </div>
+        )}
+      </div>
 
       <Tabs defaultValue="daily" className="w-full">
         <TabsList className="grid w-full grid-cols-3 bg-rose-100 text-rose-700">

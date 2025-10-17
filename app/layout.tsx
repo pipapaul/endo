@@ -4,6 +4,8 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "EndoTrack",
   description: "Minimalistische Endometriose-Tracking App",
+  manifest: "/manifest.webmanifest",
+  themeColor: "#f43f5e",
 };
 
 export default function RootLayout({

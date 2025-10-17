@@ -30,4 +30,10 @@ Der Befehl legt die fertigen Dateien im Verzeichnis `out/` ab. Der gesamte Ordne
 - React 18
 - Tailwind CSS für das Styling
 - Recharts für Diagramme
-- Lokale Persistenz via `localStorage`
+- Lokale Persistenz via IndexedDB (Offline-First)
+- Service Worker für App-Shell-Caching
+- PWA Manifest & Installierbarkeit
+
+## Migration auf IndexedDB
+
+Bestehende Installationen, die bislang `localStorage` genutzt haben, migrieren die Daten beim ersten Start automatisch in die neue IndexedDB-Datenbank. Nach erfolgreicher Migration werden die alten `localStorage`-Einträge entfernt. Sollte der Browser keinen Zugriff auf IndexedDB erlauben (z. B. in sehr restriktiven Umgebungen), arbeitet die App weiter mit einem temporären Speicher und blendet einen Warnhinweis ein.

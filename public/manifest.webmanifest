@@ -1,13 +1,13 @@
 {
-  "name": "Endo – Tagescheck",
-  "short_name": "EndoB",
+  "name": "EndoTrack",
+  "short_name": "Endo",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
   "background_color": "#fef2f2",
   "theme_color": "#f43f5e",
-  "description": "Tagesprotokoll für Endometriose – option2.",
- "icons": [
+  "description": "Minimalistische Endometriose-Tracking App.",
+  "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
