@@ -323,7 +323,7 @@ function Section({
                   {confettiPieces.map((piece, index) => (
                     <span
                       key={index}
-                      className="confetti-piece absolute h-2 w-2 rounded-sm"
+                      className="confetti-piece absolute h-3 w-3 rounded-sm"
                       style={{
                         left: piece.left,
                         top: piece.top,
