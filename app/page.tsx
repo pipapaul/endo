@@ -991,6 +991,15 @@ function isoWeekToDate(isoWeek: string) {
   return monday;
 }
 
+function dateToIsoWeek(date: Date) {
+  const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNr = target.getUTCDay() || 7;
+  target.setUTCDate(target.getUTCDate() + 4 - dayNr);
+  const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
+  const weekNumber = Math.ceil(((target.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${target.getUTCFullYear()}-W${String(weekNumber).padStart(2, "0")}`;
+}
+
 function monthToDate(month: string) {
   const match = month.match(/^(\d{4})-(\d{2})$/);
   if (!match) return null;
@@ -1042,14 +1051,7 @@ export default function HomePage() {
   const [dailySaveNotice, setDailySaveNotice] = useState<string | null>(null);
 
   const [weeklyDraft, setWeeklyDraft] = useState<WeeklyEntry>(() => {
-    const now = new Date();
-    const target = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-    const dayNr = (target.getUTCDay() + 6) % 7;
-    target.setUTCDate(target.getUTCDate() - dayNr + 3);
-    const firstThursday = new Date(Date.UTC(target.getUTCFullYear(), 0, 4));
-    const weekNumber =
-      1 + Math.round(((target.getTime() - firstThursday.getTime()) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
-    const isoWeek = `${target.getUTCFullYear()}-W${String(weekNumber).padStart(2, "0")}`;
+    const isoWeek = dateToIsoWeek(new Date());
     return createEmptyWeeklyEntry(isoWeek);
   });
 
@@ -1220,6 +1222,45 @@ export default function HomePage() {
 
   const canGoToNextDay = useMemo(() => dailyDraft.date < today, [dailyDraft.date, today]);
 
+  const currentIsoWeek = useMemo(() => {
+    const parsedToday = parseIsoDate(today);
+    return parsedToday ? dateToIsoWeek(parsedToday) : dateToIsoWeek(new Date());
+  }, [today]);
+
+  const currentMonth = useMemo(() => today.slice(0, 7), [today]);
+
+  const selectedWeekLabel = useMemo(() => {
+    const start = isoWeekToDate(weeklyDraft.isoWeek);
+    if (!start) return null;
+    const end = new Date(start);
+    end.setUTCDate(end.getUTCDate() + 6);
+    const startOptions: Intl.DateTimeFormatOptions = { day: "2-digit", month: "long" };
+    if (start.getUTCFullYear() !== end.getUTCFullYear()) {
+      startOptions.year = "numeric";
+    }
+    const endOptions: Intl.DateTimeFormatOptions = { day: "2-digit", month: "long", year: "numeric" };
+    const startLabel = start.toLocaleDateString("de-DE", startOptions);
+    const endLabel = end.toLocaleDateString("de-DE", endOptions);
+    const weekNumber = weeklyDraft.isoWeek.slice(-2);
+    return `KW ${weekNumber} (${startLabel} – ${endLabel})`;
+  }, [weeklyDraft.isoWeek]);
+
+  const selectedMonthLabel = useMemo(() => {
+    const monthDate = monthToDate(monthlyDraft.month);
+    if (!monthDate) return null;
+    return monthDate.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
+  }, [monthlyDraft.month]);
+
+  const canGoToNextWeek = useMemo(() => {
+    const baseIsoWeek = weeklyDraft.isoWeek || currentIsoWeek;
+    return baseIsoWeek < currentIsoWeek;
+  }, [weeklyDraft.isoWeek, currentIsoWeek]);
+
+  const canGoToNextMonth = useMemo(() => {
+    const baseMonth = monthlyDraft.month || currentMonth;
+    return baseMonth < currentMonth;
+  }, [monthlyDraft.month, currentMonth]);
+
   const goToPreviousDay = useCallback(() => {
     setDailyDraft((prev) => {
       const base = parseIsoDate(prev.date || today);
@@ -1242,6 +1283,72 @@ export default function HomePage() {
       return { ...prev, date: nextDate };
     });
   }, [today]);
+
+  const goToPreviousWeek = useCallback(() => {
+    setWeeklyDraft((prev) => {
+      const baseIsoWeek = prev.isoWeek || currentIsoWeek;
+      const start = isoWeekToDate(baseIsoWeek);
+      if (!start) return prev;
+      start.setUTCDate(start.getUTCDate() - 7);
+      const nextIsoWeek = dateToIsoWeek(start);
+      return { ...prev, isoWeek: nextIsoWeek };
+    });
+  }, [currentIsoWeek]);
+
+  const goToNextWeek = useCallback(() => {
+    setWeeklyDraft((prev) => {
+      const baseIsoWeek = prev.isoWeek || currentIsoWeek;
+      if (baseIsoWeek >= currentIsoWeek) {
+        return prev;
+      }
+      const start = isoWeekToDate(baseIsoWeek);
+      if (!start) return prev;
+      start.setUTCDate(start.getUTCDate() + 7);
+      const nextIsoWeek = dateToIsoWeek(start);
+      if (nextIsoWeek > currentIsoWeek) {
+        return prev;
+      }
+      return { ...prev, isoWeek: nextIsoWeek };
+    });
+  }, [currentIsoWeek]);
+
+  const goToPreviousMonth = useCallback(() => {
+    setMonthlyDraft((prev) => {
+      const baseMonth = prev.month || currentMonth;
+      const baseDate = monthToDate(baseMonth);
+      if (!baseDate) return prev;
+      baseDate.setUTCMonth(baseDate.getUTCMonth() - 1);
+      const nextMonth = `${baseDate.getUTCFullYear()}-${String(baseDate.getUTCMonth() + 1).padStart(2, "0")}`;
+      return { ...prev, month: nextMonth };
+    });
+  }, [currentMonth]);
+
+  const goToNextMonth = useCallback(() => {
+    setMonthlyDraft((prev) => {
+      const baseMonth = prev.month || currentMonth;
+      if (baseMonth >= currentMonth) {
+        return prev;
+      }
+      const baseDate = monthToDate(baseMonth);
+      if (!baseDate) return prev;
+      baseDate.setUTCMonth(baseDate.getUTCMonth() + 1);
+      const nextMonth = `${baseDate.getUTCFullYear()}-${String(baseDate.getUTCMonth() + 1).padStart(2, "0")}`;
+      if (nextMonth > currentMonth) {
+        return prev;
+      }
+      return { ...prev, month: nextMonth };
+    });
+  }, [currentMonth]);
+
+  const hasEntryForSelectedWeek = useMemo(
+    () => weeklyEntries.some((entry) => entry.isoWeek === weeklyDraft.isoWeek),
+    [weeklyEntries, weeklyDraft.isoWeek]
+  );
+
+  const hasEntryForSelectedMonth = useMemo(
+    () => monthlyEntries.some((entry) => entry.month === monthlyDraft.month),
+    [monthlyEntries, monthlyDraft.month]
+  );
 
   const activeUrinary = Boolean(featureFlags.moduleUrinary);
   const activeHeadache = Boolean(featureFlags.moduleHeadache);
@@ -3936,11 +4043,61 @@ export default function HomePage() {
           >
             <div className="grid gap-4 md:grid-cols-2">
               <Labeled label="Kalenderwoche (ISO)" htmlFor="iso-week">
-                <Input
-                  id="iso-week"
-                  value={weeklyDraft.isoWeek}
-                  onChange={(event) => setWeeklyDraft((prev) => ({ ...prev, isoWeek: event.target.value }))}
-                />
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                  <div className="flex w-full max-w-xl items-center justify-between gap-2 rounded-lg border border-rose-200 bg-white px-3 py-2 shadow-sm">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={goToPreviousWeek}
+                      aria-label="Vorherige Woche"
+                      className="text-rose-500 hover:text-rose-700"
+                    >
+                      <ChevronLeft className="h-5 w-5" />
+                    </Button>
+                    <div className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                      <CalendarDays className="h-6 w-6 flex-shrink-0 text-rose-500" aria-hidden="true" />
+                      <div className="min-w-0">
+                        <p className="text-xs uppercase tracking-wide text-rose-400">Ausgewählte Woche</p>
+                        <p className="truncate text-sm font-semibold text-rose-700">
+                          {selectedWeekLabel ?? "Bitte Woche wählen"}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={goToNextWeek}
+                      aria-label="Nächste Woche"
+                      className="text-rose-500 hover:text-rose-700"
+                      disabled={!canGoToNextWeek}
+                    >
+                      <ChevronRight className="h-5 w-5" />
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-rose-400" aria-hidden="true" />
+                    <Input
+                      id="iso-week"
+                      type="week"
+                      value={weeklyDraft.isoWeek}
+                      onChange={(event) => setWeeklyDraft((prev) => ({ ...prev, isoWeek: event.target.value }))}
+                      className="w-full max-w-[11rem]"
+                      max={currentIsoWeek}
+                      aria-label="Kalenderwoche direkt auswählen"
+                    />
+                  </div>
+                </div>
+                {hasEntryForSelectedWeek && (
+                  <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                    <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-500" />
+                    <div>
+                      <p className="font-semibold">Für diese Woche wurden bereits Angaben gespeichert.</p>
+                      <p className="text-xs text-amber-600">Beim Speichern werden die bestehenden Daten aktualisiert.</p>
+                    </div>
+                  </div>
+                )}
                 {renderIssuesForPath("isoWeek")}
               </Labeled>
               <TermField termKey="wpai_abs" htmlFor="wpai-abs">
@@ -4075,12 +4232,61 @@ export default function HomePage() {
           >
             <div className="grid gap-6">
               <Labeled label="Monat (YYYY-MM)" htmlFor="monthly-month">
-                <Input
-                  id="monthly-month"
-                  type="month"
-                  value={monthlyDraft.month}
-                  onChange={(event) => setMonthlyDraft((prev) => ({ ...prev, month: event.target.value }))}
-                />
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                  <div className="flex w-full max-w-xl items-center justify-between gap-2 rounded-lg border border-rose-200 bg-white px-3 py-2 shadow-sm">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={goToPreviousMonth}
+                      aria-label="Vorheriger Monat"
+                      className="text-rose-500 hover:text-rose-700"
+                    >
+                      <ChevronLeft className="h-5 w-5" />
+                    </Button>
+                    <div className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                      <CalendarDays className="h-6 w-6 flex-shrink-0 text-rose-500" aria-hidden="true" />
+                      <div className="min-w-0">
+                        <p className="text-xs uppercase tracking-wide text-rose-400">Ausgewählter Monat</p>
+                        <p className="truncate text-sm font-semibold text-rose-700">
+                          {selectedMonthLabel ?? "Bitte Monat wählen"}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={goToNextMonth}
+                      aria-label="Nächster Monat"
+                      className="text-rose-500 hover:text-rose-700"
+                      disabled={!canGoToNextMonth}
+                    >
+                      <ChevronRight className="h-5 w-5" />
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-rose-400" aria-hidden="true" />
+                    <Input
+                      id="monthly-month"
+                      type="month"
+                      value={monthlyDraft.month}
+                      onChange={(event) => setMonthlyDraft((prev) => ({ ...prev, month: event.target.value }))}
+                      className="w-full max-w-[11rem]"
+                      max={currentMonth}
+                      aria-label="Monat direkt auswählen"
+                    />
+                  </div>
+                </div>
+                {hasEntryForSelectedMonth && (
+                  <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                    <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-500" />
+                    <div>
+                      <p className="font-semibold">Für diesen Monat wurden bereits Angaben gespeichert.</p>
+                      <p className="text-xs text-amber-600">Beim Speichern werden die bestehenden Daten aktualisiert.</p>
+                    </div>
+                  </div>
+                )}
                 {renderIssuesForPath("month")}
               </Labeled>
               <div className="grid gap-6 lg:grid-cols-2">
