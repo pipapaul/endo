@@ -1,15 +1,16 @@
-name: Build static site (Next 14, output: export)
+name: build-static-site
 
 on:
-  workflow_dispatch: {}      # manuell startbar
+  workflow_dispatch:
   push:
-    branches: [ main ]       # optional: auf Push bauen
+    branches:
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      NEXT_TELEMETRY_DISABLED: 1
+      NEXT_TELEMETRY_DISABLED: "1"
 
     steps:
       - name: Checkout
@@ -18,7 +19,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'   # Next >=13 braucht mind. 18
+          node-version: 20
 
       - name: Install deps
         run: |
@@ -28,29 +29,33 @@ jobs:
             npm install --no-audit --no-fund
           fi
 
-      - name: Build (Static export via next.config.mjs)
+      - name: Build (static export via next.config.mjs)
         run: |
-          # Vorausgesetzt: next.config.mjs hat: output: 'export'
           if npm run -s | grep -q "^  build$"; then
             npm run build
           else
             npx next build
           fi
-          echo "== out/ Inhalt =="
-          ls -la out || (echo "⚠️ out/ nicht gefunden – prüfe next.config.mjs" && exit 1)
+          ls -la out || (echo "out/ not found - check next.config.mjs (output: 'export')" && exit 1)
 
-      - name: Upload artifact (out/)
+      - name: Upload artifact (out)
         uses: actions/upload-artifact@v4
         with:
           name: site-out
           path: out
 
-      - name: ZIP out/
+      - name: ZIP out
+        if: always()
         run: |
-          cd out
-          zip -r ../site-out.zip .
+          if [ -d out ]; then
+            cd out
+            zip -r ../site-out.zip .
+          fi
+
       - name: Upload ZIP
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: site-out-zip
           path: site-out.zip
+          if-no-files-found: ignore
