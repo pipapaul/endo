@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import {
   LineChart,
@@ -234,6 +234,8 @@ const createEmptyMonthlyEntry = (month: string): MonthlyEntry => ({
   promis: {},
 });
 
+const SectionScopeContext = createContext<string | number | null>(null);
+
 function Section({
   title,
   description,
@@ -247,6 +249,7 @@ function Section({
   children: ReactNode;
   completionEnabled?: boolean;
 }) {
+  const scope = useContext(SectionScopeContext);
   const cardRef = useRef<HTMLDivElement | null>(null);
   const timeoutRef = useRef<number | null>(null);
   const [isCompleted, setIsCompleted] = useState(false);
@@ -268,6 +271,16 @@ function Section({
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!completionEnabled) return;
+    if (timeoutRef.current !== null) {
+      window.clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    setIsCompleted(false);
+    setShowConfetti(false);
+  }, [scope, completionEnabled]);
 
   const scrollToNextSection = () => {
     if (!cardRef.current) return;
@@ -2506,6 +2519,7 @@ export default function HomePage() {
         </TabsList>
 
         <TabsContent value="daily" className="space-y-6">
+          <SectionScopeContext.Provider value={`daily:${dailyDraft.date}`}>
           <Section
             title="Tagescheck-in"
             description="Schmerz → Körperkarte → Symptome → Blutung → Medikation → Schlaf → Darm/Blase → Notizen"
@@ -4034,8 +4048,10 @@ export default function HomePage() {
               </div>
             </div>
           </Section>
+          </SectionScopeContext.Provider>
         </TabsContent>
         <TabsContent value="weekly" className="space-y-6">
+          <SectionScopeContext.Provider value={`weekly:${weeklyDraft.isoWeek}`}>
           <Section
             title={`${TERMS.wpai_overall.label} (WPAI – 7-Tage-Rückblick)`}
             description="Prozentwerte für Fehlzeiten, Präsenzminderung und Gesamtbeeinträchtigung"
@@ -4222,9 +4238,11 @@ export default function HomePage() {
               </ResponsiveContainer>
             </div>
           </Section>
+          </SectionScopeContext.Provider>
         </TabsContent>
 
         <TabsContent value="monthly" className="space-y-6">
+          <SectionScopeContext.Provider value={`monthly:${monthlyDraft.month}`}>
           <Section
             title="Monatliche Fragebögen"
             description="Lebensqualität (EHP-5), Stimmung (PHQ-9), Angst (GAD-7) und optionale PROMIS-T-Scores"
@@ -4537,6 +4555,7 @@ export default function HomePage() {
               </ResponsiveContainer>
             </div>
           </Section>
+          </SectionScopeContext.Provider>
         </TabsContent>
       </Tabs>
     </main>
