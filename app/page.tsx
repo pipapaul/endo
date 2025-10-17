@@ -17,7 +17,15 @@ import {
   Scatter,
 } from "recharts";
 import type { TooltipProps } from "recharts";
-import { Calendar, Download, Upload } from "lucide-react";
+import {
+  Calendar,
+  CalendarDays,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Upload,
+} from "lucide-react";
 
 import { DailyEntry, FeatureFlags, MonthlyEntry, WeeklyEntry } from "@/lib/types";
 import { TERMS } from "@/lib/terms";
@@ -167,6 +175,12 @@ const formatDate = (date: Date) => {
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
   const day = `${date.getDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
+};
+
+const parseIsoDate = (iso: string) => {
+  const [year, month, day] = iso.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day);
 };
 
 const createEmptyDailyEntry = (date: string): DailyEntry => ({
@@ -857,6 +871,47 @@ export default function HomePage() {
 
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
+
+  const hasEntryForSelectedDate = useMemo(
+    () => dailyEntries.some((entry) => entry.date === dailyDraft.date),
+    [dailyEntries, dailyDraft.date]
+  );
+
+  const selectedDateLabel = useMemo(() => {
+    const parsed = parseIsoDate(dailyDraft.date);
+    if (!parsed) return null;
+    return parsed.toLocaleDateString("de-DE", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  }, [dailyDraft.date]);
+
+  const canGoToNextDay = useMemo(() => dailyDraft.date < today, [dailyDraft.date, today]);
+
+  const goToPreviousDay = useCallback(() => {
+    setDailyDraft((prev) => {
+      const base = parseIsoDate(prev.date || today);
+      if (!base) return prev;
+      base.setDate(base.getDate() - 1);
+      return { ...prev, date: formatDate(base) };
+    });
+  }, [today]);
+
+  const goToNextDay = useCallback(() => {
+    setDailyDraft((prev) => {
+      if ((prev.date || today) >= today) {
+        return prev;
+      }
+      const base = parseIsoDate(prev.date || today);
+      if (!base) return prev;
+      base.setDate(base.getDate() + 1);
+      const nextDate = formatDate(base);
+      if (nextDate > today) return prev;
+      return { ...prev, date: nextDate };
+    });
+  }, [today]);
 
   const activeUrinary = Boolean(featureFlags.moduleUrinary);
   const activeHeadache = Boolean(featureFlags.moduleHeadache);
@@ -1821,13 +1876,60 @@ export default function HomePage() {
               <div className="space-y-6">
                 <div className="grid gap-4">
                   <Label className="text-sm font-medium text-rose-800">Datum</Label>
-                  <Input
-                    type="date"
-                    value={dailyDraft.date}
-                    onChange={(event) => setDailyDraft({ ...dailyDraft, date: event.target.value })}
-                    className="w-48"
-                    max={today}
-                  />
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                    <div className="flex w-full max-w-xl items-center justify-between gap-2 rounded-lg border border-rose-200 bg-white px-3 py-2 shadow-sm">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={goToPreviousDay}
+                        aria-label="Vorheriger Tag"
+                        className="text-rose-500 hover:text-rose-700"
+                      >
+                        <ChevronLeft className="h-5 w-5" />
+                      </Button>
+                      <div className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                        <CalendarDays className="h-6 w-6 flex-shrink-0 text-rose-500" />
+                        <div className="min-w-0">
+                          <p className="text-xs uppercase tracking-wide text-rose-400">Ausgewählter Tag</p>
+                          <p className="truncate text-sm font-semibold text-rose-700">
+                            {selectedDateLabel ?? "Bitte Datum wählen"}
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={goToNextDay}
+                        aria-label="Nächster Tag"
+                        className="text-rose-500 hover:text-rose-700"
+                        disabled={!canGoToNextDay}
+                      >
+                        <ChevronRight className="h-5 w-5" />
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-rose-400" aria-hidden="true" />
+                      <Input
+                        type="date"
+                        value={dailyDraft.date}
+                        onChange={(event) => setDailyDraft({ ...dailyDraft, date: event.target.value })}
+                        className="w-full max-w-[11rem]"
+                        max={today}
+                        aria-label="Datum direkt auswählen"
+                      />
+                    </div>
+                  </div>
+                  {hasEntryForSelectedDate && (
+                    <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                      <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-500" />
+                      <div>
+                        <p className="font-semibold">Für dieses Datum wurden bereits Angaben gespeichert.</p>
+                        <p className="text-xs text-amber-600">Beim Speichern werden die bestehenden Daten aktualisiert.</p>
+                      </div>
+                    </div>
+                  )}
                   {renderIssuesForPath("date")}
                 </div>
 
