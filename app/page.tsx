@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import {
   LineChart,
@@ -240,8 +240,77 @@ function Section({ title, description, aside, children }: {
   aside?: ReactNode;
   children: ReactNode;
 }) {
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const confettiPieces = useMemo(
+    () =>
+      CONFETTI_PIECES.map((piece, index) => ({
+        ...piece,
+        color: CONFETTI_COLORS[index % CONFETTI_COLORS.length],
+      })),
+    []
+  );
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
+
+  const scrollToNextSection = () => {
+    if (!cardRef.current) return;
+    const sections = Array.from(document.querySelectorAll<HTMLElement>("[data-section-card]"));
+    const currentIndex = sections.indexOf(cardRef.current);
+    if (currentIndex === -1) return;
+    for (let index = currentIndex + 1; index < sections.length; index += 1) {
+      const next = sections[index];
+      if (next) {
+        next.scrollIntoView({ behavior: "smooth", block: "start" });
+        break;
+      }
+    }
+  };
+
+  const handleComplete = () => {
+    if (isCompleted || showConfetti) return;
+    setShowConfetti(true);
+    timeoutRef.current = window.setTimeout(() => {
+      setShowConfetti(false);
+      setIsCompleted(true);
+      scrollToNextSection();
+    }, 200);
+  };
+
   return (
-    <Card className="border border-rose-100 bg-white shadow-sm">
+    <Card
+      ref={cardRef}
+      data-section-card
+      data-section-completed={isCompleted ? "true" : "false"}
+      className={cn(
+        "relative border border-rose-100 shadow-sm transition-colors",
+        isCompleted ? "border-amber-200 bg-amber-50" : "bg-white"
+      )}
+    >
+      {showConfetti ? (
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          {confettiPieces.map((piece, index) => (
+            <span
+              key={index}
+              className="confetti-piece absolute h-2 w-2 rounded-sm"
+              style={{
+                left: piece.left,
+                top: "45%",
+                backgroundColor: piece.color,
+                animationDelay: `${piece.delay}ms`,
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -251,7 +320,30 @@ function Section({ title, description, aside, children }: {
           {aside}
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">{children}</CardContent>
+      <CardContent className="space-y-4">
+        {children}
+        <div className="flex justify-end pt-2">
+          <Button
+            type="button"
+            variant="outline"
+            className={cn(
+              "border-amber-300 text-amber-700 transition-colors hover:bg-amber-100",
+              isCompleted ? "cursor-default bg-amber-50" : ""
+            )}
+            onClick={handleComplete}
+            disabled={isCompleted}
+          >
+            {isCompleted ? (
+              <span className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4" />
+                Erledigt
+              </span>
+            ) : (
+              "Fertig"
+            )}
+          </Button>
+        </div>
+      </CardContent>
     </Card>
   );
 }
@@ -381,6 +473,13 @@ const MODULE_TERMS: ModuleTerms = {
   headacheOpt: TERMS.headacheOpt,
   dizzinessOpt: TERMS.dizzinessOpt,
 };
+
+const CONFETTI_COLORS = ["#fb7185", "#f97316", "#facc15", "#4ade80", "#38bdf8"] as const;
+
+const CONFETTI_PIECES = Array.from({ length: 8 }, (_, index) => ({
+  left: `${8 + index * 12}%`,
+  delay: index * 30,
+}));
 
 const SYMPTOM_MODULE_TOGGLES: Array<{
   key: keyof FeatureFlags;
