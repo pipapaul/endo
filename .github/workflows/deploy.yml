@@ -1,22 +1,50 @@
-name: Build static site
+name: Build static site (Next export)
 
 on:
-  workflow_dispatch: {}   # per Klick startbar
+  workflow_dispatch: {}     # per Klick startbar
+  push:
+    branches: [ main ]      # optional: auf jeden Push bauen
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: npm ci
-      - run: |
-          npm run build
-          npm run export
-      - name: Upload artifact (out folder)
+          cache: 'npm'
+
+      - name: Install deps
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Build (Next static export)
+        run: |
+          if npm run -s | grep -q "^  build$"; then npm run build; else npx next build; fi
+          if npm run -s | grep -q "^  export$"; then npm run export; else npx next export; fi
+
+      # Artefakt „out/“ hochladen (zum Download im Actions-UI)
+      - name: Upload artifact (out/)
         uses: actions/upload-artifact@v4
         with:
           name: site-out
           path: out
+
+      # Bequemer: zusätzlich als ZIP bündeln
+      - name: Pack ZIP
+        run: |
+          cd out
+          zip -r ../site-out.zip .
+      - name: Upload ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-out-zip
+          path: site-out.zip
