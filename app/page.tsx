@@ -234,14 +234,21 @@ const createEmptyMonthlyEntry = (month: string): MonthlyEntry => ({
   promis: {},
 });
 
-function Section({ title, description, aside, children }: {
+function Section({
+  title,
+  description,
+  aside,
+  children,
+  completionEnabled = true,
+}: {
   title: string;
   description?: string;
   aside?: ReactNode;
   children: ReactNode;
+  completionEnabled?: boolean;
 }) {
   const cardRef = useRef<HTMLDivElement | null>(null);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timeoutRef = useRef<number | null>(null);
   const [isCompleted, setIsCompleted] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const confettiPieces = useMemo(
@@ -255,8 +262,9 @@ function Section({ title, description, aside, children }: {
 
   useEffect(() => {
     return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
+      if (timeoutRef.current !== null) {
+        window.clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
       }
     };
   }, []);
@@ -276,12 +284,13 @@ function Section({ title, description, aside, children }: {
   };
 
   const handleComplete = () => {
-    if (isCompleted || showConfetti) return;
+    if (!completionEnabled || isCompleted || showConfetti) return;
     setShowConfetti(true);
     timeoutRef.current = window.setTimeout(() => {
       setShowConfetti(false);
       setIsCompleted(true);
       scrollToNextSection();
+      timeoutRef.current = null;
     }, 200);
   };
 
@@ -295,7 +304,7 @@ function Section({ title, description, aside, children }: {
         isCompleted ? "border-amber-200 bg-amber-50" : "bg-white"
       )}
     >
-      {showConfetti ? (
+      {completionEnabled && showConfetti ? (
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
           {confettiPieces.map((piece, index) => (
             <span
@@ -322,27 +331,29 @@ function Section({ title, description, aside, children }: {
       </CardHeader>
       <CardContent className="space-y-4">
         {children}
-        <div className="flex justify-end pt-2">
-          <Button
-            type="button"
-            variant="outline"
-            className={cn(
-              "border-amber-300 text-amber-700 transition-colors hover:bg-amber-100",
-              isCompleted ? "cursor-default bg-amber-50" : ""
-            )}
-            onClick={handleComplete}
-            disabled={isCompleted}
-          >
-            {isCompleted ? (
-              <span className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4" />
-                Erledigt
-              </span>
-            ) : (
-              "Fertig"
-            )}
-          </Button>
-        </div>
+        {completionEnabled ? (
+          <div className="flex justify-end pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              className={cn(
+                "border-amber-300 text-amber-700 transition-colors hover:bg-amber-100",
+                isCompleted ? "cursor-default bg-amber-50" : ""
+              )}
+              onClick={handleComplete}
+              disabled={isCompleted}
+            >
+              {isCompleted ? (
+                <span className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Erledigt
+                </span>
+              ) : (
+                "Fertig"
+              )}
+            </Button>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -3341,7 +3352,11 @@ export default function HomePage() {
                   </Section>
                 )}
 
-                <Section title="Sexualfunktion (sensibles Opt-in)" description="FSFI wird nur nach Opt-in gezeigt">
+                <Section
+                  title="Sexualfunktion (sensibles Opt-in)"
+                  description="FSFI wird nur nach Opt-in gezeigt"
+                  completionEnabled={false}
+                >
                   <div className="flex items-center gap-3">
                     <Switch checked={fsfiOptIn} onCheckedChange={setFsfiOptIn} />
                     <span className="text-sm text-rose-700">
@@ -3371,7 +3386,11 @@ export default function HomePage() {
                   )}
                 </Section>
 
-                <Section title="Notizen & Tags" description="Freitext oder wiederkehrende Muster markieren">
+                <Section
+                  title="Notizen & Tags"
+                  description="Freitext oder wiederkehrende Muster markieren"
+                  completionEnabled={false}
+                >
                   <div className="grid gap-3">
                     <TermField termKey="notesTags" htmlFor="notes-tag-input">
                       <div className="flex flex-wrap gap-2">
@@ -3417,6 +3436,7 @@ export default function HomePage() {
                       aria-label="Hilfsmittel-Optionen"
                     />
                   }
+                  completionEnabled={false}
                 >
                   <Button type="button" variant="secondary" onClick={() => setSensorsVisible((prev) => !prev)}>
                     {optionalSensorsLabel}
@@ -3616,6 +3636,7 @@ export default function HomePage() {
                 <Section
                   title="Trend"
                   description={`${TERMS.nrs.label}, ${TERMS.pbac.label} sowie Symptom- und Schlafverlauf`}
+                  completionEnabled={false}
                 >
                   <div className="flex justify-end gap-2 text-xs text-rose-600">
                     <span>Achse:</span>
@@ -3790,7 +3811,11 @@ export default function HomePage() {
                   </Section>
                 )}
 
-                <Section title="Letzte Einträge" description="Kernmetriken kompakt">
+                <Section
+                  title="Letzte Einträge"
+                  description="Kernmetriken kompakt"
+                  completionEnabled={false}
+                >
                   <div className="space-y-3">
                     {dailyEntries
                       .slice()
@@ -3830,7 +3855,11 @@ export default function HomePage() {
                       ))}
                   </div>
                 </Section>
-                <Section title="Zyklus-Overlay" description="Durchschnittswerte je Zyklustag">
+                <Section
+                  title="Zyklus-Overlay"
+                  description="Durchschnittswerte je Zyklustag"
+                  completionEnabled={false}
+                >
                   <div className="max-h-64 space-y-2 overflow-y-auto text-xs text-rose-700">
                     {cycleOverlay.length === 0 && <p className="text-rose-500">Noch keine Zyklusdaten.</p>}
                     {cycleOverlay.map((row) => (
@@ -3860,7 +3889,11 @@ export default function HomePage() {
                     ))}
                   </div>
                 </Section>
-                <Section title="Wochentag-Overlay" description="Durchschnittlicher NRS nach Wochentag">
+                <Section
+                  title="Wochentag-Overlay"
+                  description="Durchschnittlicher NRS nach Wochentag"
+                  completionEnabled={false}
+                >
                   <div className="grid grid-cols-2 gap-2 text-xs text-rose-700 sm:grid-cols-4">
                     {weekdayOverlay.map((row) => (
                       <div key={row.weekday} className="rounded border border-amber-100 bg-amber-50 px-2 py-1">
@@ -3873,6 +3906,7 @@ export default function HomePage() {
                 <Section
                   title="Explorative Korrelationen"
                   description="Lokal berechnete Pearson-r Werte – keine medizinische Bewertung"
+                  completionEnabled={false}
                 >
                   <div className="space-y-2 text-xs text-rose-700">
                     <p>
