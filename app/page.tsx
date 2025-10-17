@@ -122,6 +122,9 @@ const HEAVY_BLEED_PBAC = 100;
 
 const isHeavyBleedToday = (entry: DailyEntry) => (entry.bleeding?.pbacScore ?? 0) >= HEAVY_BLEED_PBAC;
 
+const DEFAULT_PAGE_BG = "#fff1f2";
+const SAVED_PAGE_BG = "#fff7ed";
+
 const EHP5_ITEMS = [
   "Schmerz schränkt Alltagstätigkeiten ein",
   "Arbeit oder Studium litten unter Beschwerden",
@@ -883,6 +886,14 @@ export default function HomePage() {
     () => dailyEntries.some((entry) => entry.date === dailyDraft.date),
     [dailyEntries, dailyDraft.date]
   );
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--endo-bg", hasEntryForSelectedDate ? SAVED_PAGE_BG : DEFAULT_PAGE_BG);
+    return () => {
+      root.style.setProperty("--endo-bg", DEFAULT_PAGE_BG);
+    };
+  }, [hasEntryForSelectedDate]);
 
   const selectedDateLabel = useMemo(() => {
     const parsed = parseIsoDate(dailyDraft.date);
