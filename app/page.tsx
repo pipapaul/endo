@@ -838,6 +838,7 @@ export default function HomePage() {
   const [featureFlags, setFeatureFlags] = useLocalStorageState<FeatureFlags>("endo.flags.v1", {});
 
   const [dailyDraft, setDailyDraft] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
+  const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
   const [pbacCounts, setPbacCounts] = useState<PbacCounts>({ ...PBAC_DEFAULT_COUNTS });
   const [pbacStep, setPbacStep] = useState(1);
   const [pbacSelection, setPbacSelection] = useState<{ product: PbacProduct | null; saturation: PbacSaturation | null }>(
@@ -850,6 +851,7 @@ export default function HomePage() {
   const [notesTagDraft, setNotesTagDraft] = useState("");
   const [painQualityOther, setPainQualityOther] = useState("");
   const [trendXAxisMode, setTrendXAxisMode] = useState<"date" | "cycleDay">("date");
+  const [dailySaveNotice, setDailySaveNotice] = useState<string | null>(null);
 
   const [weeklyDraft, setWeeklyDraft] = useState<WeeklyEntry>(() => {
     const now = new Date();
@@ -871,6 +873,11 @@ export default function HomePage() {
 
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
+
+  const isDailyDirty = useMemo(
+    () => JSON.stringify(dailyDraft) !== JSON.stringify(lastSavedDailySnapshot),
+    [dailyDraft, lastSavedDailySnapshot]
+  );
 
   const hasEntryForSelectedDate = useMemo(
     () => dailyEntries.some((entry) => entry.date === dailyDraft.date),
@@ -933,6 +940,12 @@ export default function HomePage() {
   const gadSeverity = monthlyDraft.mental?.gad7Severity ?? mapGadSeverity(monthlyDraft.mental?.gad7);
 
   useEffect(() => {
+    if (!dailySaveNotice) return;
+    const timeout = window.setTimeout(() => setDailySaveNotice(null), 3000);
+    return () => window.clearTimeout(timeout);
+  }, [dailySaveNotice]);
+
+  useEffect(() => {
     if (dailyDraft.bleeding.isBleeding) {
       setDailyDraft((prev) => ({
         ...prev,
@@ -945,6 +958,18 @@ export default function HomePage() {
       }));
     }
   }, [pbacScore, dailyDraft.bleeding.isBleeding]);
+
+  useEffect(() => {
+    const existingEntry = dailyEntries.find((entry) => entry.date === dailyDraft.date);
+    if (!existingEntry) return;
+    const serializedExisting = JSON.stringify(existingEntry);
+    if (serializedExisting === JSON.stringify(lastSavedDailySnapshot)) {
+      return;
+    }
+    if (serializedExisting === JSON.stringify(dailyDraft)) {
+      setLastSavedDailySnapshot(existingEntry);
+    }
+  }, [dailyDraft, dailyEntries, lastSavedDailySnapshot]);
 
   useEffect(() => {
     if (activeUrinary) {
@@ -1242,9 +1267,15 @@ export default function HomePage() {
       return [...filtered, payload].sort((a, b) => a.date.localeCompare(b.date));
     });
 
-    setInfoMessage("Tagescheck-in gespeichert.");
-    setDailyDraft(createEmptyDailyEntry(today));
+    setInfoMessage(null);
+    setDailySaveNotice("Tagesdaten gespeichert.");
+    const nextEmptyDailyEntry = createEmptyDailyEntry(today);
+    setDailyDraft(nextEmptyDailyEntry);
+    setLastSavedDailySnapshot(nextEmptyDailyEntry);
     setPbacCounts({ ...PBAC_DEFAULT_COUNTS });
+    setPbacStep(1);
+    setPbacSelection({ product: null, saturation: null });
+    setPbacCountDraft("0");
     setPainQualityOther("");
     setNotesTagDraft("");
     setFsfiOptIn(false);
@@ -3046,9 +3077,12 @@ export default function HomePage() {
                 </Section>
 
                 <div className="flex flex-wrap items-center gap-3">
-                  <Button type="button" onClick={handleDailySubmit}>
+                  <Button type="button" onClick={handleDailySubmit} disabled={!isDailyDirty}>
                     Tagesdaten speichern
                   </Button>
+                  {dailySaveNotice && (
+                    <span className="text-sm text-amber-600">{dailySaveNotice}</span>
+                  )}
                   <label className="flex cursor-pointer items-center gap-2 text-sm text-rose-600">
                     <Upload size={16} />
                     JSON importieren
@@ -3275,7 +3309,7 @@ export default function HomePage() {
                       .sort((a, b) => b.date.localeCompare(a.date))
                       .slice(0, 7)
                       .map((entry) => (
-                        <div key={entry.date} className="rounded-lg border border-rose-100 bg-rose-50 p-3 text-sm">
+                        <div key={entry.date} className="rounded-lg border border-amber-100 bg-amber-50 p-3 text-sm">
                           <div className="flex items-center justify-between">
                             <span className="font-semibold text-rose-800">{entry.date}</span>
                             <span className="text-rose-600">NRS {entry.painNRS}</span>
