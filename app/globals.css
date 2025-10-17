@@ -5,6 +5,8 @@
 :root {
   --endo-accent: #e11d48;
   --endo-bg: #fff1f2;
+  --section-card-completed-bg: #fef9c3;
+  --section-card-completed-border: #facc15;
 }
 
 body {
@@ -37,4 +39,9 @@ textarea:focus-visible {
     transform: translate3d(0, -30px, 0) scale(0.7);
     opacity: 0;
   }
+}
+
+[data-section-card][data-section-completed="true"] {
+  background-color: var(--section-card-completed-bg);
+  border-color: var(--section-card-completed-border);
 }
