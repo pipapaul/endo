@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import {
   LineChart,
@@ -234,14 +234,92 @@ const createEmptyMonthlyEntry = (month: string): MonthlyEntry => ({
   promis: {},
 });
 
-function Section({ title, description, aside, children }: {
+function Section({
+  title,
+  description,
+  aside,
+  children,
+  completionEnabled = true,
+}: {
   title: string;
   description?: string;
   aside?: ReactNode;
   children: ReactNode;
+  completionEnabled?: boolean;
 }) {
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const timeoutRef = useRef<number | null>(null);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const confettiPieces = useMemo(
+    () =>
+      CONFETTI_PIECES.map((piece, index) => ({
+        ...piece,
+        color: CONFETTI_COLORS[index % CONFETTI_COLORS.length],
+      })),
+    []
+  );
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current !== null) {
+        window.clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  const scrollToNextSection = () => {
+    if (!cardRef.current) return;
+    const sections = Array.from(document.querySelectorAll<HTMLElement>("[data-section-card]"));
+    const currentIndex = sections.indexOf(cardRef.current);
+    if (currentIndex === -1) return;
+    for (let index = currentIndex + 1; index < sections.length; index += 1) {
+      const next = sections[index];
+      if (next) {
+        next.scrollIntoView({ behavior: "smooth", block: "start" });
+        break;
+      }
+    }
+  };
+
+  const handleComplete = () => {
+    if (!completionEnabled || isCompleted || showConfetti) return;
+    setShowConfetti(true);
+    timeoutRef.current = window.setTimeout(() => {
+      setShowConfetti(false);
+      setIsCompleted(true);
+      scrollToNextSection();
+      timeoutRef.current = null;
+    }, 400);
+  };
+
   return (
-    <Card className="border border-rose-100 bg-white shadow-sm">
+    <Card
+      ref={cardRef}
+      data-section-card
+      data-section-completed={isCompleted ? "true" : "false"}
+      className={cn(
+        "relative border border-rose-100 shadow-sm transition-colors",
+        isCompleted ? "border-amber-200 bg-amber-50" : "bg-white"
+      )}
+    >
+      {completionEnabled && showConfetti ? (
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          {confettiPieces.map((piece, index) => (
+            <span
+              key={index}
+              className="confetti-piece absolute h-2 w-2 rounded-sm"
+              style={{
+                left: piece.left,
+                top: "45%",
+                backgroundColor: piece.color,
+                animationDelay: `${piece.delay}ms`,
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -251,7 +329,29 @@ function Section({ title, description, aside, children }: {
           {aside}
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">{children}</CardContent>
+      <CardContent className="space-y-4">
+        {children}
+        {completionEnabled ? (
+          <div className="flex justify-end pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              className={cn(isCompleted ? "cursor-default" : "")}
+              onClick={handleComplete}
+              disabled={isCompleted}
+            >
+              {isCompleted ? (
+                <span className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Erledigt
+                </span>
+              ) : (
+                "Fertig"
+              )}
+            </Button>
+          </div>
+        ) : null}
+      </CardContent>
     </Card>
   );
 }
@@ -381,6 +481,13 @@ const MODULE_TERMS: ModuleTerms = {
   headacheOpt: TERMS.headacheOpt,
   dizzinessOpt: TERMS.dizzinessOpt,
 };
+
+const CONFETTI_COLORS = ["#fb7185", "#f97316", "#facc15", "#4ade80", "#38bdf8"] as const;
+
+const CONFETTI_PIECES = Array.from({ length: 8 }, (_, index) => ({
+  left: `${8 + index * 12}%`,
+  delay: index * 30,
+}));
 
 const SYMPTOM_MODULE_TOGGLES: Array<{
   key: keyof FeatureFlags;
@@ -3242,7 +3349,11 @@ export default function HomePage() {
                   </Section>
                 )}
 
-                <Section title="Sexualfunktion (sensibles Opt-in)" description="FSFI wird nur nach Opt-in gezeigt">
+                <Section
+                  title="Sexualfunktion (sensibles Opt-in)"
+                  description="FSFI wird nur nach Opt-in gezeigt"
+                  completionEnabled={false}
+                >
                   <div className="flex items-center gap-3">
                     <Switch checked={fsfiOptIn} onCheckedChange={setFsfiOptIn} />
                     <span className="text-sm text-rose-700">
@@ -3272,7 +3383,11 @@ export default function HomePage() {
                   )}
                 </Section>
 
-                <Section title="Notizen & Tags" description="Freitext oder wiederkehrende Muster markieren">
+                <Section
+                  title="Notizen & Tags"
+                  description="Freitext oder wiederkehrende Muster markieren"
+                  completionEnabled={false}
+                >
                   <div className="grid gap-3">
                     <TermField termKey="notesTags" htmlFor="notes-tag-input">
                       <div className="flex flex-wrap gap-2">
@@ -3318,6 +3433,7 @@ export default function HomePage() {
                       aria-label="Hilfsmittel-Optionen"
                     />
                   }
+                  completionEnabled={false}
                 >
                   <Button type="button" variant="secondary" onClick={() => setSensorsVisible((prev) => !prev)}>
                     {optionalSensorsLabel}
@@ -3517,6 +3633,7 @@ export default function HomePage() {
                 <Section
                   title="Trend"
                   description={`${TERMS.nrs.label}, ${TERMS.pbac.label} sowie Symptom- und Schlafverlauf`}
+                  completionEnabled={false}
                 >
                   <div className="flex justify-end gap-2 text-xs text-rose-600">
                     <span>Achse:</span>
@@ -3691,7 +3808,11 @@ export default function HomePage() {
                   </Section>
                 )}
 
-                <Section title="Letzte Einträge" description="Kernmetriken kompakt">
+                <Section
+                  title="Letzte Einträge"
+                  description="Kernmetriken kompakt"
+                  completionEnabled={false}
+                >
                   <div className="space-y-3">
                     {dailyEntries
                       .slice()
@@ -3731,7 +3852,11 @@ export default function HomePage() {
                       ))}
                   </div>
                 </Section>
-                <Section title="Zyklus-Overlay" description="Durchschnittswerte je Zyklustag">
+                <Section
+                  title="Zyklus-Overlay"
+                  description="Durchschnittswerte je Zyklustag"
+                  completionEnabled={false}
+                >
                   <div className="max-h-64 space-y-2 overflow-y-auto text-xs text-rose-700">
                     {cycleOverlay.length === 0 && <p className="text-rose-500">Noch keine Zyklusdaten.</p>}
                     {cycleOverlay.map((row) => (
@@ -3761,7 +3886,11 @@ export default function HomePage() {
                     ))}
                   </div>
                 </Section>
-                <Section title="Wochentag-Overlay" description="Durchschnittlicher NRS nach Wochentag">
+                <Section
+                  title="Wochentag-Overlay"
+                  description="Durchschnittlicher NRS nach Wochentag"
+                  completionEnabled={false}
+                >
                   <div className="grid grid-cols-2 gap-2 text-xs text-rose-700 sm:grid-cols-4">
                     {weekdayOverlay.map((row) => (
                       <div key={row.weekday} className="rounded border border-amber-100 bg-amber-50 px-2 py-1">
@@ -3774,6 +3903,7 @@ export default function HomePage() {
                 <Section
                   title="Explorative Korrelationen"
                   description="Lokal berechnete Pearson-r Werte – keine medizinische Bewertung"
+                  completionEnabled={false}
                 >
                   <div className="space-y-2 text-xs text-rose-700">
                     <p>
