@@ -3348,7 +3348,7 @@ export default function HomePage() {
                     {cycleOverlay.map((row) => (
                       <div
                         key={row.cycleDay}
-                        className="flex items-center justify-between rounded border border-rose-100 bg-rose-50 px-2 py-1"
+                        className="flex items-center justify-between rounded border border-amber-100 bg-amber-50 px-2 py-1"
                       >
                         <span className="font-semibold text-rose-800">ZT {row.cycleDay}</span>
                         <span>{TERMS.nrs.label}: {row.painAvg.toFixed(1)}</span>
@@ -3375,7 +3375,7 @@ export default function HomePage() {
                 <Section title="Wochentag-Overlay" description="Durchschnittlicher NRS nach Wochentag">
                   <div className="grid grid-cols-2 gap-2 text-xs text-rose-700 sm:grid-cols-4">
                     {weekdayOverlay.map((row) => (
-                      <div key={row.weekday} className="rounded border border-rose-100 bg-rose-50 px-2 py-1">
+                      <div key={row.weekday} className="rounded border border-amber-100 bg-amber-50 px-2 py-1">
                         <p className="font-semibold text-rose-800">{row.weekday}</p>
                         <p>{TERMS.nrs.label}: {row.painAvg.toFixed(1)}</p>
                       </div>
