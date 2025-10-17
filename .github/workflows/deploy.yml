@@ -1,22 +1,24 @@
 name: Build static site (Next export)
 
 on:
-  workflow_dispatch: {}     # per Klick startbar
+  workflow_dispatch: {}
   push:
-    branches: [ main ]      # optional: auf jeden Push bauen
+    branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     env:
       NEXT_TELEMETRY_DISABLED: 1
+
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          # 👇 KEIN cache: 'npm' mehr – sonst Lockfile-Fehler
 
       - name: Install deps
         run: |
@@ -31,14 +33,12 @@ jobs:
           if npm run -s | grep -q "^  build$"; then npm run build; else npx next build; fi
           if npm run -s | grep -q "^  export$"; then npm run export; else npx next export; fi
 
-      # Artefakt „out/“ hochladen (zum Download im Actions-UI)
       - name: Upload artifact (out/)
         uses: actions/upload-artifact@v4
         with:
           name: site-out
           path: out
 
-      # Bequemer: zusätzlich als ZIP bündeln
       - name: Pack ZIP
         run: |
           cd out
