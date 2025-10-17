@@ -301,7 +301,7 @@ function Section({
       data-section-completed={isCompleted ? "true" : "false"}
       className={cn(
         "relative border border-rose-100 shadow-sm transition-colors",
-        isCompleted ? "border-amber-200 bg-amber-50" : "bg-white"
+        isCompleted ? "border-amber-200 bg-amber-100" : "bg-white"
       )}
     >
       <CardHeader className="pb-3">
