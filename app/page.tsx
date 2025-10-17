@@ -285,10 +285,10 @@ function Section({
 
   const handleComplete = () => {
     if (!completionEnabled || isCompleted || showConfetti) return;
+    setIsCompleted(true);
     setShowConfetti(true);
     timeoutRef.current = window.setTimeout(() => {
       setShowConfetti(false);
-      setIsCompleted(true);
       scrollToNextSection();
       timeoutRef.current = null;
     }, 400);
@@ -304,22 +304,6 @@ function Section({
         isCompleted ? "border-amber-200 bg-amber-50" : "bg-white"
       )}
     >
-      {completionEnabled && showConfetti ? (
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          {confettiPieces.map((piece, index) => (
-            <span
-              key={index}
-              className="confetti-piece absolute h-2 w-2 rounded-sm"
-              style={{
-                left: piece.left,
-                top: "45%",
-                backgroundColor: piece.color,
-                animationDelay: `${piece.delay}ms`,
-              }}
-            />
-          ))}
-        </div>
-      ) : null}
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -333,22 +317,40 @@ function Section({
         {children}
         {completionEnabled ? (
           <div className="flex justify-end pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              className={cn(isCompleted ? "cursor-default" : "")}
-              onClick={handleComplete}
-              disabled={isCompleted}
-            >
-              {isCompleted ? (
-                <span className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4" />
-                  Erledigt
-                </span>
-              ) : (
-                "Fertig"
-              )}
-            </Button>
+            <div className="relative inline-flex">
+              {completionEnabled && showConfetti ? (
+                <div className="pointer-events-none absolute -inset-x-4 -inset-y-3 overflow-visible">
+                  {confettiPieces.map((piece, index) => (
+                    <span
+                      key={index}
+                      className="confetti-piece absolute h-2 w-2 rounded-sm"
+                      style={{
+                        left: piece.left,
+                        top: piece.top,
+                        backgroundColor: piece.color,
+                        animationDelay: `${piece.delay}ms`,
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                className={cn(isCompleted ? "cursor-default" : "")}
+                onClick={handleComplete}
+                disabled={isCompleted}
+              >
+                {isCompleted ? (
+                  <span className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Erledigt
+                  </span>
+                ) : (
+                  "Fertig"
+                )}
+              </Button>
+            </div>
           </div>
         ) : null}
       </CardContent>
@@ -484,8 +486,11 @@ const MODULE_TERMS: ModuleTerms = {
 
 const CONFETTI_COLORS = ["#fb7185", "#f97316", "#facc15", "#4ade80", "#38bdf8"] as const;
 
+const CONFETTI_VERTICAL_POSITIONS = ["20%", "50%", "80%"] as const;
+
 const CONFETTI_PIECES = Array.from({ length: 8 }, (_, index) => ({
-  left: `${8 + index * 12}%`,
+  left: `${5 + index * 12}%`,
+  top: CONFETTI_VERTICAL_POSITIONS[index % CONFETTI_VERTICAL_POSITIONS.length],
   delay: index * 30,
 }));
 
