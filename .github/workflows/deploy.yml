@@ -1,4 +1,4 @@
-name: Build static site (Next export)
+name: Build static site (Next 14, output: export)
 
 on:
   workflow_dispatch: {}
@@ -14,24 +14,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          # 👇 KEIN cache: 'npm' mehr – sonst Lockfile-Fehler
 
       - name: Install deps
         run: |
           if [ -f package-lock.json ]; then
             npm ci
           else
-            npm install
+            npm install --no-audit --no-fund
           fi
 
-      - name: Build (Next static export)
+      - name: Build (Static export via next.config.mjs)
         run: |
-          if npm run -s | grep -q "^  build$"; then npm run build; else npx next build; fi
-          if npm run -s | grep -q "^  export$"; then npm run export; else npx next export; fi
+          if npm run -s | grep -q "^  build$"; then
+            npm run build
+          else
+            npx next build
+          fi
+          echo "OUT DIR:"
+          ls -la out || (echo "⚠️ out/ nicht gefunden" && exit 1)
 
       - name: Upload artifact (out/)
         uses: actions/upload-artifact@v4
@@ -39,7 +42,7 @@ jobs:
           name: site-out
           path: out
 
-      - name: Pack ZIP
+      - name: ZIP out/ (optional)
         run: |
           cd out
           zip -r ../site-out.zip .
