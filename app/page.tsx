@@ -2443,6 +2443,7 @@ export default function HomePage() {
                           type="number"
                           min={0}
                           step={1}
+                          placeholder="0 (kein Stuhlgang)"
                           value={dailyDraft.urinary?.freqPerDay ?? ""}
                           onChange={(event) =>
                             setDailyDraft((prev) => ({

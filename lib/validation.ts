@@ -207,7 +207,7 @@ export function validateDailyEntry(entry: DailyEntry): ValidationIssue[] {
     if (freqPerDay !== undefined && (!Number.isInteger(freqPerDay) || freqPerDay < 0)) {
       issues.push({
         path: "urinary.freqPerDay",
-        message: "Miktionen/Tag müssen als nicht-negative Ganzzahl erfasst werden.",
+        message: "Stuhlgänge/Tag müssen als nicht-negative Ganzzahl erfasst werden.",
       });
     }
     if (urgency !== undefined && !intRange(urgency, 0, 10)) {

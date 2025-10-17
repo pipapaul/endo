@@ -64,7 +64,7 @@ export const TERMS = {
   awakenings: { label: "Nächtliches Erwachen", help: "Wie oft aufgewacht?" },
   bristol: { label: "Stuhlform (Bristol 1–7)", help: "Bildskala von hart (1) bis flüssig (7)" },
   bowelPain: { label: "Schmerz beim Stuhlgang (0–10)", help: "Schmerzstärke" },
-  urinary_freq: { label: "Toilettengänge/Tag", help: "Wie oft urinieren?" },
+  urinary_freq: { label: "Stuhlgang pro Tag", help: "Wie oft Stuhlgang? 0 = kein Stuhlgang" },
   urinary_urgency: { label: "Harndrang (0–10)", help: "Starker Drang?" },
   urinary_pain: { label: "Schmerz beim Wasserlassen (0–10)", help: "Brennen/Stechen?" },
   fsfi: { label: "Sexuelle Funktion (FSFI)", help: "Kurzfragebogen zur Sexualität" },
