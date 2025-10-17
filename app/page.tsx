@@ -236,6 +236,15 @@ const createEmptyMonthlyEntry = (month: string): MonthlyEntry => ({
 
 const SectionScopeContext = createContext<string | number | null>(null);
 
+type SectionCompletionState = Record<string, Record<string, boolean>>;
+
+type SectionCompletionContextValue = {
+  getCompletion: (scope: string | number | null, key: string) => boolean;
+  setCompletion: (scope: string | number | null, key: string, completed: boolean) => void;
+};
+
+const SectionCompletionContext = createContext<SectionCompletionContextValue | null>(null);
+
 function Section({
   title,
   description,
@@ -250,6 +259,7 @@ function Section({
   completionEnabled?: boolean;
 }) {
   const scope = useContext(SectionScopeContext);
+  const completionContext = useContext(SectionCompletionContext);
   const cardRef = useRef<HTMLDivElement | null>(null);
   const timeoutRef = useRef<number | null>(null);
   const [isCompleted, setIsCompleted] = useState(false);
@@ -263,6 +273,13 @@ function Section({
     []
   );
 
+  const completedFromContext = useMemo(() => {
+    if (!completionEnabled) return false;
+    if (!completionContext) return false;
+    if (scope === null || scope === undefined) return false;
+    return completionContext.getCompletion(scope, title);
+  }, [completionContext, completionEnabled, scope, title]);
+
   useEffect(() => {
     return () => {
       if (timeoutRef.current !== null) {
@@ -273,14 +290,18 @@ function Section({
   }, []);
 
   useEffect(() => {
-    if (!completionEnabled) return;
     if (timeoutRef.current !== null) {
       window.clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
-    setIsCompleted(false);
+    if (!completionEnabled) {
+      setIsCompleted(false);
+      setShowConfetti(false);
+      return;
+    }
     setShowConfetti(false);
-  }, [scope, completionEnabled]);
+    setIsCompleted(completedFromContext);
+  }, [completedFromContext, completionEnabled]);
 
   const scrollToNextSection = () => {
     if (!cardRef.current) return;
@@ -299,6 +320,9 @@ function Section({
   const handleComplete = () => {
     if (!completionEnabled || isCompleted || showConfetti) return;
     setIsCompleted(true);
+    if (completionContext && scope !== null && scope !== undefined) {
+      completionContext.setCompletion(scope, title, true);
+    }
     setShowConfetti(true);
     timeoutRef.current = window.setTimeout(() => {
       setShowConfetti(false);
@@ -1038,14 +1062,49 @@ export default function HomePage() {
   const [weeklyEntries, setWeeklyEntries, weeklyStorage] = usePersistentState<WeeklyEntry[]>("endo.weekly.v2", []);
   const [monthlyEntries, setMonthlyEntries, monthlyStorage] = usePersistentState<MonthlyEntry[]>("endo.monthly.v2", []);
   const [featureFlags, setFeatureFlags, featureStorage] = usePersistentState<FeatureFlags>("endo.flags.v1", {});
+  const [sectionCompletionState, setSectionCompletionState, sectionCompletionStorage] =
+    usePersistentState<SectionCompletionState>("endo.sectionCompletion.v1", {});
 
-  const storageMetas = [dailyStorage, weeklyStorage, monthlyStorage, featureStorage];
+  const storageMetas = [dailyStorage, weeklyStorage, monthlyStorage, featureStorage, sectionCompletionStorage];
   const storageReady = storageMetas.every((meta) => meta.ready);
   const storageErrors = storageMetas.map((meta) => meta.error).filter(Boolean) as string[];
   const storageDrivers = Array.from(new Set(storageMetas.map((meta) => meta.driverLabel)));
   const usesIndexedDb = storageMetas.every((meta) => meta.driver === "indexeddb");
   const hasMemoryFallback = storageMetas.some((meta) => meta.driver === "memory");
   const storageUnavailable = storageMetas.some((meta) => meta.driver === "unavailable");
+
+  const sectionCompletionContextValue = useMemo<SectionCompletionContextValue>(
+    () => ({
+      getCompletion: (scope, key) => {
+        if (scope === null || scope === undefined) return false;
+        const scopeKey = String(scope);
+        return Boolean(sectionCompletionState[scopeKey]?.[key]);
+      },
+      setCompletion: (scope, key, completed) => {
+        if (scope === null || scope === undefined) return;
+        setSectionCompletionState((prev) => {
+          const scopeKey = String(scope);
+          const prevForScope = prev[scopeKey] ?? {};
+          if (completed) {
+            return {
+              ...prev,
+              [scopeKey]: { ...prevForScope, [key]: true },
+            };
+          }
+          const { [key]: _removed, ...restForScope } = prevForScope;
+          if (Object.keys(restForScope).length === 0) {
+            const { [scopeKey]: _scopeRemoved, ...rest } = prev;
+            return rest;
+          }
+          return {
+            ...prev,
+            [scopeKey]: restForScope,
+          };
+        });
+      },
+    }),
+    [sectionCompletionState, setSectionCompletionState]
+  );
 
   const [dailyDraft, setDailyDraft] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
   const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
@@ -2453,12 +2512,13 @@ export default function HomePage() {
   const installHintVisible = showInstallHint && !isStandalone;
 
   return (
-    <main className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold text-rose-900">Endometriose Symptomtracker</h1>
-        <p className="text-sm text-rose-700">
-          Kernmetriken ohne Hilfsmittel, optionale Sensorfelder nur auf Wunsch.
-        </p>
+    <SectionCompletionContext.Provider value={sectionCompletionContextValue}>
+      <main className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8">
+        <header className="flex flex-col gap-2">
+          <h1 className="text-2xl font-semibold text-rose-900">Endometriose Symptomtracker</h1>
+          <p className="text-sm text-rose-700">
+            Kernmetriken ohne Hilfsmittel, optionale Sensorfelder nur auf Wunsch.
+          </p>
         <p className="text-xs text-rose-500">Keine Telemetrie. Daten bleiben im Browser (IndexedDB) – Export jederzeit als JSON/CSV/PDF.</p>
         {infoMessage && <p className="text-sm font-medium text-rose-600">{infoMessage}</p>}
       </header>
@@ -4558,6 +4618,7 @@ export default function HomePage() {
           </SectionScopeContext.Provider>
         </TabsContent>
       </Tabs>
-    </main>
+      </main>
+    </SectionCompletionContext.Provider>
   );
 }
