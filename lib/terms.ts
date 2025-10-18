@@ -14,6 +14,12 @@ export const TERMS = {
   },
   painQuality: { label: "Wie fühlt sich der Schmerz an?", help: "Mehrfachauswahl, z. B. krampfend, stechend" },
   bodyMap: { label: "Körperkarte", help: "Tippe an, wo es weh tut" },
+  ovulationPain: {
+    label: "Vermuteter Eisprungschmerz?",
+    tech: "Mittelschmerz",
+    help: "Seitlicher Schmerz rund um den Eisprung",
+    optional: true,
+  },
   bleeding_active: {
     label: "Periode aktiv?",
     tech: "Aktive Menstruationsblutung",
