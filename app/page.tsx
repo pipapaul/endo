@@ -786,6 +786,20 @@ function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>
   delete extra["dizziness_nrs"];
   delete extra["dizziness_orthostatic"];
 
+  const ovulationPain: NonNullable<DailyEntry["ovulationPain"]> = { ...(entry.ovulationPain ?? {}) };
+  const side = extra["ovulation_pain_side"];
+  if (typeof side === "string" && ["links", "rechts", "beidseitig", "unsicher"].includes(side)) {
+    ovulationPain.side = side as NonNullable<DailyEntry["ovulationPain"]>["side"];
+  }
+  if (typeof extra["ovulation_pain_intensity"] === "number") {
+    ovulationPain.intensity = extra["ovulation_pain_intensity"] as number;
+  }
+  if (Object.keys(ovulationPain).length) {
+    clone.ovulationPain = ovulationPain;
+  }
+  delete extra["ovulation_pain_side"];
+  delete extra["ovulation_pain_intensity"];
+
   return clone;
 }
 
@@ -1571,6 +1585,9 @@ export default function HomePage() {
         [`${TERMS.nrs.label} (NRS)`]: entry.painNRS,
         Schmerzarten: entry.painQuality.join(";"),
         "Schmerzorte (IDs)": entry.painMapRegionIds.join(";"),
+        [`${TERMS.ovulationPain.label} – Seite`]: entry.ovulationPain?.side ?? "",
+        [`${TERMS.ovulationPain.label} – Intensität`]:
+          typeof entry.ovulationPain?.intensity === "number" ? entry.ovulationPain.intensity : "",
         [`${TERMS.pbac.label}`]: entry.bleeding.pbacScore ?? "",
         "Symptom-Scores": symptomScores,
         [`${TERMS.sleep_quality.label}`]: entry.sleep?.quality ?? "",
@@ -1697,6 +1714,19 @@ export default function HomePage() {
           )
         : dailyDraft.notesTags,
     };
+
+    if (payload.ovulationPain) {
+      const { side, intensity } = payload.ovulationPain;
+      if (!side) {
+        delete (payload as { ovulationPain?: DailyEntry["ovulationPain"] }).ovulationPain;
+      } else {
+        const normalized: NonNullable<DailyEntry["ovulationPain"]> = { side };
+        if (typeof intensity === "number") {
+          normalized.intensity = Math.max(0, Math.min(10, Math.round(intensity)));
+        }
+        payload.ovulationPain = normalized;
+      }
+    }
 
     if (!activeUrinary) {
       delete (payload as { urinaryOpt?: DailyEntry["urinaryOpt"] }).urinaryOpt;
@@ -2298,6 +2328,9 @@ export default function HomePage() {
         urinary_urgency: activeUrinary ? entry.urinaryOpt?.urgency ?? null : undefined,
         urinary_leaks: activeUrinary ? entry.urinaryOpt?.leaksCount ?? null : undefined,
         urinary_nocturia: activeUrinary ? entry.urinaryOpt?.nocturia ?? null : undefined,
+        ovulation_pain_side: entry.ovulationPain?.side ?? null,
+        ovulation_pain_intensity:
+          typeof entry.ovulationPain?.intensity === "number" ? entry.ovulationPain.intensity : null,
         headache_present: activeHeadache ? entry.headacheOpt?.present ?? null : undefined,
         headache_nrs: activeHeadache ? entry.headacheOpt?.nrs ?? null : undefined,
         headache_aura: activeHeadache ? entry.headacheOpt?.aura ?? null : undefined,
@@ -2680,13 +2713,76 @@ export default function HomePage() {
                       </div>
                       {dailyDraft.painQuality.map((_, index) => renderIssuesForPath(`painQuality[${index}]`))}
                     </TermField>
-                    <TermField termKey="bodyMap">
-                      <BodyMap
-                        value={dailyDraft.painMapRegionIds}
-                        onChange={(next) => setDailyDraft((prev) => ({ ...prev, painMapRegionIds: next }))}
-                      />
-                      {renderIssuesForPath("painMapRegionIds")}
-                    </TermField>
+                    <div className="space-y-4">
+                      <TermField termKey="bodyMap">
+                        <BodyMap
+                          value={dailyDraft.painMapRegionIds}
+                          onChange={(next) => setDailyDraft((prev) => ({ ...prev, painMapRegionIds: next }))}
+                        />
+                        {renderIssuesForPath("painMapRegionIds")}
+                      </TermField>
+                      <TermField termKey="ovulationPain">
+                        <div className="space-y-3">
+                          <Select
+                            value={dailyDraft.ovulationPain?.side ?? ""}
+                            onValueChange={(value) =>
+                              setDailyDraft((prev) => {
+                                if (!value) {
+                                  if (!prev.ovulationPain) {
+                                    return prev;
+                                  }
+                                  return { ...prev, ovulationPain: undefined };
+                                }
+                                return {
+                                  ...prev,
+                                  ovulationPain: {
+                                    side: value as NonNullable<DailyEntry["ovulationPain"]>["side"],
+                                    intensity: prev.ovulationPain?.intensity,
+                                  },
+                                };
+                              })
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Auswählen" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">Keine Auswahl</SelectItem>
+                              <SelectItem value="links">Links</SelectItem>
+                              <SelectItem value="rechts">Rechts</SelectItem>
+                              <SelectItem value="beidseitig">Beidseitig</SelectItem>
+                              <SelectItem value="unsicher">Unsicher</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {renderIssuesForPath("ovulationPain.side")}
+                          {dailyDraft.ovulationPain?.side ? (
+                            <>
+                              <ScoreInput
+                                id="ovulation-pain-intensity"
+                                label="Intensität (0–10)"
+                                value={dailyDraft.ovulationPain?.intensity ?? 0}
+                                onChange={(value) =>
+                                  setDailyDraft((prev) => {
+                                    const side = prev.ovulationPain?.side;
+                                    if (!side) {
+                                      return prev;
+                                    }
+                                    return {
+                                      ...prev,
+                                      ovulationPain: {
+                                        side,
+                                        intensity: Math.max(0, Math.min(10, Math.round(value))),
+                                      },
+                                    };
+                                  })
+                                }
+                              />
+                              {renderIssuesForPath("ovulationPain.intensity")} 
+                            </>
+                          ) : null}
+                        </div>
+                      </TermField>
+                    </div>
                   </div>
                 </Section>
 

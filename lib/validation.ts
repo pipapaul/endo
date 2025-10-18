@@ -96,6 +96,26 @@ export function validateDailyEntry(entry: DailyEntry): ValidationIssue[] {
     issues.push({ path: "painMapRegionIds", message: "Schmerzorte müssen als Liste gespeichert werden." });
   }
 
+  if (entry.ovulationPain) {
+    const { side, intensity } = entry.ovulationPain;
+    const allowedSides = new Set(["links", "rechts", "beidseitig", "unsicher"]);
+    if (side !== undefined && !allowedSides.has(side)) {
+      issues.push({ path: "ovulationPain.side", message: "Bitte Seite Links/Rechts/Beidseitig/Unsicher wählen." });
+    }
+    if (side === undefined && intensity !== undefined) {
+      issues.push({
+        path: "ovulationPain.side",
+        message: "Bitte zuerst eine Seite auswählen oder Intensität entfernen.",
+      });
+    }
+    if (intensity !== undefined && !intRange(intensity, 0, 10)) {
+      issues.push({
+        path: "ovulationPain.intensity",
+        message: "Intensität muss als ganze Zahl zwischen 0 und 10 erfasst werden.",
+      });
+    }
+  }
+
   if (entry.bleeding.isBleeding) {
     if (!nonNegative(entry.bleeding.pbacScore)) {
       issues.push({

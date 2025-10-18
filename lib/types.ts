@@ -44,6 +44,11 @@ export interface DailyEntry {
     bbtCelsius?: number; // optional, Hilfsmittel
   };
 
+  ovulationPain?: {
+    side?: "links" | "rechts" | "beidseitig" | "unsicher";
+    intensity?: number;
+  };
+
   urinaryOpt?: {
     urgency?: number;
     leaksCount?: number;
