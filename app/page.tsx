@@ -1166,6 +1166,17 @@ export default function HomePage() {
   );
 
   useEffect(() => {
+    if (!storageReady) return;
+    if (isDailyDirty) return;
+    if (dailyDraft.date >= today) return;
+    const hasDraftEntry = dailyEntries.some((entry) => entry.date === dailyDraft.date);
+    if (hasDraftEntry) return;
+    const next = createEmptyDailyEntry(today);
+    setDailyDraft(next);
+    setLastSavedDailySnapshot(next);
+  }, [storageReady, isDailyDirty, dailyDraft.date, dailyEntries, today]);
+
+  useEffect(() => {
     if (typeof navigator === "undefined" || !("storage" in navigator) || !navigator.storage) {
       setPersisted(null);
       setPersistWarning("Persistent Storage API nicht verfügbar.");
