@@ -6,6 +6,15 @@ export const metadata: Metadata = {
   description: "Minimalistische Endometriose-Tracking App",
   manifest: "/manifest.webmanifest",
   themeColor: "#f43f5e",
+  icons: {
+    icon: "/favicon.svg",
+    apple: "/apple-touch-icon.png",
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "EndoTrack",
+  },
 };
 
 export default function RootLayout({
