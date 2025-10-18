@@ -1306,6 +1306,44 @@ export default function HomePage() {
     });
   }, [dailyDraft.date]);
 
+  const selectedCycleDay = useMemo(() => {
+    if (!dailyDraft.date) return null;
+    const entries = dailyEntries.slice();
+    const draftIndex = entries.findIndex((entry) => entry.date === dailyDraft.date);
+    if (draftIndex >= 0) {
+      entries[draftIndex] = dailyDraft;
+    } else {
+      entries.push(dailyDraft);
+    }
+    const sorted = entries.slice().sort((a, b) => a.date.localeCompare(b.date));
+    let cycleDay: number | null = null;
+    let previousDate: Date | null = null;
+    let previousBleeding = false;
+    for (const entry of sorted) {
+      const currentDate = new Date(entry.date);
+      if (Number.isNaN(currentDate.getTime())) {
+        continue;
+      }
+      const diffDays = previousDate
+        ? Math.round((currentDate.getTime() - previousDate.getTime()) / 86_400_000)
+        : 0;
+      if (cycleDay !== null && diffDays > 0) {
+        cycleDay += diffDays;
+      }
+      const isBleeding = entry.bleeding.isBleeding;
+      const bleedingStartsToday = isBleeding && (!previousBleeding || diffDays > 1 || cycleDay === null);
+      if (bleedingStartsToday) {
+        cycleDay = 1;
+      }
+      if (entry.date === dailyDraft.date) {
+        return cycleDay;
+      }
+      previousDate = currentDate;
+      previousBleeding = isBleeding;
+    }
+    return cycleDay;
+  }, [dailyEntries, dailyDraft]);
+
   const canGoToNextDay = useMemo(() => dailyDraft.date < today, [dailyDraft.date, today]);
 
   const currentIsoWeek = useMemo(() => {
@@ -2638,9 +2676,16 @@ export default function HomePage() {
                         <CalendarDays className="h-6 w-6 flex-shrink-0 text-rose-500" />
                         <div className="min-w-0">
                           <p className="text-xs uppercase tracking-wide text-rose-400">Ausgewählter Tag</p>
-                          <p className="truncate text-sm font-semibold text-rose-700">
-                            {selectedDateLabel ?? "Bitte Datum wählen"}
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <p className="truncate text-sm font-semibold text-rose-700">
+                              {selectedDateLabel ?? "Bitte Datum wählen"}
+                            </p>
+                            {selectedCycleDay !== null && (
+                              <Badge className="flex-shrink-0 bg-rose-200 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
+                                ZT {selectedCycleDay}
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                       </div>
                       <Button
