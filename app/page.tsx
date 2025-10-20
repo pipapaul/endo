@@ -1322,7 +1322,9 @@ export default function HomePage() {
     const entries = dailyEntries.slice();
     const draftIndex = entries.findIndex((entry) => entry.date === dailyDraft.date);
     if (draftIndex >= 0) {
-      entries[draftIndex] = dailyDraft;
+      if (isDailyDirty) {
+        entries[draftIndex] = dailyDraft;
+      }
     } else {
       entries.push(dailyDraft);
     }
@@ -1353,7 +1355,7 @@ export default function HomePage() {
       previousBleeding = isBleeding;
     }
     return cycleDay;
-  }, [dailyEntries, dailyDraft]);
+  }, [dailyEntries, dailyDraft, isDailyDirty]);
 
   const canGoToNextDay = useMemo(() => dailyDraft.date < today, [dailyDraft.date, today]);
 
