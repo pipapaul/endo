@@ -2763,6 +2763,7 @@ export default function HomePage() {
             description="Schmerz → Körperkarte → Symptome → Blutung → Medikation → Schlaf → Darm/Blase → Notizen"
             aside={<Badge className="bg-rose-200 text-rose-700">max. 60 Sekunden</Badge>}
             variant="plain"
+            completionEnabled={false}
           >
             <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
               <div className="space-y-6">
@@ -4369,6 +4370,7 @@ export default function HomePage() {
             description="Prozentwerte für Fehlzeiten, Präsenzminderung und Gesamtbeeinträchtigung"
             aside={<Calendar size={16} className="text-rose-500" />}
             variant="plain"
+            completionEnabled={false}
           >
             <div className="grid gap-4 md:grid-cols-2">
               <Labeled label="Kalenderwoche (ISO)" htmlFor="iso-week">
@@ -4532,7 +4534,7 @@ export default function HomePage() {
               </Button>
             </div>
           </Section>
-          <Section title="Verlauf" description="WPAI Gesamtbeeinträchtigung">
+          <Section title="Verlauf" description="WPAI Gesamtbeeinträchtigung" completionEnabled={false}>
             <div className="h-64 w-full">
               <ResponsiveContainer>
                 <LineChart data={weeklyEntries} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
@@ -4561,6 +4563,7 @@ export default function HomePage() {
             description="Lebensqualität (EHP-5), Stimmung (PHQ-9), Angst (GAD-7) und optionale PROMIS-T-Scores"
             aside={<Calendar size={16} className="text-rose-500" />}
             variant="plain"
+            completionEnabled={false}
           >
             <div className="grid gap-6">
               <Labeled label="Monat (YYYY-MM)" htmlFor="monthly-month">
@@ -4845,7 +4848,7 @@ export default function HomePage() {
               </Button>
             </div>
           </Section>
-          <Section title="Verlauf" description="EHP-5 & psychische Scores">
+          <Section title="Verlauf" description="EHP-5 & psychische Scores" completionEnabled={false}>
             <div className="h-64 w-full">
               <ResponsiveContainer>
                 <LineChart
