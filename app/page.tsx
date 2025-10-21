@@ -2667,6 +2667,8 @@ export default function HomePage() {
   useEffect(() => {
     if (!storageCompactPossible) {
       setStorageDetailsExpanded(true);
+    } else {
+      setStorageDetailsExpanded(false);
     }
   }, [storageCompactPossible]);
   const installHintVisible = showInstallHint && !isStandalone;
@@ -2714,12 +2716,7 @@ export default function HomePage() {
         <main className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8">
         <header className="flex flex-col gap-2">
           <h1 className="text-2xl font-semibold text-rose-900">Endometriose Symptomtracker</h1>
-          <p className="text-sm text-rose-700">
-            Kernmetriken ohne Hilfsmittel, optionale Sensorfelder nur auf Wunsch.
-          </p>
-          <p className="text-xs text-rose-500">
-            Keine Telemetrie. Daten bleiben im Browser (IndexedDB) – Export jederzeit als JSON/CSV/PDF.
-          </p>
+          <p className="text-sm text-rose-700">Dein persönlicher Endometriose tracker</p>
           {infoMessage && <p className="text-sm font-medium text-rose-600">{infoMessage}</p>}
         </header>
 
