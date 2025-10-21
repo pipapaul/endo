@@ -44,7 +44,6 @@ import {
 import InfoTip from "@/components/InfoTip";
 import { Labeled } from "@/components/Labeled";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -332,25 +331,23 @@ function Section({
   };
 
   return (
-    <Card
+    <section
       ref={cardRef}
       data-section-card
       data-section-completed={isCompleted ? "true" : "false"}
       className={cn(
-        "relative border border-rose-100 shadow-sm transition-colors",
-        isCompleted ? "border-amber-200" : "bg-white"
+        "relative space-y-4 border-b border-rose-100 pb-6 transition-colors last:border-b-0",
+        isCompleted ? "border-amber-200" : null
       )}
     >
-      <CardHeader className="pb-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-1">
-            <CardTitle className="text-base font-semibold text-rose-900">{title}</CardTitle>
-            {description && <p className="text-sm text-rose-600">{description}</p>}
-          </div>
-          {aside ? <div className="flex-shrink-0 sm:self-start">{aside}</div> : null}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <h2 className="text-base font-semibold text-rose-900">{title}</h2>
+          {description && <p className="text-sm text-rose-600">{description}</p>}
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
+        {aside ? <div className="flex-shrink-0 sm:self-start">{aside}</div> : null}
+      </div>
+      <div className="space-y-4">
         {children}
         {completionEnabled ? (
           <div className="flex justify-end pt-2">
@@ -390,8 +387,8 @@ function Section({
             </div>
           </div>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 
