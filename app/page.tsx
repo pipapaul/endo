@@ -250,12 +250,14 @@ function Section({
   aside,
   children,
   completionEnabled = true,
+  variant = "card",
 }: {
   title: string;
   description?: string;
   aside?: ReactNode;
   children: ReactNode;
   completionEnabled?: boolean;
+  variant?: "card" | "plain";
 }) {
   const scope = useContext(SectionScopeContext);
   const completionContext = useContext(SectionCompletionContext);
@@ -336,8 +338,11 @@ function Section({
       data-section-card
       data-section-completed={isCompleted ? "true" : "false"}
       className={cn(
-        "relative space-y-4 rounded-2xl border border-rose-100 bg-white p-4 shadow-sm transition-colors sm:p-6",
-        isCompleted ? "border-amber-200 shadow-md" : null
+        "relative",
+        variant === "card"
+          ? "space-y-4 rounded-2xl border border-rose-100 bg-white p-4 shadow-sm transition-colors sm:p-6"
+          : "space-y-4 sm:space-y-5",
+        variant === "card" && isCompleted ? "border-amber-200 shadow-md" : null
       )}
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -2699,6 +2704,7 @@ export default function HomePage() {
             title="Tagescheck-in"
             description="Schmerz → Körperkarte → Symptome → Blutung → Medikation → Schlaf → Darm/Blase → Notizen"
             aside={<Badge className="bg-rose-200 text-rose-700">max. 60 Sekunden</Badge>}
+            variant="plain"
           >
             <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
               <div className="space-y-6">
@@ -4301,6 +4307,7 @@ export default function HomePage() {
             title={`${TERMS.wpai_overall.label} (WPAI – 7-Tage-Rückblick)`}
             description="Prozentwerte für Fehlzeiten, Präsenzminderung und Gesamtbeeinträchtigung"
             aside={<Calendar size={16} className="text-rose-500" />}
+            variant="plain"
           >
             <div className="grid gap-4 md:grid-cols-2">
               <Labeled label="Kalenderwoche (ISO)" htmlFor="iso-week">
@@ -4492,6 +4499,7 @@ export default function HomePage() {
             title="Monatliche Fragebögen"
             description="Lebensqualität (EHP-5), Stimmung (PHQ-9), Angst (GAD-7) und optionale PROMIS-T-Scores"
             aside={<Calendar size={16} className="text-rose-500" />}
+            variant="plain"
           >
             <div className="grid gap-6">
               <Labeled label="Monat (YYYY-MM)" htmlFor="monthly-month">
