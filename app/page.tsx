@@ -336,8 +336,8 @@ function Section({
       data-section-card
       data-section-completed={isCompleted ? "true" : "false"}
       className={cn(
-        "relative space-y-4 border-b border-rose-100 pb-6 transition-colors last:border-b-0",
-        isCompleted ? "border-amber-200" : null
+        "relative space-y-4 rounded-2xl border border-rose-100 bg-white p-4 shadow-sm transition-colors sm:p-6",
+        isCompleted ? "border-amber-200 shadow-md" : null
       )}
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
