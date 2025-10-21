@@ -1367,6 +1367,12 @@ export default function HomePage() {
   }, [today]);
 
   const currentMonth = useMemo(() => today.slice(0, 7), [today]);
+  const todayDate = useMemo(() => parseIsoDate(today), [today]);
+
+  const isSunday = useMemo(() => {
+    if (!todayDate) return false;
+    return todayDate.getDay() === 0;
+  }, [todayDate]);
 
   const selectedWeekLabel = useMemo(() => {
     const start = isoWeekToDate(weeklyDraft.isoWeek);
@@ -1399,6 +1405,16 @@ export default function HomePage() {
     const baseMonth = monthlyDraft.month || currentMonth;
     return baseMonth < currentMonth;
   }, [monthlyDraft.month, currentMonth]);
+
+  const hasWeeklyEntryForCurrentWeek = useMemo(
+    () => weeklyEntries.some((entry) => entry.isoWeek === currentIsoWeek),
+    [weeklyEntries, currentIsoWeek]
+  );
+
+  const hasMonthlyEntryForCurrentMonth = useMemo(
+    () => monthlyEntries.some((entry) => entry.month === currentMonth),
+    [monthlyEntries, currentMonth]
+  );
 
   const goToPreviousDay = useCallback(() => {
     setDailyDraft((prev) => {
@@ -2238,6 +2254,32 @@ export default function HomePage() {
     });
   }, [dailyEntries]);
 
+  const latestCycleStartDate = useMemo(() => {
+    for (let index = annotatedDailyEntries.length - 1; index >= 0; index -= 1) {
+      const item = annotatedDailyEntries[index];
+      if (item.cycleDay === 1) {
+        return parseIsoDate(item.entry.date);
+      }
+    }
+    return null;
+  }, [annotatedDailyEntries]);
+
+  const isMonthlyReminderDue = useMemo(() => {
+    if (!latestCycleStartDate || !todayDate) return false;
+    const diffMs = todayDate.getTime() - latestCycleStartDate.getTime();
+    if (diffMs < 0) return false;
+    const diffDays = Math.floor(diffMs / 86_400_000);
+    return diffDays >= 28;
+  }, [latestCycleStartDate, todayDate]);
+
+  const showWeeklyReminderBadge = storageReady && isSunday && !hasWeeklyEntryForCurrentWeek;
+  const showMonthlyReminderBadge =
+    storageReady && isMonthlyReminderDue && !hasMonthlyEntryForCurrentMonth;
+
+  const weeklyBannerText = isSunday
+    ? "Es ist Sonntag. Zeit für deinen wöchentlichen Check In."
+    : "Fülle diese Fragen möglichst jeden Sonntag aus.";
+
   const painTrendData = useMemo(
     () =>
       annotatedDailyEntries.map(({ entry, cycleDay, weekday, symptomAverage }) => ({
@@ -2693,9 +2735,25 @@ export default function HomePage() {
 
       <Tabs defaultValue="daily" className="w-full">
         <TabsList className="grid h-auto w-full grid-cols-1 gap-2 bg-rose-100 text-rose-700 sm:h-10 sm:grid-cols-3">
-          <TabsTrigger value="daily">Täglicher Check-in</TabsTrigger>
-          <TabsTrigger value="weekly">Wöchentlich</TabsTrigger>
-          <TabsTrigger value="monthly">Monatlich</TabsTrigger>
+          <TabsTrigger value="daily" className="gap-2">
+            Täglicher Check-in
+          </TabsTrigger>
+          <TabsTrigger value="weekly" className="gap-2">
+            Wöchentlich
+            {showWeeklyReminderBadge ? (
+              <Badge className="bg-amber-400 text-rose-900" aria-label="Wöchentlicher Check-in fällig">
+                fällig
+              </Badge>
+            ) : null}
+          </TabsTrigger>
+          <TabsTrigger value="monthly" className="gap-2">
+            Monatlich
+            {showMonthlyReminderBadge ? (
+              <Badge className="bg-amber-400 text-rose-900" aria-label="Monatlicher Check-in fällig">
+                fällig
+              </Badge>
+            ) : null}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="daily" className="space-y-6">
@@ -4302,6 +4360,9 @@ export default function HomePage() {
           </SectionScopeContext.Provider>
         </TabsContent>
         <TabsContent value="weekly" className="space-y-6">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            <p className="font-medium text-amber-900">{weeklyBannerText}</p>
+          </div>
           <SectionScopeContext.Provider value={`weekly:${weeklyDraft.isoWeek}`}>
           <Section
             title={`${TERMS.wpai_overall.label} (WPAI – 7-Tage-Rückblick)`}
