@@ -44,7 +44,6 @@ import {
 import InfoTip from "@/components/InfoTip";
 import { Labeled } from "@/components/Labeled";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -251,12 +250,14 @@ function Section({
   aside,
   children,
   completionEnabled = true,
+  variant = "card",
 }: {
   title: string;
   description?: string;
   aside?: ReactNode;
   children: ReactNode;
   completionEnabled?: boolean;
+  variant?: "card" | "plain";
 }) {
   const scope = useContext(SectionScopeContext);
   const completionContext = useContext(SectionCompletionContext);
@@ -332,25 +333,26 @@ function Section({
   };
 
   return (
-    <Card
+    <section
       ref={cardRef}
       data-section-card
       data-section-completed={isCompleted ? "true" : "false"}
       className={cn(
-        "relative border border-rose-100 shadow-sm transition-colors",
-        isCompleted ? "border-amber-200" : "bg-white"
+        "relative",
+        variant === "card"
+          ? "space-y-4 rounded-2xl border border-rose-100 bg-white p-4 shadow-sm transition-colors sm:p-6"
+          : "space-y-4 sm:space-y-5",
+        variant === "card" && isCompleted ? "border-amber-200 shadow-md" : null
       )}
     >
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <CardTitle className="text-base font-semibold text-rose-900">{title}</CardTitle>
-            {description && <p className="mt-1 text-sm text-rose-600">{description}</p>}
-          </div>
-          {aside}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <h2 className="text-base font-semibold text-rose-900">{title}</h2>
+          {description && <p className="text-sm text-rose-600">{description}</p>}
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
+        {aside ? <div className="flex-shrink-0 sm:self-start">{aside}</div> : null}
+      </div>
+      <div className="space-y-4">
         {children}
         {completionEnabled ? (
           <div className="flex justify-end pt-2">
@@ -390,8 +392,8 @@ function Section({
             </div>
           </div>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 
@@ -560,11 +562,11 @@ function ModuleToggleRow({
   return (
     <div
       className={cn(
-        "flex items-center justify-between rounded-lg border border-rose-100 bg-rose-50 p-4",
+        "flex flex-col gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4 sm:flex-row sm:items-center sm:justify-between",
         className,
       )}
     >
-      <div className="flex items-center gap-2 text-sm font-medium text-rose-900">
+      <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-rose-900">
         <span>{label}</span>
         <InfoTip tech={tech ?? label} help={help} />
       </div>
@@ -2690,7 +2692,7 @@ export default function HomePage() {
         )}
 
       <Tabs defaultValue="daily" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 bg-rose-100 text-rose-700">
+        <TabsList className="grid h-auto w-full grid-cols-1 gap-2 bg-rose-100 text-rose-700 sm:h-10 sm:grid-cols-3">
           <TabsTrigger value="daily">Täglicher Check-in</TabsTrigger>
           <TabsTrigger value="weekly">Wöchentlich</TabsTrigger>
           <TabsTrigger value="monthly">Monatlich</TabsTrigger>
@@ -2702,6 +2704,7 @@ export default function HomePage() {
             title="Tagescheck-in"
             description="Schmerz → Körperkarte → Symptome → Blutung → Medikation → Schlaf → Darm/Blase → Notizen"
             aside={<Badge className="bg-rose-200 text-rose-700">max. 60 Sekunden</Badge>}
+            variant="plain"
           >
             <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
               <div className="space-y-6">
@@ -3078,7 +3081,7 @@ export default function HomePage() {
                             {PBAC_PRODUCT_ITEMS.some((item) => pbacCounts[item.id] > 0) ? (
                               PBAC_PRODUCT_ITEMS.map((item) =>
                                 pbacCounts[item.id] > 0 ? (
-                                  <div key={item.id} className="flex items-center justify-between">
+                                  <div key={item.id} className="flex flex-wrap items-center justify-between gap-2">
                                     <span>
                                       {pbacCounts[item.id]} × {item.label}
                                     </span>
@@ -3134,7 +3137,7 @@ export default function HomePage() {
                           </Labeled>
                         ))}
                           </div>
-                          <div className="flex justify-between">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
                             <Button type="button" variant="ghost" onClick={() => setPbacStep(3)}>
                               Zurück
                             </Button>
@@ -3166,7 +3169,7 @@ export default function HomePage() {
                             <p className="text-sm">Score heute: {pbacScore}</p>
                             <div className="space-y-1">
                               {PBAC_PRODUCT_ITEMS.filter((item) => pbacCounts[item.id] > 0).map((item) => (
-                                <div key={item.id} className="flex items-center justify-between">
+                                <div key={item.id} className="flex flex-wrap items-center justify-between gap-2">
                                   <span>
                                     {pbacCounts[item.id]} × {item.label}
                                   </span>
@@ -3174,7 +3177,7 @@ export default function HomePage() {
                                 </div>
                               ))}
                               {PBAC_CLOT_ITEMS.filter((item) => pbacCounts[item.id] > 0).map((item) => (
-                                <div key={item.id} className="flex items-center justify-between">
+                                <div key={item.id} className="flex flex-wrap items-center justify-between gap-2">
                                   <span>
                                     {pbacCounts[item.id]} × {item.label}
                                   </span>
@@ -3182,7 +3185,7 @@ export default function HomePage() {
                                 </div>
                               ))}
                               {pbacFlooding ? (
-                                <div className="flex items-center justify-between">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
                                   <span>Flooding</span>
                                   <span className="font-semibold text-rose-800">+{PBAC_FLOODING_SCORE}</span>
                                 </div>
@@ -3194,7 +3197,7 @@ export default function HomePage() {
                               ) : null}
                             </div>
                           </div>
-                          <div className="flex justify-between">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
                             <Button type="button" variant="ghost" onClick={() => setPbacStep(4)}>
                               Zurück
                             </Button>
@@ -3429,7 +3432,7 @@ export default function HomePage() {
                       {renderIssuesForPath("gi.bowelPain")}
                     </div>
                     <div className="grid gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
-                      <div className="flex items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
                         <p className="font-medium text-rose-800">Blase</p>
                         <ModuleToggleRow
                           label="Dranginkontinenz"
@@ -3924,7 +3927,7 @@ export default function HomePage() {
                       </div>
 
                       <div className="grid gap-2 rounded-lg border border-rose-100 bg-rose-50 p-4">
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
                           <TermHeadline termKey="hrv" />
                           <Switch checked={exploratoryVisible} onCheckedChange={setExploratoryVisible} />
                         </div>
@@ -4194,7 +4197,7 @@ export default function HomePage() {
                       .slice(0, 7)
                       .map((entry) => (
                         <div key={entry.date} className="rounded-lg border border-amber-100 bg-amber-50 p-3 text-sm">
-                          <div className="flex items-center justify-between">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
                             <span className="font-semibold text-rose-800">{entry.date}</span>
                             <span className="text-rose-600">NRS {entry.painNRS}</span>
                           </div>
@@ -4236,7 +4239,7 @@ export default function HomePage() {
                     {cycleOverlay.map((row) => (
                       <div
                         key={row.cycleDay}
-                        className="flex items-center justify-between rounded border border-amber-100 bg-amber-50 px-2 py-1"
+                        className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-100 bg-amber-50 px-2 py-1"
                       >
                         <span className="font-semibold text-rose-800">ZT {row.cycleDay}</span>
                         <span>{TERMS.nrs.label}: {row.painAvg.toFixed(1)}</span>
@@ -4304,6 +4307,7 @@ export default function HomePage() {
             title={`${TERMS.wpai_overall.label} (WPAI – 7-Tage-Rückblick)`}
             description="Prozentwerte für Fehlzeiten, Präsenzminderung und Gesamtbeeinträchtigung"
             aside={<Calendar size={16} className="text-rose-500" />}
+            variant="plain"
           >
             <div className="grid gap-4 md:grid-cols-2">
               <Labeled label="Kalenderwoche (ISO)" htmlFor="iso-week">
@@ -4495,6 +4499,7 @@ export default function HomePage() {
             title="Monatliche Fragebögen"
             description="Lebensqualität (EHP-5), Stimmung (PHQ-9), Angst (GAD-7) und optionale PROMIS-T-Scores"
             aside={<Calendar size={16} className="text-rose-500" />}
+            variant="plain"
           >
             <div className="grid gap-6">
               <Labeled label="Monat (YYYY-MM)" htmlFor="monthly-month">
@@ -4633,7 +4638,7 @@ export default function HomePage() {
                       </Labeled>
                     );
                   })}
-                  <div className="flex items-center justify-between rounded border border-rose-100 bg-white p-3 text-sm text-rose-700">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded border border-rose-100 bg-white p-3 text-sm text-rose-700">
                     <div>
                       <p>Summe: {monthlyDraft.mental?.phq9 ?? "–"}</p>
                       <div className="space-y-1 text-xs text-rose-600">
@@ -4682,7 +4687,7 @@ export default function HomePage() {
                       </Labeled>
                     );
                   })}
-                  <div className="flex items-center justify-between rounded border border-rose-100 bg-white p-3 text-sm text-rose-700">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded border border-rose-100 bg-white p-3 text-sm text-rose-700">
                     <div>
                       <p>Summe: {monthlyDraft.mental?.gad7 ?? "–"}</p>
                       <div className="space-y-1 text-xs text-rose-600">
