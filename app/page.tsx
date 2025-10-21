@@ -2699,9 +2699,8 @@ export default function HomePage() {
           </div>
           <Button
             type="button"
-            size="lg"
             onClick={() => setShowBirthdayGreeting(false)}
-            className="mx-auto mt-auto w-full max-w-xs rounded-full bg-rose-600 text-lg font-semibold shadow-lg transition hover:bg-rose-500"
+            className="mx-auto mt-auto w-full max-w-xs rounded-full bg-rose-600 py-4 text-lg font-semibold shadow-lg transition hover:bg-rose-500"
           >
             weiter zur App
           </Button>
