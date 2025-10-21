@@ -291,17 +291,28 @@ function Section({
   }, []);
 
   useEffect(() => {
-    if (timeoutRef.current !== null) {
-      window.clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
+    const cancelTimeout = () => {
+      if (timeoutRef.current !== null) {
+        window.clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+
     if (!completionEnabled) {
+      cancelTimeout();
       setIsCompleted(false);
       setShowConfetti(false);
       return;
     }
-    setShowConfetti(false);
-    setIsCompleted(completedFromContext);
+
+    if (!completedFromContext) {
+      cancelTimeout();
+      setIsCompleted(false);
+      setShowConfetti(false);
+      return;
+    }
+
+    setIsCompleted(true);
   }, [completedFromContext, completionEnabled]);
 
   const scrollToNextSection = () => {
