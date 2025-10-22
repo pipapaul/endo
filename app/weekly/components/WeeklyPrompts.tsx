@@ -135,7 +135,7 @@ export function WeeklyPrompts({ value, onChange }: { value: PromptAnswers; onCha
       <header className="space-y-1">
         <h2 className="text-xl font-semibold text-rose-900">Wöchentliche Leitfragen</h2>
         <p className="text-sm text-rose-900/70">
-          Wähle passende Punkte aus oder ergänze eigene Notizen. Deine Auswahl bleibt nur lokal gespeichert.
+          Wähle passende Chips oder ergänze eigene Stichworte. Deine Auswahl wird lokal gemerkt.
         </p>
       </header>
 
