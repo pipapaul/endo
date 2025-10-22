@@ -11,7 +11,8 @@ import {
   YAxis,
   CartesianGrid,
 } from "recharts";
-import { useMemo } from "react";
+import type { TooltipProps } from "recharts";
+import { useMemo, useCallback } from "react";
 
 type WeeklySummaryCardProps = {
   stats: WeeklyStats;
@@ -21,8 +22,10 @@ type WeeklySummaryCardProps = {
 
 type SparklinePoint = {
   dateISO: string;
-  pain: number | null;
+  pain: number | undefined;
   label: string;
+  missing: boolean;
+  displayValue: string;
 };
 
 function formatPain(value: number | null): string {
@@ -39,9 +42,36 @@ export function WeeklySummaryCard({ stats, confirmed, onConfirmChange }: WeeklyS
     return stats.sparkline.map((point) => {
       const date = new Date(`${point.dateISO}T00:00:00Z`);
       const label = date.toLocaleDateString("de-DE", { weekday: "short" });
-      return { ...point, label };
+      const missing = point.pain === null || Number.isNaN(point.pain ?? NaN);
+      const pain = missing ? undefined : point.pain ?? undefined;
+      return {
+        dateISO: point.dateISO,
+        label,
+        pain,
+        missing,
+        displayValue: formatPain(point.pain),
+      };
     });
   }, [stats.sparkline]);
+
+  const tooltipFormatter = useCallback<
+    TooltipProps<string | number, string>["formatter"]
+  >((value, _name, entry) => {
+    if (!entry) {
+      return value ?? "";
+    }
+
+    const payload = entry.payload as SparklinePoint | undefined;
+    if (!payload) {
+      return value ?? "";
+    }
+
+    if (payload.missing) {
+      return "Keine Angabe";
+    }
+
+    return payload.displayValue;
+  }, []);
 
   const avgPain = formatPain(stats.avgPain);
   const maxPain = formatPain(stats.maxPain);
@@ -94,7 +124,7 @@ export function WeeklySummaryCard({ stats, confirmed, onConfirmChange }: WeeklyS
                 tickLine={false}
               />
               <Tooltip
-                formatter={(value: number | null) => (value === null ? "Keine Angabe" : value)}
+                formatter={tooltipFormatter}
                 labelFormatter={(_, index) => sparklineData[index]?.dateISO ?? ""}
                 contentStyle={{
                   borderRadius: 12,
