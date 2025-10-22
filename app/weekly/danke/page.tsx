@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { Suspense, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,7 @@ function nextSunday(): Date {
   return target;
 }
 
-export default function WeeklyThankYouPage(): JSX.Element {
+function WeeklyThankYouContent(): JSX.Element {
   const router = useRouter();
   const searchParams = useSearchParams();
   const yearParam = searchParams?.get("year") ?? null;
@@ -97,5 +97,31 @@ export default function WeeklyThankYouPage(): JSX.Element {
         </div>
       </section>
     </main>
+  );
+}
+
+function LoadingFallback(): JSX.Element {
+  return (
+    <main className="mx-auto max-w-2xl px-4 py-10 lg:px-8">
+      <section className="space-y-4 rounded-2xl border border-rose-100 bg-white/80 p-8 shadow-sm">
+        <div className="h-6 w-1/3 animate-pulse rounded bg-rose-100" />
+        <div className="space-y-2">
+          <div className="h-4 w-2/3 animate-pulse rounded bg-rose-100" />
+          <div className="h-4 w-1/2 animate-pulse rounded bg-rose-100" />
+        </div>
+        <div className="flex gap-3">
+          <div className="h-10 flex-1 animate-pulse rounded bg-rose-100" />
+          <div className="h-10 flex-1 animate-pulse rounded bg-rose-100" />
+        </div>
+      </section>
+    </main>
+  );
+}
+
+export default function WeeklyThankYouPage(): JSX.Element {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <WeeklyThankYouContent />
+    </Suspense>
   );
 }
