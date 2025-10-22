@@ -1152,7 +1152,6 @@ export default function HomePage() {
     () => ({ product: null, saturation: null })
   );
   const [pbacCountDraft, setPbacCountDraft] = useState("0");
-  const [fsfiOptIn, setFsfiOptIn] = useState(false);
   const [sensorsVisible, setSensorsVisible] = useState(false);
   const [exploratoryVisible, setExploratoryVisible] = useState(false);
   const [notesTagDraft, setNotesTagDraft] = useState("");
@@ -3841,40 +3840,6 @@ export default function HomePage() {
                     </div>
                   </Section>
                 )}
-
-                <Section
-                  title="Sexualfunktion (sensibles Opt-in)"
-                  description="FSFI wird nur nach Opt-in gezeigt"
-                  completionEnabled={false}
-                >
-                  <div className="flex items-center gap-3">
-                    <Switch checked={fsfiOptIn} onCheckedChange={setFsfiOptIn} />
-                    <span className="text-sm text-rose-700">
-                      FSFI-Eingabe aktivieren (Werte werden separat gespeichert)
-                    </span>
-                  </div>
-                  {fsfiOptIn && (
-                    <TermField termKey="fsfi" htmlFor="fsfi-score">
-                      <Input
-                        id="fsfi-score"
-                        type="number"
-                        min={0}
-                        step={0.1}
-                        value={dailyDraft.sexual?.fsfiTotal ?? ""}
-                        onChange={(event) =>
-                          setDailyDraft((prev) => ({
-                            ...prev,
-                            sexual: {
-                              ...(prev.sexual ?? {}),
-                              fsfiTotal: event.target.value ? Number(event.target.value) : undefined,
-                            },
-                          }))
-                        }
-                      />
-                      {renderIssuesForPath("sexual.fsfiTotal")}
-                    </TermField>
-                  )}
-                </Section>
 
                 <Section
                   title="Notizen & Tags"

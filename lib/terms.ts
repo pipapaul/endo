@@ -73,7 +73,6 @@ export const TERMS = {
   urinary_freq: { label: "Toilettengänge/Tag", help: "Wie oft urinieren?" },
   urinary_urgency: { label: "Harndrang (0–10)", help: "Starker Drang?" },
   urinary_pain: { label: "Schmerz beim Wasserlassen (0–10)", help: "Brennen/Stechen?" },
-  fsfi: { label: "Sexuelle Funktion (FSFI)", help: "Kurzfragebogen zur Sexualität" },
   ehp5: {
     label: "Lebensqualität (EHP-5)",
     tech: "EHP-5 – Endometriose Health Profile",
