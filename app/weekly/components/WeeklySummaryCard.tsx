@@ -125,7 +125,10 @@ export function WeeklySummaryCard({ stats, confirmed, onConfirmChange }: WeeklyS
               />
               <Tooltip
                 formatter={tooltipFormatter}
-                labelFormatter={(_, index) => sparklineData[index]?.dateISO ?? ""}
+                labelFormatter={(_label, payload) => {
+                  const point = payload?.[0]?.payload as SparklinePoint | undefined;
+                  return point?.dateISO ?? "";
+                }}
                 contentStyle={{
                   borderRadius: 12,
                   borderColor: "#fb7185",
