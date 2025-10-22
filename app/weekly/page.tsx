@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { Suspense, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 
 import WeeklyForm, { WeeklyProvider } from "./WeeklyForm";
@@ -25,6 +25,20 @@ function parseWeek(raw: string | null, fallback: number): number {
 }
 
 export default function Page(): JSX.Element {
+  return (
+    <main className="mx-auto max-w-4xl px-4 py-10 lg:px-8">
+      <Suspense fallback={<LoadingWeeklyPage />}>
+        <WeeklyPageContent />
+      </Suspense>
+    </main>
+  );
+}
+
+function LoadingWeeklyPage(): JSX.Element {
+  return <p className="text-sm text-rose-900/70">Initialisiere Wochenansicht …</p>;
+}
+
+function WeeklyPageContent(): JSX.Element {
   const searchParams = useSearchParams();
   const now = useMemo(() => new Date(), []);
   const currentWeek = useMemo(() => getIsoWeekParts(now), [now]);
@@ -61,9 +75,5 @@ export default function Page(): JSX.Element {
     );
   }, [dailyMeta.error, dailyMeta.ready, entriesForWeek, week, year]);
 
-  return (
-    <main className="mx-auto max-w-4xl px-4 py-10 lg:px-8">
-      {content}
-    </main>
-  );
+  return content;
 }
