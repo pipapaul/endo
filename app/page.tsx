@@ -460,9 +460,27 @@ function ScoreInput({
   max?: number;
   step?: number;
 }) {
+  const rangeDescriptionId = `${id}-range-hint`;
   const content = (
-    <div className="flex items-center gap-4">
-      <Slider value={[value]} min={min} max={max} step={step} onValueChange={([v]) => onChange(v)} id={id} />
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
+      <div className="flex flex-1 flex-col gap-1">
+        <Slider
+          value={[value]}
+          min={min}
+          max={max}
+          step={step}
+          onValueChange={([v]) => onChange(v)}
+          id={id}
+          aria-describedby={rangeDescriptionId}
+        />
+        <div
+          id={rangeDescriptionId}
+          className="flex justify-between text-xs text-rose-600"
+        >
+          <span>{min}</span>
+          <span>{max}</span>
+        </div>
+      </div>
       <Input
         className="w-20"
         type="number"
@@ -471,6 +489,7 @@ function ScoreInput({
         max={max}
         step={step}
         value={value}
+        aria-describedby={rangeDescriptionId}
         onChange={(event) => onChange(Number(event.target.value))}
       />
     </div>
@@ -514,11 +533,12 @@ function MultiSelectChips({
           key={option.value}
           type="button"
           onClick={() => toggle(option.value)}
+          aria-pressed={value.includes(option.value)}
           className={cn(
-            "rounded-full border px-3 py-1 text-sm transition",
+            "rounded-full border px-3 py-1 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2",
             value.includes(option.value)
-              ? "border-rose-400 bg-rose-100 text-rose-700"
-              : "border-rose-100 bg-white text-rose-600 hover:border-rose-200"
+              ? "border-rose-500 bg-rose-500 text-white shadow-sm"
+              : "border-rose-200 bg-white text-rose-700 hover:border-rose-400 hover:bg-rose-50"
           )}
         >
           {option.label}
@@ -587,16 +607,24 @@ function ModuleToggleRow({
 }
 
 function NrsInput({ id, value, onChange }: { id: string; value: number; onChange: (value: number) => void }) {
+  const rangeDescriptionId = `${id}-nrs-range`;
   return (
-    <div className="flex items-center gap-4">
-      <Slider
-        id={id}
-        value={[value]}
-        min={0}
-        max={10}
-        step={1}
-        onValueChange={([next]) => onChange(Math.max(0, Math.min(10, Math.round(next))))}
-      />
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
+      <div className="flex flex-1 flex-col gap-1">
+        <Slider
+          id={id}
+          value={[value]}
+          min={0}
+          max={10}
+          step={1}
+          aria-describedby={rangeDescriptionId}
+          onValueChange={([next]) => onChange(Math.max(0, Math.min(10, Math.round(next))))}
+        />
+        <div id={rangeDescriptionId} className="flex justify-between text-xs text-rose-600">
+          <span>0 Kein Schmerz</span>
+          <span>10 Stärkster Schmerz</span>
+        </div>
+      </div>
       <Input
         className="w-20"
         type="number"
@@ -605,6 +633,7 @@ function NrsInput({ id, value, onChange }: { id: string; value: number; onChange
         max={10}
         step={1}
         value={value}
+        aria-describedby={rangeDescriptionId}
         onChange={(event) => {
           const parsed = Number(event.target.value);
           if (Number.isNaN(parsed)) {
@@ -1085,12 +1114,49 @@ function computePearson(pairs: { x: number; y: number }[]) {
 }
 export default function HomePage() {
   const today = formatDate(new Date());
+  const defaultDailyDraft = useMemo(() => createEmptyDailyEntry(today), [today]);
+  const defaultWeeklyDraft = useMemo(() => {
+    const isoWeek = dateToIsoWeek(new Date());
+    return createEmptyWeeklyEntry(isoWeek);
+  }, []);
+  const defaultMonthlyDraft = useMemo(() => {
+    const now = new Date();
+    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    return createEmptyMonthlyEntry(month);
+  }, []);
   const [dailyEntries, setDailyEntries, dailyStorage] = usePersistentState<DailyEntry[]>("endo.daily.v2", []);
   const [weeklyEntries, setWeeklyEntries, weeklyStorage] = usePersistentState<WeeklyEntry[]>("endo.weekly.v2", []);
   const [monthlyEntries, setMonthlyEntries, monthlyStorage] = usePersistentState<MonthlyEntry[]>("endo.monthly.v2", []);
   const [featureFlags, setFeatureFlags, featureStorage] = usePersistentState<FeatureFlags>("endo.flags.v1", {});
   const [sectionCompletionState, setSectionCompletionState, sectionCompletionStorage] =
     usePersistentState<SectionCompletionState>("endo.sectionCompletion.v1", {});
+
+  const [dailyDraft, setDailyDraft, dailyDraftStorage] =
+    usePersistentState<DailyEntry>("endo.draft.daily.v1", defaultDailyDraft);
+  const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
+  const [pbacCounts, setPbacCounts] = useState<PbacCounts>({ ...PBAC_DEFAULT_COUNTS });
+  const [pbacStep, setPbacStep] = useState(1);
+  const [pbacSelection, setPbacSelection] = useState<{ product: PbacProduct | null; saturation: PbacSaturation | null }>(
+    () => ({ product: null, saturation: null })
+  );
+  const [pbacCountDraft, setPbacCountDraft] = useState("0");
+  const [sensorsVisible, setSensorsVisible] = useState(false);
+  const [exploratoryVisible, setExploratoryVisible] = useState(false);
+  const [notesTagDraft, setNotesTagDraft] = useState("");
+  const [painQualityOther, setPainQualityOther] = useState("");
+  const [trendXAxisMode, setTrendXAxisMode] = useState<"date" | "cycleDay">("date");
+  const [dailySaveNotice, setDailySaveNotice] = useState<string | null>(null);
+
+  const [weeklyDraft, setWeeklyDraft, weeklyDraftStorage] =
+    usePersistentState<WeeklyEntry>("endo.draft.weekly.v1", defaultWeeklyDraft);
+
+  const [monthlyDraft, setMonthlyDraft, monthlyDraftStorage] =
+    usePersistentState<MonthlyEntry>("endo.draft.monthly.v1", defaultMonthlyDraft);
+
+  const [draftStatus, setDraftStatus] = useState<string | null>(null);
+  const draftStatusTimeoutRef = useRef<number | null>(null);
+  const draftRestoredRef = useRef(false);
+  const lastDraftSavedAtRef = useRef<number | null>(null);
 
   const isBirthdayGreetingDay = () => {
     const now = new Date();
@@ -1103,13 +1169,55 @@ export default function HomePage() {
     [heartGradientReactId]
   );
 
-  const storageMetas = [dailyStorage, weeklyStorage, monthlyStorage, featureStorage, sectionCompletionStorage];
+  const storageMetas = [
+    dailyStorage,
+    weeklyStorage,
+    monthlyStorage,
+    featureStorage,
+    sectionCompletionStorage,
+    dailyDraftStorage,
+    weeklyDraftStorage,
+    monthlyDraftStorage,
+  ];
   const storageReady = storageMetas.every((meta) => meta.ready);
   const storageErrors = storageMetas.map((meta) => meta.error).filter(Boolean) as string[];
   const storageDrivers = Array.from(new Set(storageMetas.map((meta) => meta.driverLabel)));
   const usesIndexedDb = storageMetas.every((meta) => meta.driver === "indexeddb");
   const hasMemoryFallback = storageMetas.some((meta) => meta.driver === "memory");
   const storageUnavailable = storageMetas.some((meta) => meta.driver === "unavailable");
+
+  useEffect(() => {
+    if (!dailyDraftStorage.ready) return;
+    if (dailyDraftStorage.restored && !draftRestoredRef.current) {
+      draftRestoredRef.current = true;
+      setDraftStatus("Wiederhergestellt");
+    }
+  }, [dailyDraftStorage.ready, dailyDraftStorage.restored]);
+
+  useEffect(() => {
+    if (!dailyDraftStorage.ready) return;
+    if (!dailyDraftStorage.lastSavedAt) return;
+    if (lastDraftSavedAtRef.current && dailyDraftStorage.lastSavedAt <= lastDraftSavedAtRef.current) {
+      return;
+    }
+    lastDraftSavedAtRef.current = dailyDraftStorage.lastSavedAt;
+    setDraftStatus("Entwurf gespeichert");
+  }, [dailyDraftStorage.lastSavedAt, dailyDraftStorage.ready]);
+
+  useEffect(() => {
+    if (!draftStatus) return;
+    if (typeof window === "undefined") return;
+    if (draftStatusTimeoutRef.current) {
+      window.clearTimeout(draftStatusTimeoutRef.current);
+    }
+    draftStatusTimeoutRef.current = window.setTimeout(() => setDraftStatus(null), 2500);
+    return () => {
+      if (draftStatusTimeoutRef.current) {
+        window.clearTimeout(draftStatusTimeoutRef.current);
+        draftStatusTimeoutRef.current = null;
+      }
+    };
+  }, [draftStatus]);
 
   const sectionCompletionContextValue = useMemo<SectionCompletionContextValue>(
     () => ({
@@ -1144,32 +1252,6 @@ export default function HomePage() {
     [sectionCompletionState, setSectionCompletionState]
   );
 
-  const [dailyDraft, setDailyDraft] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
-  const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
-  const [pbacCounts, setPbacCounts] = useState<PbacCounts>({ ...PBAC_DEFAULT_COUNTS });
-  const [pbacStep, setPbacStep] = useState(1);
-  const [pbacSelection, setPbacSelection] = useState<{ product: PbacProduct | null; saturation: PbacSaturation | null }>(
-    () => ({ product: null, saturation: null })
-  );
-  const [pbacCountDraft, setPbacCountDraft] = useState("0");
-  const [sensorsVisible, setSensorsVisible] = useState(false);
-  const [exploratoryVisible, setExploratoryVisible] = useState(false);
-  const [notesTagDraft, setNotesTagDraft] = useState("");
-  const [painQualityOther, setPainQualityOther] = useState("");
-  const [trendXAxisMode, setTrendXAxisMode] = useState<"date" | "cycleDay">("date");
-  const [dailySaveNotice, setDailySaveNotice] = useState<string | null>(null);
-
-  const [weeklyDraft, setWeeklyDraft] = useState<WeeklyEntry>(() => {
-    const isoWeek = dateToIsoWeek(new Date());
-    return createEmptyWeeklyEntry(isoWeek);
-  });
-
-  const [monthlyDraft, setMonthlyDraft] = useState<MonthlyEntry>(() => {
-    const now = new Date();
-    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    return createEmptyMonthlyEntry(month);
-  });
-
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [persisted, setPersisted] = useState<boolean | null>(null);
@@ -1197,7 +1279,7 @@ export default function HomePage() {
     const next = createEmptyDailyEntry(today);
     setDailyDraft(next);
     setLastSavedDailySnapshot(next);
-  }, [storageReady, isDailyDirty, dailyDraft.date, dailyEntries, today]);
+  }, [storageReady, isDailyDirty, dailyDraft.date, dailyEntries, today, setDailyDraft, setLastSavedDailySnapshot]);
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !("storage" in navigator) || !navigator.storage) {
@@ -1444,7 +1526,7 @@ export default function HomePage() {
       base.setDate(base.getDate() - 1);
       return { ...prev, date: formatDate(base) };
     });
-  }, [today]);
+  }, [setDailyDraft, today]);
 
   const goToNextDay = useCallback(() => {
     setDailyDraft((prev) => {
@@ -1458,7 +1540,7 @@ export default function HomePage() {
       if (nextDate > today) return prev;
       return { ...prev, date: nextDate };
     });
-  }, [today]);
+  }, [setDailyDraft, today]);
 
   const goToPreviousWeek = useCallback(() => {
     setWeeklyDraft((prev) => {
@@ -1469,7 +1551,7 @@ export default function HomePage() {
       const nextIsoWeek = dateToIsoWeek(start);
       return { ...prev, isoWeek: nextIsoWeek };
     });
-  }, [currentIsoWeek]);
+  }, [currentIsoWeek, setWeeklyDraft]);
 
   const goToNextWeek = useCallback(() => {
     setWeeklyDraft((prev) => {
@@ -1486,7 +1568,7 @@ export default function HomePage() {
       }
       return { ...prev, isoWeek: nextIsoWeek };
     });
-  }, [currentIsoWeek]);
+  }, [currentIsoWeek, setWeeklyDraft]);
 
   const goToPreviousMonth = useCallback(() => {
     setMonthlyDraft((prev) => {
@@ -1497,7 +1579,7 @@ export default function HomePage() {
       const nextMonth = `${baseDate.getUTCFullYear()}-${String(baseDate.getUTCMonth() + 1).padStart(2, "0")}`;
       return { ...prev, month: nextMonth };
     });
-  }, [currentMonth]);
+  }, [currentMonth, setMonthlyDraft]);
 
   const goToNextMonth = useCallback(() => {
     setMonthlyDraft((prev) => {
@@ -1514,7 +1596,7 @@ export default function HomePage() {
       }
       return { ...prev, month: nextMonth };
     });
-  }, [currentMonth]);
+  }, [currentMonth, setMonthlyDraft]);
 
   const hasEntryForSelectedWeek = useMemo(
     () => weeklyEntries.some((entry) => entry.isoWeek === weeklyDraft.isoWeek),
@@ -1563,7 +1645,7 @@ export default function HomePage() {
         },
       }));
     }
-  }, [pbacScore, dailyDraft.bleeding.isBleeding]);
+  }, [pbacScore, dailyDraft.bleeding.isBleeding, setDailyDraft]);
 
   useEffect(() => {
     const existingEntry = dailyEntries.find((entry) => entry.date === dailyDraft.date);
@@ -1610,7 +1692,7 @@ export default function HomePage() {
         urinaryOpt: cleanedOpt,
       };
     });
-  }, [activeUrinary]);
+  }, [activeUrinary, setDailyDraft]);
 
   useEffect(() => {
     if (!activeHeadache) {
@@ -1619,7 +1701,7 @@ export default function HomePage() {
         return { ...prev, headacheOpt: undefined };
       });
     }
-  }, [activeHeadache]);
+  }, [activeHeadache, setDailyDraft]);
 
   useEffect(() => {
     if (!activeDizziness) {
@@ -1628,7 +1710,7 @@ export default function HomePage() {
         return { ...prev, dizzinessOpt: undefined };
       });
     }
-  }, [activeDizziness]);
+  }, [activeDizziness, setDailyDraft]);
 
   const handleFeatureToggle = (key: keyof FeatureFlags, value: boolean) => {
     setFeatureFlags((prev) => ({ ...prev, [key]: value }));
@@ -4042,8 +4124,22 @@ export default function HomePage() {
                   <Button type="button" onClick={handleDailySubmit} disabled={!isDailyDirty}>
                     Tagesdaten speichern
                   </Button>
-                  {dailySaveNotice && (
-                    <span className="text-sm text-amber-600">{dailySaveNotice}</span>
+                  {(draftStatus || dailySaveNotice) && (
+                    <div className="flex items-center gap-2">
+                      {draftStatus && (
+                        <span
+                          className={cn(
+                            "text-sm",
+                            draftStatus === "Wiederhergestellt" ? "text-sky-600" : "text-emerald-600"
+                          )}
+                        >
+                          {draftStatus}
+                        </span>
+                      )}
+                      {dailySaveNotice && (
+                        <span className="text-sm text-amber-600">{dailySaveNotice}</span>
+                      )}
+                    </div>
                   )}
                   <label className="flex cursor-pointer items-center gap-2 text-sm text-rose-600">
                     <Upload size={16} />
