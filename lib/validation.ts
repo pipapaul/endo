@@ -238,13 +238,6 @@ export function validateDailyEntry(entry: DailyEntry): ValidationIssue[] {
     }
   }
 
-  if (entry.sexual?.fsfiTotal !== undefined && (!Number.isFinite(entry.sexual.fsfiTotal) || entry.sexual.fsfiTotal < 0)) {
-    issues.push({
-      path: "sexual.fsfiTotal",
-      message: "FSFI-Werte müssen als nicht-negative Zahl angegeben werden.",
-    });
-  }
-
   if (entry.activity) {
     if (entry.activity.steps !== undefined && (!Number.isInteger(entry.activity.steps) || entry.activity.steps < 0)) {
       issues.push({ path: "activity.steps", message: "Schritte müssen als nicht-negative Ganzzahl angegeben werden." });

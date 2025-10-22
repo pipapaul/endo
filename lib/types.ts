@@ -32,7 +32,6 @@ export interface DailyEntry {
   sleep?: { hours?: number; quality?: number; awakenings?: number };
   gi?: { bristolType?: 1 | 2 | 3 | 4 | 5 | 6 | 7; bowelPain?: number };
   urinary?: { freqPerDay?: number; urgency?: number; pain?: number };
-  sexual?: { fsfiTotal?: number };
 
   activity?: { steps?: number; activeMinutes?: number }; // optional, Hilfsmittel
   exploratory?: { hrvRmssdMs?: number }; // optional, Hilfsmittel
