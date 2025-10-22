@@ -76,3 +76,8 @@ export async function listWeeklyReports(limit?: number): Promise<WeeklyReport[]>
   }
   return reports.map(cloneReport);
 }
+
+export async function replaceWeeklyReports(reports: WeeklyReport[]): Promise<void> {
+  const sanitized = reports.map(cloneReport).sort((a, b) => b.submittedAt - a.submittedAt);
+  await persistReports(sanitized);
+}
