@@ -1,12 +1,18 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useReducer } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { DailyEntry } from "@/lib/types";
 import { formatIsoWeek, getIsoWeekCalendarDates } from "@/lib/isoWeek";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import type { DailyEntry as AggregateDailyEntry, WeeklyStats } from "@/lib/weekly/aggregate";
+import { computeWeeklyStats } from "@/lib/weekly/aggregate";
+import { WeeklySummaryCard } from "./components/WeeklySummaryCard";
+import { WeeklyPrompts, type PromptAnswers } from "./components/WeeklyPrompts";
+import type { WeeklyDraft } from "@/lib/weekly/drafts";
+import { loadWeeklyDraft, saveWeeklyDraft } from "@/lib/weekly/drafts";
 
 type WeeklyState = {
   year: number;
@@ -66,6 +72,39 @@ function weeklyReducer(state: WeeklyState, action: WeeklyAction): WeeklyState {
   }
 }
 
+function createDefaultWeeklyDraft(isoWeekKey: string): WeeklyDraft {
+  return {
+    isoWeekKey,
+    confirmedSummary: false,
+    answers: { helped: [], worsened: [], nextWeekTry: [], freeText: "" },
+    progress: 0,
+    updatedAt: Date.now(),
+  };
+}
+
+function mapBleedingSeverity(pbacScore?: number): "light" | "medium" | "strong" {
+  if (typeof pbacScore !== "number") {
+    return "light";
+  }
+  if (pbacScore >= 250) {
+    return "strong";
+  }
+  if (pbacScore >= 100) {
+    return "medium";
+  }
+  return "light";
+}
+
+function toAggregateDailyEntry(entry: DailyEntry): AggregateDailyEntry {
+  return {
+    dateISO: entry.date,
+    pain0to10: typeof entry.painNRS === "number" ? entry.painNRS : undefined,
+    bleeding: entry.bleeding.isBleeding ? mapBleedingSeverity(entry.bleeding.pbacScore) : "none",
+    sleepQuality0to10: typeof entry.sleep?.quality === "number" ? entry.sleep.quality : undefined,
+    medicationsChanged: undefined,
+  };
+}
+
 export function WeeklyProvider({ children, year, week, dailyEntries }: WeeklyProviderProps) {
   const [state, dispatch] = useReducer(weeklyReducer, { year, week, dailyEntries }, createState);
 
@@ -111,6 +150,51 @@ export default function WeeklyForm(props: { year: number; week: number }): JSX.E
   const state = useWeeklyState();
   const dispatch = useWeeklyDispatch();
 
+  const [weeklyDraft, setWeeklyDraft] = useState<WeeklyDraft>(() => createDefaultWeeklyDraft(state.isoWeek));
+  const [draftReady, setDraftReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const baseDraft = createDefaultWeeklyDraft(state.isoWeek);
+    setDraftReady(false);
+    setWeeklyDraft(baseDraft);
+
+    loadWeeklyDraft(state.isoWeek)
+      .then((loaded) => {
+        if (cancelled) return;
+        if (loaded) {
+          setWeeklyDraft({
+            ...baseDraft,
+            ...loaded,
+            isoWeekKey: state.isoWeek,
+            answers: {
+              helped: loaded.answers.helped ?? baseDraft.answers.helped,
+              worsened: loaded.answers.worsened ?? baseDraft.answers.worsened,
+              nextWeekTry: loaded.answers.nextWeekTry ?? baseDraft.answers.nextWeekTry,
+              freeText: loaded.answers.freeText ?? baseDraft.answers.freeText,
+            },
+          });
+        }
+        setDraftReady(true);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error("Wochenentwurf konnte nicht geladen werden", error);
+        setDraftReady(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state.isoWeek]);
+
+  useEffect(() => {
+    if (!draftReady) return;
+    saveWeeklyDraft({ ...weeklyDraft, isoWeekKey: state.isoWeek }).catch((error) => {
+      console.error("Wochenentwurf konnte nicht gespeichert werden", error);
+    });
+  }, [draftReady, state.isoWeek, weeklyDraft]);
+
   const entriesByDate = useMemo(() => {
     const map = new Map<string, DailyEntry>();
     for (const entry of state.dailyEntries) {
@@ -118,6 +202,43 @@ export default function WeeklyForm(props: { year: number; week: number }): JSX.E
     }
     return map;
   }, [state.dailyEntries]);
+
+  const weeklyStats = useMemo<WeeklyStats | null>(() => {
+    if (!state.calendarDays.length) return null;
+    const startISO = state.calendarDays[0];
+    const endISO = state.calendarDays[state.calendarDays.length - 1];
+    const aggregateEntries: AggregateDailyEntry[] = state.dailyEntries.map(toAggregateDailyEntry);
+    return computeWeeklyStats(aggregateEntries, startISO, endISO);
+  }, [state.calendarDays, state.dailyEntries]);
+
+  const handleConfirmChange = useCallback(
+    (value: boolean) => {
+      setWeeklyDraft((prev) => ({
+        ...prev,
+        isoWeekKey: state.isoWeek,
+        confirmedSummary: value,
+        updatedAt: Date.now(),
+      }));
+    },
+    [state.isoWeek]
+  );
+
+  const handlePromptChange = useCallback(
+    (next: PromptAnswers) => {
+      setWeeklyDraft((prev) => ({
+        ...prev,
+        isoWeekKey: state.isoWeek,
+        answers: {
+          helped: [...next.helped],
+          worsened: [...next.worsened],
+          nextWeekTry: [...next.nextWeekTry],
+          freeText: next.freeText ?? "",
+        },
+        updatedAt: Date.now(),
+      }));
+    },
+    [state.isoWeek]
+  );
 
   const weekRangeLabel = useMemo(() => {
     if (!state.calendarDays.length) return "";
@@ -138,6 +259,16 @@ export default function WeeklyForm(props: { year: number; week: number }): JSX.E
           Die Tagesdaten dieser Woche werden automatisch zusammengefasst. Ergänze deine wöchentlichen Angaben und Notizen.
         </p>
       </header>
+
+      {weeklyStats ? (
+        <WeeklySummaryCard
+          stats={weeklyStats}
+          confirmed={weeklyDraft.confirmedSummary}
+          onConfirmChange={handleConfirmChange}
+        />
+      ) : null}
+
+      <WeeklyPrompts value={weeklyDraft.answers} onChange={handlePromptChange} />
 
       <div className="space-y-3">
         {state.calendarDays.map((isoDate) => {
