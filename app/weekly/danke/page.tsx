@@ -6,6 +6,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { formatIsoWeek } from "@/lib/isoWeek";
 import { exportWeeklyReportPDF } from "@/lib/export/pdfWeekly";
+import { buildWeeklyReminderICS } from "@/lib/reminders/ics";
+import {
+  requestWeeklyReminderPermission,
+  scheduleLocalWeeklyReminder,
+} from "@/lib/reminders/notifications";
 import { listWeeklyReports, type WeeklyReport } from "@/lib/weekly/reports";
 
 function formatWeekLabel(yearParam: string | null, weekParam: string | null): string {
@@ -21,13 +26,6 @@ function formatWeekLabel(yearParam: string | null, weekParam: string | null): st
   return `Kalenderwoche ${String(normalizedWeek).padStart(2, "0")} / ${year}`;
 }
 
-function formatGoogleDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}${month}${day}`;
-}
-
 function nextSunday(): Date {
   const now = new Date();
   const day = now.getDay();
@@ -36,6 +34,13 @@ function nextSunday(): Date {
   target.setDate(now.getDate() + offset);
   target.setHours(0, 0, 0, 0);
   return target;
+}
+
+function formatLocalISODate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function WeeklyThankYouContent(): JSX.Element {
@@ -59,6 +64,9 @@ function WeeklyThankYouContent(): JSX.Element {
   const [isLoadingReport, setIsLoadingReport] = useState(true);
   const [exportError, setExportError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [reminderMessage, setReminderMessage] = useState<string | null>(null);
+  const [reminderError, setReminderError] = useState<string | null>(null);
+  const [isSettingReminder, setIsSettingReminder] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,16 +117,62 @@ function WeeklyThankYouContent(): JSX.Element {
       });
   }, [report]);
 
-  const handleReminder = useCallback(() => {
-    if (typeof window === "undefined") return;
-    const sunday = nextSunday();
-    const end = new Date(sunday);
-    end.setDate(sunday.getDate() + 1);
-    const startString = formatGoogleDate(sunday);
-    const endString = formatGoogleDate(end);
-    const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=EndoTrack%20Check-in&dates=${startString}/${endString}&details=W%C3%B6chentlicher%20Check-in%20mit%20EndoTrack`;
-    window.open(url, "_blank");
+  const downloadReminderIcs = useCallback((content: string) => {
+    const blob = new Blob([content], { type: "text/calendar" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "endo-track-wochen-checkin.ics";
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
   }, []);
+
+  const handleReminder = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    setReminderMessage(null);
+    setReminderError(null);
+    setIsSettingReminder(true);
+
+    const sunday = nextSunday();
+    const nextSundayISO = formatLocalISODate(sunday);
+
+    try {
+      const permission = await requestWeeklyReminderPermission();
+
+      if (permission === "granted") {
+        try {
+          await scheduleLocalWeeklyReminder(nextSundayISO);
+          setReminderMessage(
+            "Benachrichtigung eingerichtet. Du erhältst am nächsten Sonntag eine Erinnerung in deinem Browser.",
+          );
+          return;
+        } catch (error) {
+          console.error("Geplante Benachrichtigung nicht möglich", error);
+          const icsContent = buildWeeklyReminderICS(nextSundayISO);
+          downloadReminderIcs(icsContent);
+          setReminderError(
+            "Benachrichtigungen sind erlaubt, konnten aber nicht geplant werden. Stattdessen wurde eine Kalenderdatei heruntergeladen.",
+          );
+          return;
+        }
+      }
+
+      const icsContent = buildWeeklyReminderICS(nextSundayISO);
+      downloadReminderIcs(icsContent);
+      setReminderMessage(
+        permission === "denied"
+          ? "Browser-Benachrichtigungen sind deaktiviert. Wir haben dir eine Kalenderdatei zur wöchentlichen Erinnerung bereitgestellt."
+          : "Benachrichtigungen konnten nicht aktiviert werden. Wir haben dir eine Kalenderdatei zur wöchentlichen Erinnerung bereitgestellt.",
+      );
+    } catch (error) {
+      console.error("Erinnerung konnte nicht eingerichtet werden", error);
+      setReminderError("Erinnerung konnte nicht eingerichtet werden. Bitte versuche es erneut.");
+    } finally {
+      setIsSettingReminder(false);
+    }
+  }, [downloadReminderIcs]);
 
   const handleBack = useCallback(() => {
     router.push("/weekly");
@@ -146,15 +200,23 @@ function WeeklyThankYouContent(): JSX.Element {
             >
               {isExporting ? "PDF wird erstellt…" : "Als PDF speichern"}
             </Button>
-            <Button type="button" variant="secondary" onClick={handleReminder} className="flex-1">
-              Erinnerung für nächsten Sonntag einrichten
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleReminder}
+              className="flex-1"
+              disabled={isSettingReminder}
+            >
+              {isSettingReminder ? "Erinnerung wird eingerichtet…" : "Erinnerung für nächsten Sonntag einrichten"}
             </Button>
           </div>
           <p className="text-xs text-rose-900/60">
-            Der PDF-Export speichert deinen Wochenbericht als kompaktes A4-Dokument. Die Erinnerung verlinkt zur
-            Kalendereinrichtung in Google Calendar.
+            Der PDF-Export speichert deinen Wochenbericht als kompaktes A4-Dokument. Die Erinnerung richtet nach
+            Möglichkeit eine Browser-Benachrichtigung ein oder stellt eine Kalenderdatei bereit.
           </p>
           {exportError ? <p className="text-xs text-rose-500">{exportError}</p> : null}
+          {reminderMessage ? <p className="text-xs text-rose-700">{reminderMessage}</p> : null}
+          {reminderError ? <p className="text-xs text-rose-500">{reminderError}</p> : null}
           {!isLoadingReport && !report ? (
             <p className="text-xs text-rose-500">Es wurde kein Wochenbericht gefunden.</p>
           ) : null}
