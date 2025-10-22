@@ -1900,7 +1900,6 @@ export default function HomePage() {
     setPbacCountDraft("0");
     setPainQualityOther("");
     setNotesTagDraft("");
-    setFsfiOptIn(false);
     setSensorsVisible(false);
     setExploratoryVisible(false);
     setIssues([]);
