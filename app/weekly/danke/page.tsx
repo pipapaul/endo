@@ -185,7 +185,7 @@ function WeeklyThankYouContent(): JSX.Element {
           <p className="text-sm font-medium uppercase tracking-wide text-rose-500">Danke</p>
           <h1 className="text-3xl font-semibold text-rose-900">Wochenbericht gespeichert</h1>
           <p className="text-sm text-rose-900/70">
-            Dein Bericht für {weekLabel} wurde gesichert. Wähle eine der folgenden Aktionen, um nahtlos weiterzumachen.
+            Danke. Möchtest du die Woche als A4 speichern oder eine Erinnerung für nächsten Sonntag erhalten?
           </p>
         </header>
 

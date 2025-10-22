@@ -353,6 +353,9 @@ export default function WeeklyForm(props: { year: number; week: number }): JSX.E
   if (activeStep === 1) {
     stepContent = (
       <div className="space-y-6">
+        <p className="text-sm text-rose-900/70">
+          Bitte bestätige die automatisch erstellte Wochenübersicht. Du kannst Werte jederzeit korrigieren.
+        </p>
         {weeklyStats ? (
           <WeeklySummaryCard
             stats={weeklyStats}
@@ -469,6 +472,10 @@ export default function WeeklyForm(props: { year: number; week: number }): JSX.E
           </p>
         </header>
 
+        <p className="text-sm text-rose-900/70">
+          Bitte bestätige die automatisch erstellte Wochenübersicht. Du kannst Werte jederzeit korrigieren.
+        </p>
+
         {weeklyStats ? (
           <WeeklySummaryCard
             stats={weeklyStats}
@@ -521,7 +528,7 @@ export default function WeeklyForm(props: { year: number; week: number }): JSX.E
 
         {!weeklyDraft.confirmedSummary ? (
           <p className="text-sm text-rose-900">
-            Bitte bestätige die Zusammenfassung im ersten Schritt, bevor du absendest.
+            Bitte bestätige die automatisch erstellte Wochenübersicht im ersten Schritt, bevor du absendest.
           </p>
         ) : null}
         {submitError ? (
