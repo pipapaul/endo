@@ -1,9 +1,12 @@
 "use client";
 
-import { Suspense, useCallback, useMemo } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
+import { formatIsoWeek } from "@/lib/isoWeek";
+import { exportWeeklyReportPDF } from "@/lib/export/pdfWeekly";
+import { listWeeklyReports, type WeeklyReport } from "@/lib/weekly/reports";
 
 function formatWeekLabel(yearParam: string | null, weekParam: string | null): string {
   if (!yearParam || !weekParam) {
@@ -43,10 +46,68 @@ function WeeklyThankYouContent(): JSX.Element {
 
   const weekLabel = useMemo(() => formatWeekLabel(yearParam, weekParam), [weekParam, yearParam]);
 
+  const isoWeekKey = useMemo(() => {
+    const year = Number(yearParam);
+    const week = Number(weekParam);
+    if (!Number.isFinite(year) || !Number.isFinite(week)) {
+      return null;
+    }
+    return formatIsoWeek(year, week);
+  }, [weekParam, yearParam]);
+
+  const [report, setReport] = useState<WeeklyReport | null>(null);
+  const [isLoadingReport, setIsLoadingReport] = useState(true);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoadingReport(true);
+    setExportError(null);
+    (async () => {
+      try {
+        const reports = await listWeeklyReports();
+        if (cancelled) return;
+        if (!reports.length) {
+          setReport(null);
+          return;
+        }
+        if (isoWeekKey) {
+          const match = reports.find((entry) => entry.isoWeekKey === isoWeekKey);
+          setReport(match ?? reports[0]);
+          return;
+        }
+        setReport(reports[0]);
+      } catch (error) {
+        console.error("Wochenbericht konnte nicht geladen werden", error);
+        if (!cancelled) {
+          setReport(null);
+          setExportError("Der gespeicherte Bericht konnte nicht geladen werden.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingReport(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isoWeekKey]);
+
   const handleExport = useCallback(() => {
-    if (typeof window === "undefined") return;
-    window.print();
-  }, []);
+    if (!report) return;
+    setIsExporting(true);
+    setExportError(null);
+    exportWeeklyReportPDF(report)
+      .catch((error) => {
+        console.error("PDF-Export fehlgeschlagen", error);
+        setExportError("Der PDF-Export ist fehlgeschlagen. Bitte versuche es erneut.");
+      })
+      .finally(() => {
+        setIsExporting(false);
+      });
+  }, [report]);
 
   const handleReminder = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -77,17 +138,26 @@ function WeeklyThankYouContent(): JSX.Element {
         <div className="space-y-4">
           <p className="text-sm font-medium text-rose-900">Nächste Schritte</p>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <Button type="button" onClick={handleExport} className="flex-1">
-              Woche als A4 exportieren
+            <Button
+              type="button"
+              onClick={handleExport}
+              className="flex-1"
+              disabled={!report || isExporting || isLoadingReport}
+            >
+              {isExporting ? "PDF wird erstellt…" : "Als PDF speichern"}
             </Button>
             <Button type="button" variant="secondary" onClick={handleReminder} className="flex-1">
               Erinnerung für nächsten Sonntag einrichten
             </Button>
           </div>
           <p className="text-xs text-rose-900/60">
-            Der Export öffnet den Druckdialog deines Browsers. Die Erinnerung verlinkt zur Kalendereinrichtung in Google
-            Calendar.
+            Der PDF-Export speichert deinen Wochenbericht als kompaktes A4-Dokument. Die Erinnerung verlinkt zur
+            Kalendereinrichtung in Google Calendar.
           </p>
+          {exportError ? <p className="text-xs text-rose-500">{exportError}</p> : null}
+          {!isLoadingReport && !report ? (
+            <p className="text-xs text-rose-500">Es wurde kein Wochenbericht gefunden.</p>
+          ) : null}
         </div>
 
         <div className="flex justify-center">
