@@ -78,15 +78,22 @@ export async function scheduleLocalWeeklyReminder(nextSundayISO: string): Promis
     throw new Error("Service Worker sind nicht verfügbar, Benachrichtigungen können nicht geplant werden.");
   }
 
+  type TimestampTriggerCtor = new (timestamp: number) => { timestamp: number };
+
   const triggerCtor = (window as typeof window & {
-    TimestampTrigger?: new (timestamp: number) => unknown;
+    TimestampTrigger?: TimestampTriggerCtor;
   }).TimestampTrigger;
 
   if (!triggerCtor) {
     throw new Error("Geplante Benachrichtigungen werden von diesem Browser nicht unterstützt.");
   }
 
-  const options: NotificationOptions & { showTrigger?: unknown } = {
+  interface ScheduledNotificationOptions extends NotificationOptions {
+    renotify?: boolean;
+    showTrigger?: InstanceType<TimestampTriggerCtor>;
+  }
+
+  const options: ScheduledNotificationOptions = {
     body: "Zeit für deinen wöchentlichen EndoTrack Check-in.",
     tag: REMINDER_NOTIFICATION_TAG,
     badge: "/icon-192.png",
