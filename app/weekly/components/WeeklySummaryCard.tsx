@@ -55,7 +55,7 @@ export function WeeklySummaryCard({ stats, confirmed, onConfirmChange }: WeeklyS
   }, [stats.sparkline]);
 
   const tooltipFormatter = useCallback<
-    TooltipProps<string | number, string>["formatter"]
+    NonNullable<TooltipProps<string | number, string>["formatter"]>
   >((value, _name, entry) => {
     if (!entry) {
       return value ?? "";
