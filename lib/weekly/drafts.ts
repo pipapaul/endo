@@ -1,4 +1,5 @@
 import { getItem, removeItem, setItem } from "../persistence";
+import { DEFAULT_WPAI, normalizeWpai, type WeeklyWpai } from "./wpai";
 
 export type WeeklyDraft = {
   isoWeekKey: string;
@@ -8,6 +9,7 @@ export type WeeklyDraft = {
     worsened: string[];
     nextWeekTry: string[];
     freeText?: string;
+    wpai: WeeklyWpai;
   };
   progress: 0 | 1 | 2 | 3;
   updatedAt: number;
@@ -40,12 +42,14 @@ function cloneDraft(draft: WeeklyDraft): WeeklyDraft {
       worsened: [...draft.answers.worsened],
       nextWeekTry: [...draft.answers.nextWeekTry],
       freeText: draft.answers.freeText,
+      wpai: { ...draft.answers.wpai },
     },
   };
 }
 
 function normalizeDraft(draft: WeeklyDraft): WeeklyDraft {
-  const answers = draft.answers ?? { helped: [], worsened: [], nextWeekTry: [], freeText: undefined };
+  const answers =
+    draft.answers ?? { helped: [], worsened: [], nextWeekTry: [], freeText: undefined, wpai: DEFAULT_WPAI };
   return {
     ...draft,
     answers: {
@@ -53,6 +57,7 @@ function normalizeDraft(draft: WeeklyDraft): WeeklyDraft {
       worsened: Array.isArray(answers.worsened) ? [...answers.worsened] : [],
       nextWeekTry: Array.isArray(answers.nextWeekTry) ? [...answers.nextWeekTry] : [],
       freeText: answers.freeText,
+      wpai: normalizeWpai(answers.wpai),
     },
   };
 }

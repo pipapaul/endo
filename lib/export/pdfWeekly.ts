@@ -1,5 +1,6 @@
 import { formatIsoWeek } from "@/lib/isoWeek";
 import type { WeeklyReport } from "@/lib/weekly/reports";
+import { WPAI_FIELD_DEFINITIONS } from "@/lib/weekly/wpai";
 
 const PAGE_WIDTH = 595.28; // A4 width in points (210mm)
 const PAGE_HEIGHT = 841.89; // A4 height in points (297mm)
@@ -181,6 +182,15 @@ function buildTextRuns(report: WeeklyReport): TextRun[] {
       });
     }
     addSpacer(2);
+  });
+
+  addSpacer();
+  pushText("WPAI – 7-Tage-Rueckblick", BODY_SIZE + 1);
+  WPAI_FIELD_DEFINITIONS.forEach((field) => {
+    const rawValue = answers.wpai?.[field.key];
+    const formatted = typeof rawValue === "number" ? `${formatNumber(rawValue, 0)} %` : "-";
+    pushText(`${field.label}: ${formatted}`, BODY_SIZE);
+    pushText(`  ${field.description}`, BODY_SIZE - 1, BODY_FONT, (BODY_SIZE - 1) * 1.35);
   });
 
   if (answers.freeText) {

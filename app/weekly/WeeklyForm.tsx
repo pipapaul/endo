@@ -25,6 +25,13 @@ import { Stepper } from "./components/Stepper";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { storeWeeklyReport } from "@/lib/weekly/reports";
+import InfoTip from "@/components/InfoTip";
+import {
+  DEFAULT_WPAI,
+  normalizeWpai,
+  WPAI_CARD_TOOLTIP,
+  WPAI_FIELD_DEFINITIONS,
+} from "@/lib/weekly/wpai";
 
 type WeeklyState = {
   year: number;
@@ -88,7 +95,7 @@ function createDefaultWeeklyDraft(isoWeekKey: string): WeeklyDraft {
   return {
     isoWeekKey,
     confirmedSummary: false,
-    answers: { helped: [], worsened: [], nextWeekTry: [], freeText: "" },
+    answers: { helped: [], worsened: [], nextWeekTry: [], freeText: "", wpai: { ...DEFAULT_WPAI } },
     progress: 1,
     updatedAt: Date.now(),
   };
@@ -207,6 +214,7 @@ export default function WeeklyForm(props: { year: number; week: number }): JSX.E
               worsened: loaded.answers.worsened ?? baseDraft.answers.worsened,
               nextWeekTry: loaded.answers.nextWeekTry ?? baseDraft.answers.nextWeekTry,
               freeText: loaded.answers.freeText ?? baseDraft.answers.freeText,
+              wpai: normalizeWpai(loaded.answers.wpai, baseDraft.answers.wpai),
             },
             progress: normalizedProgress,
           });
@@ -270,6 +278,7 @@ export default function WeeklyForm(props: { year: number; week: number }): JSX.E
           worsened: [...next.worsened],
           nextWeekTry: [...next.nextWeekTry],
           freeText: next.freeText ?? "",
+          wpai: normalizeWpai(next.wpai, prev.answers.wpai),
         },
         updatedAt: Date.now(),
       }));
@@ -307,6 +316,7 @@ export default function WeeklyForm(props: { year: number; week: number }): JSX.E
       worsened: Array.isArray(weeklyDraft.answers.worsened) ? [...weeklyDraft.answers.worsened] : [],
       nextWeekTry: Array.isArray(weeklyDraft.answers.nextWeekTry) ? [...weeklyDraft.answers.nextWeekTry] : [],
       freeText: weeklyDraft.answers.freeText ?? "",
+      wpai: normalizeWpai(weeklyDraft.answers.wpai),
     }),
     [weeklyDraft.answers]
   );
@@ -326,6 +336,7 @@ export default function WeeklyForm(props: { year: number; week: number }): JSX.E
           worsened: [...reviewAnswers.worsened],
           nextWeekTry: [...reviewAnswers.nextWeekTry],
           freeText: reviewAnswers.freeText,
+          wpai: { ...reviewAnswers.wpai },
         },
         submittedAt: Date.now(),
       });
@@ -515,6 +526,30 @@ export default function WeeklyForm(props: { year: number; week: number }): JSX.E
               <p className="whitespace-pre-line text-sm text-rose-900/80">{reviewAnswers.freeText}</p>
             </div>
           ) : null}
+        </div>
+
+        <div className="space-y-4 rounded-xl border border-rose-100 bg-white/80 p-4 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <h3 className="text-lg font-semibold text-rose-900">WPAI – 7-Tage-Rückblick</h3>
+            <InfoTip tech={WPAI_CARD_TOOLTIP.tech} help={WPAI_CARD_TOOLTIP.help} />
+          </div>
+          <dl className="space-y-3">
+            {WPAI_FIELD_DEFINITIONS.map((field) => {
+              const value = reviewAnswers.wpai[field.key];
+              return (
+                <div key={field.key} className="space-y-1">
+                  <dt className="flex items-center gap-2 text-sm font-medium text-rose-900">
+                    {field.label}
+                    <InfoTip tech={field.label} help={field.tooltip} />
+                  </dt>
+                  <dd className="text-sm text-rose-900/80">
+                    <span className="font-semibold text-rose-900">{value} %</span>
+                    <span className="ml-2 text-rose-900/60">{field.description}</span>
+                  </dd>
+                </div>
+              );
+            })}
+          </dl>
         </div>
 
         <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4 shadow-sm">
