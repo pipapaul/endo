@@ -16,6 +16,9 @@ export type PersistentStateMeta = {
   driver: StorageDriver;
   error: string | null;
   driverLabel: string;
+  isSaving: boolean;
+  lastSavedAt: number | null;
+  restored: boolean;
 };
 
 export function usePersistentState<T>(key: string, defaultValue: T) {
@@ -23,7 +26,11 @@ export function usePersistentState<T>(key: string, defaultValue: T) {
   const [ready, setReady] = useState(false);
   const [driver, setDriver] = useState<StorageDriver>(storageSupported() ? "indexeddb" : "unavailable");
   const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  const [restored, setRestored] = useState(false);
   const valueRef = useRef(value);
+  const debounceRef = useRef<number | null>(null);
 
   useEffect(() => {
     valueRef.current = value;
@@ -44,6 +51,9 @@ export function usePersistentState<T>(key: string, defaultValue: T) {
         }
         if (result.value !== undefined) {
           setValue(result.value);
+          setRestored(true);
+        } else {
+          setRestored(false);
         }
         setReady(true);
         setError(null);
@@ -62,7 +72,19 @@ export function usePersistentState<T>(key: string, defaultValue: T) {
 
   useEffect(() => {
     if (!ready) return;
-    if (driver === "unavailable") return;
+    if (typeof window === "undefined") return;
+
+    if (driver === "unavailable") {
+      setIsSaving(false);
+      return;
+    }
+
+    if (debounceRef.current) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+
+    setIsSaving(true);
     if (typeof window === "undefined") return;
     let cancelled = false;
     let attempts = 0;
@@ -74,6 +96,8 @@ export function usePersistentState<T>(key: string, defaultValue: T) {
           if (cancelled) return;
           setDriver(currentDriver);
           setError(null);
+          setIsSaving(false);
+          setLastSavedAt(Date.now());
         })
         .catch((persistError: unknown) => {
           if (cancelled) return;
@@ -83,14 +107,19 @@ export function usePersistentState<T>(key: string, defaultValue: T) {
             window.setTimeout(persist, 300 * attempts);
           } else {
             setDriver("memory");
+            setIsSaving(false);
           }
         });
     };
 
-    persist();
+    debounceRef.current = window.setTimeout(persist, 300);
 
     return () => {
       cancelled = true;
+      if (debounceRef.current) {
+        window.clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
     };
   }, [driver, key, ready, value]);
 
@@ -100,8 +129,11 @@ export function usePersistentState<T>(key: string, defaultValue: T) {
       driver,
       error,
       driverLabel: getStorageDriverName(driver),
+      isSaving,
+      lastSavedAt,
+      restored,
     }),
-    [driver, error, ready]
+    [driver, error, ready, isSaving, lastSavedAt, restored]
   );
 
   return [value, setValue, meta] as const;

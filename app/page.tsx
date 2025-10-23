@@ -32,15 +32,10 @@ import {
   Upload,
 } from "lucide-react";
 
-import { DailyEntry, FeatureFlags, MonthlyEntry, WeeklyEntry } from "@/lib/types";
+import { DailyEntry, FeatureFlags, MonthlyEntry } from "@/lib/types";
 import { TERMS } from "@/lib/terms";
 import type { ModuleTerms, TermDescriptor, TermKey } from "@/lib/terms";
-import {
-  validateDailyEntry,
-  validateMonthlyEntry,
-  validateWeeklyEntry,
-  type ValidationIssue,
-} from "@/lib/validation";
+import { validateDailyEntry, validateMonthlyEntry, type ValidationIssue } from "@/lib/validation";
 import InfoTip from "@/components/InfoTip";
 import { Labeled } from "@/components/Labeled";
 import { Button } from "@/components/ui/button";
@@ -57,6 +52,14 @@ import Checkbox from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { touchLastActive } from "@/lib/persistence";
 import { usePersistentState } from "@/lib/usePersistentState";
+import WeeklyTabShell from "@/components/weekly/WeeklyTabShell";
+import {
+  listWeeklyReports,
+  replaceWeeklyReports,
+  type WeeklyReport,
+  type PromptAnswers,
+} from "@/lib/weekly/reports";
+import { normalizeWpai, type WeeklyWpai } from "@/lib/weekly/wpai";
 
 type SymptomKey = keyof DailyEntry["symptoms"];
 
@@ -69,7 +72,7 @@ type BackupPayload = {
   version: number;
   exportedAt: string;
   dailyEntries: DailyEntry[];
-  weeklyEntries: WeeklyEntry[];
+  weeklyReports: WeeklyReport[];
   monthlyEntries: MonthlyEntry[];
   featureFlags: FeatureFlags;
 };
@@ -215,15 +218,6 @@ const createEmptyDailyEntry = (date: string): DailyEntry => ({
   symptoms: {},
   meds: [],
   ovulation: {},
-});
-
-const createEmptyWeeklyEntry = (isoWeek: string): WeeklyEntry => ({
-  isoWeek,
-  function: {
-    wpaiAbsenteeismPct: undefined,
-    wpaiPresenteeismPct: undefined,
-    wpaiOverallPct: undefined,
-  },
 });
 
 const createEmptyMonthlyEntry = (month: string): MonthlyEntry => ({
@@ -460,9 +454,27 @@ function ScoreInput({
   max?: number;
   step?: number;
 }) {
+  const rangeDescriptionId = `${id}-range-hint`;
   const content = (
-    <div className="flex items-center gap-4">
-      <Slider value={[value]} min={min} max={max} step={step} onValueChange={([v]) => onChange(v)} id={id} />
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
+      <div className="flex flex-1 flex-col gap-1">
+        <Slider
+          value={[value]}
+          min={min}
+          max={max}
+          step={step}
+          onValueChange={([v]) => onChange(v)}
+          id={id}
+          aria-describedby={rangeDescriptionId}
+        />
+        <div
+          id={rangeDescriptionId}
+          className="flex justify-between text-xs text-rose-600"
+        >
+          <span>{min}</span>
+          <span>{max}</span>
+        </div>
+      </div>
       <Input
         className="w-20"
         type="number"
@@ -471,6 +483,7 @@ function ScoreInput({
         max={max}
         step={step}
         value={value}
+        aria-describedby={rangeDescriptionId}
         onChange={(event) => onChange(Number(event.target.value))}
       />
     </div>
@@ -514,11 +527,12 @@ function MultiSelectChips({
           key={option.value}
           type="button"
           onClick={() => toggle(option.value)}
+          aria-pressed={value.includes(option.value)}
           className={cn(
-            "rounded-full border px-3 py-1 text-sm transition",
+            "rounded-full border px-3 py-1 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2",
             value.includes(option.value)
-              ? "border-rose-400 bg-rose-100 text-rose-700"
-              : "border-rose-100 bg-white text-rose-600 hover:border-rose-200"
+              ? "border-rose-500 bg-rose-500 text-white shadow-sm"
+              : "border-rose-200 bg-white text-rose-700 hover:border-rose-400 hover:bg-rose-50"
           )}
         >
           {option.label}
@@ -587,16 +601,24 @@ function ModuleToggleRow({
 }
 
 function NrsInput({ id, value, onChange }: { id: string; value: number; onChange: (value: number) => void }) {
+  const rangeDescriptionId = `${id}-nrs-range`;
   return (
-    <div className="flex items-center gap-4">
-      <Slider
-        id={id}
-        value={[value]}
-        min={0}
-        max={10}
-        step={1}
-        onValueChange={([next]) => onChange(Math.max(0, Math.min(10, Math.round(next))))}
-      />
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
+      <div className="flex flex-1 flex-col gap-1">
+        <Slider
+          id={id}
+          value={[value]}
+          min={0}
+          max={10}
+          step={1}
+          aria-describedby={rangeDescriptionId}
+          onValueChange={([next]) => onChange(Math.max(0, Math.min(10, Math.round(next))))}
+        />
+        <div id={rangeDescriptionId} className="flex justify-between text-xs text-rose-600">
+          <span>0 Kein Schmerz</span>
+          <span>10 Stärkster Schmerz</span>
+        </div>
+      </div>
       <Input
         className="w-20"
         type="number"
@@ -605,6 +627,7 @@ function NrsInput({ id, value, onChange }: { id: string; value: number; onChange
         max={10}
         step={1}
         value={value}
+        aria-describedby={rangeDescriptionId}
         onChange={(event) => {
           const parsed = Number(event.target.value);
           if (Number.isNaN(parsed)) {
@@ -816,21 +839,123 @@ function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>
   return clone;
 }
 
-function normalizeImportedWeeklyEntry(entry: WeeklyEntry & Record<string, unknown>): WeeklyEntry {
-  const normalized: WeeklyEntry = {
-    isoWeek: typeof entry.isoWeek === "string" ? entry.isoWeek : "",
-  };
-  if (entry.function && typeof entry.function === "object") {
-    const fn = entry.function as Record<string, unknown>;
-    normalized.function = {
-      wpaiAbsenteeismPct:
-        typeof fn.wpaiAbsenteeismPct === "number" ? (fn.wpaiAbsenteeismPct as number) : undefined,
-      wpaiPresenteeismPct:
-        typeof fn.wpaiPresenteeismPct === "number" ? (fn.wpaiPresenteeismPct as number) : undefined,
-      wpaiOverallPct: typeof fn.wpaiOverallPct === "number" ? (fn.wpaiOverallPct as number) : undefined,
-    };
+type RawWeeklyReport = Record<string, unknown> & { stats?: Record<string, unknown> };
+
+function normalizeImportedWeeklyReport(entry: RawWeeklyReport): WeeklyReport | null {
+  if (!entry || typeof entry !== "object") {
+    return null;
   }
-  return normalized;
+
+  const isoWeekKey = typeof entry.isoWeekKey === "string" ? entry.isoWeekKey : "";
+  const submittedAtRaw = entry.submittedAt;
+  const submittedAt =
+    typeof submittedAtRaw === "number" && Number.isFinite(submittedAtRaw) ? submittedAtRaw : Date.now();
+
+  const statsSource = entry.stats;
+  if (!statsSource || typeof statsSource !== "object") {
+    return null;
+  }
+
+  const startISO = typeof statsSource.startISO === "string" ? statsSource.startISO : "";
+  const endISO = typeof statsSource.endISO === "string" ? statsSource.endISO : "";
+  if (!startISO || !endISO) {
+    return null;
+  }
+
+  const sparkline = Array.isArray(statsSource.sparkline)
+    ? statsSource.sparkline
+        .map((point) => {
+          if (!point || typeof point !== "object") return null;
+          const dateISO = typeof (point as { dateISO?: unknown }).dateISO === "string" ? point.dateISO : "";
+          if (!dateISO) return null;
+          const painValue = (point as { pain?: unknown }).pain;
+          const pain = typeof painValue === "number" && Number.isFinite(painValue) ? painValue : null;
+          return { dateISO, pain };
+        })
+        .filter((point): point is { dateISO: string; pain: number | null } => point !== null)
+    : [];
+
+  const notesSource = statsSource.notes;
+  const notes =
+    notesSource && typeof notesSource === "object"
+      ? {
+          medicationChange: Boolean((notesSource as { medicationChange?: unknown }).medicationChange),
+          sleepBelowUsual: Boolean((notesSource as { sleepBelowUsual?: unknown }).sleepBelowUsual),
+        }
+      : { medicationChange: false, sleepBelowUsual: false };
+
+  const stats: WeeklyReport["stats"] = {
+    isoWeekKey:
+      typeof statsSource.isoWeekKey === "string" && statsSource.isoWeekKey
+        ? statsSource.isoWeekKey
+        : isoWeekKey,
+    startISO,
+    endISO,
+    avgPain:
+      typeof statsSource.avgPain === "number" && Number.isFinite(statsSource.avgPain)
+        ? statsSource.avgPain
+        : null,
+    maxPain:
+      typeof statsSource.maxPain === "number" && Number.isFinite(statsSource.maxPain)
+        ? statsSource.maxPain
+        : null,
+    badDaysCount:
+      typeof statsSource.badDaysCount === "number" && Number.isFinite(statsSource.badDaysCount)
+        ? Math.max(0, Math.trunc(statsSource.badDaysCount))
+        : 0,
+    bleedingDaysCount:
+      typeof statsSource.bleedingDaysCount === "number" && Number.isFinite(statsSource.bleedingDaysCount)
+        ? Math.max(0, Math.trunc(statsSource.bleedingDaysCount))
+        : 0,
+    sparkline,
+    notes,
+  };
+
+  const answersSource = entry.answers;
+  const answers: PromptAnswers = (() => {
+    if (answersSource && typeof answersSource === "object") {
+      const wpaiSource = (answersSource as { wpai?: unknown }).wpai;
+      return {
+        helped: Array.isArray((answersSource as { helped?: unknown }).helped)
+          ? ((answersSource as { helped?: unknown }).helped as unknown[]).filter(
+              (item): item is string => typeof item === "string"
+            )
+          : [],
+        worsened: Array.isArray((answersSource as { worsened?: unknown }).worsened)
+          ? ((answersSource as { worsened?: unknown }).worsened as unknown[]).filter(
+              (item): item is string => typeof item === "string"
+            )
+          : [],
+        nextWeekTry: Array.isArray((answersSource as { nextWeekTry?: unknown }).nextWeekTry)
+          ? ((answersSource as { nextWeekTry?: unknown }).nextWeekTry as unknown[]).filter(
+              (item): item is string => typeof item === "string"
+            )
+          : [],
+        freeText:
+          typeof (answersSource as { freeText?: unknown }).freeText === "string"
+            ? ((answersSource as { freeText?: unknown }).freeText as string)
+            : "",
+        wpai: normalizeWpai(
+          wpaiSource && typeof wpaiSource === "object"
+            ? (wpaiSource as Partial<WeeklyWpai>)
+            : undefined
+        ),
+      };
+    }
+    return { helped: [], worsened: [], nextWeekTry: [], freeText: "", wpai: normalizeWpai() };
+  })();
+
+  const resolvedIsoWeek = stats.isoWeekKey || isoWeekKey;
+  if (!resolvedIsoWeek) {
+    return null;
+  }
+
+  return {
+    isoWeekKey: resolvedIsoWeek,
+    stats,
+    answers,
+    submittedAt,
+  };
 }
 
 function normalizeImportedMonthlyEntry(entry: MonthlyEntry & Record<string, unknown>): MonthlyEntry {
@@ -917,16 +1042,6 @@ function computePbacScore(counts: PbacCounts, flooding: boolean) {
 
 function findPbacProductItem(product: PbacProduct, saturation: PbacSaturation) {
   return PBAC_PRODUCT_ITEMS.find((item) => item.product === product && item.saturation === saturation);
-}
-
-function computeWpaiOverall(absenteeism?: number, presenteeism?: number) {
-  if (typeof absenteeism !== "number" || typeof presenteeism !== "number") return undefined;
-  const abs = Math.max(0, Math.min(100, absenteeism));
-  const pre = Math.max(0, Math.min(100, presenteeism));
-  const absFraction = abs / 100;
-  const preFraction = pre / 100;
-  const overall = Math.round((absFraction + (1 - absFraction) * preFraction) * 100);
-  return Math.min(overall, 100);
 }
 
 type SeverityLevel = "mild" | "moderat" | "hoch";
@@ -1043,18 +1158,6 @@ function createPdfDocument(title: string, lines: string[]) {
   return `${header}${body}${xref}${trailer}`;
 }
 
-function isoWeekToDate(isoWeek: string) {
-  const match = isoWeek.match(/^(\d{4})-W(\d{2})$/);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const week = Number(match[2]);
-  const fourthJan = new Date(Date.UTC(year, 0, 4));
-  const dayOfWeek = fourthJan.getUTCDay() || 7;
-  const monday = new Date(fourthJan);
-  monday.setUTCDate(fourthJan.getUTCDate() - (dayOfWeek - 1) + (week - 1) * 7);
-  return monday;
-}
-
 function dateToIsoWeek(date: Date) {
   const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const dayNr = target.getUTCDay() || 7;
@@ -1085,12 +1188,45 @@ function computePearson(pairs: { x: number; y: number }[]) {
 }
 export default function HomePage() {
   const today = formatDate(new Date());
+  const defaultDailyDraft = useMemo(() => createEmptyDailyEntry(today), [today]);
+  const defaultMonthlyDraft = useMemo(() => {
+    const now = new Date();
+    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    return createEmptyMonthlyEntry(month);
+  }, []);
   const [dailyEntries, setDailyEntries, dailyStorage] = usePersistentState<DailyEntry[]>("endo.daily.v2", []);
-  const [weeklyEntries, setWeeklyEntries, weeklyStorage] = usePersistentState<WeeklyEntry[]>("endo.weekly.v2", []);
   const [monthlyEntries, setMonthlyEntries, monthlyStorage] = usePersistentState<MonthlyEntry[]>("endo.monthly.v2", []);
   const [featureFlags, setFeatureFlags, featureStorage] = usePersistentState<FeatureFlags>("endo.flags.v1", {});
   const [sectionCompletionState, setSectionCompletionState, sectionCompletionStorage] =
     usePersistentState<SectionCompletionState>("endo.sectionCompletion.v1", {});
+
+  const [dailyDraft, setDailyDraft, dailyDraftStorage] =
+    usePersistentState<DailyEntry>("endo.draft.daily.v1", defaultDailyDraft);
+  const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
+  const [pbacCounts, setPbacCounts] = useState<PbacCounts>({ ...PBAC_DEFAULT_COUNTS });
+  const [pbacStep, setPbacStep] = useState(1);
+  const [pbacSelection, setPbacSelection] = useState<{ product: PbacProduct | null; saturation: PbacSaturation | null }>(
+    () => ({ product: null, saturation: null })
+  );
+  const [pbacCountDraft, setPbacCountDraft] = useState("0");
+  const [sensorsVisible, setSensorsVisible] = useState(false);
+  const [exploratoryVisible, setExploratoryVisible] = useState(false);
+  const [notesTagDraft, setNotesTagDraft] = useState("");
+  const [painQualityOther, setPainQualityOther] = useState("");
+  const [trendXAxisMode, setTrendXAxisMode] = useState<"date" | "cycleDay">("date");
+  const [dailySaveNotice, setDailySaveNotice] = useState<string | null>(null);
+  const [weeklyReports, setWeeklyReports] = useState<WeeklyReport[]>([]);
+  const [weeklyReportsReady, setWeeklyReportsReady] = useState(false);
+  const [weeklyReportsError, setWeeklyReportsError] = useState<string | null>(null);
+  const [weeklyReportsRevision, setWeeklyReportsRevision] = useState(0);
+
+  const [monthlyDraft, setMonthlyDraft, monthlyDraftStorage] =
+    usePersistentState<MonthlyEntry>("endo.draft.monthly.v1", defaultMonthlyDraft);
+
+  const [draftStatus, setDraftStatus] = useState<string | null>(null);
+  const draftStatusTimeoutRef = useRef<number | null>(null);
+  const draftRestoredRef = useRef(false);
+  const lastDraftSavedAtRef = useRef<number | null>(null);
 
   const isBirthdayGreetingDay = () => {
     const now = new Date();
@@ -1103,13 +1239,78 @@ export default function HomePage() {
     [heartGradientReactId]
   );
 
-  const storageMetas = [dailyStorage, weeklyStorage, monthlyStorage, featureStorage, sectionCompletionStorage];
+  const storageMetas = [
+    dailyStorage,
+    monthlyStorage,
+    featureStorage,
+    sectionCompletionStorage,
+    dailyDraftStorage,
+    monthlyDraftStorage,
+  ];
   const storageReady = storageMetas.every((meta) => meta.ready);
   const storageErrors = storageMetas.map((meta) => meta.error).filter(Boolean) as string[];
   const storageDrivers = Array.from(new Set(storageMetas.map((meta) => meta.driverLabel)));
   const usesIndexedDb = storageMetas.every((meta) => meta.driver === "indexeddb");
   const hasMemoryFallback = storageMetas.some((meta) => meta.driver === "memory");
   const storageUnavailable = storageMetas.some((meta) => meta.driver === "unavailable");
+
+  useEffect(() => {
+    if (!dailyDraftStorage.ready) return;
+    if (dailyDraftStorage.restored && !draftRestoredRef.current) {
+      draftRestoredRef.current = true;
+      setDraftStatus("Wiederhergestellt");
+    }
+  }, [dailyDraftStorage.ready, dailyDraftStorage.restored]);
+
+  useEffect(() => {
+    if (!dailyDraftStorage.ready) return;
+    if (!dailyDraftStorage.lastSavedAt) return;
+    if (lastDraftSavedAtRef.current && dailyDraftStorage.lastSavedAt <= lastDraftSavedAtRef.current) {
+      return;
+    }
+    lastDraftSavedAtRef.current = dailyDraftStorage.lastSavedAt;
+    setDraftStatus("Entwurf gespeichert");
+  }, [dailyDraftStorage.lastSavedAt, dailyDraftStorage.ready]);
+
+  useEffect(() => {
+    if (!draftStatus) return;
+    if (typeof window === "undefined") return;
+    if (draftStatusTimeoutRef.current) {
+      window.clearTimeout(draftStatusTimeoutRef.current);
+    }
+    draftStatusTimeoutRef.current = window.setTimeout(() => setDraftStatus(null), 2500);
+    return () => {
+      if (draftStatusTimeoutRef.current) {
+        window.clearTimeout(draftStatusTimeoutRef.current);
+        draftStatusTimeoutRef.current = null;
+      }
+    };
+  }, [draftStatus]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setWeeklyReportsReady(false);
+    setWeeklyReportsError(null);
+    listWeeklyReports()
+      .then((reports) => {
+        if (cancelled) return;
+        setWeeklyReports(reports);
+        setWeeklyReportsReady(true);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error("Wöchentliche Berichte konnten nicht geladen werden", error);
+        setWeeklyReportsReady(true);
+        setWeeklyReportsError("Wöchentliche Berichte konnten nicht geladen werden.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [weeklyReportsRevision]);
+
+  const refreshWeeklyReports = useCallback(() => {
+    setWeeklyReportsRevision((prev) => prev + 1);
+  }, []);
 
   const sectionCompletionContextValue = useMemo<SectionCompletionContextValue>(
     () => ({
@@ -1144,32 +1345,6 @@ export default function HomePage() {
     [sectionCompletionState, setSectionCompletionState]
   );
 
-  const [dailyDraft, setDailyDraft] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
-  const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
-  const [pbacCounts, setPbacCounts] = useState<PbacCounts>({ ...PBAC_DEFAULT_COUNTS });
-  const [pbacStep, setPbacStep] = useState(1);
-  const [pbacSelection, setPbacSelection] = useState<{ product: PbacProduct | null; saturation: PbacSaturation | null }>(
-    () => ({ product: null, saturation: null })
-  );
-  const [pbacCountDraft, setPbacCountDraft] = useState("0");
-  const [sensorsVisible, setSensorsVisible] = useState(false);
-  const [exploratoryVisible, setExploratoryVisible] = useState(false);
-  const [notesTagDraft, setNotesTagDraft] = useState("");
-  const [painQualityOther, setPainQualityOther] = useState("");
-  const [trendXAxisMode, setTrendXAxisMode] = useState<"date" | "cycleDay">("date");
-  const [dailySaveNotice, setDailySaveNotice] = useState<string | null>(null);
-
-  const [weeklyDraft, setWeeklyDraft] = useState<WeeklyEntry>(() => {
-    const isoWeek = dateToIsoWeek(new Date());
-    return createEmptyWeeklyEntry(isoWeek);
-  });
-
-  const [monthlyDraft, setMonthlyDraft] = useState<MonthlyEntry>(() => {
-    const now = new Date();
-    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    return createEmptyMonthlyEntry(month);
-  });
-
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [persisted, setPersisted] = useState<boolean | null>(null);
@@ -1197,7 +1372,7 @@ export default function HomePage() {
     const next = createEmptyDailyEntry(today);
     setDailyDraft(next);
     setLastSavedDailySnapshot(next);
-  }, [storageReady, isDailyDirty, dailyDraft.date, dailyEntries, today]);
+  }, [storageReady, isDailyDirty, dailyDraft.date, dailyEntries, today, setDailyDraft, setLastSavedDailySnapshot]);
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !("storage" in navigator) || !navigator.storage) {
@@ -1395,41 +1570,20 @@ export default function HomePage() {
     return todayDate.getDay() === 0;
   }, [todayDate]);
 
-  const selectedWeekLabel = useMemo(() => {
-    const start = isoWeekToDate(weeklyDraft.isoWeek);
-    if (!start) return null;
-    const end = new Date(start);
-    end.setUTCDate(end.getUTCDate() + 6);
-    const startOptions: Intl.DateTimeFormatOptions = { day: "2-digit", month: "long" };
-    if (start.getUTCFullYear() !== end.getUTCFullYear()) {
-      startOptions.year = "numeric";
-    }
-    const endOptions: Intl.DateTimeFormatOptions = { day: "2-digit", month: "long", year: "numeric" };
-    const startLabel = start.toLocaleDateString("de-DE", startOptions);
-    const endLabel = end.toLocaleDateString("de-DE", endOptions);
-    const weekNumber = weeklyDraft.isoWeek.slice(-2);
-    return `KW ${weekNumber} (${startLabel} – ${endLabel})`;
-  }, [weeklyDraft.isoWeek]);
-
   const selectedMonthLabel = useMemo(() => {
     const monthDate = monthToDate(monthlyDraft.month);
     if (!monthDate) return null;
     return monthDate.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
   }, [monthlyDraft.month]);
 
-  const canGoToNextWeek = useMemo(() => {
-    const baseIsoWeek = weeklyDraft.isoWeek || currentIsoWeek;
-    return baseIsoWeek < currentIsoWeek;
-  }, [weeklyDraft.isoWeek, currentIsoWeek]);
-
   const canGoToNextMonth = useMemo(() => {
     const baseMonth = monthlyDraft.month || currentMonth;
     return baseMonth < currentMonth;
   }, [monthlyDraft.month, currentMonth]);
 
-  const hasWeeklyEntryForCurrentWeek = useMemo(
-    () => weeklyEntries.some((entry) => entry.isoWeek === currentIsoWeek),
-    [weeklyEntries, currentIsoWeek]
+  const hasWeeklyReportForCurrentWeek = useMemo(
+    () => weeklyReports.some((report) => report.isoWeekKey === currentIsoWeek),
+    [weeklyReports, currentIsoWeek]
   );
 
   const hasMonthlyEntryForCurrentMonth = useMemo(
@@ -1444,7 +1598,7 @@ export default function HomePage() {
       base.setDate(base.getDate() - 1);
       return { ...prev, date: formatDate(base) };
     });
-  }, [today]);
+  }, [setDailyDraft, today]);
 
   const goToNextDay = useCallback(() => {
     setDailyDraft((prev) => {
@@ -1458,35 +1612,7 @@ export default function HomePage() {
       if (nextDate > today) return prev;
       return { ...prev, date: nextDate };
     });
-  }, [today]);
-
-  const goToPreviousWeek = useCallback(() => {
-    setWeeklyDraft((prev) => {
-      const baseIsoWeek = prev.isoWeek || currentIsoWeek;
-      const start = isoWeekToDate(baseIsoWeek);
-      if (!start) return prev;
-      start.setUTCDate(start.getUTCDate() - 7);
-      const nextIsoWeek = dateToIsoWeek(start);
-      return { ...prev, isoWeek: nextIsoWeek };
-    });
-  }, [currentIsoWeek]);
-
-  const goToNextWeek = useCallback(() => {
-    setWeeklyDraft((prev) => {
-      const baseIsoWeek = prev.isoWeek || currentIsoWeek;
-      if (baseIsoWeek >= currentIsoWeek) {
-        return prev;
-      }
-      const start = isoWeekToDate(baseIsoWeek);
-      if (!start) return prev;
-      start.setUTCDate(start.getUTCDate() + 7);
-      const nextIsoWeek = dateToIsoWeek(start);
-      if (nextIsoWeek > currentIsoWeek) {
-        return prev;
-      }
-      return { ...prev, isoWeek: nextIsoWeek };
-    });
-  }, [currentIsoWeek]);
+  }, [setDailyDraft, today]);
 
   const goToPreviousMonth = useCallback(() => {
     setMonthlyDraft((prev) => {
@@ -1497,7 +1623,7 @@ export default function HomePage() {
       const nextMonth = `${baseDate.getUTCFullYear()}-${String(baseDate.getUTCMonth() + 1).padStart(2, "0")}`;
       return { ...prev, month: nextMonth };
     });
-  }, [currentMonth]);
+  }, [currentMonth, setMonthlyDraft]);
 
   const goToNextMonth = useCallback(() => {
     setMonthlyDraft((prev) => {
@@ -1514,12 +1640,7 @@ export default function HomePage() {
       }
       return { ...prev, month: nextMonth };
     });
-  }, [currentMonth]);
-
-  const hasEntryForSelectedWeek = useMemo(
-    () => weeklyEntries.some((entry) => entry.isoWeek === weeklyDraft.isoWeek),
-    [weeklyEntries, weeklyDraft.isoWeek]
-  );
+  }, [currentMonth, setMonthlyDraft]);
 
   const hasEntryForSelectedMonth = useMemo(
     () => monthlyEntries.some((entry) => entry.month === monthlyDraft.month),
@@ -1539,9 +1660,6 @@ export default function HomePage() {
     pbacSelection.product && pbacSelection.saturation
       ? findPbacProductItem(pbacSelection.product, pbacSelection.saturation)
       : null;
-  const wpaiAbsenteeism = weeklyDraft.function?.wpaiAbsenteeismPct;
-  const wpaiPresenteeism = weeklyDraft.function?.wpaiPresenteeismPct;
-  const wpaiOverall = weeklyDraft.function?.wpaiOverallPct ?? computeWpaiOverall(wpaiAbsenteeism, wpaiPresenteeism);
   const phqSeverity = monthlyDraft.mental?.phq9Severity ?? mapPhqSeverity(monthlyDraft.mental?.phq9);
   const gadSeverity = monthlyDraft.mental?.gad7Severity ?? mapGadSeverity(monthlyDraft.mental?.gad7);
 
@@ -1563,7 +1681,7 @@ export default function HomePage() {
         },
       }));
     }
-  }, [pbacScore, dailyDraft.bleeding.isBleeding]);
+  }, [pbacScore, dailyDraft.bleeding.isBleeding, setDailyDraft]);
 
   useEffect(() => {
     const existingEntry = dailyEntries.find((entry) => entry.date === dailyDraft.date);
@@ -1610,7 +1728,7 @@ export default function HomePage() {
         urinaryOpt: cleanedOpt,
       };
     });
-  }, [activeUrinary]);
+  }, [activeUrinary, setDailyDraft]);
 
   useEffect(() => {
     if (!activeHeadache) {
@@ -1619,7 +1737,7 @@ export default function HomePage() {
         return { ...prev, headacheOpt: undefined };
       });
     }
-  }, [activeHeadache]);
+  }, [activeHeadache, setDailyDraft]);
 
   useEffect(() => {
     if (!activeDizziness) {
@@ -1628,7 +1746,7 @@ export default function HomePage() {
         return { ...prev, dizzinessOpt: undefined };
       });
     }
-  }, [activeDizziness]);
+  }, [activeDizziness, setDailyDraft]);
 
   const handleFeatureToggle = (key: keyof FeatureFlags, value: boolean) => {
     setFeatureFlags((prev) => ({ ...prev, [key]: value }));
@@ -1905,38 +2023,6 @@ export default function HomePage() {
     setIssues([]);
   };
 
-  const handleWeeklySubmit = () => {
-    const payloadFunction = weeklyDraft.function
-      ? { ...weeklyDraft.function }
-      : undefined;
-    if (payloadFunction) {
-      const computedOverall = computeWpaiOverall(
-        payloadFunction.wpaiAbsenteeismPct,
-        payloadFunction.wpaiPresenteeismPct
-      );
-      if (computedOverall !== undefined) {
-        payloadFunction.wpaiOverallPct = computedOverall;
-      } else {
-        delete payloadFunction.wpaiOverallPct;
-      }
-    }
-    const payload: WeeklyEntry = { ...weeklyDraft, function: payloadFunction };
-    const validationIssues = validateWeeklyEntry(payload);
-    setIssues(validationIssues);
-    if (validationIssues.length) {
-      setInfoMessage("WPAI-Eingaben prüfen.");
-      return;
-    }
-
-    setWeeklyEntries((prev) => {
-      const filtered = prev.filter((entry) => entry.isoWeek !== payload.isoWeek);
-      return [...filtered, payload].sort((a, b) => a.isoWeek.localeCompare(b.isoWeek));
-    });
-    setInfoMessage("WPAI-Werte gespeichert.");
-    setWeeklyDraft(createEmptyWeeklyEntry(payload.isoWeek));
-    setIssues([]);
-  };
-
   const handleMonthlySubmit = () => {
     const payload: MonthlyEntry = { ...monthlyDraft };
     if (payload.qol) {
@@ -2028,11 +2114,11 @@ export default function HomePage() {
     }
     file
       .text()
-      .then((text) => {
+      .then(async (text) => {
         try {
           const parsed = JSON.parse(text) as Partial<BackupPayload>;
           if (!parsed || typeof parsed !== "object") throw new Error("invalid");
-          if (!Array.isArray(parsed.dailyEntries) || !Array.isArray(parsed.weeklyEntries) || !Array.isArray(parsed.monthlyEntries)) {
+          if (!Array.isArray(parsed.dailyEntries) || !Array.isArray(parsed.monthlyEntries)) {
             throw new Error("invalid");
           }
           const normalizedDaily = parsed.dailyEntries
@@ -2041,18 +2127,17 @@ export default function HomePage() {
           if (normalizedDaily.some((entry) => validateDailyEntry(entry).length > 0)) {
             throw new Error("invalid");
           }
-          const normalizedWeekly = parsed.weeklyEntries
-            .filter((item): item is WeeklyEntry & Record<string, unknown> => typeof item === "object" && item !== null)
-            .map((item) => normalizeImportedWeeklyEntry(item));
-          if (normalizedWeekly.some((entry) => validateWeeklyEntry(entry).length > 0)) {
-            throw new Error("invalid");
-          }
           const normalizedMonthly = parsed.monthlyEntries
             .filter((item): item is MonthlyEntry & Record<string, unknown> => typeof item === "object" && item !== null)
             .map((item) => normalizeImportedMonthlyEntry(item));
           if (normalizedMonthly.some((entry) => validateMonthlyEntry(entry).length > 0)) {
             throw new Error("invalid");
           }
+          const weeklyReportsSource = Array.isArray(parsed.weeklyReports) ? parsed.weeklyReports : [];
+          const normalizedWeeklyReports = weeklyReportsSource
+            .map((item) => (item && typeof item === "object" ? normalizeImportedWeeklyReport(item as RawWeeklyReport) : null))
+            .filter((report): report is WeeklyReport => report !== null);
+
           const flagsSource = parsed.featureFlags ?? {};
           const normalizedFlags: FeatureFlags = {};
           if (flagsSource && typeof flagsSource === "object") {
@@ -2068,9 +2153,10 @@ export default function HomePage() {
           }
 
           setDailyEntries(normalizedDaily);
-          setWeeklyEntries(normalizedWeekly);
           setMonthlyEntries(normalizedMonthly);
           setFeatureFlags(normalizedFlags);
+          await replaceWeeklyReports(normalizedWeeklyReports);
+          refreshWeeklyReports();
           setInfoMessage("Backup importiert.");
         } catch {
           setInfoMessage("Backup-Import fehlgeschlagen.");
@@ -2099,11 +2185,9 @@ export default function HomePage() {
     const thresholdIso = formatDate(threshold);
     const thresholdMonth = thresholdIso.slice(0, 7);
     const dailyFiltered = dailyEntries.filter((entry) => entry.date >= thresholdIso);
-    const weeklyFiltered = weeklyEntries.filter((entry) => {
-      const start = isoWeekToDate(entry.isoWeek);
-      if (!start) return false;
-      return formatDate(start) >= thresholdIso;
-    });
+    const weeklyFiltered = weeklyReports
+      .filter((report) => report.stats.endISO >= thresholdIso)
+      .sort((a, b) => a.stats.startISO.localeCompare(b.stats.startISO));
     const monthlyFiltered = monthlyEntries.filter((entry) => entry.month >= thresholdMonth);
 
     const lines: string[] = [];
@@ -2176,10 +2260,14 @@ export default function HomePage() {
     if (weeklyFiltered.length) {
       const latest = weeklyFiltered[weeklyFiltered.length - 1];
       lines.push(
-        `Letzte WPAI-Werte: Absenz ${latest.function?.wpaiAbsenteeismPct ?? "–"}% | Präsenzminderung ${latest.function?.wpaiPresenteeismPct ?? "–"}% | Gesamt ${latest.function?.wpaiOverallPct ?? "–"}%`
+        `Letzte Wochenübersicht (${latest.stats.startISO} – ${latest.stats.endISO}): Ø Schmerz ${
+          typeof latest.stats.avgPain === "number" ? latest.stats.avgPain.toFixed(1) : "–"
+        } | Max Schmerz ${
+          typeof latest.stats.maxPain === "number" ? latest.stats.maxPain.toFixed(1) : "–"
+        } | Schwere Tage ${latest.stats.badDaysCount} | Blutungstage ${latest.stats.bleedingDaysCount}`
       );
     } else {
-      lines.push("Keine WPAI-Werte im Zeitraum.");
+      lines.push("Keine wöchentlichen Berichte im Zeitraum.");
     }
 
     if (monthlyFiltered.length) {
@@ -2198,18 +2286,7 @@ export default function HomePage() {
     }
 
     lines.push("", "Glossar:");
-    const glossaryKeys: TermKey[] = [
-      "nrs",
-      "pbac",
-      "wpai_abs",
-      "wpai_pre",
-      "wpai_overall",
-      "ehp5",
-      "phq9",
-      "gad7",
-      "promis_fatigue",
-      "promis_painInt",
-    ];
+    const glossaryKeys: TermKey[] = ["nrs", "pbac", "ehp5", "phq9", "gad7", "promis_fatigue", "promis_painInt"];
     glossaryKeys.forEach((key) => {
       const term = TERMS[key];
       lines.push(`- ${term.label}: ${term.help}`);
@@ -2292,7 +2369,8 @@ export default function HomePage() {
     return diffDays >= 28;
   }, [latestCycleStartDate, todayDate]);
 
-  const showWeeklyReminderBadge = storageReady && isSunday && !hasWeeklyEntryForCurrentWeek;
+  const showWeeklyReminderBadge =
+    storageReady && weeklyReportsReady && isSunday && !hasWeeklyReportForCurrentWeek;
   const showMonthlyReminderBadge =
     storageReady && isMonthlyReminderDue && !hasMonthlyEntryForCurrentMonth;
 
@@ -2461,11 +2539,11 @@ export default function HomePage() {
       version: 1,
       exportedAt: new Date().toISOString(),
       dailyEntries,
-      weeklyEntries,
+      weeklyReports,
       monthlyEntries,
       featureFlags,
     }),
-    [dailyEntries, weeklyEntries, monthlyEntries, featureFlags]
+    [dailyEntries, weeklyReports, monthlyEntries, featureFlags]
   );
 
   const urinaryTrendData = useMemo(() => {
@@ -4042,8 +4120,22 @@ export default function HomePage() {
                   <Button type="button" onClick={handleDailySubmit} disabled={!isDailyDirty}>
                     Tagesdaten speichern
                   </Button>
-                  {dailySaveNotice && (
-                    <span className="text-sm text-amber-600">{dailySaveNotice}</span>
+                  {(draftStatus || dailySaveNotice) && (
+                    <div className="flex items-center gap-2">
+                      {draftStatus && (
+                        <span
+                          className={cn(
+                            "text-sm",
+                            draftStatus === "Wiederhergestellt" ? "text-sky-600" : "text-emerald-600"
+                          )}
+                        >
+                          {draftStatus}
+                        </span>
+                      )}
+                      {dailySaveNotice && (
+                        <span className="text-sm text-amber-600">{dailySaveNotice}</span>
+                      )}
+                    </div>
                   )}
                   <label className="flex cursor-pointer items-center gap-2 text-sm text-rose-600">
                     <Upload size={16} />
@@ -4384,196 +4476,18 @@ export default function HomePage() {
         <TabsContent value="weekly" className="space-y-6">
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
             <p className="font-medium text-amber-900">{weeklyBannerText}</p>
+            {weeklyReportsError ? (
+              <p className="mt-2 text-xs text-amber-700">{weeklyReportsError}</p>
+            ) : null}
           </div>
-          <SectionScopeContext.Provider value={`weekly:${weeklyDraft.isoWeek}`}>
-          <Section
-            title={`${TERMS.wpai_overall.label} (WPAI – 7-Tage-Rückblick)`}
-            description="Prozentwerte für Fehlzeiten, Präsenzminderung und Gesamtbeeinträchtigung"
-            aside={<Calendar size={16} className="text-rose-500" />}
-            variant="plain"
-            completionEnabled={false}
-          >
-            <div className="grid gap-4 md:grid-cols-2">
-              <Labeled label="Kalenderwoche (ISO)" htmlFor="iso-week">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-                  <div className="flex w-full max-w-xl items-center justify-between gap-2 rounded-lg border border-rose-200 bg-white px-3 py-2 shadow-sm">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={goToPreviousWeek}
-                      aria-label="Vorherige Woche"
-                      className="text-rose-500 hover:text-rose-700"
-                    >
-                      <ChevronLeft className="h-5 w-5" />
-                    </Button>
-                    <div className="flex min-w-0 flex-1 items-center gap-3 text-left">
-                      <CalendarDays className="h-6 w-6 flex-shrink-0 text-rose-500" aria-hidden="true" />
-                      <div className="min-w-0">
-                        <p className="text-xs uppercase tracking-wide text-rose-400">Ausgewählte Woche</p>
-                        <p className="truncate text-sm font-semibold text-rose-700">
-                          {selectedWeekLabel ?? "Bitte Woche wählen"}
-                        </p>
-                      </div>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={goToNextWeek}
-                      aria-label="Nächste Woche"
-                      className="text-rose-500 hover:text-rose-700"
-                      disabled={!canGoToNextWeek}
-                    >
-                      <ChevronRight className="h-5 w-5" />
-                    </Button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Calendar className="h-4 w-4 text-rose-400" aria-hidden="true" />
-                    <Input
-                      id="iso-week"
-                      type="week"
-                      value={weeklyDraft.isoWeek}
-                      onChange={(event) => setWeeklyDraft((prev) => ({ ...prev, isoWeek: event.target.value }))}
-                      className="w-full max-w-[11rem]"
-                      max={currentIsoWeek}
-                      aria-label="Kalenderwoche direkt auswählen"
-                    />
-                  </div>
-                </div>
-                {hasEntryForSelectedWeek && (
-                  <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                    <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-500" />
-                    <div>
-                      <p className="font-semibold">Für diese Woche wurden bereits Angaben gespeichert.</p>
-                      <p className="text-xs text-amber-600">Beim Speichern werden die bestehenden Daten aktualisiert.</p>
-                    </div>
-                  </div>
-                )}
-                {renderIssuesForPath("isoWeek")}
-              </Labeled>
-              <TermField termKey="wpai_abs" htmlFor="wpai-abs">
-                <Input
-                  id="wpai-abs"
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={weeklyDraft.function?.wpaiAbsenteeismPct ?? ""}
-                  onChange={(event) => {
-                    const value = event.target.value ? Number(event.target.value) : undefined;
-                    setWeeklyDraft((prev) => {
-                      const nextFunction = { ...(prev.function ?? {}), wpaiAbsenteeismPct: value };
-                      const computed = computeWpaiOverall(value, nextFunction.wpaiPresenteeismPct);
-                      if (computed !== undefined) {
-                        nextFunction.wpaiOverallPct = computed;
-                      } else {
-                        delete nextFunction.wpaiOverallPct;
-                      }
-                      return { ...prev, function: nextFunction };
-                    });
-                  }}
-                />
-                {renderIssuesForPath("function.wpaiAbsenteeismPct")}
-              </TermField>
-              <TermField termKey="wpai_pre" htmlFor="wpai-pre">
-                <Input
-                  id="wpai-pre"
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={weeklyDraft.function?.wpaiPresenteeismPct ?? ""}
-                  onChange={(event) => {
-                    const value = event.target.value ? Number(event.target.value) : undefined;
-                    setWeeklyDraft((prev) => {
-                      const nextFunction = { ...(prev.function ?? {}), wpaiPresenteeismPct: value };
-                      const computed = computeWpaiOverall(nextFunction.wpaiAbsenteeismPct, value);
-                      if (computed !== undefined) {
-                        nextFunction.wpaiOverallPct = computed;
-                      } else {
-                        delete nextFunction.wpaiOverallPct;
-                      }
-                      return { ...prev, function: nextFunction };
-                    });
-                  }}
-                />
-                {renderIssuesForPath("function.wpaiPresenteeismPct")}
-              </TermField>
-              <TermField termKey="wpai_overall" htmlFor="wpai-overall">
-                <Input
-                  id="wpai-overall"
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={weeklyDraft.function?.wpaiOverallPct ?? ""}
-                  readOnly
-                />
-                {renderIssuesForPath("function.wpaiOverallPct")}
-              </TermField>
+          <SectionScopeContext.Provider value={`weekly:${currentIsoWeek}`}>
+          {weeklyReportsReady ? (
+            <WeeklyTabShell dailyEntries={dailyEntries} currentIsoWeek={currentIsoWeek} />
+          ) : (
+            <div className="rounded-xl border border-rose-100 bg-white/80 p-4 text-sm text-rose-700">
+              Wöchentliche Daten werden geladen …
             </div>
-            <div className="rounded-lg border border-rose-100 bg-rose-50 p-4 text-sm text-rose-700">
-              <p className="font-semibold text-rose-800">WPAI-Zusammenfassung</p>
-              <p>Fehlzeiten: {wpaiAbsenteeism ?? "–"}%</p>
-              <p>Präsenzminderung: {wpaiPresenteeism ?? "–"}%</p>
-              <p>Gesamt (Formel): {wpaiOverall ?? "–"}%</p>
-            </div>
-            <div className="flex gap-3 pt-4">
-              <Button type="button" onClick={handleWeeklySubmit}>
-                Woche speichern
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() =>
-                  downloadFile(
-                    `endo-weekly-${today}.json`,
-                    JSON.stringify(weeklyEntries, null, 2),
-                    "application/json"
-                  )
-                }
-              >
-                <Download size={16} className="mr-2" /> Export
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() =>
-                  downloadFile(
-                    `endo-weekly-${today}.csv`,
-                    toCsv(
-                      weeklyEntries.map((entry) => ({
-                        Kalenderwoche: entry.isoWeek,
-                        [`${TERMS.wpai_abs.label}`]: entry.function?.wpaiAbsenteeismPct ?? "",
-                        [`${TERMS.wpai_pre.label}`]: entry.function?.wpaiPresenteeismPct ?? "",
-                        [`${TERMS.wpai_overall.label}`]: entry.function?.wpaiOverallPct ?? "",
-                      }))
-                    ),
-                    "text/csv"
-                  )
-                }
-              >
-                <Download size={16} className="mr-2" /> CSV
-              </Button>
-            </div>
-          </Section>
-          <Section title="Verlauf" description="WPAI Gesamtbeeinträchtigung" completionEnabled={false}>
-            <div className="h-64 w-full">
-              <ResponsiveContainer>
-                <LineChart data={weeklyEntries} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                  <XAxis dataKey="isoWeek" stroke="#fb7185" tick={{ fontSize: 12 }} />
-                  <YAxis domain={[0, 100]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                  <Tooltip />
-                  <Line
-                    type="monotone"
-                    dataKey="function.wpaiOverallPct"
-                    stroke="#f43f5e"
-                    strokeWidth={2}
-                    name={TERMS.wpai_overall.label}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </Section>
+          )}
           </SectionScopeContext.Provider>
         </TabsContent>
 
