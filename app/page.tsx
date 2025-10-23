@@ -1007,7 +1007,7 @@ function normalizeImportedMonthlyEntry(entry: MonthlyEntry & Record<string, unkn
 
 function BodyMap({ value, onChange }: { value: string[]; onChange: (next: string[]) => void }) {
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
       {BODY_REGIONS.map((region) => (
         <button
           key={region.id}
@@ -4440,7 +4440,7 @@ export default function HomePage() {
                   description="Durchschnittlicher NRS nach Wochentag"
                   completionEnabled={false}
                 >
-                  <div className="grid grid-cols-2 gap-2 text-xs text-rose-700 sm:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-2 text-xs text-rose-700 sm:grid-cols-2 lg:grid-cols-4">
                     {weekdayOverlay.map((row) => (
                       <div key={row.weekday} className="rounded border border-amber-100 bg-amber-50 px-2 py-1">
                         <p className="font-semibold text-rose-800">{row.weekday}</p>
