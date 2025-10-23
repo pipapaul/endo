@@ -1,6 +1,7 @@
 import { getItem, setItem } from "@/lib/persistence";
 import type { WeeklyStats } from "./aggregate";
 import type { WeeklyDraft } from "./drafts";
+import { normalizeWpai } from "./wpai";
 
 export type PromptAnswers = WeeklyDraft["answers"];
 
@@ -17,13 +18,14 @@ type StoredReports = WeeklyReport[];
 
 function normalizeAnswers(answers: PromptAnswers | undefined): PromptAnswers {
   if (!answers) {
-    return { helped: [], worsened: [], nextWeekTry: [], freeText: "" };
+    return { helped: [], worsened: [], nextWeekTry: [], freeText: "", wpai: normalizeWpai() };
   }
   return {
     helped: Array.isArray(answers.helped) ? [...answers.helped] : [],
     worsened: Array.isArray(answers.worsened) ? [...answers.worsened] : [],
     nextWeekTry: Array.isArray(answers.nextWeekTry) ? [...answers.nextWeekTry] : [],
     freeText: answers.freeText ?? "",
+    wpai: normalizeWpai(answers.wpai),
   };
 }
 

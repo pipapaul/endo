@@ -5,13 +5,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import { getSuggestedChips, rememberChosenChips } from "@/lib/weekly/suggestions";
 import type { WeeklyDraft } from "@/lib/weekly/drafts";
+import InfoTip from "@/components/InfoTip";
+import { normalizeWpai, WPAI_CARD_TOOLTIP, WPAI_FIELD_DEFINITIONS } from "@/lib/weekly/wpai";
 
 export type PromptAnswers = WeeklyDraft["answers"];
 
 type PromptSectionKey = "helped" | "worsened" | "nextWeekTry";
+type WpaiFieldKey = (typeof WPAI_FIELD_DEFINITIONS)[number]["key"];
 
 type SectionConfig = {
   key: PromptSectionKey;
@@ -56,6 +60,7 @@ export function WeeklyPrompts({ value, onChange }: { value: PromptAnswers; onCha
       worsened: dedupeList(value?.worsened ?? []),
       nextWeekTry: dedupeList(value?.nextWeekTry ?? []),
       freeText: value?.freeText ?? "",
+      wpai: normalizeWpai(value?.wpai),
     };
   }, [value]);
 
@@ -83,14 +88,26 @@ export function WeeklyPrompts({ value, onChange }: { value: PromptAnswers; onCha
     };
   }, [normalizedValue.helped, normalizedValue.nextWeekTry, normalizedValue.worsened]);
 
-  const updateAnswers = (key: PromptSectionKey, items: string[]) => {
+  const updateAnswers = (partial: Partial<PromptAnswers>) => {
+    const mergedWpaiInput = partial.wpai ? { ...normalizedValue.wpai, ...partial.wpai } : normalizedValue.wpai;
     const next: PromptAnswers = {
-      helped: key === "helped" ? items : normalizedValue.helped,
-      worsened: key === "worsened" ? items : normalizedValue.worsened,
-      nextWeekTry: key === "nextWeekTry" ? items : normalizedValue.nextWeekTry,
-      freeText: normalizedValue.freeText,
+      helped: partial.helped ?? normalizedValue.helped,
+      worsened: partial.worsened ?? normalizedValue.worsened,
+      nextWeekTry: partial.nextWeekTry ?? normalizedValue.nextWeekTry,
+      freeText: partial.freeText ?? normalizedValue.freeText,
+      wpai: normalizeWpai(mergedWpaiInput),
     };
     onChange(next);
+  };
+
+  const updateListAnswers = (key: PromptSectionKey, items: string[]) => {
+    if (key === "helped") {
+      updateAnswers({ helped: items });
+    } else if (key === "worsened") {
+      updateAnswers({ worsened: items });
+    } else {
+      updateAnswers({ nextWeekTry: items });
+    }
   };
 
   const handleToggle = (key: PromptSectionKey, chip: string) => {
@@ -104,12 +121,12 @@ export function WeeklyPrompts({ value, onChange }: { value: PromptAnswers; onCha
       const nextItems = current.filter(
         (entry) => entry.localeCompare(normalizedChip, undefined, { sensitivity: "accent" }) !== 0
       );
-      updateAnswers(key, nextItems);
+      updateListAnswers(key, nextItems);
       return;
     }
 
     const nextItems = dedupeList([...current, normalizedChip]);
-    updateAnswers(key, nextItems);
+    updateListAnswers(key, nextItems);
     setSuggestions((prev) => ({ ...prev, [key]: mergeSuggestions(prev[key], [normalizedChip]) }));
     rememberChosenChips(key, [normalizedChip]).catch((error) => {
       console.error("Auswahl konnte nicht gespeichert werden", error);
@@ -128,6 +145,11 @@ export function WeeklyPrompts({ value, onChange }: { value: PromptAnswers; onCha
       event.preventDefault();
       handleInputAdd(key);
     }
+  };
+
+  const handleWpaiChange = (key: WpaiFieldKey, sliderValue: number) => {
+    const sanitized = Number.isFinite(sliderValue) ? sliderValue : normalizedValue.wpai[key];
+    updateAnswers({ wpai: { ...normalizedValue.wpai, [key]: sanitized } });
   };
 
   return (
@@ -188,6 +210,48 @@ export function WeeklyPrompts({ value, onChange }: { value: PromptAnswers; onCha
         ))}
       </div>
 
+      <article className="space-y-5 rounded-xl border border-rose-100 bg-white/80 p-4 shadow-sm">
+        <header className="space-y-1">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <h3 className="text-lg font-semibold text-rose-900">WPAI – 7-Tage-Rückblick</h3>
+            <InfoTip tech={WPAI_CARD_TOOLTIP.tech} help={WPAI_CARD_TOOLTIP.help} />
+          </div>
+          <p className="text-sm text-rose-900/70">
+            Schätze, wie sehr deine Beschwerden deine Arbeits- oder Ausbildungsfähigkeit in dieser Woche beeinflusst haben.
+          </p>
+        </header>
+
+        <div className="space-y-5">
+          {WPAI_FIELD_DEFINITIONS.map((field) => {
+            const value = normalizedValue.wpai[field.key];
+            const sliderId = `weekly-prompts-wpai-${field.key}`;
+            return (
+              <div key={field.key} className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Label
+                    htmlFor={sliderId}
+                    className="flex items-center gap-2 text-sm font-medium text-rose-900"
+                  >
+                    {field.label}
+                    <InfoTip tech={field.label} help={field.tooltip} />
+                  </Label>
+                  <span className="text-sm font-semibold text-rose-900">{value} %</span>
+                </div>
+                <Slider
+                  id={sliderId}
+                  value={[value]}
+                  min={0}
+                  max={100}
+                  step={5}
+                  onValueChange={(values) => handleWpaiChange(field.key, values[0] ?? value)}
+                />
+                <p className="text-xs text-rose-900/60">{field.description}</p>
+              </div>
+            );
+          })}
+        </div>
+      </article>
+
       <div className="space-y-2">
         <Label htmlFor="weekly-prompts-free" className="text-sm text-rose-900">
           Weitere Gedanken zur Woche
@@ -195,14 +259,7 @@ export function WeeklyPrompts({ value, onChange }: { value: PromptAnswers; onCha
         <Textarea
           id="weekly-prompts-free"
           value={normalizedValue.freeText}
-          onChange={(event) =>
-            onChange({
-              helped: normalizedValue.helped,
-              worsened: normalizedValue.worsened,
-              nextWeekTry: normalizedValue.nextWeekTry,
-              freeText: event.target.value,
-            })
-          }
+          onChange={(event) => updateAnswers({ freeText: event.target.value })}
           placeholder="Zusätzliche Reflexionen, Fragen oder Beobachtungen"
           className="min-h-[100px] bg-white"
         />
