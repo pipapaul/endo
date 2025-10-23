@@ -53,7 +53,13 @@ import { cn } from "@/lib/utils";
 import { touchLastActive } from "@/lib/persistence";
 import { usePersistentState } from "@/lib/usePersistentState";
 import WeeklyTabShell from "@/components/weekly/WeeklyTabShell";
-import { listWeeklyReports, replaceWeeklyReports, type WeeklyReport } from "@/lib/weekly/reports";
+import {
+  listWeeklyReports,
+  replaceWeeklyReports,
+  type WeeklyReport,
+  type PromptAnswers,
+} from "@/lib/weekly/reports";
+import { normalizeWpai, type WeeklyWpai } from "@/lib/weekly/wpai";
 
 type SymptomKey = keyof DailyEntry["symptoms"];
 
@@ -906,30 +912,38 @@ function normalizeImportedWeeklyReport(entry: RawWeeklyReport): WeeklyReport | n
   };
 
   const answersSource = entry.answers;
-  const answers =
-    answersSource && typeof answersSource === "object"
-      ? {
-          helped: Array.isArray((answersSource as { helped?: unknown }).helped)
-            ? ((answersSource as { helped?: unknown }).helped as unknown[]).filter(
-                (item): item is string => typeof item === "string"
-              )
-            : [],
-          worsened: Array.isArray((answersSource as { worsened?: unknown }).worsened)
-            ? ((answersSource as { worsened?: unknown }).worsened as unknown[]).filter(
-                (item): item is string => typeof item === "string"
-              )
-            : [],
-          nextWeekTry: Array.isArray((answersSource as { nextWeekTry?: unknown }).nextWeekTry)
-            ? ((answersSource as { nextWeekTry?: unknown }).nextWeekTry as unknown[]).filter(
-                (item): item is string => typeof item === "string"
-              )
-            : [],
-          freeText:
-            typeof (answersSource as { freeText?: unknown }).freeText === "string"
-              ? ((answersSource as { freeText?: unknown }).freeText as string)
-              : "",
-        }
-      : { helped: [], worsened: [], nextWeekTry: [], freeText: "" };
+  const answers: PromptAnswers = (() => {
+    if (answersSource && typeof answersSource === "object") {
+      const wpaiSource = (answersSource as { wpai?: unknown }).wpai;
+      return {
+        helped: Array.isArray((answersSource as { helped?: unknown }).helped)
+          ? ((answersSource as { helped?: unknown }).helped as unknown[]).filter(
+              (item): item is string => typeof item === "string"
+            )
+          : [],
+        worsened: Array.isArray((answersSource as { worsened?: unknown }).worsened)
+          ? ((answersSource as { worsened?: unknown }).worsened as unknown[]).filter(
+              (item): item is string => typeof item === "string"
+            )
+          : [],
+        nextWeekTry: Array.isArray((answersSource as { nextWeekTry?: unknown }).nextWeekTry)
+          ? ((answersSource as { nextWeekTry?: unknown }).nextWeekTry as unknown[]).filter(
+              (item): item is string => typeof item === "string"
+            )
+          : [],
+        freeText:
+          typeof (answersSource as { freeText?: unknown }).freeText === "string"
+            ? ((answersSource as { freeText?: unknown }).freeText as string)
+            : "",
+        wpai: normalizeWpai(
+          wpaiSource && typeof wpaiSource === "object"
+            ? (wpaiSource as Partial<WeeklyWpai>)
+            : undefined
+        ),
+      };
+    }
+    return { helped: [], worsened: [], nextWeekTry: [], freeText: "", wpai: normalizeWpai() };
+  })();
 
   const resolvedIsoWeek = stats.isoWeekKey || isoWeekKey;
   if (!resolvedIsoWeek) {
