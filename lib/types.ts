@@ -30,8 +30,8 @@ export interface DailyEntry {
   rescueDosesCount?: number;
 
   sleep?: { hours?: number; quality?: number; awakenings?: number };
-  gi?: { bristolType?: 1 | 2 | 3 | 4 | 5 | 6 | 7; bowelPain?: number };
-  urinary?: { freqPerDay?: number; urgency?: number; pain?: number };
+  gi?: { bristolType?: 1 | 2 | 3 | 4 | 5 | 6 | 7 };
+  urinary?: { freqPerDay?: number; urgency?: number };
 
   activity?: { steps?: number; activeMinutes?: number }; // optional, Hilfsmittel
   exploratory?: { hrvRmssdMs?: number }; // optional, Hilfsmittel

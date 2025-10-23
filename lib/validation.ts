@@ -217,13 +217,10 @@ export function validateDailyEntry(entry: DailyEntry): ValidationIssue[] {
     if (entry.gi.bristolType !== undefined && ![1, 2, 3, 4, 5, 6, 7].includes(entry.gi.bristolType)) {
       issues.push({ path: "gi.bristolType", message: "Bristol-Score muss zwischen 1 und 7 liegen." });
     }
-    if (entry.gi.bowelPain !== undefined && !intRange(entry.gi.bowelPain, 0, 10)) {
-      issues.push({ path: "gi.bowelPain", message: "Darm-Schmerz muss 0–10 (Ganzzahl) sein." });
-    }
   }
 
   if (entry.urinary) {
-    const { freqPerDay, urgency, pain } = entry.urinary;
+    const { freqPerDay, urgency } = entry.urinary;
     if (freqPerDay !== undefined && (!Number.isInteger(freqPerDay) || freqPerDay < 0)) {
       issues.push({
         path: "urinary.freqPerDay",
@@ -232,9 +229,6 @@ export function validateDailyEntry(entry: DailyEntry): ValidationIssue[] {
     }
     if (urgency !== undefined && !intRange(urgency, 0, 10)) {
       issues.push({ path: "urinary.urgency", message: "Drang muss 0–10 (Ganzzahl) sein." });
-    }
-    if (pain !== undefined && !intRange(pain, 0, 10)) {
-      issues.push({ path: "urinary.pain", message: "Blasenschmerz muss 0–10 (Ganzzahl) sein." });
     }
   }
 

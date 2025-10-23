@@ -442,6 +442,7 @@ function ScoreInput({
   min = 0,
   max = 10,
   step = 1,
+  disabled = false,
 }: {
   id: string;
   label: string;
@@ -453,6 +454,7 @@ function ScoreInput({
   min?: number;
   max?: number;
   step?: number;
+  disabled?: boolean;
 }) {
   const rangeDescriptionId = `${id}-range-hint`;
   const content = (
@@ -463,9 +465,14 @@ function ScoreInput({
           min={min}
           max={max}
           step={step}
-          onValueChange={([v]) => onChange(v)}
+          onValueChange={([v]) => {
+            if (!disabled) {
+              onChange(v);
+            }
+          }}
           id={id}
           aria-describedby={rangeDescriptionId}
+          disabled={disabled}
         />
         <div
           id={rangeDescriptionId}
@@ -484,7 +491,12 @@ function ScoreInput({
         step={step}
         value={value}
         aria-describedby={rangeDescriptionId}
-        onChange={(event) => onChange(Number(event.target.value))}
+        onChange={(event) => {
+          if (!disabled) {
+            onChange(Number(event.target.value));
+          }
+        }}
+        disabled={disabled}
       />
     </div>
   );
@@ -770,6 +782,58 @@ function InlineNotice({ title, text }: { title: string; text: string }) {
 function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>): DailyEntry {
   const clone: DailyEntry = { ...entry };
   const extra = clone as unknown as Record<string, unknown>;
+
+  const importedBowelPain = (() => {
+    const giSource = entry.gi as (DailyEntry["gi"] & { bowelPain?: number }) | undefined;
+    return typeof giSource?.bowelPain === "number" ? giSource.bowelPain : undefined;
+  })();
+  if (typeof importedBowelPain === "number") {
+    const normalized = Math.max(0, Math.min(10, Math.round(importedBowelPain)));
+    const nextSymptoms: DailyEntry["symptoms"] = { ...(clone.symptoms ?? {}) };
+    const existing = nextSymptoms.dyschezia;
+    if (!existing) {
+      nextSymptoms.dyschezia = { present: true, score: normalized };
+    } else if (existing.present && typeof existing.score !== "number") {
+      nextSymptoms.dyschezia = { present: true, score: normalized };
+    }
+    clone.symptoms = nextSymptoms;
+  }
+  if (clone.gi) {
+    const giRecord = { ...(clone.gi as Record<string, unknown>) };
+    if ("bowelPain" in giRecord) {
+      delete giRecord.bowelPain;
+    }
+    clone.gi = Object.keys(giRecord).length ? (giRecord as DailyEntry["gi"]) : undefined;
+    if (!clone.gi) {
+      delete (clone as { gi?: DailyEntry["gi"] }).gi;
+    }
+  }
+
+  const importedUrinaryPain = (() => {
+    const urinarySource = entry.urinary as (DailyEntry["urinary"] & { pain?: number }) | undefined;
+    return typeof urinarySource?.pain === "number" ? urinarySource.pain : undefined;
+  })();
+  if (typeof importedUrinaryPain === "number") {
+    const normalized = Math.max(0, Math.min(10, Math.round(importedUrinaryPain)));
+    const nextSymptoms: DailyEntry["symptoms"] = { ...(clone.symptoms ?? {}) };
+    const existing = nextSymptoms.dysuria;
+    if (!existing) {
+      nextSymptoms.dysuria = { present: true, score: normalized };
+    } else if (existing.present && typeof existing.score !== "number") {
+      nextSymptoms.dysuria = { present: true, score: normalized };
+    }
+    clone.symptoms = nextSymptoms;
+  }
+  if (clone.urinary) {
+    const urinaryRecord = { ...(clone.urinary as Record<string, unknown>) };
+    if ("pain" in urinaryRecord) {
+      delete urinaryRecord.pain;
+    }
+    clone.urinary = Object.keys(urinaryRecord).length ? (urinaryRecord as DailyEntry["urinary"]) : undefined;
+    if (!clone.urinary) {
+      delete (clone as { urinary?: DailyEntry["urinary"] }).urinary;
+    }
+  }
 
   const urinaryOpt: NonNullable<DailyEntry["urinaryOpt"]> = { ...(entry.urinaryOpt ?? {}) };
   if (typeof extra["urinary_urgency"] === "number") {
@@ -1650,6 +1714,8 @@ export default function HomePage() {
   const activeUrinary = Boolean(featureFlags.moduleUrinary);
   const activeHeadache = Boolean(featureFlags.moduleHeadache);
   const activeDizziness = Boolean(featureFlags.moduleDizziness);
+  const dyscheziaSymptom = dailyDraft.symptoms.dyschezia;
+  const dysuriaSymptom = dailyDraft.symptoms.dysuria;
 
   const pbacFlooding = dailyDraft.bleeding.flooding ?? false;
   const pbacScore = useMemo(() => computePbacScore(pbacCounts, pbacFlooding), [pbacCounts, pbacFlooding]);
@@ -1799,7 +1865,10 @@ export default function HomePage() {
         [`${TERMS.pbac.label}`]: entry.bleeding.pbacScore ?? "",
         "Symptom-Scores": symptomScores,
         [`${TERMS.sleep_quality.label}`]: entry.sleep?.quality ?? "",
-        [`${TERMS.urinary_pain.label}`]: entry.urinary?.pain ?? "",
+        [`${TERMS.urinary_pain.label}`]:
+          entry.symptoms?.dysuria?.present && typeof entry.symptoms.dysuria.score === "number"
+            ? entry.symptoms.dysuria.score
+            : "",
       };
       if (activeUrinary) {
         row.urinary_urgency = entry.urinaryOpt?.urgency ?? "";
@@ -3610,18 +3679,27 @@ export default function HomePage() {
                         id="bowel-pain"
                         label={TERMS.bowelPain.label}
                         termKey="bowelPain"
-                        value={dailyDraft.gi?.bowelPain ?? 0}
+                        value={dyscheziaSymptom?.score ?? 0}
                         onChange={(value) =>
                           setDailyDraft((prev) => ({
                             ...prev,
-                            gi: {
-                              ...(prev.gi ?? {}),
-                              bowelPain: Math.max(0, Math.min(10, Math.round(value))),
+                            symptoms: {
+                              ...prev.symptoms,
+                              dyschezia: {
+                                present: true,
+                                score: Math.max(0, Math.min(10, Math.round(value))),
+                              },
                             },
                           }))
                         }
+                        disabled={!dyscheziaSymptom?.present}
                       />
-                      {renderIssuesForPath("gi.bowelPain")}
+                      {renderIssuesForPath("symptoms.dyschezia.score")}
+                      {!dyscheziaSymptom?.present ? (
+                        <p className="text-xs text-rose-600">
+                          Aktiviere „{TERMS.dyschezia.label}“ im Symptomblock, um hier einen Wert zu sehen.
+                        </p>
+                      ) : null}
                     </div>
                     <div className="grid gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
                       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -3683,18 +3761,27 @@ export default function HomePage() {
                         id="urinary-pain"
                         label={TERMS.urinary_pain.label}
                         termKey="urinary_pain"
-                        value={dailyDraft.urinary?.pain ?? 0}
+                        value={dysuriaSymptom?.score ?? 0}
                         onChange={(value) =>
                           setDailyDraft((prev) => ({
                             ...prev,
-                            urinary: {
-                              ...(prev.urinary ?? {}),
-                              pain: Math.max(0, Math.min(10, Math.round(value))),
+                            symptoms: {
+                              ...prev.symptoms,
+                              dysuria: {
+                                present: true,
+                                score: Math.max(0, Math.min(10, Math.round(value))),
+                              },
                             },
                           }))
                         }
+                        disabled={!dysuriaSymptom?.present}
                       />
-                      {renderIssuesForPath("urinary.pain")}
+                      {renderIssuesForPath("symptoms.dysuria.score")}
+                      {!dysuriaSymptom?.present ? (
+                        <p className="text-xs text-rose-600">
+                          Aktiviere „{TERMS.dysuria.label}“ im Symptomblock, um hier einen Wert zu sehen.
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                 </Section>
@@ -4376,7 +4463,12 @@ export default function HomePage() {
                           <div className="mt-1 flex flex-wrap gap-2 text-xs text-rose-700">
                             <span>PBAC: {entry.bleeding.pbacScore ?? "–"}</span>
                             <span>Schlafqualität: {entry.sleep?.quality ?? "–"}</span>
-                            <span>Blasenschmerz: {entry.urinary?.pain ?? "–"}</span>
+                            <span>
+                              Blasenschmerz:
+                              {entry.symptoms?.dysuria?.present && typeof entry.symptoms.dysuria.score === "number"
+                                ? entry.symptoms.dysuria.score
+                                : "–"}
+                            </span>
                             {activeUrinary && (
                               <span>Harndrang (Modul): {entry.urinaryOpt?.urgency ?? "–"}</span>
                             )}
