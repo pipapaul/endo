@@ -171,8 +171,6 @@ const SYMPTOM_ITEMS: { key: SymptomKey; termKey: TermKey }[] = [
   { key: "dysmenorrhea", termKey: "dysmenorrhea" },
   { key: "deepDyspareunia", termKey: "deepDyspareunia" },
   { key: "pelvicPainNonMenses", termKey: "pelvicPainNonMenses" },
-  { key: "dyschezia", termKey: "dyschezia" },
-  { key: "dysuria", termKey: "dysuria" },
   { key: "fatigue", termKey: "fatigue" },
   { key: "bloating", termKey: "bloating" },
 ];
@@ -3751,6 +3749,57 @@ export default function HomePage() {
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="grid gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
                       <p className="font-medium text-rose-800">Darm</p>
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-rose-800">{TERMS.dyschezia.label}</p>
+                            <InfoTip tech={TERMS.dyschezia.tech ?? TERMS.dyschezia.label} help={TERMS.dyschezia.help} />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs text-rose-600">vorhanden</Label>
+                            <Switch
+                              checked={dyscheziaSymptom?.present ?? false}
+                              onCheckedChange={(checked) =>
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  symptoms: {
+                                    ...prev.symptoms,
+                                    dyschezia: checked
+                                      ? {
+                                          present: true,
+                                          score: prev.symptoms.dyschezia?.score ?? 0,
+                                        }
+                                      : { present: false },
+                                  },
+                                }))
+                              }
+                            />
+                          </div>
+                        </div>
+                        {renderIssuesForPath("symptoms.dyschezia.present")}
+                        {dyscheziaSymptom?.present ? (
+                          <div className="space-y-2">
+                            <ScoreInput
+                              id="symptom-dyschezia"
+                              label={`${TERMS.dyschezia.label} – Stärke (0–10)`}
+                              value={dyscheziaSymptom?.score ?? 0}
+                              onChange={(value) =>
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  symptoms: {
+                                    ...prev.symptoms,
+                                    dyschezia: {
+                                      present: true,
+                                      score: Math.max(0, Math.min(10, Math.round(value))),
+                                    },
+                                  },
+                                }))
+                              }
+                            />
+                            {renderIssuesForPath("symptoms.dyschezia.score")}
+                          </div>
+                        ) : null}
+                      </div>
                       <TermField termKey="bristol">
                         <Select
                           value={dailyDraft.gi?.bristolType ? String(dailyDraft.gi.bristolType) : ""}
@@ -3777,35 +3826,61 @@ export default function HomePage() {
                         </Select>
                         {renderIssuesForPath("gi.bristolType")}
                       </TermField>
-                      <ScoreInput
-                        id="bowel-pain"
-                        label={TERMS.bowelPain.label}
-                        termKey="bowelPain"
-                        value={dyscheziaSymptom?.score ?? 0}
-                        onChange={(value) =>
-                          setDailyDraft((prev) => ({
-                            ...prev,
-                            symptoms: {
-                              ...prev.symptoms,
-                              dyschezia: {
-                                present: true,
-                                score: Math.max(0, Math.min(10, Math.round(value))),
-                              },
-                            },
-                          }))
-                        }
-                        disabled={!dyscheziaSymptom?.present}
-                      />
-                      {renderIssuesForPath("symptoms.dyschezia.score")}
-                      {!dyscheziaSymptom?.present ? (
-                        <p className="text-xs text-rose-600">
-                          Aktiviere „{TERMS.dyschezia.label}“ im Symptomblock, um hier einen Wert zu sehen.
-                        </p>
-                      ) : null}
                     </div>
                     <div className="grid gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <p className="font-medium text-rose-800">Blase</p>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-rose-800">{TERMS.dysuria.label}</p>
+                            <InfoTip tech={TERMS.dysuria.tech ?? TERMS.dysuria.label} help={TERMS.dysuria.help} />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs text-rose-600">vorhanden</Label>
+                            <Switch
+                              checked={dysuriaSymptom?.present ?? false}
+                              onCheckedChange={(checked) =>
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  symptoms: {
+                                    ...prev.symptoms,
+                                    dysuria: checked
+                                      ? {
+                                          present: true,
+                                          score: prev.symptoms.dysuria?.score ?? 0,
+                                        }
+                                      : { present: false },
+                                  },
+                                }))
+                              }
+                            />
+                          </div>
+                        </div>
+                        {renderIssuesForPath("symptoms.dysuria.present")}
+                        {dysuriaSymptom?.present ? (
+                          <div className="space-y-2">
+                            <ScoreInput
+                              id="symptom-dysuria"
+                              label={`${TERMS.dysuria.label} – Stärke (0–10)`}
+                              value={dysuriaSymptom?.score ?? 0}
+                              onChange={(value) =>
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  symptoms: {
+                                    ...prev.symptoms,
+                                    dysuria: {
+                                      present: true,
+                                      score: Math.max(0, Math.min(10, Math.round(value))),
+                                    },
+                                  },
+                                }))
+                              }
+                            />
+                            {renderIssuesForPath("symptoms.dysuria.score")}
+                          </div>
+                        ) : null}
                       </div>
                       <TermField termKey="urinary_freq" htmlFor="urinary-frequency">
                         <Input
@@ -3897,31 +3972,6 @@ export default function HomePage() {
                             {renderIssuesForPath("urinaryOpt.nocturia")}
                           </div>
                         </div>
-                      ) : null}
-                      <ScoreInput
-                        id="urinary-pain"
-                        label={TERMS.urinary_pain.label}
-                        termKey="urinary_pain"
-                        value={dysuriaSymptom?.score ?? 0}
-                        onChange={(value) =>
-                          setDailyDraft((prev) => ({
-                            ...prev,
-                            symptoms: {
-                              ...prev.symptoms,
-                              dysuria: {
-                                present: true,
-                                score: Math.max(0, Math.min(10, Math.round(value))),
-                              },
-                            },
-                          }))
-                        }
-                        disabled={!dysuriaSymptom?.present}
-                      />
-                      {renderIssuesForPath("symptoms.dysuria.score")}
-                      {!dysuriaSymptom?.present ? (
-                        <p className="text-xs text-rose-600">
-                          Aktiviere „{TERMS.dysuria.label}“ im Symptomblock, um hier einen Wert zu sehen.
-                        </p>
                       ) : null}
                     </div>
                   </div>
