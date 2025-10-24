@@ -3291,16 +3291,26 @@ export default function HomePage() {
                         </div>
                       );
                     })}
-                    {SYMPTOM_MODULE_TOGGLES.map((toggle) => (
-                      <ModuleToggleRow
-                        key={toggle.key}
-                        label={toggle.label}
-                        tech={toggle.term.tech}
-                        help={toggle.term.help}
-                        checked={Boolean(featureFlags[toggle.key])}
-                        onCheckedChange={(checked) => handleFeatureToggle(toggle.key, checked)}
-                      />
-                    ))}
+                    {SYMPTOM_MODULE_TOGGLES.map((toggle) => {
+                      const isActive = Boolean(featureFlags[toggle.key]);
+                      return (
+                        <div key={toggle.key} className="rounded-lg border border-rose-100 bg-rose-50 p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-rose-800">{toggle.label}</p>
+                              <InfoTip tech={toggle.term.tech ?? toggle.label} help={toggle.term.help} />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Label className="text-xs text-rose-600">vorhanden</Label>
+                              <Switch
+                                checked={isActive}
+                                onCheckedChange={(checked) => handleFeatureToggle(toggle.key, checked)}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </Section>
 
@@ -3816,12 +3826,7 @@ export default function HomePage() {
                         />
                         {renderIssuesForPath("urinary.freqPerDay")}
                       </TermField>
-                      {activeUrinary ? (
-                        <InlineNotice
-                          title="Harndrang im Modul"
-                          text="Spezifische Harndrang- und Leckagewerte findest du unten im Dranginkontinenz-Modul."
-                        />
-                      ) : (
+                      {activeUrinary ? null : (
                         <>
                           <ScoreInput
                             id="urinary-urgency"
