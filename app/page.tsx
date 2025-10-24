@@ -86,47 +86,85 @@ const PAIN_QUALITIES: DailyEntry["painQuality"] = [
   "anders",
 ];
 
-const BODY_REGIONS: { id: string; label: string }[] = [
-  { id: "head", label: "Kopf" },
-  { id: "neck", label: "Nacken / Hals" },
-  { id: "shoulder_left", label: "Schulter links" },
-  { id: "shoulder_right", label: "Schulter rechts" },
-  { id: "upper_back_left", label: "Oberer Rücken links" },
-  { id: "upper_back_right", label: "Oberer Rücken rechts" },
-  { id: "mid_back_left", label: "Mittlerer Rücken links" },
-  { id: "mid_back_right", label: "Mittlerer Rücken rechts" },
-  { id: "lower_back", label: "LWS / Kreuzbein" },
-  { id: "chest_left", label: "Brust links" },
-  { id: "chest_right", label: "Brust rechts" },
-  { id: "upper_abdomen_left", label: "Oberbauch links" },
-  { id: "upper_abdomen", label: "Oberbauch Mitte" },
-  { id: "upper_abdomen_right", label: "Oberbauch rechts" },
-  { id: "lower_abdomen_left", label: "Unterbauch links" },
-  { id: "lower_abdomen", label: "Unterbauch Mitte" },
-  { id: "lower_abdomen_right", label: "Unterbauch rechts" },
-  { id: "pelvis_left", label: "Becken links" },
-  { id: "pelvis_right", label: "Becken rechts" },
-  { id: "uterus", label: "Uterus" },
-  { id: "rectal", label: "Rektalbereich" },
-  { id: "vaginal", label: "Vaginalbereich" },
-  { id: "hip_left", label: "Hüfte links" },
-  { id: "hip_right", label: "Hüfte rechts" },
-  { id: "upper_arm_left", label: "Oberarm links" },
-  { id: "upper_arm_right", label: "Oberarm rechts" },
-  { id: "forearm_left", label: "Unterarm links" },
-  { id: "forearm_right", label: "Unterarm rechts" },
-  { id: "hand_left", label: "Hand links" },
-  { id: "hand_right", label: "Hand rechts" },
-  { id: "thigh_left", label: "Oberschenkel links" },
-  { id: "thigh_right", label: "Oberschenkel rechts" },
-  { id: "knee_left", label: "Knie links" },
-  { id: "knee_right", label: "Knie rechts" },
-  { id: "calf_left", label: "Unterschenkel links" },
-  { id: "calf_right", label: "Unterschenkel rechts" },
-  { id: "ankle_left", label: "Sprunggelenk links" },
-  { id: "ankle_right", label: "Sprunggelenk rechts" },
-  { id: "foot_left", label: "Fuß links" },
-  { id: "foot_right", label: "Fuß rechts" },
+type BodyRegion = { id: string; label: string };
+
+const BODY_REGION_GROUPS: { id: string; label: string; regions: BodyRegion[] }[] = [
+  {
+    id: "head-neck",
+    label: "Kopf & Nacken",
+    regions: [
+      { id: "head", label: "Kopf" },
+      { id: "neck", label: "Nacken / Hals" },
+    ],
+  },
+  {
+    id: "back",
+    label: "Rücken",
+    regions: [
+      { id: "upper_back_left", label: "Oberer Rücken links" },
+      { id: "upper_back_right", label: "Oberer Rücken rechts" },
+      { id: "mid_back_left", label: "Mittlerer Rücken links" },
+      { id: "mid_back_right", label: "Mittlerer Rücken rechts" },
+      { id: "lower_back", label: "LWS / Kreuzbein" },
+    ],
+  },
+  {
+    id: "upper-body",
+    label: "Brust & Oberbauch",
+    regions: [
+      { id: "chest_left", label: "Brust links" },
+      { id: "chest_right", label: "Brust rechts" },
+      { id: "upper_abdomen_left", label: "Oberbauch links" },
+      { id: "upper_abdomen", label: "Oberbauch Mitte" },
+      { id: "upper_abdomen_right", label: "Oberbauch rechts" },
+    ],
+  },
+  {
+    id: "abdomen",
+    label: "Unterleib & Becken",
+    regions: [
+      { id: "lower_abdomen_left", label: "Unterbauch links" },
+      { id: "lower_abdomen", label: "Unterbauch Mitte" },
+      { id: "lower_abdomen_right", label: "Unterbauch rechts" },
+      { id: "pelvis_left", label: "Becken links" },
+      { id: "pelvis_right", label: "Becken rechts" },
+      { id: "uterus", label: "Uterus" },
+      { id: "rectal", label: "Rektalbereich" },
+      { id: "vaginal", label: "Vaginalbereich" },
+    ],
+  },
+  {
+    id: "arms",
+    label: "Schultern, Arme & Hände",
+    regions: [
+      { id: "shoulder_left", label: "Schulter links" },
+      { id: "shoulder_right", label: "Schulter rechts" },
+      { id: "upper_arm_left", label: "Oberarm links" },
+      { id: "upper_arm_right", label: "Oberarm rechts" },
+      { id: "forearm_left", label: "Unterarm links" },
+      { id: "forearm_right", label: "Unterarm rechts" },
+      { id: "hand_left", label: "Hand links" },
+      { id: "hand_right", label: "Hand rechts" },
+    ],
+  },
+  {
+    id: "legs",
+    label: "Beine & Füße",
+    regions: [
+      { id: "hip_left", label: "Hüfte links" },
+      { id: "hip_right", label: "Hüfte rechts" },
+      { id: "thigh_left", label: "Oberschenkel links" },
+      { id: "thigh_right", label: "Oberschenkel rechts" },
+      { id: "knee_left", label: "Knie links" },
+      { id: "knee_right", label: "Knie rechts" },
+      { id: "calf_left", label: "Unterschenkel links" },
+      { id: "calf_right", label: "Unterschenkel rechts" },
+      { id: "ankle_left", label: "Sprunggelenk links" },
+      { id: "ankle_right", label: "Sprunggelenk rechts" },
+      { id: "foot_left", label: "Fuß links" },
+      { id: "foot_right", label: "Fuß rechts" },
+    ],
+  },
 ];
 
 const SYMPTOM_ITEMS: { key: SymptomKey; termKey: TermKey }[] = [
@@ -1102,30 +1140,53 @@ function normalizeImportedMonthlyEntry(entry: MonthlyEntry & Record<string, unkn
 
 function BodyMap({ value, onChange }: { value: string[]; onChange: (next: string[]) => void }) {
   return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
-      {BODY_REGIONS.map((region) => (
-        <button
-          key={region.id}
-          type="button"
-          onClick={() => {
-            const set = new Set(value);
-            if (set.has(region.id)) {
-              set.delete(region.id);
-            } else {
-              set.add(region.id);
-            }
-            onChange(Array.from(set));
-          }}
-          className={cn(
-            "rounded-lg border px-3 py-2 text-left text-sm transition",
-            value.includes(region.id)
-              ? "border-rose-400 bg-rose-100 text-rose-700"
-              : "border-rose-100 bg-rose-50 text-rose-600 hover:border-rose-300"
-          )}
-        >
-          {region.label}
-        </button>
-      ))}
+    <div className="space-y-3">
+      {BODY_REGION_GROUPS.map((group) => {
+        const selectedCount = group.regions.filter((region) => value.includes(region.id)).length;
+        return (
+          <details
+            key={group.id}
+            className="group rounded-lg border border-rose-100 bg-rose-50 text-rose-700 [&[open]>summary]:border-b [&[open]>summary]:bg-rose-100"
+          >
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-rose-800 [&::-webkit-details-marker]:hidden">
+              <span>{group.label}</span>
+              <span className="text-xs font-normal text-rose-500">
+                {selectedCount > 0 ? `${selectedCount} ausgewählt` : "Auswählen"}
+              </span>
+            </summary>
+            <div className="border-t border-rose-100 bg-white px-3 py-3">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {group.regions.map((region) => {
+                  const isSelected = value.includes(region.id);
+                  return (
+                    <button
+                      key={region.id}
+                      type="button"
+                      onClick={() => {
+                        const set = new Set(value);
+                        if (set.has(region.id)) {
+                          set.delete(region.id);
+                        } else {
+                          set.add(region.id);
+                        }
+                        onChange(Array.from(set));
+                      }}
+                      className={cn(
+                        "w-full rounded-md border px-3 py-2 text-left text-sm transition",
+                        isSelected
+                          ? "border-rose-400 bg-rose-100 text-rose-700"
+                          : "border-rose-100 bg-white text-rose-600 hover:border-rose-300 hover:bg-rose-50"
+                      )}
+                    >
+                      {region.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </details>
+        );
+      })}
     </div>
   );
 }
