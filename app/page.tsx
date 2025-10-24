@@ -3796,14 +3796,6 @@ export default function HomePage() {
                     <div className="grid gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <p className="font-medium text-rose-800">Blase</p>
-                        <ModuleToggleRow
-                          label="Dranginkontinenz"
-                          tech={MODULE_TERMS.urinaryOpt.urgency.tech}
-                          help={MODULE_TERMS.urinaryOpt.urgency.help}
-                          checked={activeUrinary}
-                          onCheckedChange={(checked) => handleFeatureToggle("moduleUrinary", checked)}
-                          className="bg-white/60"
-                        />
                       </div>
                       <TermField termKey="urinary_freq" htmlFor="urinary-frequency">
                         <Input
@@ -3849,6 +3841,58 @@ export default function HomePage() {
                           {renderIssuesForPath("urinary.urgency")}
                         </>
                       )}
+                      <ModuleToggleRow
+                        label="Dranginkontinenz"
+                        tech={MODULE_TERMS.urinaryOpt.urgency.tech}
+                        help={MODULE_TERMS.urinaryOpt.urgency.help}
+                        checked={activeUrinary}
+                        onCheckedChange={(checked) => handleFeatureToggle("moduleUrinary", checked)}
+                        className="bg-white/60"
+                      />
+                      {activeUrinary ? (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-1">
+                            <Labeled
+                              label={MODULE_TERMS.urinaryOpt.leaksCount.label}
+                              tech={MODULE_TERMS.urinaryOpt.leaksCount.tech}
+                              help={MODULE_TERMS.urinaryOpt.leaksCount.help}
+                              htmlFor="urinary-opt-leaks"
+                            >
+                              <NumberField
+                                id="urinary-opt-leaks"
+                                value={dailyDraft.urinaryOpt?.leaksCount}
+                                onChange={(value) =>
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    urinaryOpt: { ...(prev.urinaryOpt ?? {}), leaksCount: value },
+                                  }))
+                                }
+                              />
+                            </Labeled>
+                            {renderIssuesForPath("urinaryOpt.leaksCount")}
+                          </div>
+                          <div className="space-y-1">
+                            <Labeled
+                              label={MODULE_TERMS.urinaryOpt.nocturia.label}
+                              tech={MODULE_TERMS.urinaryOpt.nocturia.tech}
+                              help={MODULE_TERMS.urinaryOpt.nocturia.help}
+                              htmlFor="urinary-opt-nocturia"
+                            >
+                              <NumberField
+                                id="urinary-opt-nocturia"
+                                value={dailyDraft.urinaryOpt?.nocturia}
+                                onChange={(value) =>
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    urinaryOpt: { ...(prev.urinaryOpt ?? {}), nocturia: value },
+                                  }))
+                                }
+                              />
+                            </Labeled>
+                            {renderIssuesForPath("urinaryOpt.nocturia")}
+                          </div>
+                        </div>
+                      ) : null}
                       <ScoreInput
                         id="urinary-pain"
                         label={TERMS.urinary_pain.label}
@@ -3880,7 +3924,7 @@ export default function HomePage() {
 
                 {activeUrinary && (
                   <Section title="Blase/Drang (Modul)" description="Fokus auf Drang und Leckagen (Opt-in)">
-                    <div className="grid gap-4 md:grid-cols-3">
+                    <div className="grid gap-4">
                       <div className="space-y-1">
                         <Labeled
                           label={MODULE_TERMS.urinaryOpt.urgency.label}
@@ -3900,46 +3944,6 @@ export default function HomePage() {
                           />
                         </Labeled>
                         {renderIssuesForPath("urinaryOpt.urgency")}
-                      </div>
-                      <div className="space-y-1">
-                        <Labeled
-                          label={MODULE_TERMS.urinaryOpt.leaksCount.label}
-                          tech={MODULE_TERMS.urinaryOpt.leaksCount.tech}
-                          help={MODULE_TERMS.urinaryOpt.leaksCount.help}
-                          htmlFor="urinary-opt-leaks"
-                        >
-                          <NumberField
-                            id="urinary-opt-leaks"
-                            value={dailyDraft.urinaryOpt?.leaksCount}
-                            onChange={(value) =>
-                              setDailyDraft((prev) => ({
-                                ...prev,
-                                urinaryOpt: { ...(prev.urinaryOpt ?? {}), leaksCount: value },
-                              }))
-                            }
-                          />
-                        </Labeled>
-                        {renderIssuesForPath("urinaryOpt.leaksCount")}
-                      </div>
-                      <div className="space-y-1">
-                        <Labeled
-                          label={MODULE_TERMS.urinaryOpt.nocturia.label}
-                          tech={MODULE_TERMS.urinaryOpt.nocturia.tech}
-                          help={MODULE_TERMS.urinaryOpt.nocturia.help}
-                          htmlFor="urinary-opt-nocturia"
-                        >
-                          <NumberField
-                            id="urinary-opt-nocturia"
-                            value={dailyDraft.urinaryOpt?.nocturia}
-                            onChange={(value) =>
-                              setDailyDraft((prev) => ({
-                                ...prev,
-                                urinaryOpt: { ...(prev.urinaryOpt ?? {}), nocturia: value },
-                              }))
-                            }
-                          />
-                        </Labeled>
-                        {renderIssuesForPath("urinaryOpt.nocturia")}
                       </div>
                     </div>
                   </Section>
