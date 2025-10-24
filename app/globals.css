@@ -9,11 +9,19 @@
   --section-card-completed-border: #facc15;
 }
 
+html {
+  width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background-color: var(--endo-bg);
   color: #111827;
   transition: background-color 0.3s ease;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 button:focus-visible,

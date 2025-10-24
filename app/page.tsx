@@ -86,24 +86,91 @@ const PAIN_QUALITIES: DailyEntry["painQuality"] = [
   "anders",
 ];
 
-const BODY_REGIONS: { id: string; label: string }[] = [
-  { id: "pelvis_left", label: "Becken links" },
-  { id: "pelvis_right", label: "Becken rechts" },
-  { id: "uterus", label: "Uterus" },
-  { id: "lower_back", label: "LWS / Kreuzbein" },
-  { id: "upper_abdomen", label: "Oberbauch" },
-  { id: "rectal", label: "Rektalbereich" },
-  { id: "vaginal", label: "Vaginalbereich" },
-  { id: "thigh_left", label: "Oberschenkel links" },
-  { id: "thigh_right", label: "Oberschenkel rechts" },
+type BodyRegion = { id: string; label: string };
+
+const BODY_REGION_GROUPS: { id: string; label: string; regions: BodyRegion[] }[] = [
+  {
+    id: "head-neck",
+    label: "Kopf & Nacken",
+    regions: [
+      { id: "head", label: "Kopf" },
+      { id: "neck", label: "Nacken / Hals" },
+    ],
+  },
+  {
+    id: "back",
+    label: "Rücken",
+    regions: [
+      { id: "upper_back_left", label: "Oberer Rücken links" },
+      { id: "upper_back_right", label: "Oberer Rücken rechts" },
+      { id: "mid_back_left", label: "Mittlerer Rücken links" },
+      { id: "mid_back_right", label: "Mittlerer Rücken rechts" },
+      { id: "lower_back", label: "LWS / Kreuzbein" },
+    ],
+  },
+  {
+    id: "upper-body",
+    label: "Brust & Oberbauch",
+    regions: [
+      { id: "chest_left", label: "Brust links" },
+      { id: "chest_right", label: "Brust rechts" },
+      { id: "upper_abdomen_left", label: "Oberbauch links" },
+      { id: "upper_abdomen", label: "Oberbauch Mitte" },
+      { id: "upper_abdomen_right", label: "Oberbauch rechts" },
+    ],
+  },
+  {
+    id: "abdomen",
+    label: "Unterleib & Becken",
+    regions: [
+      { id: "lower_abdomen_left", label: "Unterbauch links" },
+      { id: "lower_abdomen", label: "Unterbauch Mitte" },
+      { id: "lower_abdomen_right", label: "Unterbauch rechts" },
+      { id: "pelvis_left", label: "Becken links" },
+      { id: "pelvis_right", label: "Becken rechts" },
+      { id: "uterus", label: "Uterus" },
+      { id: "rectal", label: "Rektalbereich" },
+      { id: "vaginal", label: "Vaginalbereich" },
+    ],
+  },
+  {
+    id: "arms",
+    label: "Schultern, Arme & Hände",
+    regions: [
+      { id: "shoulder_left", label: "Schulter links" },
+      { id: "shoulder_right", label: "Schulter rechts" },
+      { id: "upper_arm_left", label: "Oberarm links" },
+      { id: "upper_arm_right", label: "Oberarm rechts" },
+      { id: "forearm_left", label: "Unterarm links" },
+      { id: "forearm_right", label: "Unterarm rechts" },
+      { id: "hand_left", label: "Hand links" },
+      { id: "hand_right", label: "Hand rechts" },
+    ],
+  },
+  {
+    id: "legs",
+    label: "Beine & Füße",
+    regions: [
+      { id: "hip_left", label: "Hüfte links" },
+      { id: "hip_right", label: "Hüfte rechts" },
+      { id: "thigh_left", label: "Oberschenkel links" },
+      { id: "thigh_right", label: "Oberschenkel rechts" },
+      { id: "knee_left", label: "Knie links" },
+      { id: "knee_right", label: "Knie rechts" },
+      { id: "calf_left", label: "Unterschenkel links" },
+      { id: "calf_right", label: "Unterschenkel rechts" },
+      { id: "ankle_left", label: "Sprunggelenk links" },
+      { id: "ankle_right", label: "Sprunggelenk rechts" },
+      { id: "foot_left", label: "Fuß links" },
+      { id: "foot_right", label: "Fuß rechts" },
+    ],
+  },
 ];
 
 const SYMPTOM_ITEMS: { key: SymptomKey; termKey: TermKey }[] = [
   { key: "dysmenorrhea", termKey: "dysmenorrhea" },
   { key: "deepDyspareunia", termKey: "deepDyspareunia" },
   { key: "pelvicPainNonMenses", termKey: "pelvicPainNonMenses" },
-  { key: "dyschezia", termKey: "dyschezia" },
-  { key: "dysuria", termKey: "dysuria" },
   { key: "fatigue", termKey: "fatigue" },
   { key: "bloating", termKey: "bloating" },
 ];
@@ -442,6 +509,7 @@ function ScoreInput({
   min = 0,
   max = 10,
   step = 1,
+  disabled = false,
 }: {
   id: string;
   label: string;
@@ -453,6 +521,7 @@ function ScoreInput({
   min?: number;
   max?: number;
   step?: number;
+  disabled?: boolean;
 }) {
   const rangeDescriptionId = `${id}-range-hint`;
   const content = (
@@ -463,9 +532,14 @@ function ScoreInput({
           min={min}
           max={max}
           step={step}
-          onValueChange={([v]) => onChange(v)}
+          onValueChange={([v]) => {
+            if (!disabled) {
+              onChange(v);
+            }
+          }}
           id={id}
           aria-describedby={rangeDescriptionId}
+          disabled={disabled}
         />
         <div
           id={rangeDescriptionId}
@@ -484,7 +558,12 @@ function ScoreInput({
         step={step}
         value={value}
         aria-describedby={rangeDescriptionId}
-        onChange={(event) => onChange(Number(event.target.value))}
+        onChange={(event) => {
+          if (!disabled) {
+            onChange(Number(event.target.value));
+          }
+        }}
+        disabled={disabled}
       />
     </div>
   );
@@ -771,6 +850,58 @@ function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>
   const clone: DailyEntry = { ...entry };
   const extra = clone as unknown as Record<string, unknown>;
 
+  const importedBowelPain = (() => {
+    const giSource = entry.gi as (DailyEntry["gi"] & { bowelPain?: number }) | undefined;
+    return typeof giSource?.bowelPain === "number" ? giSource.bowelPain : undefined;
+  })();
+  if (typeof importedBowelPain === "number") {
+    const normalized = Math.max(0, Math.min(10, Math.round(importedBowelPain)));
+    const nextSymptoms: DailyEntry["symptoms"] = { ...(clone.symptoms ?? {}) };
+    const existing = nextSymptoms.dyschezia;
+    if (!existing) {
+      nextSymptoms.dyschezia = { present: true, score: normalized };
+    } else if (existing.present && typeof existing.score !== "number") {
+      nextSymptoms.dyschezia = { present: true, score: normalized };
+    }
+    clone.symptoms = nextSymptoms;
+  }
+  if (clone.gi) {
+    const giRecord = { ...(clone.gi as Record<string, unknown>) };
+    if ("bowelPain" in giRecord) {
+      delete giRecord.bowelPain;
+    }
+    clone.gi = Object.keys(giRecord).length ? (giRecord as DailyEntry["gi"]) : undefined;
+    if (!clone.gi) {
+      delete (clone as { gi?: DailyEntry["gi"] }).gi;
+    }
+  }
+
+  const importedUrinaryPain = (() => {
+    const urinarySource = entry.urinary as (DailyEntry["urinary"] & { pain?: number }) | undefined;
+    return typeof urinarySource?.pain === "number" ? urinarySource.pain : undefined;
+  })();
+  if (typeof importedUrinaryPain === "number") {
+    const normalized = Math.max(0, Math.min(10, Math.round(importedUrinaryPain)));
+    const nextSymptoms: DailyEntry["symptoms"] = { ...(clone.symptoms ?? {}) };
+    const existing = nextSymptoms.dysuria;
+    if (!existing) {
+      nextSymptoms.dysuria = { present: true, score: normalized };
+    } else if (existing.present && typeof existing.score !== "number") {
+      nextSymptoms.dysuria = { present: true, score: normalized };
+    }
+    clone.symptoms = nextSymptoms;
+  }
+  if (clone.urinary) {
+    const urinaryRecord = { ...(clone.urinary as Record<string, unknown>) };
+    if ("pain" in urinaryRecord) {
+      delete urinaryRecord.pain;
+    }
+    clone.urinary = Object.keys(urinaryRecord).length ? (urinaryRecord as DailyEntry["urinary"]) : undefined;
+    if (!clone.urinary) {
+      delete (clone as { urinary?: DailyEntry["urinary"] }).urinary;
+    }
+  }
+
   const urinaryOpt: NonNullable<DailyEntry["urinaryOpt"]> = { ...(entry.urinaryOpt ?? {}) };
   if (typeof extra["urinary_urgency"] === "number") {
     urinaryOpt.urgency = extra["urinary_urgency"] as number;
@@ -1007,30 +1138,53 @@ function normalizeImportedMonthlyEntry(entry: MonthlyEntry & Record<string, unkn
 
 function BodyMap({ value, onChange }: { value: string[]; onChange: (next: string[]) => void }) {
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-      {BODY_REGIONS.map((region) => (
-        <button
-          key={region.id}
-          type="button"
-          onClick={() => {
-            const set = new Set(value);
-            if (set.has(region.id)) {
-              set.delete(region.id);
-            } else {
-              set.add(region.id);
-            }
-            onChange(Array.from(set));
-          }}
-          className={cn(
-            "rounded-lg border px-3 py-2 text-left text-sm transition",
-            value.includes(region.id)
-              ? "border-rose-400 bg-rose-100 text-rose-700"
-              : "border-rose-100 bg-rose-50 text-rose-600 hover:border-rose-300"
-          )}
-        >
-          {region.label}
-        </button>
-      ))}
+    <div className="space-y-3">
+      {BODY_REGION_GROUPS.map((group) => {
+        const selectedCount = group.regions.filter((region) => value.includes(region.id)).length;
+        return (
+          <details
+            key={group.id}
+            className="group rounded-lg border border-rose-100 bg-rose-50 text-rose-700 [&[open]>summary]:border-b [&[open]>summary]:bg-rose-100"
+          >
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-rose-800 [&::-webkit-details-marker]:hidden">
+              <span>{group.label}</span>
+              <span className="text-xs font-normal text-rose-500">
+                {selectedCount > 0 ? `${selectedCount} ausgewählt` : "Auswählen"}
+              </span>
+            </summary>
+            <div className="border-t border-rose-100 bg-white px-3 py-3">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {group.regions.map((region) => {
+                  const isSelected = value.includes(region.id);
+                  return (
+                    <button
+                      key={region.id}
+                      type="button"
+                      onClick={() => {
+                        const set = new Set(value);
+                        if (set.has(region.id)) {
+                          set.delete(region.id);
+                        } else {
+                          set.add(region.id);
+                        }
+                        onChange(Array.from(set));
+                      }}
+                      className={cn(
+                        "w-full rounded-md border px-3 py-2 text-left text-sm transition",
+                        isSelected
+                          ? "border-rose-400 bg-rose-100 text-rose-700"
+                          : "border-rose-100 bg-white text-rose-600 hover:border-rose-300 hover:bg-rose-50"
+                      )}
+                    >
+                      {region.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </details>
+        );
+      })}
     </div>
   );
 }
@@ -1650,6 +1804,8 @@ export default function HomePage() {
   const activeUrinary = Boolean(featureFlags.moduleUrinary);
   const activeHeadache = Boolean(featureFlags.moduleHeadache);
   const activeDizziness = Boolean(featureFlags.moduleDizziness);
+  const dyscheziaSymptom = dailyDraft.symptoms.dyschezia;
+  const dysuriaSymptom = dailyDraft.symptoms.dysuria;
 
   const pbacFlooding = dailyDraft.bleeding.flooding ?? false;
   const pbacScore = useMemo(() => computePbacScore(pbacCounts, pbacFlooding), [pbacCounts, pbacFlooding]);
@@ -1799,7 +1955,10 @@ export default function HomePage() {
         [`${TERMS.pbac.label}`]: entry.bleeding.pbacScore ?? "",
         "Symptom-Scores": symptomScores,
         [`${TERMS.sleep_quality.label}`]: entry.sleep?.quality ?? "",
-        [`${TERMS.urinary_pain.label}`]: entry.urinary?.pain ?? "",
+        [`${TERMS.urinary_pain.label}`]:
+          entry.symptoms?.dysuria?.present && typeof entry.symptoms.dysuria.score === "number"
+            ? entry.symptoms.dysuria.score
+            : "",
       };
       if (activeUrinary) {
         row.urinary_urgency = entry.urinaryOpt?.urgency ?? "";
@@ -3130,16 +3289,26 @@ export default function HomePage() {
                         </div>
                       );
                     })}
-                    {SYMPTOM_MODULE_TOGGLES.map((toggle) => (
-                      <ModuleToggleRow
-                        key={toggle.key}
-                        label={toggle.label}
-                        tech={toggle.term.tech}
-                        help={toggle.term.help}
-                        checked={Boolean(featureFlags[toggle.key])}
-                        onCheckedChange={(checked) => handleFeatureToggle(toggle.key, checked)}
-                      />
-                    ))}
+                    {SYMPTOM_MODULE_TOGGLES.map((toggle) => {
+                      const isActive = Boolean(featureFlags[toggle.key]);
+                      return (
+                        <div key={toggle.key} className="rounded-lg border border-rose-100 bg-rose-50 p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-rose-800">{toggle.label}</p>
+                              <InfoTip tech={toggle.term.tech ?? toggle.label} help={toggle.term.help} />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Label className="text-xs text-rose-600">vorhanden</Label>
+                              <Switch
+                                checked={isActive}
+                                onCheckedChange={(checked) => handleFeatureToggle(toggle.key, checked)}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </Section>
 
@@ -3580,6 +3749,57 @@ export default function HomePage() {
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="grid gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
                       <p className="font-medium text-rose-800">Darm</p>
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-rose-800">{TERMS.dyschezia.label}</p>
+                            <InfoTip tech={TERMS.dyschezia.tech ?? TERMS.dyschezia.label} help={TERMS.dyschezia.help} />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs text-rose-600">vorhanden</Label>
+                            <Switch
+                              checked={dyscheziaSymptom?.present ?? false}
+                              onCheckedChange={(checked) =>
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  symptoms: {
+                                    ...prev.symptoms,
+                                    dyschezia: checked
+                                      ? {
+                                          present: true,
+                                          score: prev.symptoms.dyschezia?.score ?? 0,
+                                        }
+                                      : { present: false },
+                                  },
+                                }))
+                              }
+                            />
+                          </div>
+                        </div>
+                        {renderIssuesForPath("symptoms.dyschezia.present")}
+                        {dyscheziaSymptom?.present ? (
+                          <div className="space-y-2">
+                            <ScoreInput
+                              id="symptom-dyschezia"
+                              label={`${TERMS.dyschezia.label} – Stärke (0–10)`}
+                              value={dyscheziaSymptom?.score ?? 0}
+                              onChange={(value) =>
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  symptoms: {
+                                    ...prev.symptoms,
+                                    dyschezia: {
+                                      present: true,
+                                      score: Math.max(0, Math.min(10, Math.round(value))),
+                                    },
+                                  },
+                                }))
+                              }
+                            />
+                            {renderIssuesForPath("symptoms.dyschezia.score")}
+                          </div>
+                        ) : null}
+                      </div>
                       <TermField termKey="bristol">
                         <Select
                           value={dailyDraft.gi?.bristolType ? String(dailyDraft.gi.bristolType) : ""}
@@ -3606,34 +3826,61 @@ export default function HomePage() {
                         </Select>
                         {renderIssuesForPath("gi.bristolType")}
                       </TermField>
-                      <ScoreInput
-                        id="bowel-pain"
-                        label={TERMS.bowelPain.label}
-                        termKey="bowelPain"
-                        value={dailyDraft.gi?.bowelPain ?? 0}
-                        onChange={(value) =>
-                          setDailyDraft((prev) => ({
-                            ...prev,
-                            gi: {
-                              ...(prev.gi ?? {}),
-                              bowelPain: Math.max(0, Math.min(10, Math.round(value))),
-                            },
-                          }))
-                        }
-                      />
-                      {renderIssuesForPath("gi.bowelPain")}
                     </div>
                     <div className="grid gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <p className="font-medium text-rose-800">Blase</p>
-                        <ModuleToggleRow
-                          label="Dranginkontinenz"
-                          tech={MODULE_TERMS.urinaryOpt.urgency.tech}
-                          help={MODULE_TERMS.urinaryOpt.urgency.help}
-                          checked={activeUrinary}
-                          onCheckedChange={(checked) => handleFeatureToggle("moduleUrinary", checked)}
-                          className="bg-white/60"
-                        />
+                      </div>
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-rose-800">{TERMS.dysuria.label}</p>
+                            <InfoTip tech={TERMS.dysuria.tech ?? TERMS.dysuria.label} help={TERMS.dysuria.help} />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs text-rose-600">vorhanden</Label>
+                            <Switch
+                              checked={dysuriaSymptom?.present ?? false}
+                              onCheckedChange={(checked) =>
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  symptoms: {
+                                    ...prev.symptoms,
+                                    dysuria: checked
+                                      ? {
+                                          present: true,
+                                          score: prev.symptoms.dysuria?.score ?? 0,
+                                        }
+                                      : { present: false },
+                                  },
+                                }))
+                              }
+                            />
+                          </div>
+                        </div>
+                        {renderIssuesForPath("symptoms.dysuria.present")}
+                        {dysuriaSymptom?.present ? (
+                          <div className="space-y-2">
+                            <ScoreInput
+                              id="symptom-dysuria"
+                              label={`${TERMS.dysuria.label} – Stärke (0–10)`}
+                              value={dysuriaSymptom?.score ?? 0}
+                              onChange={(value) =>
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  symptoms: {
+                                    ...prev.symptoms,
+                                    dysuria: {
+                                      present: true,
+                                      score: Math.max(0, Math.min(10, Math.round(value))),
+                                    },
+                                  },
+                                }))
+                              }
+                            />
+                            {renderIssuesForPath("symptoms.dysuria.score")}
+                          </div>
+                        ) : null}
                       </div>
                       <TermField termKey="urinary_freq" htmlFor="urinary-frequency">
                         <Input
@@ -3654,12 +3901,7 @@ export default function HomePage() {
                         />
                         {renderIssuesForPath("urinary.freqPerDay")}
                       </TermField>
-                      {activeUrinary ? (
-                        <InlineNotice
-                          title="Harndrang im Modul"
-                          text="Spezifische Harndrang- und Leckagewerte findest du unten im Dranginkontinenz-Modul."
-                        />
-                      ) : (
+                      {activeUrinary ? null : (
                         <>
                           <ScoreInput
                             id="urinary-urgency"
@@ -3679,29 +3921,65 @@ export default function HomePage() {
                           {renderIssuesForPath("urinary.urgency")}
                         </>
                       )}
-                      <ScoreInput
-                        id="urinary-pain"
-                        label={TERMS.urinary_pain.label}
-                        termKey="urinary_pain"
-                        value={dailyDraft.urinary?.pain ?? 0}
-                        onChange={(value) =>
-                          setDailyDraft((prev) => ({
-                            ...prev,
-                            urinary: {
-                              ...(prev.urinary ?? {}),
-                              pain: Math.max(0, Math.min(10, Math.round(value))),
-                            },
-                          }))
-                        }
+                      <ModuleToggleRow
+                        label="Dranginkontinenz"
+                        tech={MODULE_TERMS.urinaryOpt.urgency.tech}
+                        help={MODULE_TERMS.urinaryOpt.urgency.help}
+                        checked={activeUrinary}
+                        onCheckedChange={(checked) => handleFeatureToggle("moduleUrinary", checked)}
+                        className="bg-white/60"
                       />
-                      {renderIssuesForPath("urinary.pain")}
+                      {activeUrinary ? (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-1">
+                            <Labeled
+                              label={MODULE_TERMS.urinaryOpt.leaksCount.label}
+                              tech={MODULE_TERMS.urinaryOpt.leaksCount.tech}
+                              help={MODULE_TERMS.urinaryOpt.leaksCount.help}
+                              htmlFor="urinary-opt-leaks"
+                            >
+                              <NumberField
+                                id="urinary-opt-leaks"
+                                value={dailyDraft.urinaryOpt?.leaksCount}
+                                onChange={(value) =>
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    urinaryOpt: { ...(prev.urinaryOpt ?? {}), leaksCount: value },
+                                  }))
+                                }
+                              />
+                            </Labeled>
+                            {renderIssuesForPath("urinaryOpt.leaksCount")}
+                          </div>
+                          <div className="space-y-1">
+                            <Labeled
+                              label={MODULE_TERMS.urinaryOpt.nocturia.label}
+                              tech={MODULE_TERMS.urinaryOpt.nocturia.tech}
+                              help={MODULE_TERMS.urinaryOpt.nocturia.help}
+                              htmlFor="urinary-opt-nocturia"
+                            >
+                              <NumberField
+                                id="urinary-opt-nocturia"
+                                value={dailyDraft.urinaryOpt?.nocturia}
+                                onChange={(value) =>
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    urinaryOpt: { ...(prev.urinaryOpt ?? {}), nocturia: value },
+                                  }))
+                                }
+                              />
+                            </Labeled>
+                            {renderIssuesForPath("urinaryOpt.nocturia")}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </Section>
 
                 {activeUrinary && (
                   <Section title="Blase/Drang (Modul)" description="Fokus auf Drang und Leckagen (Opt-in)">
-                    <div className="grid gap-4 md:grid-cols-3">
+                    <div className="grid gap-4">
                       <div className="space-y-1">
                         <Labeled
                           label={MODULE_TERMS.urinaryOpt.urgency.label}
@@ -3721,46 +3999,6 @@ export default function HomePage() {
                           />
                         </Labeled>
                         {renderIssuesForPath("urinaryOpt.urgency")}
-                      </div>
-                      <div className="space-y-1">
-                        <Labeled
-                          label={MODULE_TERMS.urinaryOpt.leaksCount.label}
-                          tech={MODULE_TERMS.urinaryOpt.leaksCount.tech}
-                          help={MODULE_TERMS.urinaryOpt.leaksCount.help}
-                          htmlFor="urinary-opt-leaks"
-                        >
-                          <NumberField
-                            id="urinary-opt-leaks"
-                            value={dailyDraft.urinaryOpt?.leaksCount}
-                            onChange={(value) =>
-                              setDailyDraft((prev) => ({
-                                ...prev,
-                                urinaryOpt: { ...(prev.urinaryOpt ?? {}), leaksCount: value },
-                              }))
-                            }
-                          />
-                        </Labeled>
-                        {renderIssuesForPath("urinaryOpt.leaksCount")}
-                      </div>
-                      <div className="space-y-1">
-                        <Labeled
-                          label={MODULE_TERMS.urinaryOpt.nocturia.label}
-                          tech={MODULE_TERMS.urinaryOpt.nocturia.tech}
-                          help={MODULE_TERMS.urinaryOpt.nocturia.help}
-                          htmlFor="urinary-opt-nocturia"
-                        >
-                          <NumberField
-                            id="urinary-opt-nocturia"
-                            value={dailyDraft.urinaryOpt?.nocturia}
-                            onChange={(value) =>
-                              setDailyDraft((prev) => ({
-                                ...prev,
-                                urinaryOpt: { ...(prev.urinaryOpt ?? {}), nocturia: value },
-                              }))
-                            }
-                          />
-                        </Labeled>
-                        {renderIssuesForPath("urinaryOpt.nocturia")}
                       </div>
                     </div>
                   </Section>
@@ -4376,7 +4614,12 @@ export default function HomePage() {
                           <div className="mt-1 flex flex-wrap gap-2 text-xs text-rose-700">
                             <span>PBAC: {entry.bleeding.pbacScore ?? "–"}</span>
                             <span>Schlafqualität: {entry.sleep?.quality ?? "–"}</span>
-                            <span>Blasenschmerz: {entry.urinary?.pain ?? "–"}</span>
+                            <span>
+                              Blasenschmerz:
+                              {entry.symptoms?.dysuria?.present && typeof entry.symptoms.dysuria.score === "number"
+                                ? entry.symptoms.dysuria.score
+                                : "–"}
+                            </span>
                             {activeUrinary && (
                               <span>Harndrang (Modul): {entry.urinaryOpt?.urgency ?? "–"}</span>
                             )}
@@ -4440,7 +4683,7 @@ export default function HomePage() {
                   description="Durchschnittlicher NRS nach Wochentag"
                   completionEnabled={false}
                 >
-                  <div className="grid grid-cols-2 gap-2 text-xs text-rose-700 sm:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-2 text-xs text-rose-700 sm:grid-cols-2 lg:grid-cols-4">
                     {weekdayOverlay.map((row) => (
                       <div key={row.weekday} className="rounded border border-amber-100 bg-amber-50 px-2 py-1">
                         <p className="font-semibold text-rose-800">{row.weekday}</p>
