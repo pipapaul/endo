@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import WeeklyForm, { WeeklyProvider } from "@/app/weekly/WeeklyForm";
 import type { DailyEntry } from "@/lib/types";
@@ -49,9 +49,10 @@ function formatWeekRangeLabel(year: number, week: number): string {
 type WeeklyTabShellProps = {
   dailyEntries: DailyEntry[];
   currentIsoWeek: string;
+  onSelectionChange?: (isoWeek: string) => void;
 };
 
-export function WeeklyTabShell({ dailyEntries, currentIsoWeek }: WeeklyTabShellProps): JSX.Element {
+export function WeeklyTabShell({ dailyEntries, currentIsoWeek, onSelectionChange }: WeeklyTabShellProps): JSX.Element {
   const currentParts = useMemo(() => parseIsoWeek(currentIsoWeek) ?? getIsoWeekParts(new Date()), [currentIsoWeek]);
   const [selected, setSelected] = useState(currentParts);
 
@@ -95,6 +96,10 @@ export function WeeklyTabShell({ dailyEntries, currentIsoWeek }: WeeklyTabShellP
       dailyEntries.filter((entry) => getIsoWeekStringFromDateString(entry.date) === selectedIsoWeek),
     [dailyEntries, selectedIsoWeek]
   );
+
+  useEffect(() => {
+    onSelectionChange?.(selectedIsoWeek);
+  }, [onSelectionChange, selectedIsoWeek]);
 
   return (
     <WeeklyProvider year={selected.year} week={selected.week} dailyEntries={entriesForWeek}>
