@@ -60,6 +60,7 @@ import {
   type PromptAnswers,
 } from "@/lib/weekly/reports";
 import { normalizeWpai, type WeeklyWpai } from "@/lib/weekly/wpai";
+import { isoWeekToDate } from "@/lib/isoWeek";
 
 type SymptomKey = keyof DailyEntry["symptoms"];
 
@@ -297,10 +298,13 @@ const createEmptyMonthlyEntry = (month: string): MonthlyEntry => ({
 const SectionScopeContext = createContext<string | number | null>(null);
 
 type SectionCompletionState = Record<string, Record<string, boolean>>;
+type SectionRegistryState = Record<string, Record<string, true>>;
 
 type SectionCompletionContextValue = {
   getCompletion: (scope: string | number | null, key: string) => boolean;
   setCompletion: (scope: string | number | null, key: string, completed: boolean) => void;
+  registerSection: (scope: string | number | null, key: string) => void;
+  unregisterSection: (scope: string | number | null, key: string) => void;
 };
 
 const SectionCompletionContext = createContext<SectionCompletionContextValue | null>(null);
@@ -340,6 +344,16 @@ function Section({
     if (!completionContext) return false;
     if (scope === null || scope === undefined) return false;
     return completionContext.getCompletion(scope, title);
+  }, [completionContext, completionEnabled, scope, title]);
+
+  useEffect(() => {
+    if (!completionEnabled) return;
+    if (!completionContext) return;
+    if (scope === null || scope === undefined) return;
+    completionContext.registerSection(scope, title);
+    return () => {
+      completionContext.unregisterSection(scope, title);
+    };
   }, [completionContext, completionEnabled, scope, title]);
 
   useEffect(() => {
@@ -1327,6 +1341,27 @@ function monthToDate(month: string) {
   return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1));
 }
 
+function parseIsoWeekKey(isoWeek: string): { year: number; week: number } | null {
+  const match = isoWeek.match(/^(\d{4})-W(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const week = Number(match[2]);
+  if (!Number.isFinite(year) || !Number.isFinite(week)) return null;
+  return { year, week };
+}
+
+function formatIsoWeekCompactLabel(isoWeek: string | null): string | null {
+  if (!isoWeek) return null;
+  const parts = parseIsoWeekKey(isoWeek);
+  if (!parts) return null;
+  const start = isoWeekToDate(parts.year, parts.week);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 6);
+  const startLabel = start.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+  const endLabel = end.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" });
+  return `KW ${String(parts.week).padStart(2, "0")} · ${startLabel}–${endLabel}`;
+}
+
 function computePearson(pairs: { x: number; y: number }[]) {
   if (pairs.length < 2) return null;
   const n = pairs.length;
@@ -1353,6 +1388,7 @@ export default function HomePage() {
   const [featureFlags, setFeatureFlags, featureStorage] = usePersistentState<FeatureFlags>("endo.flags.v1", {});
   const [sectionCompletionState, setSectionCompletionState, sectionCompletionStorage] =
     usePersistentState<SectionCompletionState>("endo.sectionCompletion.v1", {});
+  const [sectionRegistry, setSectionRegistry] = useState<SectionRegistryState>({});
 
   const [dailyDraft, setDailyDraft, dailyDraftStorage] =
     usePersistentState<DailyEntry>("endo.draft.daily.v1", defaultDailyDraft);
@@ -1373,6 +1409,7 @@ export default function HomePage() {
   const [weeklyReportsReady, setWeeklyReportsReady] = useState(false);
   const [weeklyReportsError, setWeeklyReportsError] = useState<string | null>(null);
   const [weeklyReportsRevision, setWeeklyReportsRevision] = useState(0);
+  const [weeklyIsoWeek, setWeeklyIsoWeek] = useState<string | null>(null);
 
   const [monthlyDraft, setMonthlyDraft, monthlyDraftStorage] =
     usePersistentState<MonthlyEntry>("endo.draft.monthly.v1", defaultMonthlyDraft);
@@ -1495,8 +1532,41 @@ export default function HomePage() {
           };
         });
       },
+      registerSection: (scope, key) => {
+        if (scope === null || scope === undefined) return;
+        const scopeKey = String(scope);
+        setSectionRegistry((prev) => {
+          const prevForScope = prev[scopeKey] ?? {};
+          if (prevForScope[key]) {
+            return prev;
+          }
+          return {
+            ...prev,
+            [scopeKey]: { ...prevForScope, [key]: true },
+          };
+        });
+      },
+      unregisterSection: (scope, key) => {
+        if (scope === null || scope === undefined) return;
+        const scopeKey = String(scope);
+        setSectionRegistry((prev) => {
+          const prevForScope = prev[scopeKey];
+          if (!prevForScope || !prevForScope[key]) {
+            return prev;
+          }
+          const { [key]: _removed, ...restForScope } = prevForScope;
+          if (Object.keys(restForScope).length === 0) {
+            const { [scopeKey]: _scopeRemoved, ...restScopes } = prev;
+            return restScopes;
+          }
+          return {
+            ...prev,
+            [scopeKey]: restForScope,
+          };
+        });
+      },
     }),
-    [sectionCompletionState, setSectionCompletionState]
+    [sectionCompletionState, setSectionCompletionState, setSectionRegistry]
   );
 
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
@@ -1730,6 +1800,64 @@ export default function HomePage() {
     if (!monthDate) return null;
     return monthDate.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
   }, [monthlyDraft.month]);
+
+  const dailyToolbarLabel = useMemo(() => {
+    const parsed = parseIsoDate(dailyDraft.date);
+    if (!parsed) return null;
+    return parsed.toLocaleDateString("de-DE", {
+      weekday: "short",
+      day: "2-digit",
+      month: "2-digit",
+    });
+  }, [dailyDraft.date]);
+
+  const weeklyScopeIsoWeek = weeklyIsoWeek ?? currentIsoWeek;
+
+  const weeklyToolbarLabel = useMemo(
+    () => formatIsoWeekCompactLabel(weeklyScopeIsoWeek),
+    [weeklyScopeIsoWeek]
+  );
+
+  const monthlyToolbarLabel = useMemo(() => {
+    const monthDate = monthToDate(monthlyDraft.month || currentMonth);
+    if (!monthDate) return null;
+    return monthDate.toLocaleDateString("de-DE", { month: "short", year: "numeric" });
+  }, [monthlyDraft.month, currentMonth]);
+
+  const toolbarLabel = useMemo(() => {
+    if (activeView === "daily") return dailyToolbarLabel;
+    if (activeView === "weekly") return weeklyToolbarLabel;
+    if (activeView === "monthly") return monthlyToolbarLabel;
+    return null;
+  }, [activeView, dailyToolbarLabel, monthlyToolbarLabel, weeklyToolbarLabel]);
+
+  const activeScopeKey = useMemo(() => {
+    if (activeView === "daily") {
+      return dailyDraft.date ? `daily:${dailyDraft.date}` : null;
+    }
+    if (activeView === "weekly") {
+      return `weekly:${weeklyScopeIsoWeek}`;
+    }
+    if (activeView === "monthly") {
+      const monthKey = monthlyDraft.month || currentMonth;
+      return monthKey ? `monthly:${monthKey}` : null;
+    }
+    return null;
+  }, [activeView, currentMonth, dailyDraft.date, monthlyDraft.month, weeklyScopeIsoWeek]);
+
+  const activeScopeProgress = useMemo(() => {
+    if (!activeScopeKey) {
+      return { completed: 0, total: 0 };
+    }
+    const registry = sectionRegistry[activeScopeKey];
+    const total = registry ? Object.keys(registry).length : 0;
+    if (!registry || total === 0) {
+      return { completed: 0, total: 0 };
+    }
+    const completions = sectionCompletionState[activeScopeKey] ?? {};
+    const completed = Object.keys(registry).filter((key) => Boolean(completions[key])).length;
+    return { completed, total };
+  }, [activeScopeKey, sectionCompletionState, sectionRegistry]);
 
   const canGoToNextMonth = useMemo(() => {
     const baseMonth = monthlyDraft.month || currentMonth;
@@ -3071,16 +3199,33 @@ export default function HomePage() {
             </div>
           ) : (
             <div className="flex flex-col gap-6">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => setActiveView("home")}
-                  className="flex items-center gap-2 text-rose-700 hover:text-rose-800"
-                >
-                  <ChevronLeft className="h-4 w-4" /> Zurück
-                </Button>
-                {infoMessage && <p className="text-sm font-medium text-rose-600">{infoMessage}</p>}
+              <div
+                className="sticky top-0 z-20 -mx-4 border-b border-rose-100 bg-white/80 px-4 pt-4 pb-3 shadow-sm backdrop-blur"
+                style={{ backgroundColor: "var(--endo-bg, #fff)" }}
+              >
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setActiveView("home")}
+                      className="flex items-center gap-2 text-rose-700 hover:text-rose-800"
+                    >
+                      <ChevronLeft className="h-4 w-4" /> Zurück
+                    </Button>
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
+                      {toolbarLabel ? (
+                        <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-700">
+                          {toolbarLabel}
+                        </span>
+                      ) : null}
+                      <span className="rounded-full bg-rose-200 px-3 py-1 text-rose-800">
+                        {`${activeScopeProgress.completed}/${activeScopeProgress.total}`}
+                      </span>
+                    </div>
+                  </div>
+                  {infoMessage ? <p className="text-xs text-rose-600 sm:text-sm">{infoMessage}</p> : null}
+                </div>
               </div>
               <Tabs defaultValue="daily" value={currentDataView} className="w-full">
                 <TabsContent value="daily" className="space-y-6">
@@ -4758,9 +4903,13 @@ export default function HomePage() {
               <p className="mt-2 text-xs text-amber-700">{weeklyReportsError}</p>
             ) : null}
           </div>
-          <SectionScopeContext.Provider value={`weekly:${currentIsoWeek}`}>
+          <SectionScopeContext.Provider value={`weekly:${weeklyScopeIsoWeek}`}>
           {weeklyReportsReady ? (
-            <WeeklyTabShell dailyEntries={dailyEntries} currentIsoWeek={currentIsoWeek} />
+            <WeeklyTabShell
+              dailyEntries={dailyEntries}
+              currentIsoWeek={currentIsoWeek}
+              onSelectionChange={setWeeklyIsoWeek}
+            />
           ) : (
             <div className="rounded-xl border border-rose-100 bg-white/80 p-4 text-sm text-rose-700">
               Wöchentliche Daten werden geladen …
