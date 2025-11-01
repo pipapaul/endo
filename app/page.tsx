@@ -3040,9 +3040,12 @@ export default function HomePage() {
   const currentDataView = isHomeView ? "daily" : activeView;
 
   const detailToolbar = !isHomeView ? (
-    <header
-      className="sticky top-0 z-30 w-full border-b border-rose-100 bg-white/90 shadow-sm backdrop-blur supports-[backdrop-filter:none]:bg-white"
-      style={{ backgroundColor: "var(--endo-bg, #fff)" }}
+    <div
+      className="sticky top-0 z-40 w-full border-b border-rose-100 bg-white/90 shadow-sm backdrop-blur supports-[backdrop-filter:none]:bg-white"
+      style={{
+        backgroundColor: "var(--endo-bg, #fff)",
+        top: "env(safe-area-inset-top, 0px)",
+      }}
     >
       <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3063,7 +3066,7 @@ export default function HomePage() {
         </div>
         {infoMessage ? <p className="text-xs text-rose-600 sm:text-sm">{infoMessage}</p> : null}
       </div>
-    </header>
+    </div>
   ) : null;
 
   return (
