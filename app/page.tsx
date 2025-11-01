@@ -3034,7 +3034,7 @@ export default function HomePage() {
             Wöchentlich
             {showWeeklyReminderBadge ? (
               <Badge className="bg-amber-400 text-rose-900" aria-label="Wöchentlicher Check-in fällig">
-                fällig
+                <span className="inline-block h-2 w-2 rounded-full bg-rose-600" aria-hidden="true" />
               </Badge>
             ) : null}
           </TabsTrigger>
