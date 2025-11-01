@@ -1,6 +1,16 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import {
   LineChart,
@@ -61,6 +71,8 @@ import {
 } from "@/lib/weekly/reports";
 import { normalizeWpai, type WeeklyWpai } from "@/lib/weekly/wpai";
 import { isoWeekToDate } from "@/lib/isoWeek";
+
+const DETAIL_TOOLBAR_FALLBACK_HEIGHT = 96;
 
 type SymptomKey = keyof DailyEntry["symptoms"];
 
@@ -1418,6 +1430,7 @@ export default function HomePage() {
   const draftStatusTimeoutRef = useRef<number | null>(null);
   const draftRestoredRef = useRef(false);
   const lastDraftSavedAtRef = useRef<number | null>(null);
+  const detailToolbarRef = useRef<HTMLElement | null>(null);
 
   const isBirthdayGreetingDay = () => {
     const now = new Date();
@@ -1571,6 +1584,7 @@ export default function HomePage() {
 
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [detailToolbarHeight, setDetailToolbarHeight] = useState<number>(DETAIL_TOOLBAR_FALLBACK_HEIGHT);
   const [activeView, setActiveView] = useState<"home" | "daily" | "weekly" | "monthly">("home");
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [persistWarning, setPersistWarning] = useState<string | null>(null);
@@ -3039,31 +3053,84 @@ export default function HomePage() {
   const isHomeView = activeView === "home";
   const currentDataView = isHomeView ? "daily" : activeView;
 
+  useLayoutEffect(() => {
+    if (isHomeView) {
+      return;
+    }
+
+    const updateHeight = () => {
+      const element = detailToolbarRef.current;
+      if (!element) {
+        setDetailToolbarHeight(DETAIL_TOOLBAR_FALLBACK_HEIGHT);
+        return;
+      }
+      setDetailToolbarHeight(element.getBoundingClientRect().height);
+    };
+
+    updateHeight();
+
+    const element = detailToolbarRef.current;
+    if (!element) {
+      return;
+    }
+
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(() => updateHeight());
+      observer.observe(element);
+      return () => {
+        observer.disconnect();
+      };
+    }
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("resize", updateHeight);
+      return () => {
+        window.removeEventListener("resize", updateHeight);
+      };
+    }
+
+    return;
+  }, [
+    isHomeView,
+    infoMessage,
+    toolbarLabel,
+    activeScopeProgress.completed,
+    activeScopeProgress.total,
+  ]);
+
   const detailToolbar = !isHomeView ? (
-    <header
-      className="sticky top-0 z-30 w-full border-b border-rose-100 bg-white/90 shadow-sm backdrop-blur supports-[backdrop-filter:none]:bg-white"
-      style={{ backgroundColor: "var(--endo-bg, #fff)" }}
-    >
-      <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => setActiveView("home")}
-            className="flex items-center gap-2 text-rose-700 hover:text-rose-800"
-          >
-            <ChevronLeft className="h-4 w-4" /> Zurück
-          </Button>
-          <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
-            {toolbarLabel ? (
-              <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-700">{toolbarLabel}</span>
-            ) : null}
-            <span className="rounded-full bg-rose-200 px-3 py-1 text-rose-800">{`${activeScopeProgress.completed}/${activeScopeProgress.total}`}</span>
+    <>
+      <header
+        ref={detailToolbarRef}
+        className="fixed inset-x-0 top-0 z-40 border-b border-rose-100 bg-white/90 shadow-sm backdrop-blur supports-[backdrop-filter:none]:bg-white"
+        style={{ backgroundColor: "var(--endo-bg, #fff)" }}
+      >
+        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setActiveView("home")}
+              className="flex items-center gap-2 text-rose-700 hover:text-rose-800"
+            >
+              <ChevronLeft className="h-4 w-4" /> Zurück
+            </Button>
+            <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
+              {toolbarLabel ? (
+                <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-700">{toolbarLabel}</span>
+              ) : null}
+              <span className="rounded-full bg-rose-200 px-3 py-1 text-rose-800">{`${activeScopeProgress.completed}/${activeScopeProgress.total}`}</span>
+            </div>
           </div>
+          {infoMessage ? <p className="text-xs text-rose-600 sm:text-sm">{infoMessage}</p> : null}
         </div>
-        {infoMessage ? <p className="text-xs text-rose-600 sm:text-sm">{infoMessage}</p> : null}
-      </div>
-    </header>
+      </header>
+      <div
+        aria-hidden="true"
+        className="w-full"
+        style={{ height: detailToolbarHeight || DETAIL_TOOLBAR_FALLBACK_HEIGHT }}
+      />
+    </>
   ) : null;
 
   return (
