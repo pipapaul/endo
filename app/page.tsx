@@ -43,7 +43,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -1501,6 +1501,7 @@ export default function HomePage() {
 
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<"home" | "daily" | "weekly" | "monthly">("home");
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [persistWarning, setPersistWarning] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
@@ -2907,6 +2908,8 @@ export default function HomePage() {
     }
   }, [storageCompactPossible]);
   const installHintVisible = showInstallHint && !isStandalone;
+  const isHomeView = activeView === "home";
+  const currentDataView = isHomeView ? "daily" : activeView;
 
   return (
     <>
@@ -2949,107 +2952,139 @@ export default function HomePage() {
       )}
       <SectionCompletionContext.Provider value={sectionCompletionContextValue}>
         <main className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8">
-        <header className="flex flex-col gap-2">
-          <h1 className="text-2xl font-semibold text-rose-900">Endometriose Symptomtracker</h1>
-          <p className="text-sm text-rose-700">Dein persönlicher Endometriose tracker</p>
-          {infoMessage && <p className="text-sm font-medium text-rose-600">{infoMessage}</p>}
-        </header>
-
-        {storageCompactPossible && !storageDetailsExpanded ? (
-          <button
-            type="button"
-            onClick={() => setStorageDetailsExpanded(true)}
-            className="flex w-fit items-center gap-2 rounded-full bg-emerald-100 px-4 py-2 text-[11px] font-semibold text-emerald-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2"
-          >
-            <ShieldCheck className="h-3.5 w-3.5" /> lokale Speicherung aktiv
-          </button>
-        ) : (
-          <div className="space-y-3 rounded-lg border border-rose-200 bg-white p-4 shadow-sm">
-            {storageCompactPossible && (
-              <div className="flex items-start justify-between gap-2 rounded-md bg-emerald-50 p-3 text-xs text-emerald-700">
-                <p className="font-medium">Solange die App installiert ist, bleiben die Daten dauerhaft gespeichert.</p>
+          {isHomeView ? (
+            <div className="flex flex-col gap-6">
+              <header className="space-y-1">
+                <h1 className="text-3xl font-semibold text-rose-900">Endometriose Symptomtracker</h1>
+                <p className="text-lg text-rose-700">Hallo</p>
+                {infoMessage && <p className="text-sm font-medium text-rose-600">{infoMessage}</p>}
+              </header>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <Button
+                  type="button"
+                  onClick={() => setActiveView("daily")}
+                  className="h-auto w-full flex-col items-start justify-start gap-2 rounded-2xl bg-rose-600 px-6 py-5 text-left text-white shadow-lg transition hover:bg-rose-500 sm:col-span-3 lg:col-span-2"
+                >
+                  <span className="text-lg font-semibold">Täglicher Check-in</span>
+                  <span className="text-sm text-rose-50/80">In unter einer Minute erledigt</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setActiveView("weekly")}
+                  className="h-auto w-full flex-col items-start justify-start gap-2 rounded-2xl border-rose-200 px-5 py-4 text-left text-rose-800 transition hover:border-rose-300 hover:text-rose-900"
+                >
+                  <span className="text-base font-semibold">Wöchentlich</span>
+                  {showWeeklyReminderBadge ? (
+                    <Badge className="bg-amber-400 text-rose-900" aria-label="Wöchentlicher Check-in fällig">
+                      fällig
+                    </Badge>
+                  ) : (
+                    <span className="text-xs text-rose-500">Reflexion der Woche</span>
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setActiveView("monthly")}
+                  className="h-auto w-full flex-col items-start justify-start gap-2 rounded-2xl border-rose-200 px-5 py-4 text-left text-rose-800 transition hover:border-rose-300 hover:text-rose-900"
+                >
+                  <span className="text-base font-semibold">Monatlich</span>
+                  {showMonthlyReminderBadge ? (
+                    <Badge className="bg-amber-400 text-rose-900" aria-label="Monatlicher Check-in fällig">
+                      fällig
+                    </Badge>
+                  ) : (
+                    <span className="text-xs text-rose-500">Langfristige Trends</span>
+                  )}
+                </Button>
+              </div>
+              {storageCompactPossible && !storageDetailsExpanded ? (
                 <button
                   type="button"
-                  onClick={() => setStorageDetailsExpanded(false)}
-                  className="text-[11px] font-semibold uppercase tracking-wide text-emerald-600 transition hover:text-emerald-700"
+                  onClick={() => setStorageDetailsExpanded(true)}
+                  className="flex w-fit items-center gap-2 rounded-full bg-emerald-100 px-4 py-2 text-[11px] font-semibold text-emerald-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2"
                 >
-                  Ausblenden
+                  <ShieldCheck className="h-3.5 w-3.5" /> lokale Speicherung aktiv
                 </button>
-              </div>
-            )}
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="flex flex-wrap items-center gap-3 text-sm text-rose-700">
-                <span className="flex items-center gap-2 font-medium text-rose-800">
-                  <HardDrive className="h-4 w-4 text-rose-500" /> Speicher: {storageDriverText}
-                </span>
-                <span className={cn("flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold", persistedBadgeClass)}>
-                  <ShieldCheck className="h-3.5 w-3.5" /> {persistedLabel}
-                </span>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button type="button" variant="outline" className="text-rose-700" onClick={handleBackupExport}>
-                  <Download className="mr-2 h-4 w-4" /> Daten exportieren
-                </Button>
-                <label className="flex cursor-pointer items-center gap-2 rounded-md border border-rose-200 px-3 py-2 text-sm text-rose-700 hover:bg-rose-50">
-                  <Upload className="h-4 w-4" /> Daten importieren
-                  <input type="file" accept="application/json" className="hidden" onChange={handleBackupImport} />
-                </label>
-              </div>
-            </div>
-            {storageStatusMessages.length > 0 && (
-              <div className="space-y-1 text-xs text-amber-700">
-                {storageStatusMessages.map((message) => (
-                  <div key={message} className="flex items-start gap-2">
-                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-500" />
-                    <span>{message}</span>
+              ) : (
+                <div className="space-y-3 rounded-lg border border-rose-200 bg-white p-4 shadow-sm">
+                  {storageCompactPossible && (
+                    <div className="flex items-start justify-between gap-2 rounded-md bg-emerald-50 p-3 text-xs text-emerald-700">
+                      <p className="font-medium">Solange die App installiert ist, bleiben die Daten dauerhaft gespeichert.</p>
+                      <button
+                        type="button"
+                        onClick={() => setStorageDetailsExpanded(false)}
+                        className="text-[11px] font-semibold uppercase tracking-wide text-emerald-600 transition hover:text-emerald-700"
+                      >
+                        Ausblenden
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div className="flex flex-wrap items-center gap-3 text-sm text-rose-700">
+                      <span className="flex items-center gap-2 font-medium text-rose-800">
+                        <HardDrive className="h-4 w-4 text-rose-500" /> Speicher: {storageDriverText}
+                      </span>
+                      <span className={cn("flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold", persistedBadgeClass)}>
+                        <ShieldCheck className="h-3.5 w-3.5" /> {persistedLabel}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button type="button" variant="outline" className="text-rose-700" onClick={handleBackupExport}>
+                        <Download className="mr-2 h-4 w-4" /> Daten exportieren
+                      </Button>
+                      <label className="flex cursor-pointer items-center gap-2 rounded-md border border-rose-200 px-3 py-2 text-sm text-rose-700 hover:bg-rose-50">
+                        <Upload className="h-4 w-4" /> Daten importieren
+                        <input type="file" accept="application/json" className="hidden" onChange={handleBackupImport} />
+                      </label>
+                    </div>
                   </div>
-                ))}
+                  {storageStatusMessages.length > 0 && (
+                    <div className="space-y-1 text-xs text-amber-700">
+                      {storageStatusMessages.map((message) => (
+                        <div key={message} className="flex items-start gap-2">
+                          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-500" />
+                          <span>{message}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {installHintVisible && (
+                    <div className="flex flex-col gap-2 rounded-md bg-rose-50 p-3 text-xs text-rose-700 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="flex items-center gap-2 font-medium text-rose-700">
+                        <Smartphone className="h-4 w-4 text-rose-500" /> Zum Home-Bildschirm hinzufügen für Offline-Nutzung.
+                      </span>
+                      {installPrompt ? (
+                        <Button type="button" size="sm" onClick={handleInstallClick} className="self-start sm:self-auto">
+                          <Home className="mr-2 h-4 w-4" /> Installieren
+                        </Button>
+                      ) : (
+                        <span className="rounded-full bg-rose-100 px-3 py-1 text-[11px] font-medium text-rose-600">
+                          Im Browser-Menü „Zum Home-Bildschirm“ wählen.
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setActiveView("home")}
+                  className="flex items-center gap-2 text-rose-700 hover:text-rose-800"
+                >
+                  <ChevronLeft className="h-4 w-4" /> Zurück
+                </Button>
+                {infoMessage && <p className="text-sm font-medium text-rose-600">{infoMessage}</p>}
               </div>
-            )}
-            {installHintVisible && (
-              <div className="flex flex-col gap-2 rounded-md bg-rose-50 p-3 text-xs text-rose-700 sm:flex-row sm:items-center sm:justify-between">
-                <span className="flex items-center gap-2 font-medium text-rose-700">
-                  <Smartphone className="h-4 w-4 text-rose-500" /> Zum Home-Bildschirm hinzufügen für Offline-Nutzung.
-                </span>
-                {installPrompt ? (
-                  <Button type="button" size="sm" onClick={handleInstallClick} className="self-start sm:self-auto">
-                    <Home className="mr-2 h-4 w-4" /> Installieren
-                  </Button>
-                ) : (
-                  <span className="rounded-full bg-rose-100 px-3 py-1 text-[11px] font-medium text-rose-600">
-                    Im Browser-Menü „Zum Home-Bildschirm“ wählen.
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-      <Tabs defaultValue="daily" className="w-full">
-        <TabsList className="grid h-auto w-full grid-cols-1 gap-2 bg-rose-100 text-rose-700 sm:h-10 sm:grid-cols-3">
-          <TabsTrigger value="daily" className="gap-2">
-            Täglicher Check-in
-          </TabsTrigger>
-          <TabsTrigger value="weekly" className="gap-2">
-            Wöchentlich
-            {showWeeklyReminderBadge ? (
-              <Badge className="bg-amber-400 text-rose-900" aria-label="Wöchentlicher Check-in fällig">
-                <span className="inline-block h-2 w-2 rounded-full bg-rose-600" aria-hidden="true" />
-              </Badge>
-            ) : null}
-          </TabsTrigger>
-          <TabsTrigger value="monthly" className="gap-2">
-            Monatlich
-            {showMonthlyReminderBadge ? (
-              <Badge className="bg-amber-400 text-rose-900" aria-label="Monatlicher Check-in fällig">
-                fällig
-              </Badge>
-            ) : null}
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="daily" className="space-y-6">
-          <SectionScopeContext.Provider value={`daily:${dailyDraft.date}`}>
+              <Tabs defaultValue="daily" value={currentDataView} className="w-full">
+                <TabsContent value="daily" className="space-y-6">
+                  <SectionScopeContext.Provider value={`daily:${dailyDraft.date}`}>
           <Section
             title="Tagescheck-in"
             description="Schmerz → Körperkarte → Symptome → Blutung → Medikation → Schlaf → Darm/Blase → Notizen"
@@ -4714,8 +4749,8 @@ export default function HomePage() {
               </div>
             </div>
           </Section>
-          </SectionScopeContext.Provider>
-        </TabsContent>
+                  </SectionScopeContext.Provider>
+                </TabsContent>
         <TabsContent value="weekly" className="space-y-6">
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
             <p className="font-medium text-amber-900">{weeklyBannerText}</p>
@@ -5052,7 +5087,9 @@ export default function HomePage() {
           </Section>
           </SectionScopeContext.Provider>
         </TabsContent>
-      </Tabs>
+              </Tabs>
+            </div>
+          )}
       </main>
     </SectionCompletionContext.Provider>
     </>
