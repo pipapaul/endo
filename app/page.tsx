@@ -263,6 +263,8 @@ const BRISTOL_TYPES = [
   { value: 7, label: "Typ 7" },
 ] as const;
 
+const MS_PER_DAY = 86_400_000;
+
 const formatDate = (date: Date) => {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
@@ -1518,6 +1520,11 @@ export default function HomePage() {
     [dailyEntries, dailyDraft.date]
   );
 
+  const hasDailyEntryForToday = useMemo(
+    () => dailyEntries.some((entry) => entry.date === today),
+    [dailyEntries, today]
+  );
+
   useEffect(() => {
     if (!storageReady) return;
     if (isDailyDirty) return;
@@ -1719,6 +1726,15 @@ export default function HomePage() {
 
   const currentMonth = useMemo(() => today.slice(0, 7), [today]);
   const todayDate = useMemo(() => parseIsoDate(today), [today]);
+  const todayLabel = useMemo(() => {
+    if (!todayDate) return null;
+    return todayDate.toLocaleDateString("de-DE", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  }, [todayDate]);
 
   const isSunday = useMemo(() => {
     if (!todayDate) return false;
@@ -1745,6 +1761,50 @@ export default function HomePage() {
     () => monthlyEntries.some((entry) => entry.month === currentMonth),
     [monthlyEntries, currentMonth]
   );
+
+  const latestWeeklyReport = useMemo(
+    () =>
+      weeklyReports.reduce<WeeklyReport | null>((latest, report) => {
+        if (!latest || report.submittedAt > latest.submittedAt) {
+          return report;
+        }
+        return latest;
+      }, null),
+    [weeklyReports]
+  );
+
+  const daysUntilWeeklySuggested = useMemo(() => {
+    if (!todayDate) return null;
+    const startOfToday = new Date(todayDate.getFullYear(), todayDate.getMonth(), todayDate.getDate());
+    if (!latestWeeklyReport) {
+      const daysUntilSunday = (7 - startOfToday.getDay()) % 7;
+      return daysUntilSunday;
+    }
+    const lastCompleted = new Date(latestWeeklyReport.submittedAt);
+    const startOfLast = new Date(
+      lastCompleted.getFullYear(),
+      lastCompleted.getMonth(),
+      lastCompleted.getDate()
+    );
+    const nextDue = new Date(startOfLast);
+    nextDue.setDate(nextDue.getDate() + 7);
+    const diffMs = nextDue.getTime() - startOfToday.getTime();
+    const diffDays = Math.ceil(diffMs / MS_PER_DAY);
+    return diffDays > 0 ? diffDays : 0;
+  }, [todayDate, latestWeeklyReport]);
+
+  const weeklyInfoText = useMemo(() => {
+    if (daysUntilWeeklySuggested === null) {
+      return "Starte, wann immer du bereit bist";
+    }
+    if (daysUntilWeeklySuggested <= 0) {
+      return "Heute wieder ausfüllen";
+    }
+    if (daysUntilWeeklySuggested === 1) {
+      return "In 1 Tag wieder ausfüllen";
+    }
+    return `In ${daysUntilWeeklySuggested} Tagen wieder ausfüllen`;
+  }, [daysUntilWeeklySuggested]);
 
   const goToPreviousDay = useCallback(() => {
     setDailyDraft((prev) => {
@@ -2525,9 +2585,39 @@ export default function HomePage() {
     if (!latestCycleStartDate || !todayDate) return false;
     const diffMs = todayDate.getTime() - latestCycleStartDate.getTime();
     if (diffMs < 0) return false;
-    const diffDays = Math.floor(diffMs / 86_400_000);
+    const diffDays = Math.floor(diffMs / MS_PER_DAY);
     return diffDays >= 28;
   }, [latestCycleStartDate, todayDate]);
+
+  const daysUntilMonthlySuggested = useMemo(() => {
+    if (!todayDate || !latestCycleStartDate) return null;
+    const startOfToday = new Date(todayDate.getFullYear(), todayDate.getMonth(), todayDate.getDate());
+    const cycleStart = new Date(
+      latestCycleStartDate.getFullYear(),
+      latestCycleStartDate.getMonth(),
+      latestCycleStartDate.getDate()
+    );
+    const diffMs = startOfToday.getTime() - cycleStart.getTime();
+    if (diffMs <= 0) {
+      return 0;
+    }
+    const diffDays = Math.floor(diffMs / MS_PER_DAY);
+    const remaining = 28 - diffDays;
+    return remaining > 0 ? remaining : 0;
+  }, [todayDate, latestCycleStartDate]);
+
+  const monthlyInfoText = useMemo(() => {
+    if (daysUntilMonthlySuggested === null) {
+      return "Trage deine Periode ein, um Erinnerungen zu erhalten";
+    }
+    if (daysUntilMonthlySuggested <= 0) {
+      return "Heute wieder ausfüllen";
+    }
+    if (daysUntilMonthlySuggested === 1) {
+      return "In 1 Tag wieder ausfüllen";
+    }
+    return `In ${daysUntilMonthlySuggested} Tagen wieder ausfüllen`;
+  }, [daysUntilMonthlySuggested]);
 
   const showWeeklyReminderBadge =
     storageReady && weeklyReportsReady && isSunday && !hasWeeklyReportForCurrentWeek;
@@ -2956,7 +3046,9 @@ export default function HomePage() {
             <div className="flex flex-col gap-6">
               <header className="space-y-1">
                 <h1 className="text-3xl font-semibold text-rose-900">Endometriose Symptomtracker</h1>
-                <p className="text-lg text-rose-700">Hallo</p>
+                <p className="text-lg text-rose-700">
+                  {todayLabel ? `Hallo, heute ist der ${todayLabel}` : "Hallo"}
+                </p>
                 {infoMessage && <p className="text-sm font-medium text-rose-600">{infoMessage}</p>}
               </header>
               <div className="grid gap-3 sm:grid-cols-3">
@@ -2967,6 +3059,12 @@ export default function HomePage() {
                 >
                   <span className="text-lg font-semibold">Täglicher Check-in</span>
                   <span className="text-sm text-rose-50/80">In unter einer Minute erledigt</span>
+                  {hasDailyEntryForToday && (
+                    <span className="flex items-center gap-1 text-sm font-medium text-rose-50">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-200" />
+                      Heute erledigt
+                    </span>
+                  )}
                 </Button>
                 <Button
                   type="button"
@@ -2975,13 +3073,14 @@ export default function HomePage() {
                   className="h-auto w-full flex-col items-start justify-start gap-2 rounded-2xl border-rose-200 px-5 py-4 text-left text-rose-800 transition hover:border-rose-300 hover:text-rose-900"
                 >
                   <span className="text-base font-semibold">Wöchentlich</span>
-                  {showWeeklyReminderBadge ? (
-                    <Badge className="bg-amber-400 text-rose-900" aria-label="Wöchentlicher Check-in fällig">
-                      fällig
-                    </Badge>
-                  ) : (
-                    <span className="text-xs text-rose-500">Reflexion der Woche</span>
-                  )}
+                  <div className="flex flex-col gap-1">
+                    {showWeeklyReminderBadge && (
+                      <Badge className="bg-amber-400 text-rose-900" aria-label="Wöchentlicher Check-in fällig">
+                        fällig
+                      </Badge>
+                    )}
+                    <span className="text-xs text-rose-500">{weeklyInfoText}</span>
+                  </div>
                 </Button>
                 <Button
                   type="button"
@@ -2990,13 +3089,14 @@ export default function HomePage() {
                   className="h-auto w-full flex-col items-start justify-start gap-2 rounded-2xl border-rose-200 px-5 py-4 text-left text-rose-800 transition hover:border-rose-300 hover:text-rose-900"
                 >
                   <span className="text-base font-semibold">Monatlich</span>
-                  {showMonthlyReminderBadge ? (
-                    <Badge className="bg-amber-400 text-rose-900" aria-label="Monatlicher Check-in fällig">
-                      fällig
-                    </Badge>
-                  ) : (
-                    <span className="text-xs text-rose-500">Langfristige Trends</span>
-                  )}
+                  <div className="flex flex-col gap-1">
+                    {showMonthlyReminderBadge && (
+                      <Badge className="bg-amber-400 text-rose-900" aria-label="Monatlicher Check-in fällig">
+                        fällig
+                      </Badge>
+                    )}
+                    <span className="text-xs text-rose-500">{monthlyInfoText}</span>
+                  </div>
                 </Button>
               </div>
               {storageCompactPossible && !storageDetailsExpanded ? (
