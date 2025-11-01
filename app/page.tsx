@@ -3041,7 +3041,7 @@ export default function HomePage() {
 
   const detailToolbar = !isHomeView ? (
     <header
-      className="sticky top-0 z-30 w-full border-b border-rose-100 bg-white/90 shadow-sm backdrop-blur supports-[backdrop-filter:none]:bg-white"
+      className="sticky top-0 z-40 w-full border-b border-rose-100 bg-white/90 shadow-sm backdrop-blur supports-[backdrop-filter:none]:bg-white"
       style={{ backgroundColor: "var(--endo-bg, #fff)" }}
     >
       <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-3">
