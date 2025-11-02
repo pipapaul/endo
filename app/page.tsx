@@ -978,10 +978,7 @@ const SYMPTOM_MODULE_TOGGLES: Array<{
   key: keyof FeatureFlags;
   label: string;
   term: TermDescriptor;
-}> = [
-  { key: "moduleHeadache", label: "Kopfschmerz/Migräne", term: MODULE_TERMS.headacheOpt.present },
-  { key: "moduleDizziness", label: "Schwindel", term: MODULE_TERMS.dizzinessOpt.present },
-];
+}> = [{ key: "moduleDizziness", label: "Schwindel", term: MODULE_TERMS.dizzinessOpt.present }];
 
 function ModuleToggleRow({
   label,
