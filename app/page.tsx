@@ -2640,6 +2640,7 @@ export default function HomePage() {
     setSensorsVisible(false);
     setExploratoryVisible(false);
     setIssues([]);
+    setActiveView("home");
   };
 
   const handleMonthlySubmit = () => {
@@ -3065,6 +3066,30 @@ export default function HomePage() {
       }));
   }, [annotatedDailyEntries]);
 
+  const todayCycleDay = useMemo(() => {
+    const todayEntry = annotatedDailyEntries.find(({ entry }) => entry.date === today);
+    return todayEntry?.cycleDay ?? null;
+  }, [annotatedDailyEntries, today]);
+
+  const todayCycleComparisonBadge = useMemo((): { label: string; className: string } | null => {
+    if (!hasDailyEntryForToday) return null;
+    const todayEntry = annotatedDailyEntries.find(({ entry }) => entry.date === today);
+    if (!todayEntry || !todayEntry.cycleDay) return null;
+    const painValue = typeof todayEntry.entry.painNRS === "number" ? todayEntry.entry.painNRS : null;
+    if (typeof painValue !== "number") return null;
+    const overlayEntry = cycleOverlay.find((item) => item.cycleDay === todayEntry.cycleDay);
+    if (!overlayEntry || typeof overlayEntry.painAvg !== "number") return null;
+    const diff = painValue - overlayEntry.painAvg;
+    const tolerance = 0.1;
+    if (diff < -tolerance) {
+      return { label: "Besser als Durchschnitt", className: "bg-emerald-100 text-emerald-700" };
+    }
+    if (diff > tolerance) {
+      return { label: "Schlechter als Durchschnitt", className: "bg-rose-100 text-rose-700" };
+    }
+    return { label: "Wie der Durchschnitt", className: "bg-amber-100 text-amber-700" };
+  }, [annotatedDailyEntries, cycleOverlay, hasDailyEntryForToday, today]);
+
   const weekdayOverlay = useMemo(() => {
     const order = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
     const bucket = new Map<string, { painSum: number; count: number }>();
@@ -3448,9 +3473,24 @@ export default function HomePage() {
             <div className="flex flex-col gap-6">
               <header className="space-y-1">
                 <h1 className="text-3xl font-semibold text-rose-900">Endometriose Symptomtracker</h1>
-                <p className="text-lg text-rose-700">
-                  {todayLabel ? `Hallo, heute ist der ${todayLabel}` : "Hallo"}
-                </p>
+                <div className="flex flex-wrap items-center gap-2 text-sm text-rose-700">
+                  <Badge
+                    className="bg-rose-200 text-rose-700"
+                    title={todayLabel ?? undefined}
+                    aria-label={
+                      todayCycleDay !== null
+                        ? `Zyklustag ${todayCycleDay}${todayLabel ? ` – ${todayLabel}` : ""}`
+                        : todayLabel ?? undefined
+                    }
+                  >
+                    {todayCycleDay !== null ? `Zyklustag ${todayCycleDay}` : "Zyklustag –"}
+                  </Badge>
+                  {todayCycleComparisonBadge ? (
+                    <Badge className={todayCycleComparisonBadge.className}>
+                      {todayCycleComparisonBadge.label}
+                    </Badge>
+                  ) : null}
+                </div>
                 {infoMessage && <p className="text-sm font-medium text-rose-600">{infoMessage}</p>}
               </header>
               {cycleOverview ? <CycleOverviewMiniChart data={cycleOverview} /> : null}
