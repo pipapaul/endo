@@ -863,11 +863,7 @@ function ScoreInput({
           <span>{max}</span>
         </div>
       </div>
-      <SliderValueDisplay
-        value={value}
-        label="Aktueller Wert"
-        className="sm:self-stretch"
-      />
+      <SliderValueDisplay value={value} className="sm:self-stretch" />
     </div>
   );
   if (termKey) {
@@ -996,7 +992,7 @@ function NrsInput({ id, value, onChange }: { id: string; value: number; onChange
           <span>10 Stärkster Schmerz</span>
         </div>
       </div>
-      <SliderValueDisplay value={value} label="Aktueller Wert" className="sm:self-stretch" />
+      <SliderValueDisplay value={value} className="sm:self-stretch" />
     </div>
   );
 }

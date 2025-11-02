@@ -239,7 +239,6 @@ export function WeeklyPrompts({ value, onChange }: { value: PromptAnswers; onCha
                   <SliderValueDisplay
                     value={value}
                     unit="%"
-                    label="Aktueller Wert"
                     className="min-w-[6rem]"
                     valueClassName="text-3xl"
                   />
