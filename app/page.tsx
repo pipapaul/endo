@@ -1189,20 +1189,44 @@ function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>
   delete extra["ovulation_pain_side"];
   delete extra["ovulation_pain_intensity"];
 
-  if (!clone.painRegions || clone.painRegions.length === 0) {
+  if (Array.isArray(clone.painRegions) && clone.painRegions.length > 0) {
+    const allowedQualities = new Set(PAIN_QUALITIES);
+    clone.painRegions = clone.painRegions
+      .filter(
+        (region): region is NonNullable<DailyEntry["painRegions"]>[number] & Record<string, unknown> =>
+          Boolean(region) && typeof region === "object" && typeof region.regionId === "string"
+      )
+      .map((region) => {
+        const normalizedNrs =
+          typeof region.nrs === "number" ? Math.max(0, Math.min(10, Math.round(region.nrs))) : 0;
+        const normalizedQualities = Array.isArray(region.qualities)
+          ? (region.qualities.filter((quality): quality is DailyEntry["painQuality"][number] =>
+              allowedQualities.has(quality)
+            ) as DailyEntry["painQuality"])
+          : ([] as DailyEntry["painQuality"]);
+
+        return {
+          regionId: region.regionId,
+          nrs: normalizedNrs,
+          qualities: normalizedQualities,
+        } satisfies NonNullable<DailyEntry["painRegions"]>[number];
+      });
+  } else {
     const regions = Array.isArray(clone.painMapRegionIds) ? clone.painMapRegionIds : [];
+    const allowedQualities = new Set(PAIN_QUALITIES);
+    const qualities = Array.isArray(clone.painQuality)
+      ? (clone.painQuality.filter((quality): quality is DailyEntry["painQuality"][number] =>
+          allowedQualities.has(quality)
+        ) as DailyEntry["painQuality"])
+      : ([] as DailyEntry["painQuality"]);
+    const normalizedNrs =
+      typeof clone.painNRS === "number" ? Math.max(0, Math.min(10, Math.round(clone.painNRS))) : 0;
 
-    const qualities = Array.isArray(clone.painQuality) ? clone.painQuality : [];
-
-    const perRegion = regions.map((regionId) => ({
+    clone.painRegions = regions.map((regionId) => ({
       regionId,
-      nrs: typeof clone.painNRS === "number" ? clone.painNRS : 0,
-      qualities,
+      nrs: normalizedNrs,
+      qualities: [...qualities],
     }));
-
-    if (perRegion.length > 0) {
-      clone.painRegions = perRegion;
-    }
   }
 
   if (clone.impactNRS === undefined || clone.impactNRS === null) {
@@ -2566,6 +2590,30 @@ export default function HomePage() {
     });
   };
 
+  const updatePainRegionsFromSelection = useCallback(
+    (selectedIds: string[]) => {
+      setDailyDraft((prev) => {
+        const existing = prev.painRegions ?? [];
+        const nextList: NonNullable<DailyEntry["painRegions"]> = [];
+
+        selectedIds.forEach((id) => {
+          const found = existing.find((region) => region.regionId === id);
+          if (found) {
+            nextList.push(found);
+          } else {
+            nextList.push({ regionId: id, nrs: 0, qualities: [] });
+          }
+        });
+
+        return {
+          ...prev,
+          painRegions: nextList,
+        };
+      });
+    },
+    [setDailyDraft]
+  );
+
   const handleDailySubmit = () => {
     const payload: DailyEntry = {
       ...dailyDraft,
@@ -3768,35 +3816,13 @@ export default function HomePage() {
                       <TermField termKey="bodyMap">
                         <BodyMap
                           value={(dailyDraft.painRegions ?? []).map((region) => region.regionId)}
-                          onChange={(nextIds) => {
-                            setDailyDraft((prev) => {
-                              const existing = prev.painRegions ?? [];
-                              const nextList: NonNullable<DailyEntry["painRegions"]> = [];
-
-                              nextIds.forEach((id) => {
-                                const found = existing.find((r) => r.regionId === id);
-                                if (found) {
-                                  nextList.push(found);
-                                } else {
-                                  nextList.push({
-                                    regionId: id,
-                                    nrs: 0,
-                                    qualities: [],
-                                  });
-                                }
-                              });
-
-                              return {
-                                ...prev,
-                                painRegions: nextList,
-                              };
-                            });
-                          }}
+                          onChange={updatePainRegionsFromSelection}
                         />
+                        {renderIssuesForPath("painRegions")}
                         {renderIssuesForPath("painMapRegionIds")}
                       </TermField>
 
-                      {(dailyDraft.painRegions ?? []).map((region) => (
+                      {(dailyDraft.painRegions ?? []).map((region, regionIndex) => (
                         <div
                           key={region.regionId}
                           className="space-y-3 rounded-lg border border-rose-100 bg-white p-4"
@@ -3804,6 +3830,7 @@ export default function HomePage() {
                           <p className="font-medium text-rose-800">
                             Schmerzen in: {getRegionLabel(region.regionId)}
                           </p>
+                          {renderIssuesForPath(`painRegions[${regionIndex}].regionId`)}
                           <div className="space-y-2">
                             <Label className="text-xs text-rose-600" htmlFor={`region-nrs-${region.regionId}`}>
                               Intensität (0–10)
@@ -3828,6 +3855,7 @@ export default function HomePage() {
                                 });
                               }}
                             />
+                            {renderIssuesForPath(`painRegions[${regionIndex}].nrs`)}
                           </div>
                           <div className="space-y-2">
                             <Label className="text-xs text-rose-600">
@@ -3853,6 +3881,12 @@ export default function HomePage() {
                                 });
                               }}
                             />
+                            {renderIssuesForPath(`painRegions[${regionIndex}].qualities`)}
+                            {(region.qualities ?? []).map((_, qualityIndex) =>
+                              renderIssuesForPath(
+                                `painRegions[${regionIndex}].qualities[${qualityIndex}]`
+                              )
+                            )}
                           </div>
                         </div>
                       ))}
@@ -3874,7 +3908,7 @@ export default function HomePage() {
                           />
                         </div>
                       </TermField>
-                      {renderIssuesForPath("painNRS")}
+                      {renderIssuesForPath("impactNRS")}
                     </div>
 
                     <div className="space-y-4">
