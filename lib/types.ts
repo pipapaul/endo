@@ -8,6 +8,15 @@ export interface FeatureFlags {
 
 export interface DailyEntry {
   date: string; // ISO YYYY-MM-DD
+
+  // Neu:
+  painRegions?: Array<{
+    regionId: ID;
+    nrs: number;
+    qualities: DailyEntry["painQuality"];
+  }>;
+
+  impactNRS?: number;
   painNRS: number; // 0–10
   painQuality: ("krampfend" | "stechend" | "brennend" | "dumpf" | "ziehend" | "anders")[];
   painMapRegionIds: ID[];
