@@ -1178,6 +1178,28 @@ function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>
   delete extra["ovulation_pain_side"];
   delete extra["ovulation_pain_intensity"];
 
+  if (!clone.painRegions || clone.painRegions.length === 0) {
+    const regions = Array.isArray(clone.painMapRegionIds) ? clone.painMapRegionIds : [];
+
+    const qualities = Array.isArray(clone.painQuality) ? clone.painQuality : [];
+
+    const perRegion = regions.map((regionId) => ({
+      regionId,
+      nrs: typeof clone.painNRS === "number" ? clone.painNRS : 0,
+      qualities,
+    }));
+
+    if (perRegion.length > 0) {
+      clone.painRegions = perRegion;
+    }
+  }
+
+  if (clone.impactNRS === undefined || clone.impactNRS === null) {
+    if (typeof clone.painNRS === "number") {
+      clone.impactNRS = clone.painNRS;
+    }
+  }
+
   return clone;
 }
 
