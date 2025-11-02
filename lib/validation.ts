@@ -85,7 +85,16 @@ export function validateDailyEntry(entry: DailyEntry): ValidationIssue[] {
     });
   }
 
-  const allowedPainQuality = new Set(["krampfend", "stechend", "brennend", "dumpf", "ziehend", "anders"]);
+  const allowedPainQuality = new Set([
+    "krampfend",
+    "stechend",
+    "brennend",
+    "dumpf",
+    "ziehend",
+    "anders",
+    "Migräne",
+    "Migräne mit Aura",
+  ]);
 
   if (Array.isArray(entry.painRegions) && entry.painRegions.length > 0) {
     entry.painRegions.forEach((region, idx) => {
