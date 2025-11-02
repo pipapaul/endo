@@ -2374,7 +2374,7 @@ export default function HomePage() {
       ? "Heute verwendete Tampons"
       : selectedPbacItem.product === "pad"
         ? "Heute verwendete Binden"
-        : `Heute verwendet: ${selectedPbacItem.label}`
+        : "Heute verwendete Produkte"
     : "Heute verwendete Produkte";
   const phqSeverity = monthlyDraft.mental?.phq9Severity ?? mapPhqSeverity(monthlyDraft.mental?.phq9);
   const gadSeverity = monthlyDraft.mental?.gad7Severity ?? mapGadSeverity(monthlyDraft.mental?.gad7);
