@@ -55,6 +55,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
+import { SliderValueDisplay } from "@/components/ui/slider-value-display";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -886,21 +887,10 @@ function ScoreInput({
           <span>{max}</span>
         </div>
       </div>
-      <Input
-        className="w-20"
-        type="number"
-        inputMode="numeric"
-        min={min}
-        max={max}
-        step={step}
+      <SliderValueDisplay
         value={value}
-        aria-describedby={rangeDescriptionId}
-        onChange={(event) => {
-          if (!disabled) {
-            onChange(Number(event.target.value));
-          }
-        }}
-        disabled={disabled}
+        label="Aktueller Wert"
+        className="sm:self-stretch"
       />
     </div>
   );
@@ -1030,24 +1020,7 @@ function NrsInput({ id, value, onChange }: { id: string; value: number; onChange
           <span>10 Stärkster Schmerz</span>
         </div>
       </div>
-      <Input
-        className="w-20"
-        type="number"
-        inputMode="numeric"
-        min={0}
-        max={10}
-        step={1}
-        value={value}
-        aria-describedby={rangeDescriptionId}
-        onChange={(event) => {
-          const parsed = Number(event.target.value);
-          if (Number.isNaN(parsed)) {
-            onChange(0);
-            return;
-          }
-          onChange(Math.max(0, Math.min(10, Math.round(parsed))));
-        }}
-      />
+      <SliderValueDisplay value={value} label="Aktueller Wert" className="sm:self-stretch" />
     </div>
   );
 }
@@ -2396,6 +2369,13 @@ export default function HomePage() {
     pbacSelection.product && pbacSelection.saturation
       ? findPbacProductItem(pbacSelection.product, pbacSelection.saturation)
       : null;
+  const pbacCountLabel = selectedPbacItem
+    ? selectedPbacItem.product === "tampon"
+      ? "Heute verwendete Tampons"
+      : selectedPbacItem.product === "pad"
+        ? "Heute verwendete Binden"
+        : "Heute verwendete Produkte"
+    : "Heute verwendete Produkte";
   const phqSeverity = monthlyDraft.mental?.phq9Severity ?? mapPhqSeverity(monthlyDraft.mental?.phq9);
   const gadSeverity = monthlyDraft.mental?.gad7Severity ?? mapGadSeverity(monthlyDraft.mental?.gad7);
 
@@ -4220,7 +4200,7 @@ export default function HomePage() {
                       {pbacStep === 3 && selectedPbacItem && (
                         <div className="space-y-4">
                           <Labeled
-                            label={`Anzahl ${selectedPbacItem.label}`}
+                            label={pbacCountLabel}
                             tech={TERMS.pbac.tech}
                             help={TERMS.pbac.help}
                             htmlFor="pbac-count"
@@ -4242,7 +4222,11 @@ export default function HomePage() {
                                 <span>0</span>
                                 <span>12</span>
                               </div>
-                              <p className="text-sm text-rose-700">Aktuelle Anzahl: {pbacCountDraft}</p>
+                              <SliderValueDisplay
+                                value={pbacCountDraft}
+                                label="Aktuelle Anzahl"
+                                className="w-full sm:w-auto"
+                              />
                               {pbacCountDraft === 12 ? (
                                 <p id={pbacSliderWarningId} className="text-sm font-medium text-rose-800">
                                   Bei mehr als zwölf bitte ärztlich abklären.
