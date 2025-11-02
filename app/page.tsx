@@ -266,6 +266,141 @@ const PBAC_DEFAULT_COUNTS = PBAC_ITEMS.reduce<PbacCounts>((acc, item) => {
   return acc;
 }, {} as PbacCounts);
 
+type CycleOverviewPoint = {
+  date: string;
+  cycleDay: number | null;
+  painNRS: number;
+  pbacScore: number | null;
+  isBleeding: boolean;
+  ovulationPositive: boolean;
+  ovulationPainIntensity: number | null;
+};
+
+type CycleOverviewData = {
+  startDate: string;
+  points: CycleOverviewPoint[];
+};
+
+const formatShortGermanDate = (iso: string) => {
+  const parsed = parseIsoDate(iso);
+  if (!parsed) return iso;
+  return parsed.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+};
+
+const describeBleedingLevel = (point: CycleOverviewPoint) => {
+  if (!point.isBleeding) {
+    return { className: "bg-rose-200", height: 0, label: "keine Blutung" };
+  }
+  const score = point.pbacScore ?? 0;
+  if (score >= 100) {
+    return { className: "bg-rose-600", height: 90, label: "starke Blutung" };
+  }
+  if (score >= 50) {
+    return { className: "bg-rose-500", height: 65, label: "mittlere Blutung" };
+  }
+  if (score > 0) {
+    return { className: "bg-rose-400", height: 40, label: "leichte Blutung" };
+  }
+  return { className: "bg-rose-300", height: 24, label: "Blutung ohne PBAC" };
+};
+
+const computePainHeight = (pain: number) => {
+  if (!Number.isFinite(pain)) return 0;
+  return Math.max(0, Math.min(100, Math.round((pain / 10) * 100)));
+};
+
+const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
+  if (!data.points.length) return null;
+
+  return (
+    <section
+      className="rounded-2xl border border-rose-200 bg-white/70 p-4 shadow-sm backdrop-blur"
+      role="group"
+      aria-labelledby="cycle-overview-heading"
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <div>
+          <p id="cycle-overview-heading" className="text-xs font-semibold uppercase tracking-wide text-rose-500">
+            Aktueller Zyklus
+          </p>
+          <p className="text-lg font-semibold text-rose-900">
+            Start {formatShortGermanDate(data.startDate)}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-[11px] text-rose-600">
+          <span className="flex items-center gap-1">
+            <span className="block h-3 w-3 rounded-full bg-rose-700" aria-hidden /> Schmerz
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="block h-3 w-3 rounded bg-rose-400" aria-hidden /> Blutung
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="block h-3 w-3 rounded-full bg-amber-300" aria-hidden /> Eisprung
+          </span>
+        </div>
+      </div>
+      <div className="mt-4 flex items-end gap-4 overflow-x-auto pb-1">
+        {data.points.map((point) => {
+          const bleeding = describeBleedingLevel(point);
+          const painHeight = computePainHeight(point.painNRS);
+          const ovulationSize = point.ovulationPainIntensity
+            ? 16 + Math.min(12, point.ovulationPainIntensity * 1.5)
+            : 16;
+          const columnLabel = `ZT ${point.cycleDay ?? "?"}: Schmerz ${point.painNRS}/10, ${bleeding.label}${
+            point.ovulationPositive ? ", Eisprung markiert" : ""
+          }`;
+
+          return (
+            <div key={point.date} className="flex flex-col items-center gap-2 text-[10px] text-rose-500">
+              {point.cycleDay === 1 ? (
+                <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-rose-600">
+                  Zyklusstart
+                </span>
+              ) : (
+                <span className="h-[18px]" />
+              )}
+              <div
+                className="relative flex h-28 w-12 flex-col items-center justify-end rounded-2xl bg-rose-100/80 p-1"
+                aria-label={columnLabel}
+              >
+                <div
+                  className={cn("absolute bottom-1 left-1 right-1 rounded-b-xl transition-colors", bleeding.className)}
+                  style={{ height: `${bleeding.height}%` }}
+                />
+                <div className="relative z-10 flex w-full justify-center">
+                  <div
+                    className="w-2 rounded-full bg-rose-700"
+                    style={{ height: `${Math.max(painHeight, 6)}%` }}
+                    aria-hidden
+                  />
+                </div>
+                {point.ovulationPositive ? (
+                  <div
+                    className="absolute flex items-center justify-center rounded-full bg-amber-300 ring-2 ring-white"
+                    style={{
+                      width: `${ovulationSize}px`,
+                      height: `${ovulationSize}px`,
+                      top: `-${ovulationSize / 2}px`,
+                      left: "50%",
+                      transform: "translateX(-50%)",
+                    }}
+                  >
+                    <span className="sr-only">Eisprung</span>
+                  </div>
+                ) : null}
+              </div>
+              <div className="flex flex-col items-center text-[9px] text-rose-400">
+                <span className="font-semibold text-rose-600">ZT {point.cycleDay ?? "–"}</span>
+                <span>{formatShortGermanDate(point.date)}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+};
+
 const BRISTOL_TYPES = [
   { value: 1, label: "Typ 1" },
   { value: 2, label: "Typ 2" },
@@ -1794,6 +1929,77 @@ export default function HomePage() {
     return cycleDay;
   }, [dailyEntries, dailyDraft, isDailyDirty]);
 
+  const cycleOverview = useMemo((): CycleOverviewData | null => {
+    const entries = dailyEntries.slice();
+    if (dailyDraft.date) {
+      const existingIndex = entries.findIndex((entry) => entry.date === dailyDraft.date);
+      if (existingIndex >= 0) {
+        if (isDailyDirty) {
+          entries[existingIndex] = dailyDraft;
+        }
+      } else {
+        entries.push(dailyDraft);
+      }
+    }
+
+    const sorted = entries
+      .filter((entry) => entry.date)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    if (!sorted.length) return null;
+
+    const enriched: CycleOverviewPoint[] = [];
+    let cycleDay: number | null = null;
+    let previousDate: Date | null = null;
+    let previousBleeding = false;
+
+    for (const entry of sorted) {
+      const currentDate = parseIsoDate(entry.date);
+      if (!currentDate) continue;
+      const diffDays = previousDate ? Math.round((currentDate.getTime() - previousDate.getTime()) / 86_400_000) : 0;
+      if (cycleDay !== null && diffDays > 0) {
+        cycleDay += diffDays;
+      }
+      const isBleeding = entry.bleeding?.isBleeding ?? false;
+      const bleedingStartsToday = isBleeding && (!previousBleeding || diffDays > 1 || cycleDay === null);
+      if (bleedingStartsToday) {
+        cycleDay = 1;
+      }
+      enriched.push({
+        date: entry.date,
+        cycleDay,
+        painNRS: entry.painNRS ?? 0,
+        pbacScore: entry.bleeding?.pbacScore ?? null,
+        isBleeding,
+        ovulationPositive: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
+        ovulationPainIntensity: entry.ovulationPain?.intensity ?? null,
+      });
+      previousDate = currentDate;
+      previousBleeding = isBleeding;
+    }
+
+    const latestStartIndex = enriched.reduce((acc, point, index) => {
+      if (point.cycleDay === 1 && point.date <= today) {
+        return index;
+      }
+      return acc;
+    }, -1);
+
+    if (latestStartIndex === -1) {
+      return null;
+    }
+
+    let slice = enriched.slice(latestStartIndex, latestStartIndex + 14).filter((point) => point.date <= today);
+    if (!slice.length) {
+      slice = [enriched[latestStartIndex]];
+    }
+
+    return {
+      startDate: enriched[latestStartIndex].date,
+      points: slice,
+    };
+  }, [dailyDraft, dailyEntries, isDailyDirty, today]);
+
   const canGoToNextDay = useMemo(() => dailyDraft.date < today, [dailyDraft.date, today]);
 
   const currentIsoWeek = useMemo(() => {
@@ -3187,6 +3393,7 @@ export default function HomePage() {
                 <p className="text-lg text-rose-700">Hallo</p>
                 {infoMessage && <p className="text-sm font-medium text-rose-600">{infoMessage}</p>}
               </header>
+              {cycleOverview ? <CycleOverviewMiniChart data={cycleOverview} /> : null}
               <div className="grid gap-3 sm:grid-cols-3">
                 <Button
                   type="button"
