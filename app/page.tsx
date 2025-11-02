@@ -469,9 +469,16 @@ const parseIsoDate = (iso: string) => {
 
 const createEmptyDailyEntry = (date: string): DailyEntry => ({
   date,
+
+  // Neu
+  painRegions: [], // noch keine Regionen ausgewählt
+  impactNRS: 0, // empfundene Gesamtbeeinträchtigung heute
+
+  // Alt (wird weiter gepflegt, damit Charts usw. funktionieren)
   painNRS: 0,
   painQuality: [],
   painMapRegionIds: [],
+
   bleeding: { isBleeding: false },
   symptoms: {},
   meds: [],
