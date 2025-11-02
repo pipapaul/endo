@@ -49,24 +49,22 @@ body {
 .endo-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 1.75rem;
-  height: 1.75rem;
+  width: 2rem;
+  height: 2rem;
   border-radius: 9999px;
   background: var(--endo-accent);
-  border: 4px solid #fff;
-  box-shadow: 0 4px 8px rgba(225, 29, 72, 0.35);
+  box-shadow: 0 3px 8px rgba(225, 29, 72, 0.28);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   cursor: pointer;
-  margin-top: -0.5rem;
+  margin-top: -0.625rem;
 }
 
 .endo-slider::-moz-range-thumb {
-  width: 1.75rem;
-  height: 1.75rem;
+  width: 2rem;
+  height: 2rem;
   border-radius: 9999px;
   background: var(--endo-accent);
-  border: 4px solid #fff;
-  box-shadow: 0 4px 8px rgba(225, 29, 72, 0.35);
+  box-shadow: 0 3px 8px rgba(225, 29, 72, 0.28);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   cursor: pointer;
 }
@@ -76,7 +74,7 @@ body {
 .endo-slider:active::-moz-range-thumb,
 .endo-slider:focus-visible::-moz-range-thumb {
   transform: scale(1.05);
-  box-shadow: 0 6px 12px rgba(225, 29, 72, 0.4);
+  box-shadow: 0 5px 12px rgba(225, 29, 72, 0.32);
 }
 
 button:focus-visible,
