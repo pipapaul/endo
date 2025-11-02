@@ -93,14 +93,129 @@ type BackupPayload = {
   featureFlags: FeatureFlags;
 };
 
-const PAIN_QUALITIES: DailyEntry["painQuality"] = [
+const BASE_PAIN_QUALITIES = [
   "krampfend",
   "stechend",
   "brennend",
   "dumpf",
   "ziehend",
   "anders",
-];
+] as const;
+
+const MIGRAINE_PAIN_QUALITIES = ["Migräne", "Migräne mit Aura"] as const;
+
+const PAIN_QUALITIES: DailyEntry["painQuality"] = [...BASE_PAIN_QUALITIES] as DailyEntry["painQuality"];
+const HEAD_PAIN_QUALITIES: DailyEntry["painQuality"] = [
+  ...BASE_PAIN_QUALITIES,
+  ...MIGRAINE_PAIN_QUALITIES,
+] as DailyEntry["painQuality"];
+const ALL_PAIN_QUALITIES: DailyEntry["painQuality"] = HEAD_PAIN_QUALITIES;
+
+const HEAD_REGION_ID = "head";
+const MIGRAINE_LABEL = "Migräne";
+const MIGRAINE_WITH_AURA_LABEL = "Migräne mit Aura";
+const MIGRAINE_QUALITY_SET = new Set<string>(MIGRAINE_PAIN_QUALITIES);
+
+const sanitizeHeadRegionQualities = (
+  qualities: DailyEntry["painQuality"],
+  migraineEnabled: boolean
+): DailyEntry["painQuality"] => {
+  const base = Array.from(new Set(qualities)) as DailyEntry["painQuality"];
+  if (!migraineEnabled) {
+    return base.filter((quality) => !MIGRAINE_QUALITY_SET.has(quality)) as DailyEntry["painQuality"];
+  }
+  if (base.includes(MIGRAINE_WITH_AURA_LABEL)) {
+    return base.filter((quality) => quality !== MIGRAINE_LABEL) as DailyEntry["painQuality"];
+  }
+  return base;
+};
+
+const stripMigraineFromRegions = (
+  regions: DailyEntry["painRegions"] | undefined
+): DailyEntry["painRegions"] | undefined => {
+  if (!regions) return regions;
+  let changed = false;
+  const nextRegions = regions.map((region) => {
+    if (region.regionId !== HEAD_REGION_ID) {
+      return region;
+    }
+    const original = region.qualities ?? [];
+    const filtered = original.filter((quality) => !MIGRAINE_QUALITY_SET.has(quality)) as DailyEntry["painQuality"];
+    if (filtered.length === original.length) {
+      return region;
+    }
+    changed = true;
+    return { ...region, qualities: filtered };
+  });
+  return changed ? nextRegions : regions;
+};
+
+const mergeHeadacheOptIntoPainRegions = (
+  regions: DailyEntry["painRegions"] | undefined,
+  headacheOpt: DailyEntry["headacheOpt"] | undefined
+): DailyEntry["painRegions"] | undefined => {
+  if (!headacheOpt?.present) {
+    return regions;
+  }
+  const desiredQuality = headacheOpt.aura ? MIGRAINE_WITH_AURA_LABEL : MIGRAINE_LABEL;
+  const targetNrs =
+    typeof headacheOpt.nrs === "number" ? Math.max(0, Math.min(10, Math.round(headacheOpt.nrs))) : 0;
+
+  if (!regions || regions.length === 0) {
+    return [
+      { regionId: HEAD_REGION_ID, nrs: targetNrs, qualities: [desiredQuality] as DailyEntry["painQuality"] },
+    ];
+  }
+
+  const headIndex = regions.findIndex((region) => region.regionId === HEAD_REGION_ID);
+  if (headIndex === -1) {
+    return [
+      ...regions,
+      { regionId: HEAD_REGION_ID, nrs: targetNrs, qualities: [desiredQuality] as DailyEntry["painQuality"] },
+    ];
+  }
+
+  const headRegion = regions[headIndex];
+  const originalQualities = headRegion.qualities ?? [];
+  const filtered = originalQualities.filter((quality) => !MIGRAINE_QUALITY_SET.has(quality));
+  const hasDesired = originalQualities.includes(desiredQuality);
+  const nextQualities = hasDesired && filtered.length === originalQualities.length
+    ? sanitizeHeadRegionQualities(originalQualities as DailyEntry["painQuality"], true)
+    : sanitizeHeadRegionQualities([...(filtered as DailyEntry["painQuality"]), desiredQuality], true);
+  const nextNrs = typeof headRegion.nrs === "number" ? headRegion.nrs : targetNrs;
+
+  if (nextQualities === headRegion.qualities && nextNrs === headRegion.nrs) {
+    return regions;
+  }
+
+  const updatedHead = { ...headRegion, nrs: nextNrs, qualities: nextQualities };
+  const nextRegions = [...regions];
+  nextRegions[headIndex] = updatedHead;
+  return nextRegions;
+};
+
+const deriveHeadacheFromPainRegions = (
+  regions: DailyEntry["painRegions"] | undefined,
+  previous: DailyEntry["headacheOpt"] | undefined
+): DailyEntry["headacheOpt"] | undefined => {
+  if (!regions) return undefined;
+  const headRegion = regions.find((region) => region.regionId === HEAD_REGION_ID);
+  if (!headRegion) return undefined;
+  const qualities = headRegion.qualities ?? [];
+  const hasMigraine = qualities.some((quality) => MIGRAINE_QUALITY_SET.has(quality));
+  if (!hasMigraine) return undefined;
+  const next: NonNullable<DailyEntry["headacheOpt"]> = {
+    present: true,
+    nrs: headRegion.nrs,
+  };
+  if (qualities.includes(MIGRAINE_WITH_AURA_LABEL)) {
+    next.aura = true;
+  }
+  if (previous?.meds?.length) {
+    next.meds = previous.meds;
+  }
+  return next;
+};
 
 type BodyRegion = { id: string; label: string };
 
@@ -868,8 +983,6 @@ const SYMPTOM_MODULE_TOGGLES: Array<{
   { key: "moduleDizziness", label: "Schwindel", term: MODULE_TERMS.dizzinessOpt.present },
 ];
 
-type HeadacheMed = NonNullable<NonNullable<DailyEntry["headacheOpt"]>["meds"]>[number];
-
 function ModuleToggleRow({
   label,
   tech,
@@ -972,90 +1085,6 @@ function NumberField({
         onChange(Math.max(min, Math.round(parsed)));
       }}
     />
-  );
-}
-
-function MedList({
-  items,
-  onChange,
-  renderIssues,
-}: {
-  items: HeadacheMed[];
-  onChange: (items: HeadacheMed[]) => void;
-  renderIssues?: (path: string) => ReactNode;
-}) {
-  const updateItem = (index: number, patch: Partial<HeadacheMed>) => {
-    const next = items.slice();
-    next[index] = { ...next[index], ...patch };
-    onChange(next);
-  };
-
-  return (
-    <div className="space-y-3">
-      {items.map((item, index) => (
-        <div key={index} className="space-y-2 rounded-lg border border-rose-100 bg-white p-3 text-sm text-rose-700">
-          <div className="grid gap-2 md:grid-cols-3">
-            <div>
-              <Label htmlFor={`headache-med-name-${index}`} className="text-xs text-rose-600">
-                Name
-              </Label>
-              <Input
-                id={`headache-med-name-${index}`}
-                value={item.name}
-                onChange={(event) => updateItem(index, { name: event.target.value })}
-              />
-              {renderIssues?.(`headacheOpt.meds[${index}].name`)}
-            </div>
-            <div>
-              <Label htmlFor={`headache-med-dose-${index}`} className="text-xs text-rose-600">
-                Dosis (mg)
-              </Label>
-              <Input
-                id={`headache-med-dose-${index}`}
-                type="number"
-                min={0}
-                value={item.doseMg ?? ""}
-                onChange={(event) =>
-                  updateItem(index, {
-                    doseMg: event.target.value === "" ? undefined : Math.max(0, Math.round(Number(event.target.value))),
-                  })
-                }
-              />
-              {renderIssues?.(`headacheOpt.meds[${index}].doseMg`)}
-            </div>
-            <div>
-              <Label htmlFor={`headache-med-time-${index}`} className="text-xs text-rose-600">
-                Uhrzeit (optional)
-              </Label>
-              <Input
-                id={`headache-med-time-${index}`}
-                placeholder="08:00"
-                value={item.time ?? ""}
-                onChange={(event) => updateItem(index, { time: event.target.value || undefined })}
-              />
-              {renderIssues?.(`headacheOpt.meds[${index}].time`)}
-            </div>
-          </div>
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              variant="ghost"
-              className="text-xs text-rose-600"
-              onClick={() => onChange(items.filter((_, i) => i !== index))}
-            >
-              Entfernen
-            </Button>
-          </div>
-        </div>
-      ))}
-      <Button
-        type="button"
-        variant="secondary"
-        onClick={() => onChange([...items, { name: "" } as HeadacheMed])}
-      >
-        + Mittel ergänzen
-      </Button>
-    </div>
   );
 }
 
@@ -1190,7 +1219,7 @@ function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>
   delete extra["ovulation_pain_intensity"];
 
   if (Array.isArray(clone.painRegions) && clone.painRegions.length > 0) {
-    const allowedQualities = new Set(PAIN_QUALITIES);
+    const allowedQualities = new Set(ALL_PAIN_QUALITIES);
     clone.painRegions = clone.painRegions
       .filter(
         (region): region is NonNullable<DailyEntry["painRegions"]>[number] & Record<string, unknown> =>
@@ -1213,7 +1242,7 @@ function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>
       });
   } else {
     const regions = Array.isArray(clone.painMapRegionIds) ? clone.painMapRegionIds : [];
-    const allowedQualities = new Set(PAIN_QUALITIES);
+    const allowedQualities = new Set(ALL_PAIN_QUALITIES);
     const qualities = Array.isArray(clone.painQuality)
       ? (clone.painQuality.filter((quality): quality is DailyEntry["painQuality"][number] =>
           allowedQualities.has(quality)
@@ -1227,6 +1256,17 @@ function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>
       nrs: normalizedNrs,
       qualities: [...qualities],
     }));
+  }
+
+  const mergedPainRegions = mergeHeadacheOptIntoPainRegions(clone.painRegions, clone.headacheOpt);
+  if (mergedPainRegions) {
+    clone.painRegions = mergedPainRegions;
+  }
+  const derivedHeadache = deriveHeadacheFromPainRegions(clone.painRegions, clone.headacheOpt);
+  if (derivedHeadache) {
+    clone.headacheOpt = derivedHeadache;
+  } else if (clone.headacheOpt) {
+    delete (clone as { headacheOpt?: DailyEntry["headacheOpt"] }).headacheOpt;
   }
 
   if (clone.impactNRS === undefined || clone.impactNRS === null) {
@@ -2434,8 +2474,11 @@ export default function HomePage() {
   useEffect(() => {
     if (!activeHeadache) {
       setDailyDraft((prev) => {
-        if (!prev.headacheOpt) return prev;
-        return { ...prev, headacheOpt: undefined };
+        const nextRegions = stripMigraineFromRegions(prev.painRegions);
+        if (!prev.headacheOpt && nextRegions === prev.painRegions) {
+          return prev;
+        }
+        return { ...prev, painRegions: nextRegions, headacheOpt: undefined };
       });
     }
   }, [activeHeadache, setDailyDraft]);
@@ -2456,8 +2499,12 @@ export default function HomePage() {
       if (key === "moduleUrinary") {
         return prev;
       }
-      if (key === "moduleHeadache" && prev.headacheOpt) {
-        return { ...prev, headacheOpt: undefined };
+      if (key === "moduleHeadache") {
+        const nextRegions = stripMigraineFromRegions(prev.painRegions);
+        if (!prev.headacheOpt && nextRegions === prev.painRegions) {
+          return prev;
+        }
+        return { ...prev, painRegions: nextRegions, headacheOpt: undefined };
       }
       if (key === "moduleDizziness" && prev.dizzinessOpt) {
         return { ...prev, dizzinessOpt: undefined };
@@ -2629,9 +2676,11 @@ export default function HomePage() {
           }
         });
 
+        const nextHeadache = deriveHeadacheFromPainRegions(nextList, prev.headacheOpt);
         return {
           ...prev,
           painRegions: nextList,
+          headacheOpt: nextHeadache,
         };
       });
     },
@@ -3123,6 +3172,8 @@ export default function HomePage() {
       return null;
     }
     const region = regions[regionIndex];
+    const qualityChoices =
+      region.regionId === HEAD_REGION_ID && activeHeadache ? HEAD_PAIN_QUALITIES : PAIN_QUALITIES;
     return (
       <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4">
         <p className="font-medium text-rose-800">Schmerzen in: {getRegionLabel(region.regionId)}</p>
@@ -3144,9 +3195,11 @@ export default function HomePage() {
                       }
                     : r
                 );
+                const nextHeadache = deriveHeadacheFromPainRegions(nextRegions, prev.headacheOpt);
                 return {
                   ...prev,
                   painRegions: nextRegions,
+                  headacheOpt: nextHeadache,
                 };
               });
             }}
@@ -3156,21 +3209,27 @@ export default function HomePage() {
         <div className="space-y-2">
           <Label className="text-xs text-rose-600">Schmerzcharakter in dieser Region</Label>
           <MultiSelectChips
-            options={PAIN_QUALITIES.map((quality) => ({ value: quality, label: quality }))}
+            options={qualityChoices.map((quality) => ({ value: quality, label: quality }))}
             value={region.qualities}
             onToggle={(next) => {
               setDailyDraft((prev) => {
+                const updatedQualities =
+                  region.regionId === HEAD_REGION_ID
+                    ? sanitizeHeadRegionQualities(next as DailyEntry["painQuality"], activeHeadache)
+                    : (next as DailyEntry["painQuality"]);
                 const nextRegions = (prev.painRegions ?? []).map((r) =>
                   r.regionId === region.regionId
                     ? {
                         ...r,
-                        qualities: next as DailyEntry["painQuality"],
+                        qualities: updatedQualities,
                       }
                     : r
                 );
+                const nextHeadache = deriveHeadacheFromPainRegions(nextRegions, prev.headacheOpt);
                 return {
                   ...prev,
                   painRegions: nextRegions,
+                  headacheOpt: nextHeadache,
                 };
               });
             }}
@@ -4785,82 +4844,6 @@ export default function HomePage() {
                         </Labeled>
                         {renderIssuesForPath("urinaryOpt.urgency")}
                       </div>
-                    </div>
-                  </Section>
-                )}
-
-                {activeHeadache && (
-                  <Section title="Kopfschmerz/Migräne (Modul)" description="Nur wenn benötigt – Präsenz + Intensität">
-                    <div className="space-y-4">
-                      <label className="flex items-center gap-2 text-sm text-rose-800">
-                        <Checkbox
-                          checked={dailyDraft.headacheOpt?.present ?? false}
-                          onChange={(event) =>
-                            setDailyDraft((prev) => ({
-                              ...prev,
-                              headacheOpt: event.target.checked
-                                ? { ...(prev.headacheOpt ?? {}), present: true, nrs: prev.headacheOpt?.nrs ?? 0 }
-                                : { present: false },
-                            }))
-                          }
-                        />
-                        <span>{MODULE_TERMS.headacheOpt.present.label}</span>
-                        <InfoTip
-                          tech={MODULE_TERMS.headacheOpt.present.tech ?? MODULE_TERMS.headacheOpt.present.label}
-                          help={MODULE_TERMS.headacheOpt.present.help}
-                        />
-                      </label>
-                      {renderIssuesForPath("headacheOpt.present")}
-                      {dailyDraft.headacheOpt?.present && (
-                        <div className="space-y-3">
-                          <div className="space-y-1">
-                            <Labeled
-                              label={MODULE_TERMS.headacheOpt.nrs.label}
-                              tech={MODULE_TERMS.headacheOpt.nrs.tech}
-                              help={MODULE_TERMS.headacheOpt.nrs.help}
-                              htmlFor="headache-opt-nrs"
-                            >
-                              <NrsInput
-                                id="headache-opt-nrs"
-                                value={dailyDraft.headacheOpt?.nrs ?? 0}
-                                onChange={(value) =>
-                                  setDailyDraft((prev) => ({
-                                    ...prev,
-                                    headacheOpt: { ...(prev.headacheOpt ?? {}), nrs: value },
-                                  }))
-                                }
-                              />
-                            </Labeled>
-                            {renderIssuesForPath("headacheOpt.nrs")}
-                          </div>
-                          <label className="flex items-center gap-2 text-sm text-rose-800">
-                            <Checkbox
-                              checked={dailyDraft.headacheOpt?.aura ?? false}
-                              onChange={(event) =>
-                                setDailyDraft((prev) => ({
-                                  ...prev,
-                                  headacheOpt: { ...(prev.headacheOpt ?? {}), aura: event.target.checked },
-                                }))
-                              }
-                            />
-                            <span>{MODULE_TERMS.headacheOpt.aura.label}</span>
-                            <InfoTip
-                              tech={MODULE_TERMS.headacheOpt.aura.tech ?? MODULE_TERMS.headacheOpt.aura.label}
-                              help={MODULE_TERMS.headacheOpt.aura.help}
-                            />
-                          </label>
-                          <MedList
-                            items={dailyDraft.headacheOpt?.meds ?? []}
-                            onChange={(items) =>
-                              setDailyDraft((prev) => ({
-                                ...prev,
-                                headacheOpt: { ...(prev.headacheOpt ?? {}), meds: items },
-                              }))
-                            }
-                            renderIssues={renderIssuesForPath}
-                          />
-                        </div>
-                      )}
                     </div>
                   </Section>
                 )}
