@@ -183,6 +183,17 @@ const BODY_REGION_GROUPS: { id: string; label: string; regions: BodyRegion[] }[]
   },
 ];
 
+const getRegionLabel = (regionId: string): string => {
+  for (const group of BODY_REGION_GROUPS) {
+    for (const region of group.regions) {
+      if (region.id === regionId) {
+        return region.label;
+      }
+    }
+  }
+  return regionId;
+};
+
 const SYMPTOM_ITEMS: { key: SymptomKey; termKey: TermKey }[] = [
   { key: "dysmenorrhea", termKey: "dysmenorrhea" },
   { key: "deepDyspareunia", termKey: "deepDyspareunia" },
@@ -2647,7 +2658,23 @@ export default function HomePage() {
       payload.dizzinessOpt = normalized;
     }
 
-    const validationIssues = validateDailyEntry(payload);
+    const syncedDraft: DailyEntry = { ...payload };
+
+    if (Array.isArray(syncedDraft.painRegions)) {
+      syncedDraft.painMapRegionIds = syncedDraft.painRegions.map((region) => region.regionId);
+
+      const qualitiesSet = new Set<string>();
+      syncedDraft.painRegions.forEach((region) => {
+        (region.qualities ?? []).forEach((quality) => qualitiesSet.add(quality));
+      });
+      syncedDraft.painQuality = Array.from(qualitiesSet) as DailyEntry["painQuality"];
+    }
+
+    if (typeof syncedDraft.impactNRS === "number") {
+      syncedDraft.painNRS = syncedDraft.impactNRS;
+    }
+
+    const validationIssues = validateDailyEntry(syncedDraft);
     setIssues(validationIssues);
     if (validationIssues.length) {
       setInfoMessage("Bitte prüfe die markierten Felder.");
@@ -2655,13 +2682,13 @@ export default function HomePage() {
     }
 
     setDailyEntries((prev) => {
-      const filtered = prev.filter((entry) => entry.date !== payload.date);
-      return [...filtered, payload].sort((a, b) => a.date.localeCompare(b.date));
+      const filtered = prev.filter((entry) => entry.date !== syncedDraft.date);
+      return [...filtered, syncedDraft].sort((a, b) => a.date.localeCompare(b.date));
     });
 
     setInfoMessage(null);
     setDailySaveNotice("Tagesdaten gespeichert.");
-    const nextDraft = payload;
+    const nextDraft = syncedDraft;
     setDailyDraft(nextDraft);
     setLastSavedDailySnapshot(nextDraft);
     setPainQualityOther("");
@@ -3733,47 +3760,124 @@ export default function HomePage() {
                 </div>
 
                 <Section
-                  title={`${TERMS.nrs.label} (NRS)`}
-                  description="Numerische Schmerzskala 0–10 – ganzzahlige Eingabe"
+                  title="Schmerzen heute"
+                  description="Zuerst betroffene Körperbereiche wählen, anschließend Intensität und Schmerzart je Region erfassen"
                 >
-                  <ScoreInput
-                    id="pain-nrs"
-                    label={TERMS.nrs.label}
-                    termKey="nrs"
-                    value={dailyDraft.painNRS}
-                    onChange={(value) =>
-                      setDailyDraft((prev) => ({ ...prev, painNRS: Math.max(0, Math.min(10, Math.round(value))) }))
-                    }
-                  />
-                  {renderIssuesForPath("painNRS")}
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <TermField termKey="painQuality">
-                      <div className="space-y-2">
-                        <MultiSelectChips
-                          options={PAIN_QUALITIES.map((quality) => ({ value: quality, label: quality }))}
-                          value={dailyDraft.painQuality}
-                          onToggle={(next) =>
-                            setDailyDraft((prev) => ({ ...prev, painQuality: next as DailyEntry["painQuality"] }))
-                          }
-                        />
-                        {dailyDraft.painQuality.includes("anders") && (
-                          <Input
-                            placeholder="Beschreibe den Schmerz"
-                            value={painQualityOther}
-                            onChange={(event) => setPainQualityOther(event.target.value)}
-                          />
-                        )}
-                      </div>
-                      {dailyDraft.painQuality.map((_, index) => renderIssuesForPath(`painQuality[${index}]`))}
-                    </TermField>
-                    <div className="space-y-4">
+                  <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                    <div className="space-y-6">
                       <TermField termKey="bodyMap">
                         <BodyMap
-                          value={dailyDraft.painMapRegionIds}
-                          onChange={(next) => setDailyDraft((prev) => ({ ...prev, painMapRegionIds: next }))}
+                          value={(dailyDraft.painRegions ?? []).map((region) => region.regionId)}
+                          onChange={(nextIds) => {
+                            setDailyDraft((prev) => {
+                              const existing = prev.painRegions ?? [];
+                              const nextList: NonNullable<DailyEntry["painRegions"]> = [];
+
+                              nextIds.forEach((id) => {
+                                const found = existing.find((r) => r.regionId === id);
+                                if (found) {
+                                  nextList.push(found);
+                                } else {
+                                  nextList.push({
+                                    regionId: id,
+                                    nrs: 0,
+                                    qualities: [],
+                                  });
+                                }
+                              });
+
+                              return {
+                                ...prev,
+                                painRegions: nextList,
+                              };
+                            });
+                          }}
                         />
                         {renderIssuesForPath("painMapRegionIds")}
                       </TermField>
+
+                      {(dailyDraft.painRegions ?? []).map((region) => (
+                        <div
+                          key={region.regionId}
+                          className="space-y-3 rounded-lg border border-rose-100 bg-white p-4"
+                        >
+                          <p className="font-medium text-rose-800">
+                            Schmerzen in: {getRegionLabel(region.regionId)}
+                          </p>
+                          <div className="space-y-2">
+                            <Label className="text-xs text-rose-600" htmlFor={`region-nrs-${region.regionId}`}>
+                              Intensität (0–10)
+                            </Label>
+                            <NrsInput
+                              id={`region-nrs-${region.regionId}`}
+                              value={region.nrs}
+                              onChange={(value) => {
+                                setDailyDraft((prev) => {
+                                  const nextRegions = (prev.painRegions ?? []).map((r) =>
+                                    r.regionId === region.regionId
+                                      ? {
+                                          ...r,
+                                          nrs: Math.max(0, Math.min(10, Math.round(value))),
+                                        }
+                                      : r
+                                  );
+                                  return {
+                                    ...prev,
+                                    painRegions: nextRegions,
+                                  };
+                                });
+                              }}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-xs text-rose-600">
+                              Schmerzcharakter in dieser Region
+                            </Label>
+                            <MultiSelectChips
+                              options={PAIN_QUALITIES.map((quality) => ({ value: quality, label: quality }))}
+                              value={region.qualities}
+                              onToggle={(next) => {
+                                setDailyDraft((prev) => {
+                                  const nextRegions = (prev.painRegions ?? []).map((r) =>
+                                    r.regionId === region.regionId
+                                      ? {
+                                          ...r,
+                                          qualities: next as DailyEntry["painQuality"],
+                                        }
+                                      : r
+                                  );
+                                  return {
+                                    ...prev,
+                                    painRegions: nextRegions,
+                                  };
+                                });
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+
+                      <TermField termKey="nrs">
+                        <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4">
+                          <p className="font-medium text-rose-800">
+                            Wie stark haben dich deine Schmerzen heute insgesamt eingeschränkt oder belastet?
+                          </p>
+                          <NrsInput
+                            id="impact-nrs"
+                            value={dailyDraft.impactNRS ?? 0}
+                            onChange={(value) => {
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                impactNRS: Math.max(0, Math.min(10, Math.round(value))),
+                              }));
+                            }}
+                          />
+                        </div>
+                      </TermField>
+                      {renderIssuesForPath("painNRS")}
+                    </div>
+
+                    <div className="space-y-4">
                       <TermField termKey="ovulationPain">
                         <div className="space-y-3">
                           <Select
