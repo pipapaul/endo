@@ -310,21 +310,7 @@ const PBAC_CLOT_ITEMS = [
 
 const PBAC_ITEMS = [...PBAC_PRODUCT_ITEMS, ...PBAC_CLOT_ITEMS] as const;
 
-type PbacProductItem = (typeof PBAC_PRODUCT_ITEMS)[number];
-type PbacProduct = PbacProductItem["product"];
-type PbacSaturation = PbacProductItem["saturation"];
 type PbacCounts = Record<(typeof PBAC_ITEMS)[number]["id"], number>;
-
-const PBAC_PRODUCT_OPTIONS: { id: PbacProduct; label: string }[] = [
-  { id: "pad", label: "Binde" },
-  { id: "tampon", label: "Tampon" },
-];
-
-const PBAC_SATURATION_OPTIONS: { id: PbacSaturation; label: string }[] = [
-  { id: "light", label: "leicht" },
-  { id: "medium", label: "mittel" },
-  { id: "heavy", label: "stark" },
-];
 
 const PBAC_FLOODING_SCORE = 5;
 const HEAVY_BLEED_PBAC = 100;
@@ -1468,10 +1454,6 @@ function computePbacScore(counts: PbacCounts, flooding: boolean) {
   return base + (flooding ? PBAC_FLOODING_SCORE : 0);
 }
 
-function findPbacProductItem(product: PbacProduct, saturation: PbacSaturation) {
-  return PBAC_PRODUCT_ITEMS.find((item) => item.product === product && item.saturation === saturation);
-}
-
 type SeverityLevel = "mild" | "moderat" | "hoch";
 
 function mapPhqSeverity(score?: number): SeverityLevel | undefined {
@@ -1654,11 +1636,6 @@ export default function HomePage() {
     usePersistentState<DailyEntry>("endo.draft.daily.v1", defaultDailyDraft);
   const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
   const [pbacCounts, setPbacCounts] = useState<PbacCounts>({ ...PBAC_DEFAULT_COUNTS });
-  const [pbacStep, setPbacStep] = useState(1);
-  const [pbacSelection, setPbacSelection] = useState<{ product: PbacProduct | null; saturation: PbacSaturation | null }>(
-    () => ({ product: null, saturation: null })
-  );
-  const [pbacCountDraft, setPbacCountDraft] = useState(0);
   const [sensorsVisible, setSensorsVisible] = useState(false);
   const [exploratoryVisible, setExploratoryVisible] = useState(false);
   const [notesTagDraft, setNotesTagDraft] = useState("");
@@ -2337,17 +2314,6 @@ export default function HomePage() {
   const currentPbacForNotice = dailyDraft.bleeding.isBleeding ? pbacScore : dailyDraft.bleeding.pbacScore ?? 0;
   const showDizzinessNotice =
     activeDizziness && dailyDraft.dizzinessOpt?.present && currentPbacForNotice >= HEAVY_BLEED_PBAC;
-  const selectedPbacItem =
-    pbacSelection.product && pbacSelection.saturation
-      ? findPbacProductItem(pbacSelection.product, pbacSelection.saturation)
-      : null;
-  const pbacCountLabel = selectedPbacItem
-    ? selectedPbacItem.product === "tampon"
-      ? "Heute verwendete Tampons"
-      : selectedPbacItem.product === "pad"
-        ? "Heute verwendete Binden"
-        : "Heute verwendete Produkte"
-    : "Heute verwendete Produkte";
   const phqSeverity = monthlyDraft.mental?.phq9Severity ?? mapPhqSeverity(monthlyDraft.mental?.phq9);
   const gadSeverity = monthlyDraft.mental?.gad7Severity ?? mapGadSeverity(monthlyDraft.mental?.gad7);
 
@@ -2518,33 +2484,6 @@ export default function HomePage() {
     },
     [activeUrinary, activeHeadache, activeDizziness]
   );
-
-  const goToPbacProduct = (product: PbacProduct, saturation: PbacSaturation) => {
-    const item = findPbacProductItem(product, saturation);
-    if (!item) return;
-    setPbacSelection({ product, saturation });
-    const existingCount = pbacCounts[item.id] ?? 0;
-    const sanitizedCount = Math.max(0, Math.min(12, Math.round(existingCount)));
-    setPbacCountDraft(sanitizedCount);
-    setPbacStep(3);
-  };
-
-  const commitPbacCount = () => {
-    if (!selectedPbacItem) return;
-    const parsed = Math.max(0, Math.min(12, Math.round(pbacCountDraft)));
-    setPbacCounts((prev) => {
-      if (prev[selectedPbacItem.id] === parsed) {
-        return prev;
-      }
-      return { ...prev, [selectedPbacItem.id]: parsed };
-    });
-    setPbacCountDraft(parsed);
-  };
-
-  const pbacSliderHintId = "pbac-count-range-hint";
-  const pbacSliderWarningId = "pbac-count-warning";
-  const pbacSliderDescribedBy =
-    pbacCountDraft === 12 ? `${pbacSliderHintId} ${pbacSliderWarningId}` : pbacSliderHintId;
 
   const handleEhp5ItemChange = (index: number, value: number | undefined) => {
     setMonthlyDraft((prev) => {
@@ -4099,298 +4038,187 @@ export default function HomePage() {
                         );
                         if (!checked) {
                           setPbacCounts({ ...PBAC_DEFAULT_COUNTS });
-                          setPbacStep(1);
-                          setPbacSelection({ product: null, saturation: null });
-                          setPbacCountDraft(0);
                         }
                       }}
                     />
                   </div>
                   {dailyDraft.bleeding.isBleeding && (
-                    <div className="space-y-4">
+                    <div className="space-y-6">
                       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                        <span>PBAC-Wizard • Schritt {pbacStep} von 5</span>
+                        <span>PBAC-Assistent</span>
                         <span>Aktueller Score: {pbacScore}</span>
                       </div>
-                      {pbacStep === 1 && (
-                        <div className="space-y-3">
-                          <TermHeadline termKey="pbac" />
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            {PBAC_PRODUCT_OPTIONS.map((option) => (
-                              <button
-                                key={option.id}
-                                type="button"
-                                onClick={() => {
-                                  setPbacSelection({ product: option.id, saturation: null });
-                                  setPbacStep(2);
-                                }}
-                                className={cn(
-                                  "rounded border px-3 py-2 text-left text-sm transition",
-                                  pbacSelection.product === option.id
-                                    ? "border-rose-400 bg-rose-100 text-rose-700"
-                                    : "border-rose-100 bg-white text-rose-600 hover:border-rose-300"
-                                )}
-                              >
-                                {option.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {pbacStep === 2 && (
-                        <div className="space-y-3">
-                          <TermHeadline termKey="pbac" />
-                          <div className="grid grid-cols-3 gap-2">
-                            {PBAC_SATURATION_OPTIONS.map((option) => (
-                              <button
-                                key={option.id}
-                                type="button"
-                                disabled={!pbacSelection.product}
-                                onClick={() => pbacSelection.product && goToPbacProduct(pbacSelection.product, option.id)}
-                                className={cn(
-                                  "rounded border px-3 py-2 text-sm transition",
-                                  pbacSelection.saturation === option.id
-                                    ? "border-rose-400 bg-rose-100 text-rose-700"
-                                    : "border-rose-100 bg-white text-rose-600 hover:border-rose-300",
-                                  !pbacSelection.product ? "opacity-50" : ""
-                                )}
-                              >
-                                {option.label}
-                              </button>
-                            ))}
-                          </div>
-                          <div className="flex justify-start">
-                            <Button type="button" variant="ghost" onClick={() => setPbacStep(1)}>
-                              Zurück
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                      {pbacStep === 3 && selectedPbacItem && (
-                        <div className="space-y-4">
-                          <Labeled
-                            label={pbacCountLabel}
-                            tech={TERMS.pbac.tech}
-                            help={TERMS.pbac.help}
-                            htmlFor="pbac-count"
-                          >
-                            <div className="space-y-2">
-                              <Slider
-                                id="pbac-count"
-                                min={0}
-                                max={12}
-                                step={1}
-                                value={[pbacCountDraft]}
-                                onValueChange={([value]) => setPbacCountDraft(value ?? 0)}
-                                aria-describedby={pbacSliderDescribedBy}
-                              />
-                              <div
-                                id={pbacSliderHintId}
-                                className="flex justify-between text-xs text-rose-600"
-                              >
-                                <span>0</span>
-                                <span>12</span>
-                              </div>
-                              <SliderValueDisplay
-                                value={pbacCountDraft}
-                                label="Aktuelle Anzahl"
-                                className="w-full sm:w-auto"
-                              />
-                              {pbacCountDraft === 12 ? (
-                                <p id={pbacSliderWarningId} className="text-sm font-medium text-rose-800">
-                                  Bei mehr als zwölf bitte ärztlich abklären.
-                                </p>
-                              ) : null}
-                            </div>
-                          </Labeled>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Button type="button" variant="ghost" onClick={() => setPbacStep(2)}>
-                              Zurück
-                            </Button>
-                            <div className="ml-auto flex flex-wrap gap-2">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => {
-                                  commitPbacCount();
-                                  setPbacSelection({ product: null, saturation: null });
-                                  setPbacCountDraft(0);
-                                  setPbacStep(1);
-                                }}
-                              >
-                                Weiteres Produkt
-                              </Button>
-                              <Button
-                                type="button"
-                                onClick={() => {
-                                  commitPbacCount();
-                                  setPbacStep(4);
-                                }}
-                              >
-                                Weiter zu Koageln
-                              </Button>
-                            </div>
-                          </div>
-                          <div className="space-y-2 rounded border border-rose-100 bg-rose-50 p-3 text-xs text-rose-700">
-                            <p className="font-semibold text-rose-800">Bisher erfasste Produkte</p>
-                            {PBAC_PRODUCT_ITEMS.some((item) => pbacCounts[item.id] > 0) ? (
-                              PBAC_PRODUCT_ITEMS.map((item) =>
-                                pbacCounts[item.id] > 0 ? (
-                                  <div key={item.id} className="flex flex-wrap items-center justify-between gap-2">
-                                    <span>
-                                      {pbacCounts[item.id]} × {item.label}
-                                    </span>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="ghost"
-                                      className="h-auto px-2 py-0 text-xs text-rose-600"
-                                      onClick={() => goToPbacProduct(item.product, item.saturation)}
-                                    >
-                                      Bearbeiten
-                                    </Button>
-                                  </div>
-                                ) : null
-                              )
-                            ) : (
-                              <p className="text-rose-500">Noch keine Produkte dokumentiert.</p>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                      {pbacStep === 4 && (
-                        <div className="space-y-3">
-                          <TermHeadline termKey="clots" />
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            {PBAC_CLOT_ITEMS.map((item) => {
-                              const value = pbacCounts[item.id] ?? 0;
-                              const max = item.id === "clot_small" ? 15 : 5;
-                              const labelHint =
-                                item.id === "clot_small"
-                                  ? "Kleine, meist weichere Klümpchen im Blut, etwa erbsen- bis kirschgroß. Zähle jeden, den du deutlich erkennst."
-                                  : "Deutlich größere, kompaktere Klumpen, oft dunkler. Notiere jede sichtbare Einheit, auch wenn mehrere in kurzer Zeit kommen.";
-                              const label = `${item.label} – ${labelHint}`;
-                              const sliderId = `${item.id}-slider`;
-                              const sliderHintId = `${item.id}-slider-hint`;
+                      <div className="space-y-4">
+                        <TermHeadline termKey="pbac" />
+                        <p className="text-sm text-rose-600">
+                          Dokumentiere, wie viele Produkte du heute verwendet hast. Alle Angaben lassen sich jederzeit anpassen.
+                        </p>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          {PBAC_PRODUCT_ITEMS.map((item) => {
+                            const value = pbacCounts[item.id] ?? 0;
+                            const max = 12;
+                            const sliderId = `${item.id}-slider`;
+                            const sliderHintId = `${item.id}-slider-hint`;
+                            const sliderWarningId = `${item.id}-slider-warning`;
+                            const describedBy = value === max ? `${sliderHintId} ${sliderWarningId}` : sliderHintId;
 
-                              return (
-                                <Labeled key={item.id} label={label} htmlFor={sliderId}>
-                                  <div className="space-y-2">
-                                    <Slider
-                                      id={sliderId}
-                                      min={0}
-                                      max={max}
-                                      step={1}
-                                      value={[value]}
-                                      onValueChange={([nextValue]) => {
-                                        const clampedValue = Math.min(max, Math.max(0, nextValue ?? 0));
+                            return (
+                              <Labeled
+                                key={item.id}
+                                label={item.label}
+                                tech={TERMS.pbac.tech}
+                                help={TERMS.pbac.help}
+                                htmlFor={sliderId}
+                              >
+                                <div className="space-y-2">
+                                  <Slider
+                                    id={sliderId}
+                                    min={0}
+                                    max={max}
+                                    step={1}
+                                    value={[value]}
+                                    onValueChange={([nextValue]) => {
+                                      const clampedValue = Math.min(max, Math.max(0, nextValue ?? 0));
+                                      setPbacCounts((prev) => {
+                                        if (prev[item.id] === clampedValue) {
+                                          return prev;
+                                        }
+                                        return { ...prev, [item.id]: clampedValue };
+                                      });
+                                    }}
+                                    aria-describedby={describedBy}
+                                  />
+                                  <div id={sliderHintId} className="flex justify-between text-xs text-rose-600">
+                                    <span>0</span>
+                                    <span>{max}</span>
+                                  </div>
+                                  <SliderValueDisplay
+                                    value={value}
+                                    label="Aktuelle Anzahl"
+                                    className="w-full sm:w-auto"
+                                  />
+                                  {value === max ? (
+                                    <p id={sliderWarningId} className="text-sm font-medium text-rose-800">
+                                      Bei mehr als zwölf bitte ärztlich abklären.
+                                    </p>
+                                  ) : null}
+                                </div>
+                              </Labeled>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        <TermHeadline termKey="clots" />
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {PBAC_CLOT_ITEMS.map((item) => {
+                            const value = pbacCounts[item.id] ?? 0;
+                            const max = item.id === "clot_small" ? 15 : 5;
+                            const labelHint =
+                              item.id === "clot_small"
+                                ? "Kleine, meist weichere Klümpchen im Blut, etwa erbsen- bis kirschgroß. Zähle jeden, den du deutlich erkennst."
+                                : "Deutlich größere, kompaktere Klumpen, oft dunkler. Notiere jede sichtbare Einheit, auch wenn mehrere in kurzer Zeit kommen.";
+                            const label = `${item.label} – ${labelHint}`;
+                            const sliderId = `${item.id}-slider`;
+                            const sliderHintId = `${item.id}-slider-hint`;
+
+                            return (
+                              <Labeled key={item.id} label={label} htmlFor={sliderId}>
+                                <div className="space-y-2">
+                                  <Slider
+                                    id={sliderId}
+                                    min={0}
+                                    max={max}
+                                    step={1}
+                                    value={[value]}
+                                    onValueChange={([nextValue]) => {
+                                      const clampedValue = Math.min(max, Math.max(0, nextValue ?? 0));
+                                      setPbacCounts((prev) => {
+                                        if (prev[item.id] === clampedValue) {
+                                          return prev;
+                                        }
                                         const updatedCounts: PbacCounts = {
-                                          ...pbacCounts,
+                                          ...prev,
                                           [item.id]: clampedValue,
                                         };
-                                        setPbacCounts(updatedCounts);
-                                        setDailyDraft((prev) => ({
-                                          ...prev,
+                                        setDailyDraft((prevDraft) => ({
+                                          ...prevDraft,
                                           bleeding: {
-                                            ...prev.bleeding,
+                                            ...prevDraft.bleeding,
                                             clots:
                                               (updatedCounts.clot_small ?? 0) + (updatedCounts.clot_large ?? 0) > 0,
                                           },
                                         }));
-                                      }}
-                                      aria-describedby={sliderHintId}
-                                    />
-                                    <div id={sliderHintId} className="flex justify-between text-xs text-rose-600">
-                                      <span>0</span>
-                                      <span>{max}</span>
-                                    </div>
-                                    <SliderValueDisplay
-                                      value={value}
-                                      label="Aktuelle Anzahl"
-                                      className="w-full sm:w-auto"
-                                    />
+                                        return updatedCounts;
+                                      });
+                                    }}
+                                    aria-describedby={sliderHintId}
+                                  />
+                                  <div id={sliderHintId} className="flex justify-between text-xs text-rose-600">
+                                    <span>0</span>
+                                    <span>{max}</span>
                                   </div>
-                                </Labeled>
-                              );
-                            })}
+                                  <SliderValueDisplay
+                                    value={value}
+                                    label="Aktuelle Anzahl"
+                                    className="w-full sm:w-auto"
+                                  />
+                                </div>
+                              </Labeled>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        <TermField termKey="flooding">
+                          <div className="flex items-center gap-3">
+                            <Switch
+                              checked={pbacFlooding}
+                              onCheckedChange={(checked) =>
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  bleeding: { ...prev.bleeding, flooding: checked },
+                                }))
+                              }
+                            />
+                            <span className="text-sm text-rose-700">Flooding heute beobachtet?</span>
                           </div>
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <Button type="button" variant="ghost" onClick={() => setPbacStep(3)}>
-                              Zurück
-                            </Button>
-                            <Button type="button" onClick={() => setPbacStep(5)}>
-                              Weiter zu Flooding
-                            </Button>
+                          {renderIssuesForPath("bleeding.flooding")}
+                        </TermField>
+                        <div className="space-y-2 rounded border border-rose-100 bg-rose-50 p-3 text-xs text-rose-700">
+                          <p className="font-semibold text-rose-800">PBAC-Zusammenfassung</p>
+                          <p className="text-sm">Score heute: {pbacScore}</p>
+                          <div className="space-y-1">
+                            {PBAC_PRODUCT_ITEMS.filter((item) => pbacCounts[item.id] > 0).map((item) => (
+                              <div key={item.id} className="flex flex-wrap items-center justify-between gap-2">
+                                <span>
+                                  {pbacCounts[item.id]} × {item.label}
+                                </span>
+                                <span className="font-semibold text-rose-800">+{pbacCounts[item.id] * item.score}</span>
+                              </div>
+                            ))}
+                            {PBAC_CLOT_ITEMS.filter((item) => pbacCounts[item.id] > 0).map((item) => (
+                              <div key={item.id} className="flex flex-wrap items-center justify-between gap-2">
+                                <span>
+                                  {pbacCounts[item.id]} × {item.label}
+                                </span>
+                                <span className="font-semibold text-rose-800">+{pbacCounts[item.id] * item.score}</span>
+                              </div>
+                            ))}
+                            {pbacFlooding ? (
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span>Flooding</span>
+                                <span className="font-semibold text-rose-800">+{PBAC_FLOODING_SCORE}</span>
+                              </div>
+                            ) : null}
+                            {PBAC_PRODUCT_ITEMS.every((item) => pbacCounts[item.id] === 0) &&
+                            PBAC_CLOT_ITEMS.every((item) => pbacCounts[item.id] === 0) &&
+                            !pbacFlooding ? (
+                              <p className="text-rose-500">Noch keine PBAC-Daten erfasst.</p>
+                            ) : null}
                           </div>
                         </div>
-                      )}
-                      {pbacStep === 5 && (
-                        <div className="space-y-3">
-                          <TermField termKey="flooding">
-                            <div className="flex items-center gap-3">
-                              <Switch
-                                checked={pbacFlooding}
-                                onCheckedChange={(checked) =>
-                                  setDailyDraft((prev) => ({
-                                    ...prev,
-                                    bleeding: { ...prev.bleeding, flooding: checked },
-                                  }))
-                                }
-                              />
-                              <span className="text-sm text-rose-700">Flooding heute beobachtet?</span>
-                            </div>
-                            {renderIssuesForPath("bleeding.flooding")}
-                          </TermField>
-                          <div className="space-y-2 rounded border border-rose-100 bg-rose-50 p-3 text-xs text-rose-700">
-                            <p className="font-semibold text-rose-800">PBAC-Zusammenfassung</p>
-                            <p className="text-sm">Score heute: {pbacScore}</p>
-                            <div className="space-y-1">
-                              {PBAC_PRODUCT_ITEMS.filter((item) => pbacCounts[item.id] > 0).map((item) => (
-                                <div key={item.id} className="flex flex-wrap items-center justify-between gap-2">
-                                  <span>
-                                    {pbacCounts[item.id]} × {item.label}
-                                  </span>
-                                  <span className="font-semibold text-rose-800">+{pbacCounts[item.id] * item.score}</span>
-                                </div>
-                              ))}
-                              {PBAC_CLOT_ITEMS.filter((item) => pbacCounts[item.id] > 0).map((item) => (
-                                <div key={item.id} className="flex flex-wrap items-center justify-between gap-2">
-                                  <span>
-                                    {pbacCounts[item.id]} × {item.label}
-                                  </span>
-                                  <span className="font-semibold text-rose-800">+{pbacCounts[item.id] * item.score}</span>
-                                </div>
-                              ))}
-                              {pbacFlooding ? (
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <span>Flooding</span>
-                                  <span className="font-semibold text-rose-800">+{PBAC_FLOODING_SCORE}</span>
-                                </div>
-                              ) : null}
-                              {PBAC_PRODUCT_ITEMS.every((item) => pbacCounts[item.id] === 0) &&
-                              PBAC_CLOT_ITEMS.every((item) => pbacCounts[item.id] === 0) &&
-                              !pbacFlooding ? (
-                                <p className="text-rose-500">Noch keine PBAC-Daten erfasst.</p>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <Button type="button" variant="ghost" onClick={() => setPbacStep(4)}>
-                              Zurück
-                            </Button>
-                            <Button
-                              type="button"
-                              onClick={() => {
-                                setPbacStep(1);
-                                setPbacSelection({ product: null, saturation: null });
-                                setPbacCountDraft(0);
-                              }}
-                            >
-                              Wizard schließen
-                            </Button>
-                          </div>
-                        </div>
-                      )}
+                      </div>
                       <div className="space-y-1 text-xs text-rose-600">
                         {renderIssuesForPath("bleeding.pbacScore")}
                         {renderIssuesForPath("bleeding.clots")}
