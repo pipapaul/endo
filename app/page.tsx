@@ -4262,35 +4262,57 @@ export default function HomePage() {
                         <div className="space-y-3">
                           <TermHeadline termKey="clots" />
                           <div className="grid gap-3 sm:grid-cols-2">
-                            {PBAC_CLOT_ITEMS.map((item) => (
-                              <Labeled
-                                key={item.id}
-                                label={item.label}
-                                tech={TERMS.clots.tech}
-                                help={TERMS.clots.help}
-                                htmlFor={item.id}
-                              >
-                            <Input
-                              id={item.id}
-                              type="number"
-                              min={0}
-                              step={1}
-                              value={String(pbacCounts[item.id] ?? 0)}
-                              onChange={(event) => {
-                                const nextValue = Math.max(0, Math.round(Number(event.target.value) || 0));
-                                const updatedCounts: PbacCounts = { ...pbacCounts, [item.id]: nextValue };
-                                setPbacCounts(updatedCounts);
-                                setDailyDraft((prev) => ({
-                                  ...prev,
-                                  bleeding: {
-                                    ...prev.bleeding,
-                                    clots: (updatedCounts.clot_small ?? 0) + (updatedCounts.clot_large ?? 0) > 0,
-                                  },
-                                }));
-                              }}
-                            />
-                          </Labeled>
-                        ))}
+                            {PBAC_CLOT_ITEMS.map((item) => {
+                              const value = pbacCounts[item.id] ?? 0;
+                              const max = item.id === "clot_small" ? 15 : 5;
+                              const labelHint =
+                                item.id === "clot_small"
+                                  ? "Kleine, meist weichere Klümpchen im Blut, etwa erbsen- bis kirschgroß. Zähle jeden, den du deutlich erkennst."
+                                  : "Deutlich größere, kompaktere Klumpen, oft dunkler. Notiere jede sichtbare Einheit, auch wenn mehrere in kurzer Zeit kommen.";
+                              const label = `${item.label} – ${labelHint}`;
+                              const sliderId = `${item.id}-slider`;
+                              const sliderHintId = `${item.id}-slider-hint`;
+
+                              return (
+                                <Labeled key={item.id} label={label} htmlFor={sliderId}>
+                                  <div className="space-y-2">
+                                    <Slider
+                                      id={sliderId}
+                                      min={0}
+                                      max={max}
+                                      step={1}
+                                      value={[value]}
+                                      onValueChange={([nextValue]) => {
+                                        const clampedValue = Math.min(max, Math.max(0, nextValue ?? 0));
+                                        const updatedCounts: PbacCounts = {
+                                          ...pbacCounts,
+                                          [item.id]: clampedValue,
+                                        };
+                                        setPbacCounts(updatedCounts);
+                                        setDailyDraft((prev) => ({
+                                          ...prev,
+                                          bleeding: {
+                                            ...prev.bleeding,
+                                            clots:
+                                              (updatedCounts.clot_small ?? 0) + (updatedCounts.clot_large ?? 0) > 0,
+                                          },
+                                        }));
+                                      }}
+                                      aria-describedby={sliderHintId}
+                                    />
+                                    <div id={sliderHintId} className="flex justify-between text-xs text-rose-600">
+                                      <span>0</span>
+                                      <span>{max}</span>
+                                    </div>
+                                    <SliderValueDisplay
+                                      value={value}
+                                      label="Aktuelle Anzahl"
+                                      className="w-full sm:w-auto"
+                                    />
+                                  </div>
+                                </Labeled>
+                              );
+                            })}
                           </div>
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <Button type="button" variant="ghost" onClick={() => setPbacStep(3)}>
