@@ -1977,53 +1977,19 @@ export default function HomePage() {
   }, [dailyEntries, dailyDraft, isDailyDirty]);
 
   const cycleOverview = useMemo((): CycleOverviewData | null => {
-    const entries = dailyEntries.slice();
-    if (dailyDraft.date) {
-      const existingIndex = entries.findIndex((entry) => entry.date === dailyDraft.date);
-      if (existingIndex >= 0) {
-        if (isDailyDirty) {
-          entries[existingIndex] = dailyDraft;
-        }
-      } else {
-        entries.push(dailyDraft);
-      }
+    if (!annotatedDailyEntries.length) {
+      return null;
     }
 
-    const sorted = entries
-      .filter((entry) => entry.date)
-      .sort((a, b) => a.date.localeCompare(b.date));
-
-    if (!sorted.length) return null;
-
-    const enriched: CycleOverviewPoint[] = [];
-    let cycleDay: number | null = null;
-    let previousDate: Date | null = null;
-    let previousBleeding = false;
-
-    for (const entry of sorted) {
-      const currentDate = parseIsoDate(entry.date);
-      if (!currentDate) continue;
-      const diffDays = previousDate ? Math.round((currentDate.getTime() - previousDate.getTime()) / 86_400_000) : 0;
-      if (cycleDay !== null && diffDays > 0) {
-        cycleDay += diffDays;
-      }
-      const isBleeding = entry.bleeding?.isBleeding ?? false;
-      const bleedingStartsToday = isBleeding && (!previousBleeding || diffDays > 1 || cycleDay === null);
-      if (bleedingStartsToday) {
-        cycleDay = 1;
-      }
-      enriched.push({
-        date: entry.date,
-        cycleDay,
-        painNRS: entry.painNRS ?? 0,
-        pbacScore: entry.bleeding?.pbacScore ?? null,
-        isBleeding,
-        ovulationPositive: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
-        ovulationPainIntensity: entry.ovulationPain?.intensity ?? null,
-      });
-      previousDate = currentDate;
-      previousBleeding = isBleeding;
-    }
+    const enriched: CycleOverviewPoint[] = annotatedDailyEntries.map(({ entry, cycleDay }) => ({
+      date: entry.date,
+      cycleDay: cycleDay ?? null,
+      painNRS: entry.painNRS ?? 0,
+      pbacScore: entry.bleeding?.pbacScore ?? null,
+      isBleeding: entry.bleeding?.isBleeding ?? false,
+      ovulationPositive: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
+      ovulationPainIntensity: entry.ovulationPain?.intensity ?? null,
+    }));
 
     const latestStartIndex = enriched.reduce((acc, point, index) => {
       if (point.cycleDay === 1 && point.date <= today) {
@@ -2047,7 +2013,7 @@ export default function HomePage() {
       startDate: enriched[latestStartIndex].date,
       points: slice,
     };
-  }, [dailyDraft, dailyEntries, isDailyDirty, today]);
+  }, [annotatedDailyEntries, today]);
 
   const canGoToNextDay = useMemo(() => dailyDraft.date < today, [dailyDraft.date, today]);
 
