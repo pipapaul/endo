@@ -41,6 +41,7 @@ import {
   Home,
   ShieldCheck,
   Smartphone,
+  TrendingUp,
   Upload,
 } from "lucide-react";
 
@@ -1762,7 +1763,7 @@ export default function HomePage() {
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [detailToolbarHeight, setDetailToolbarHeight] = useState<number>(DETAIL_TOOLBAR_FALLBACK_HEIGHT);
-  const [activeView, setActiveView] = useState<"home" | "daily" | "weekly" | "monthly">("home");
+  const [activeView, setActiveView] = useState<"home" | "daily" | "weekly" | "monthly" | "analytics">("home");
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [persistWarning, setPersistWarning] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
@@ -2105,6 +2106,7 @@ export default function HomePage() {
     if (activeView === "daily") return dailyToolbarLabel;
     if (activeView === "weekly") return weeklyToolbarLabel;
     if (activeView === "monthly") return monthlyToolbarLabel;
+    if (activeView === "analytics") return "Auswertungen";
     return null;
   }, [activeView, dailyToolbarLabel, monthlyToolbarLabel, weeklyToolbarLabel]);
 
@@ -2118,6 +2120,9 @@ export default function HomePage() {
     if (activeView === "monthly") {
       const monthKey = monthlyDraft.month || currentMonth;
       return monthKey ? `monthly:${monthKey}` : null;
+    }
+    if (activeView === "analytics") {
+      return "analytics";
     }
     return null;
   }, [activeView, currentMonth, dailyDraft.date, monthlyDraft.month, weeklyScopeIsoWeek]);
@@ -3525,22 +3530,33 @@ export default function HomePage() {
                     <span className="text-xs text-rose-500">{weeklyInfoText}</span>
                   </div>
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setActiveView("monthly")}
-                  className="h-auto w-full flex-col items-start justify-start gap-2 rounded-2xl border-rose-200 px-5 py-4 text-left text-rose-800 transition hover:border-rose-300 hover:text-rose-900"
-                >
-                  <span className="text-base font-semibold">Monatlich</span>
-                  <div className="flex flex-col gap-1">
-                    {showMonthlyReminderBadge && (
-                      <Badge className="bg-amber-400 text-rose-900" aria-label="Monatlicher Check-in fällig">
-                        fällig
-                      </Badge>
-                    )}
-                    <span className="text-xs text-rose-500">{monthlyInfoText}</span>
-                  </div>
-                </Button>
+                <div className="flex flex-col gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setActiveView("monthly")}
+                    className="h-auto w-full flex-col items-start justify-start gap-2 rounded-2xl border-rose-200 px-5 py-4 text-left text-rose-800 transition hover:border-rose-300 hover:text-rose-900"
+                  >
+                    <span className="text-base font-semibold">Monatlich</span>
+                    <div className="flex flex-col gap-1">
+                      {showMonthlyReminderBadge && (
+                        <Badge className="bg-amber-400 text-rose-900" aria-label="Monatlicher Check-in fällig">
+                          fällig
+                        </Badge>
+                      )}
+                      <span className="text-xs text-rose-500">{monthlyInfoText}</span>
+                    </div>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setActiveView("analytics")}
+                    className="h-auto w-full items-center justify-start gap-2 rounded-xl border-rose-200 px-4 py-3 text-left text-sm font-semibold text-rose-700 transition hover:border-rose-300 hover:text-rose-900"
+                  >
+                    <TrendingUp className="h-4 w-4 text-rose-500" />
+                    Auswertungen
+                  </Button>
+                </div>
               </div>
               {storageCompactPossible && !storageDetailsExpanded ? (
                 <button
@@ -3624,7 +3640,7 @@ export default function HomePage() {
             variant="plain"
             completionEnabled={false}
           >
-            <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+            <div className="space-y-6">
               <div className="space-y-6">
                 <div className="grid gap-4">
                   <Label className="text-sm font-medium text-rose-800">Datum</Label>
@@ -4983,306 +4999,311 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <Section
-                  title="Trend"
-                  description={`${TERMS.nrs.label}, ${TERMS.pbac.label} sowie Symptom- und Schlafverlauf`}
-                  completionEnabled={false}
-                >
-                  <div className="flex justify-end gap-2 text-xs text-rose-600">
-                    <span>Achse:</span>
-                    <Button
-                      type="button"
-                      variant={trendXAxisMode === "date" ? "secondary" : "ghost"}
-                      size="sm"
-                      onClick={() => setTrendXAxisMode("date")}
-                    >
-                      Datum
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={trendXAxisMode === "cycleDay" ? "secondary" : "ghost"}
-                      size="sm"
-                      onClick={() => setTrendXAxisMode("cycleDay")}
-                    >
-                      Zyklustag
-                    </Button>
-                  </div>
-                  <div className="h-64 w-full">
-                    <ResponsiveContainer>
-                      <LineChart data={painTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                        <XAxis
-                          dataKey={trendXAxisMode === "date" ? "date" : "cycleLabel"}
-                          stroke="#fb7185"
-                          tick={{ fontSize: 12 }}
-                        />
-                        <YAxis yAxisId="left" domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                        <YAxis yAxisId="right" orientation="right" domain={[0, 300]} stroke="#6366f1" tick={{ fontSize: 12 }} />
-                        <Tooltip content={<ChartTooltip />} />
-                        <Legend wrapperStyle={{ fontSize: 12 }} />
-                        <Line
-                          type="monotone"
-                          dataKey="pain"
-                          stroke="#f43f5e"
-                          strokeWidth={2}
-                          name={`${TERMS.nrs.label} (NRS)`}
-                          yAxisId="left"
-                          dot={false}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="pbac"
-                          stroke="#6366f1"
-                          strokeWidth={2}
-                          name={`${TERMS.pbac.label}`}
-                          yAxisId="right"
-                          connectNulls={false}
-                          dot={false}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="symptomAverage"
-                          stroke="#f97316"
-                          strokeWidth={1.5}
-                          name="Symptom-Schnitt"
-                          yAxisId="left"
-                          dot={false}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="sleepQuality"
-                          stroke="#22c55e"
-                          strokeWidth={1.5}
-                          name={TERMS.sleep_quality.label}
-                          yAxisId="left"
-                          dot={false}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Section>
 
-                {activeUrinary && urinaryTrendData.length > 0 && (
-                  <Section title="Blase/Drang Verlauf" description="Harndrang-NRS (0–10) an aktiven Tagen">
-                    <div className="h-56 w-full">
-                      <ResponsiveContainer>
-                        <LineChart data={urinaryTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                          <XAxis dataKey="date" stroke="#fb7185" tick={{ fontSize: 12 }} />
-                          <YAxis domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                          <Tooltip />
-                          <Line type="monotone" dataKey="urgency" stroke="#f43f5e" strokeWidth={2} dot={false} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </Section>
-                )}
-
-                {activeUrinary && urinaryMonthlyRates.length > 0 && (
-                  <Section title="Leckage-Rate" description="Anteil Tage mit Leckage pro Monat">
-                    <div className="h-56 w-full">
-                      <ResponsiveContainer>
-                        <BarChart data={urinaryMonthlyRates} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                          <XAxis dataKey="month" stroke="#fb7185" tick={{ fontSize: 12 }} />
-                          <YAxis domain={[0, 100]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                          <Tooltip />
-                          <Bar dataKey="leakRate" fill="#fb7185" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </Section>
-                )}
-
-                {activeHeadache && headacheTrendData.length > 0 && (
-                  <Section title="Kopfschmerz/Migräne Verlauf" description="NRS nur an Kopfschmerztagen">
-                    <div className="h-56 w-full">
-                      <ResponsiveContainer>
-                        <LineChart data={headacheTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                          <XAxis dataKey="date" stroke="#fb7185" tick={{ fontSize: 12 }} />
-                          <YAxis domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                          <Tooltip />
-                          <Line type="monotone" dataKey="nrs" stroke="#f43f5e" strokeWidth={2} dot={false} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </Section>
-                )}
-
-                {activeHeadache && headacheMonthlyRates.length > 0 && (
-                  <Section title="Migränetage je Monat" description="Prozentualer Anteil mit Kopfschmerz/Migräne">
-                    <div className="h-56 w-full">
-                      <ResponsiveContainer>
-                        <BarChart data={headacheMonthlyRates} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                          <XAxis dataKey="month" stroke="#fb7185" tick={{ fontSize: 12 }} />
-                          <YAxis domain={[0, 100]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                          <Tooltip />
-                          <Bar dataKey="rate" fill="#fb7185" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </Section>
-                )}
-
-                {activeDizziness && dizzinessTrendData.length > 0 && (
-                  <Section title="Schwindel-Verlauf" description="NRS 0–10 an Schwindeltagen">
-                    <div className="h-56 w-full">
-                      <ResponsiveContainer>
-                        <LineChart data={dizzinessTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                          <XAxis dataKey="date" stroke="#fb7185" tick={{ fontSize: 12 }} />
-                          <YAxis domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                          <Tooltip />
-                          <Line type="monotone" dataKey="nrs" stroke="#f43f5e" strokeWidth={2} dot={false} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </Section>
-                )}
-
-                {activeDizziness && dizzinessScatterData.length > 0 && (
-                  <Section
-                    title="PBAC vs. Schwindel"
-                    description="Streudiagramm: Blutungsstärke (PBAC) vs. Schwindel-NRS"
-                  >
-                    <div className="h-56 w-full">
-                      <ResponsiveContainer>
-                        <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                          <XAxis type="number" dataKey="pbac" name="PBAC" stroke="#fb7185" tick={{ fontSize: 12 }} />
-                          <YAxis type="number" dataKey="nrs" name="Schwindel" domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                          <Tooltip cursor={{ strokeDasharray: "3 3" }} />
-                          <Scatter data={dizzinessScatterData} fill="#22c55e" />
-                        </ScatterChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </Section>
-                )}
-
-                <Section
-                  title="Letzte Einträge"
-                  description="Kernmetriken kompakt"
-                  completionEnabled={false}
-                >
-                  <div className="space-y-3">
-                    {dailyEntries
-                      .slice()
-                      .sort((a, b) => b.date.localeCompare(a.date))
-                      .slice(0, 7)
-                      .map((entry) => (
-                        <div key={entry.date} className="rounded-lg border border-amber-100 bg-amber-50 p-3 text-sm">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="font-semibold text-rose-800">{entry.date}</span>
-                            <span className="text-rose-600">NRS {entry.painNRS}</span>
-                          </div>
-                          <div className="mt-1 flex flex-wrap gap-2 text-xs text-rose-700">
-                            <span>PBAC: {entry.bleeding.pbacScore ?? "–"}</span>
-                            <span>Schlafqualität: {entry.sleep?.quality ?? "–"}</span>
-                            <span>
-                              Blasenschmerz:
-                              {entry.symptoms?.dysuria?.present && typeof entry.symptoms.dysuria.score === "number"
-                                ? entry.symptoms.dysuria.score
-                                : "–"}
-                            </span>
-                            {activeUrinary && (
-                              <span>Harndrang (Modul): {entry.urinaryOpt?.urgency ?? "–"}</span>
-                            )}
-                            {activeHeadache && (
-                              <span>
-                                Kopfschmerz (Modul):
-                                {entry.headacheOpt?.present && typeof entry.headacheOpt.nrs === "number"
-                                  ? entry.headacheOpt.nrs
-                                  : "–"}
-                              </span>
-                            )}
-                            {activeDizziness && (
-                              <span>
-                                Schwindel (Modul):
-                                {entry.dizzinessOpt?.present && typeof entry.dizzinessOpt.nrs === "number"
-                                  ? entry.dizzinessOpt.nrs
-                                  : "–"}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                </Section>
-                <Section
-                  title="Zyklus-Overlay"
-                  description="Durchschnittswerte je Zyklustag"
-                  completionEnabled={false}
-                >
-                  <div className="max-h-64 space-y-2 overflow-y-auto text-xs text-rose-700">
-                    {cycleOverlay.length === 0 && <p className="text-rose-500">Noch keine Zyklusdaten.</p>}
-                    {cycleOverlay.map((row) => (
-                      <div
-                        key={row.cycleDay}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-100 bg-amber-50 px-2 py-1"
-                      >
-                        <span className="font-semibold text-rose-800">ZT {row.cycleDay}</span>
-                        <span>{TERMS.nrs.label}: {row.painAvg.toFixed(1)}</span>
-                        <span>Symptome: {row.symptomAvg?.toFixed(1) ?? "–"}</span>
-                        <span>{TERMS.sleep_quality.label}: {row.sleepAvg?.toFixed(1) ?? "–"}</span>
-                        <span>{TERMS.pbac.label}: {row.pbacAvg?.toFixed(1) ?? "–"}</span>
-                        {activeUrinary && (
-                          <span>{MODULE_TERMS.urinaryOpt.urgency.label}: {row.urgencyAvg?.toFixed(1) ?? "–"}</span>
-                        )}
-                        {activeHeadache && (
-                          <span>
-                            {MODULE_TERMS.headacheOpt.nrs.label}: {row.headacheAvg?.toFixed(1) ?? "–"}
-                          </span>
-                        )}
-                        {activeDizziness && (
-                          <span>
-                            {MODULE_TERMS.dizzinessOpt.nrs.label}: {row.dizzinessAvg?.toFixed(1) ?? "–"}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </Section>
-                <Section
-                  title="Wochentag-Overlay"
-                  description="Durchschnittlicher NRS nach Wochentag"
-                  completionEnabled={false}
-                >
-                  <div className="grid grid-cols-1 gap-2 text-xs text-rose-700 sm:grid-cols-2 lg:grid-cols-4">
-                    {weekdayOverlay.map((row) => (
-                      <div key={row.weekday} className="rounded border border-amber-100 bg-amber-50 px-2 py-1">
-                        <p className="font-semibold text-rose-800">{row.weekday}</p>
-                        <p>{TERMS.nrs.label}: {row.painAvg.toFixed(1)}</p>
-                      </div>
-                    ))}
-                  </div>
-                </Section>
-                <Section
-                  title="Explorative Korrelationen"
-                  description="Lokal berechnete Pearson-r Werte – keine medizinische Bewertung"
-                  completionEnabled={false}
-                >
-                  <div className="space-y-2 text-xs text-rose-700">
-                    <p>
-                      Schlafqualität ↔ Schmerz: {correlations.sleep.r !== null ? correlations.sleep.r.toFixed(2) : "–"} (n=
-                      {correlations.sleep.n})
-                    </p>
-                    <p>
-                      Schritte ↔ Schmerz: {correlations.steps.r !== null ? correlations.steps.r.toFixed(2) : "–"} (n=
-                      {correlations.steps.n})
-                    </p>
-                    <p className="text-[10px] text-rose-500">
-                      Hinweis: nur zur Orientierung, Daten verlassen den Browser nicht.
-                    </p>
-                  </div>
-                </Section>
-              </div>
             </div>
           </Section>
                   </SectionScopeContext.Provider>
                 </TabsContent>
+        <TabsContent value="analytics" className="space-y-6">
+          <SectionScopeContext.Provider value="analytics">
+            <div className="space-y-4">
+              <Section
+                title="Trend"
+                description={`${TERMS.nrs.label}, ${TERMS.pbac.label} sowie Symptom- und Schlafverlauf`}
+                completionEnabled={false}
+              >
+                <div className="flex justify-end gap-2 text-xs text-rose-600">
+                  <span>Achse:</span>
+                  <Button
+                    type="button"
+                    variant={trendXAxisMode === "date" ? "secondary" : "ghost"}
+                    size="sm"
+                    onClick={() => setTrendXAxisMode("date")}
+                  >
+                    Datum
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={trendXAxisMode === "cycleDay" ? "secondary" : "ghost"}
+                    size="sm"
+                    onClick={() => setTrendXAxisMode("cycleDay")}
+                  >
+                    Zyklustag
+                  </Button>
+                </div>
+                <div className="h-64 w-full">
+                  <ResponsiveContainer>
+                    <LineChart data={painTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                      <XAxis
+                        dataKey={trendXAxisMode === "date" ? "date" : "cycleLabel"}
+                        stroke="#fb7185"
+                        tick={{ fontSize: 12 }}
+                      />
+                      <YAxis yAxisId="left" domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                      <YAxis yAxisId="right" orientation="right" domain={[0, 300]} stroke="#6366f1" tick={{ fontSize: 12 }} />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      <Line
+                        type="monotone"
+                        dataKey="pain"
+                        stroke="#f43f5e"
+                        strokeWidth={2}
+                        name={`${TERMS.nrs.label} (NRS)`}
+                        yAxisId="left"
+                        dot={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="pbac"
+                        stroke="#6366f1"
+                        strokeWidth={2}
+                        name={`${TERMS.pbac.label}`}
+                        yAxisId="right"
+                        connectNulls={false}
+                        dot={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="symptomAverage"
+                        stroke="#f97316"
+                        strokeWidth={1.5}
+                        name="Symptom-Schnitt"
+                        yAxisId="left"
+                        dot={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="sleepQuality"
+                        stroke="#22c55e"
+                        strokeWidth={1.5}
+                        name={TERMS.sleep_quality.label}
+                        yAxisId="left"
+                        dot={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </Section>
+
+              {activeUrinary && urinaryTrendData.length > 0 && (
+                <Section title="Blase/Drang Verlauf" description="Harndrang-NRS (0–10) an aktiven Tagen">
+                  <div className="h-56 w-full">
+                    <ResponsiveContainer>
+                      <LineChart data={urinaryTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                        <XAxis dataKey="date" stroke="#fb7185" tick={{ fontSize: 12 }} />
+                        <YAxis domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                        <Tooltip />
+                        <Line type="monotone" dataKey="urgency" stroke="#f43f5e" strokeWidth={2} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Section>
+              )}
+
+              {activeUrinary && urinaryMonthlyRates.length > 0 && (
+                <Section title="Leckage-Rate" description="Anteil Tage mit Leckage pro Monat">
+                  <div className="h-56 w-full">
+                    <ResponsiveContainer>
+                      <BarChart data={urinaryMonthlyRates} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                        <XAxis dataKey="month" stroke="#fb7185" tick={{ fontSize: 12 }} />
+                        <YAxis domain={[0, 100]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                        <Tooltip />
+                        <Bar dataKey="leakRate" fill="#fb7185" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Section>
+              )}
+
+              {activeHeadache && headacheTrendData.length > 0 && (
+                <Section title="Kopfschmerz/Migräne Verlauf" description="NRS nur an Kopfschmerztagen">
+                  <div className="h-56 w-full">
+                    <ResponsiveContainer>
+                      <LineChart data={headacheTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                        <XAxis dataKey="date" stroke="#fb7185" tick={{ fontSize: 12 }} />
+                        <YAxis domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                        <Tooltip />
+                        <Line type="monotone" dataKey="nrs" stroke="#f43f5e" strokeWidth={2} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Section>
+              )}
+
+              {activeHeadache && headacheMonthlyRates.length > 0 && (
+                <Section title="Migränetage je Monat" description="Prozentualer Anteil mit Kopfschmerz/Migräne">
+                  <div className="h-56 w-full">
+                    <ResponsiveContainer>
+                      <BarChart data={headacheMonthlyRates} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                        <XAxis dataKey="month" stroke="#fb7185" tick={{ fontSize: 12 }} />
+                        <YAxis domain={[0, 100]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                        <Tooltip />
+                        <Bar dataKey="rate" fill="#fb7185" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Section>
+              )}
+
+              {activeDizziness && dizzinessTrendData.length > 0 && (
+                <Section title="Schwindel-Verlauf" description="NRS 0–10 an Schwindeltagen">
+                  <div className="h-56 w-full">
+                    <ResponsiveContainer>
+                      <LineChart data={dizzinessTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                        <XAxis dataKey="date" stroke="#fb7185" tick={{ fontSize: 12 }} />
+                        <YAxis domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                        <Tooltip />
+                        <Line type="monotone" dataKey="nrs" stroke="#f43f5e" strokeWidth={2} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Section>
+              )}
+
+              {activeDizziness && dizzinessScatterData.length > 0 && (
+                <Section
+                  title="PBAC vs. Schwindel"
+                  description="Streudiagramm: Blutungsstärke (PBAC) vs. Schwindel-NRS"
+                >
+                  <div className="h-56 w-full">
+                    <ResponsiveContainer>
+                      <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                        <XAxis type="number" dataKey="pbac" name="PBAC" stroke="#fb7185" tick={{ fontSize: 12 }} />
+                        <YAxis type="number" dataKey="nrs" name="Schwindel" domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                        <Tooltip cursor={{ strokeDasharray: "3 3" }} />
+                        <Scatter data={dizzinessScatterData} fill="#22c55e" />
+                      </ScatterChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Section>
+              )}
+
+              <Section
+                title="Letzte Einträge"
+                description="Kernmetriken kompakt"
+                completionEnabled={false}
+              >
+                <div className="space-y-3">
+                  {dailyEntries
+                    .slice()
+                    .sort((a, b) => b.date.localeCompare(a.date))
+                    .slice(0, 7)
+                    .map((entry) => (
+                      <div key={entry.date} className="rounded-lg border border-amber-100 bg-amber-50 p-3 text-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-semibold text-rose-800">{entry.date}</span>
+                          <span className="text-rose-600">NRS {entry.painNRS}</span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-2 text-xs text-rose-700">
+                          <span>PBAC: {entry.bleeding.pbacScore ?? "–"}</span>
+                          <span>Schlafqualität: {entry.sleep?.quality ?? "–"}</span>
+                          <span>
+                            Blasenschmerz:
+                            {entry.symptoms?.dysuria?.present && typeof entry.symptoms.dysuria.score === "number"
+                              ? entry.symptoms.dysuria.score
+                              : "–"}
+                          </span>
+                          {activeUrinary && (
+                            <span>Harndrang (Modul): {entry.urinaryOpt?.urgency ?? "–"}</span>
+                          )}
+                          {activeHeadache && (
+                            <span>
+                              Kopfschmerz (Modul):
+                              {entry.headacheOpt?.present && typeof entry.headacheOpt.nrs === "number"
+                                ? entry.headacheOpt.nrs
+                                : "–"}
+                            </span>
+                          )}
+                          {activeDizziness && (
+                            <span>
+                              Schwindel (Modul):
+                              {entry.dizzinessOpt?.present && typeof entry.dizzinessOpt.nrs === "number"
+                                ? entry.dizzinessOpt.nrs
+                                : "–"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </Section>
+              <Section
+                title="Zyklus-Overlay"
+                description="Durchschnittswerte je Zyklustag"
+                completionEnabled={false}
+              >
+                <div className="max-h-64 space-y-2 overflow-y-auto text-xs text-rose-700">
+                  {cycleOverlay.length === 0 && <p className="text-rose-500">Noch keine Zyklusdaten.</p>}
+                  {cycleOverlay.map((row) => (
+                    <div
+                      key={row.cycleDay}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-100 bg-amber-50 px-2 py-1"
+                    >
+                      <span className="font-semibold text-rose-800">ZT {row.cycleDay}</span>
+                      <span>{TERMS.nrs.label}: {row.painAvg.toFixed(1)}</span>
+                      <span>Symptome: {row.symptomAvg?.toFixed(1) ?? "–"}</span>
+                      <span>{TERMS.sleep_quality.label}: {row.sleepAvg?.toFixed(1) ?? "–"}</span>
+                      <span>{TERMS.pbac.label}: {row.pbacAvg?.toFixed(1) ?? "–"}</span>
+                      {activeUrinary && (
+                        <span>{MODULE_TERMS.urinaryOpt.urgency.label}: {row.urgencyAvg?.toFixed(1) ?? "–"}</span>
+                      )}
+                      {activeHeadache && (
+                        <span>
+                          {MODULE_TERMS.headacheOpt.nrs.label}: {row.headacheAvg?.toFixed(1) ?? "–"}
+                        </span>
+                      )}
+                      {activeDizziness && (
+                        <span>
+                          {MODULE_TERMS.dizzinessOpt.nrs.label}: {row.dizzinessAvg?.toFixed(1) ?? "–"}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </Section>
+              <Section
+                title="Wochentag-Overlay"
+                description="Durchschnittlicher NRS nach Wochentag"
+                completionEnabled={false}
+              >
+                <div className="grid grid-cols-1 gap-2 text-xs text-rose-700 sm:grid-cols-2 lg:grid-cols-4">
+                  {weekdayOverlay.map((row) => (
+                    <div key={row.weekday} className="rounded border border-amber-100 bg-amber-50 px-2 py-1">
+                      <p className="font-semibold text-rose-800">{row.weekday}</p>
+                      <p>{TERMS.nrs.label}: {row.painAvg.toFixed(1)}</p>
+                    </div>
+                  ))}
+                </div>
+              </Section>
+              <Section
+                title="Explorative Korrelationen"
+                description="Lokal berechnete Pearson-r Werte – keine medizinische Bewertung"
+                completionEnabled={false}
+              >
+                <div className="space-y-2 text-xs text-rose-700">
+                  <p>
+                    Schlafqualität ↔ Schmerz: {correlations.sleep.r !== null ? correlations.sleep.r.toFixed(2) : "–"} (n={
+                    correlations.sleep.n})
+                  </p>
+                  <p>
+                    Schritte ↔ Schmerz: {correlations.steps.r !== null ? correlations.steps.r.toFixed(2) : "–"} (n={
+                    correlations.steps.n})
+                  </p>
+                  <p className="text-[10px] text-rose-500">
+                    Hinweis: nur zur Orientierung, Daten verlassen den Browser nicht.
+                  </p>
+                </div>
+              </Section>
+            </div>
+          </SectionScopeContext.Provider>
+        </TabsContent>
         <TabsContent value="weekly" className="space-y-6">
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
             <p className="font-medium text-amber-900">{weeklyBannerText}</p>
