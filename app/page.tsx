@@ -2281,18 +2281,20 @@ export default function HomePage() {
   }, [dailySaveNotice]);
 
   useEffect(() => {
-    if (dailyDraft.bleeding.isBleeding) {
-      setDailyDraft((prev) => ({
-        ...prev,
-        bleeding: {
-          ...prev.bleeding,
-          pbacScore,
-          clots: prev.bleeding.clots ?? false,
-          flooding: prev.bleeding.flooding ?? false,
-        },
-      }));
+    if (!dailyDraft.bleeding.isBleeding) {
+      return;
     }
-  }, [pbacScore, dailyDraft.bleeding.isBleeding, setDailyDraft]);
+
+    setDailyDraft((prev) => ({
+      ...prev,
+      bleeding: {
+        ...prev.bleeding,
+        pbacScore,
+        clots: prev.bleeding.clots ?? false,
+        flooding: prev.bleeding.flooding ?? false,
+      },
+    }));
+  }, [dailyDraft.bleeding.isBleeding, pbacScore, setDailyDraft]);
 
   useEffect(() => {
     const existingEntry = dailyEntries.find((entry) => entry.date === dailyDraft.date);
@@ -2623,13 +2625,9 @@ export default function HomePage() {
 
     setInfoMessage(null);
     setDailySaveNotice("Tagesdaten gespeichert.");
-    const nextEmptyDailyEntry = createEmptyDailyEntry(today);
-    setDailyDraft(nextEmptyDailyEntry);
-    setLastSavedDailySnapshot(nextEmptyDailyEntry);
-    setPbacCounts({ ...PBAC_DEFAULT_COUNTS });
-    setPbacStep(1);
-    setPbacSelection({ product: null, saturation: null });
-    setPbacCountDraft("0");
+    const nextDraft = payload;
+    setDailyDraft(nextDraft);
+    setLastSavedDailySnapshot(nextDraft);
     setPainQualityOther("");
     setNotesTagDraft("");
     setSensorsVisible(false);
@@ -3407,6 +3405,8 @@ export default function HomePage() {
     activeScopeProgress.total,
   ]);
 
+  const showScopeProgressCounter = activeView !== "analytics" && activeScopeProgress.total > 0;
+
   const detailToolbar = !isHomeView ? (
     <>
       <header
@@ -3428,7 +3428,9 @@ export default function HomePage() {
               {toolbarLabel ? (
                 <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-700">{toolbarLabel}</span>
               ) : null}
-              <span className="rounded-full bg-rose-200 px-3 py-1 text-rose-800">{`${activeScopeProgress.completed}/${activeScopeProgress.total}`}</span>
+              {showScopeProgressCounter ? (
+                <span className="rounded-full bg-rose-200 px-3 py-1 text-rose-800">{`${activeScopeProgress.completed}/${activeScopeProgress.total}`}</span>
+              ) : null}
             </div>
           </div>
           {infoMessage ? <p className="text-xs text-rose-600 sm:text-sm">{infoMessage}</p> : null}
