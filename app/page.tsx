@@ -25,8 +25,10 @@ import {
   Bar,
   ScatterChart,
   Scatter,
+  Area,
+  ComposedChart,
 } from "recharts";
-import type { TooltipProps } from "recharts";
+import type { DotProps, TooltipProps } from "recharts";
 import {
   AlertTriangle,
   Calendar,
@@ -281,6 +283,8 @@ type CycleOverviewData = {
   points: CycleOverviewPoint[];
 };
 
+const CYCLE_OVERVIEW_MAX_DAYS = 30;
+
 const formatShortGermanDate = (iso: string) => {
   const parsed = parseIsoDate(iso);
   if (!parsed) return iso;
@@ -289,28 +293,91 @@ const formatShortGermanDate = (iso: string) => {
 
 const describeBleedingLevel = (point: CycleOverviewPoint) => {
   if (!point.isBleeding) {
-    return { className: "bg-rose-200", height: 0, label: "keine Blutung" };
+    return { label: "keine Blutung", value: 0 };
   }
   const score = point.pbacScore ?? 0;
   if (score >= 100) {
-    return { className: "bg-rose-600", height: 90, label: "starke Blutung" };
+    return { label: "starke Blutung", value: 9 };
   }
   if (score >= 50) {
-    return { className: "bg-rose-500", height: 65, label: "mittlere Blutung" };
+    return { label: "mittlere Blutung", value: 7 };
   }
   if (score > 0) {
-    return { className: "bg-rose-400", height: 40, label: "leichte Blutung" };
+    return { label: "leichte Blutung", value: 5 };
   }
-  return { className: "bg-rose-300", height: 24, label: "Blutung ohne PBAC" };
+  return { label: "Blutung ohne PBAC", value: 3 };
 };
 
-const computePainHeight = (pain: number) => {
-  if (!Number.isFinite(pain)) return 0;
-  return Math.max(0, Math.min(100, Math.round((pain / 10) * 100)));
+type CycleOverviewChartPoint = CycleOverviewPoint & {
+  bleedingLabel: string;
+  bleedingValue: number;
+  cycleDayLabel: string;
+  dateLabel: string;
+  painValue: number;
+};
+
+type PainDotProps = DotProps & { payload?: CycleOverviewChartPoint };
+
+const PainDot = ({ cx, cy, payload }: PainDotProps) => {
+  if (typeof cx !== "number" || typeof cy !== "number" || !payload) {
+    return null;
+  }
+
+  return (
+    <g>
+      {payload.ovulationPositive ? (
+        <circle cx={cx} cy={cy} r={7} fill="#fef3c7" stroke="#facc15" strokeWidth={2} />
+      ) : null}
+      <circle cx={cx} cy={cy} r={4} fill="#be123c" stroke="#fff" strokeWidth={2} />
+    </g>
+  );
 };
 
 const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
-  if (!data.points.length) return null;
+  const bleedingGradientId = useId();
+  const chartPoints = useMemo<CycleOverviewChartPoint[]>(() => {
+    return data.points.slice(0, CYCLE_OVERVIEW_MAX_DAYS).map((point) => {
+      const bleeding = describeBleedingLevel(point);
+      const painValue = Number.isFinite(point.painNRS)
+        ? Math.max(0, Math.min(10, Number(point.painNRS)))
+        : 0;
+
+      return {
+        ...point,
+        bleedingLabel: bleeding.label,
+        bleedingValue: bleeding.value,
+        cycleDayLabel: point.cycleDay ? `ZT ${point.cycleDay}` : "ZT –",
+        dateLabel: formatShortGermanDate(point.date),
+        painValue,
+      };
+    });
+  }, [data.points]);
+
+  const renderTooltip = useCallback(
+    (props: TooltipProps<number, string>) => {
+      if (!props.active || !props.payload?.length) {
+        return null;
+      }
+
+      const payload = props.payload[0].payload as CycleOverviewChartPoint;
+
+      return (
+        <div className="rounded-lg border border-rose-100 bg-white p-3 text-xs text-rose-700 shadow-sm">
+          <p className="font-semibold text-rose-900">{payload.dateLabel}</p>
+          <p className="mt-1">ZT {payload.cycleDay ?? "–"}</p>
+          <p>Schmerz: {payload.painNRS}/10</p>
+          <p>Blutung: {payload.bleedingLabel}</p>
+          {payload.pbacScore !== null ? <p>PBAC: {payload.pbacScore}</p> : null}
+          {payload.ovulationPositive ? <p>Eisprung markiert</p> : null}
+        </div>
+      );
+    },
+    []
+  );
+
+  if (!chartPoints.length) {
+    return null;
+  }
 
   return (
     <section
@@ -329,73 +396,59 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
         </div>
         <div className="flex flex-wrap items-center gap-3 text-[11px] text-rose-600">
           <span className="flex items-center gap-1">
-            <span className="block h-3 w-3 rounded-full bg-rose-700" aria-hidden /> Schmerz
+            <span className="block h-2.5 w-2.5 rounded-full bg-rose-700" aria-hidden /> Schmerz
           </span>
           <span className="flex items-center gap-1">
-            <span className="block h-3 w-3 rounded bg-rose-400" aria-hidden /> Blutung
+            <span className="block h-2 w-4 rounded bg-gradient-to-b from-rose-200 to-rose-400" aria-hidden /> Blutung
           </span>
           <span className="flex items-center gap-1">
-            <span className="block h-3 w-3 rounded-full bg-amber-300" aria-hidden /> Eisprung
+            <span className="block h-2.5 w-2.5 rounded-full border border-amber-400 bg-amber-200" aria-hidden /> Eisprung
           </span>
         </div>
       </div>
-      <div className="mt-4 flex items-end gap-4 overflow-x-auto pb-1">
-        {data.points.map((point) => {
-          const bleeding = describeBleedingLevel(point);
-          const painHeight = computePainHeight(point.painNRS);
-          const ovulationSize = point.ovulationPainIntensity
-            ? 16 + Math.min(12, point.ovulationPainIntensity * 1.5)
-            : 16;
-          const columnLabel = `ZT ${point.cycleDay ?? "?"}: Schmerz ${point.painNRS}/10, ${bleeding.label}${
-            point.ovulationPositive ? ", Eisprung markiert" : ""
-          }`;
-
-          return (
-            <div key={point.date} className="flex flex-col items-center gap-2 text-[10px] text-rose-500">
-              {point.cycleDay === 1 ? (
-                <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-rose-600">
-                  Zyklusstart
-                </span>
-              ) : (
-                <span className="h-[18px]" />
-              )}
-              <div
-                className="relative flex h-28 w-12 flex-col items-center justify-end rounded-2xl bg-rose-100/80 p-1"
-                aria-label={columnLabel}
-              >
-                <div
-                  className={cn("absolute bottom-1 left-1 right-1 rounded-b-xl transition-colors", bleeding.className)}
-                  style={{ height: `${bleeding.height}%` }}
-                />
-                <div className="relative z-10 flex w-full justify-center">
-                  <div
-                    className="w-2 rounded-full bg-rose-700"
-                    style={{ height: `${Math.max(painHeight, 6)}%` }}
-                    aria-hidden
-                  />
-                </div>
-                {point.ovulationPositive ? (
-                  <div
-                    className="absolute flex items-center justify-center rounded-full bg-amber-300 ring-2 ring-white"
-                    style={{
-                      width: `${ovulationSize}px`,
-                      height: `${ovulationSize}px`,
-                      top: `-${ovulationSize / 2}px`,
-                      left: "50%",
-                      transform: "translateX(-50%)",
-                    }}
-                  >
-                    <span className="sr-only">Eisprung</span>
-                  </div>
-                ) : null}
-              </div>
-              <div className="flex flex-col items-center text-[9px] text-rose-400">
-                <span className="font-semibold text-rose-600">ZT {point.cycleDay ?? "–"}</span>
-                <span>{formatShortGermanDate(point.date)}</span>
-              </div>
-            </div>
-          );
-        })}
+      <div className="mt-4 h-56 w-full sm:h-64">
+        <ResponsiveContainer>
+          <ComposedChart data={chartPoints} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+            <defs>
+              <linearGradient id={bleedingGradientId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#fb7185" stopOpacity={0.45} />
+                <stop offset="100%" stopColor="#fbcfe8" stopOpacity={0.1} />
+              </linearGradient>
+            </defs>
+            <XAxis
+              dataKey="cycleDayLabel"
+              axisLine={false}
+              tickLine={false}
+              tick={{ fill: "#fb7185", fontSize: 11 }}
+              minTickGap={6}
+            />
+            <YAxis domain={[0, 10]} hide />
+            <Tooltip
+              cursor={{ stroke: "#fb7185", strokeOpacity: 0.2, strokeWidth: 1 }}
+              content={renderTooltip}
+            />
+            <Area
+              type="monotone"
+              dataKey="bleedingValue"
+              fill={`url(#${bleedingGradientId})`}
+              stroke="#fb7185"
+              strokeWidth={1}
+              fillOpacity={1}
+              name="Blutung"
+              isAnimationActive={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="painValue"
+              stroke="#be123c"
+              strokeWidth={2}
+              dot={<PainDot />}
+              activeDot={{ r: 5, stroke: "#be123c", fill: "#fff", strokeWidth: 2 }}
+              name="Schmerz"
+              isAnimationActive={false}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
       </div>
     </section>
   );
@@ -1989,7 +2042,9 @@ export default function HomePage() {
       return null;
     }
 
-    let slice = enriched.slice(latestStartIndex, latestStartIndex + 14).filter((point) => point.date <= today);
+    let slice = enriched
+      .slice(latestStartIndex, latestStartIndex + CYCLE_OVERVIEW_MAX_DAYS)
+      .filter((point) => point.date <= today);
     if (!slice.length) {
       slice = [enriched[latestStartIndex]];
     }
