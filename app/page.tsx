@@ -1588,7 +1588,7 @@ export default function HomePage() {
   const [pbacSelection, setPbacSelection] = useState<{ product: PbacProduct | null; saturation: PbacSaturation | null }>(
     () => ({ product: null, saturation: null })
   );
-  const [pbacCountDraft, setPbacCountDraft] = useState("0");
+  const [pbacCountDraft, setPbacCountDraft] = useState(0);
   const [sensorsVisible, setSensorsVisible] = useState(false);
   const [exploratoryVisible, setExploratoryVisible] = useState(false);
   const [notesTagDraft, setNotesTagDraft] = useState("");
@@ -2441,21 +2441,28 @@ export default function HomePage() {
     const item = findPbacProductItem(product, saturation);
     if (!item) return;
     setPbacSelection({ product, saturation });
-    setPbacCountDraft(String(pbacCounts[item.id] ?? 0));
+    const existingCount = pbacCounts[item.id] ?? 0;
+    const sanitizedCount = Math.max(0, Math.min(12, Math.round(existingCount)));
+    setPbacCountDraft(sanitizedCount);
     setPbacStep(3);
   };
 
   const commitPbacCount = () => {
     if (!selectedPbacItem) return;
-    const parsed = Math.max(0, Math.round(Number(pbacCountDraft) || 0));
+    const parsed = Math.max(0, Math.min(12, Math.round(pbacCountDraft)));
     setPbacCounts((prev) => {
       if (prev[selectedPbacItem.id] === parsed) {
         return prev;
       }
       return { ...prev, [selectedPbacItem.id]: parsed };
     });
-    setPbacCountDraft(String(parsed));
+    setPbacCountDraft(parsed);
   };
+
+  const pbacSliderHintId = "pbac-count-range-hint";
+  const pbacSliderWarningId = "pbac-count-warning";
+  const pbacSliderDescribedBy =
+    pbacCountDraft === 12 ? `${pbacSliderHintId} ${pbacSliderWarningId}` : pbacSliderHintId;
 
   const handleEhp5ItemChange = (index: number, value: number | undefined) => {
     setMonthlyDraft((prev) => {
@@ -3858,7 +3865,7 @@ export default function HomePage() {
                           setPbacCounts({ ...PBAC_DEFAULT_COUNTS });
                           setPbacStep(1);
                           setPbacSelection({ product: null, saturation: null });
-                          setPbacCountDraft("0");
+                          setPbacCountDraft(0);
                         }
                       }}
                     />
@@ -3931,14 +3938,30 @@ export default function HomePage() {
                             help={TERMS.pbac.help}
                             htmlFor="pbac-count"
                           >
-                            <Input
-                              id="pbac-count"
-                              type="number"
-                              min={0}
-                              step={1}
-                              value={pbacCountDraft}
-                              onChange={(event) => setPbacCountDraft(event.target.value)}
-                            />
+                            <div className="space-y-2">
+                              <Slider
+                                id="pbac-count"
+                                min={0}
+                                max={12}
+                                step={1}
+                                value={[pbacCountDraft]}
+                                onValueChange={([value]) => setPbacCountDraft(value ?? 0)}
+                                aria-describedby={pbacSliderDescribedBy}
+                              />
+                              <div
+                                id={pbacSliderHintId}
+                                className="flex justify-between text-xs text-rose-600"
+                              >
+                                <span>0</span>
+                                <span>12</span>
+                              </div>
+                              <p className="text-sm text-rose-700">Aktuelle Anzahl: {pbacCountDraft}</p>
+                              {pbacCountDraft === 12 ? (
+                                <p id={pbacSliderWarningId} className="text-sm font-medium text-rose-800">
+                                  Bei mehr als zwölf bitte ärztlich abklären.
+                                </p>
+                              ) : null}
+                            </div>
                           </Labeled>
                           <div className="flex flex-wrap items-center gap-2">
                             <Button type="button" variant="ghost" onClick={() => setPbacStep(2)}>
@@ -3951,7 +3974,7 @@ export default function HomePage() {
                                 onClick={() => {
                                   commitPbacCount();
                                   setPbacSelection({ product: null, saturation: null });
-                                  setPbacCountDraft("0");
+                                  setPbacCountDraft(0);
                                   setPbacStep(1);
                                 }}
                               >
@@ -4098,7 +4121,7 @@ export default function HomePage() {
                               onClick={() => {
                                 setPbacStep(1);
                                 setPbacSelection({ product: null, saturation: null });
-                                setPbacCountDraft("0");
+                                setPbacCountDraft(0);
                               }}
                             >
                               Wizard schließen
