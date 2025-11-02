@@ -2680,35 +2680,6 @@ export default function HomePage() {
     setIssues([]);
   };
 
-  const handleDailyImport = (event: ChangeEvent<HTMLInputElement>) => {
-    const input = event.target;
-    const file = input.files?.[0];
-    if (!file) {
-      input.value = "";
-      return;
-    }
-    file
-      .text()
-      .then((text) => {
-        try {
-          const parsed = JSON.parse(text);
-          if (!Array.isArray(parsed)) throw new Error("invalid");
-          const normalized = parsed
-            .filter((item): item is DailyEntry & Record<string, unknown> => typeof item === "object" && item !== null)
-            .map((item) => normalizeImportedDailyEntry(item));
-          const invalid = normalized.filter((entry) => validateDailyEntry(entry).length > 0);
-          if (invalid.length) throw new Error("invalid");
-          setDailyEntries(normalized);
-          setInfoMessage("Tagesdaten importiert.");
-        } catch {
-          setInfoMessage("Import fehlgeschlagen.");
-        }
-      })
-      .finally(() => {
-        input.value = "";
-      });
-  };
-
   const handleBackupExport = () => {
     downloadFile(
       `endo-backup-${today}.json`,
@@ -3117,31 +3088,6 @@ export default function HomePage() {
       steps: { r: computePearson(stepsPairs), n: stepsPairs.length },
     };
   }, [annotatedDailyEntries, dailyEntries]);
-
-  const dailyCsvRows = useMemo(
-    () => dailyEntries.map((entry) => buildDailyExportRow(entry)),
-    [dailyEntries, buildDailyExportRow]
-  );
-
-  const jsonExportData = useMemo(
-    () =>
-      dailyEntries.map((entry) => ({
-        ...entry,
-        urinary_urgency: activeUrinary ? entry.urinaryOpt?.urgency ?? null : undefined,
-        urinary_leaks: activeUrinary ? entry.urinaryOpt?.leaksCount ?? null : undefined,
-        urinary_nocturia: activeUrinary ? entry.urinaryOpt?.nocturia ?? null : undefined,
-        ovulation_pain_side: entry.ovulationPain?.side ?? null,
-        ovulation_pain_intensity:
-          typeof entry.ovulationPain?.intensity === "number" ? entry.ovulationPain.intensity : null,
-        headache_present: activeHeadache ? entry.headacheOpt?.present ?? null : undefined,
-        headache_nrs: activeHeadache ? entry.headacheOpt?.nrs ?? null : undefined,
-        headache_aura: activeHeadache ? entry.headacheOpt?.aura ?? null : undefined,
-        dizziness_present: activeDizziness ? entry.dizzinessOpt?.present ?? null : undefined,
-        dizziness_nrs: activeDizziness ? entry.dizzinessOpt?.nrs ?? null : undefined,
-        dizziness_orthostatic: activeDizziness ? entry.dizzinessOpt?.orthostatic ?? null : undefined,
-      })),
-    [dailyEntries, activeUrinary, activeHeadache, activeDizziness]
-  );
 
   const backupPayload = useMemo<BackupPayload>(
     () => ({
@@ -4960,37 +4906,6 @@ export default function HomePage() {
                       )}
                     </div>
                   )}
-                  <label className="flex cursor-pointer items-center gap-2 text-sm text-rose-600">
-                    <Upload size={16} />
-                    JSON importieren
-                    <input type="file" accept="application/json" className="hidden" onChange={handleDailyImport} />
-                  </label>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() =>
-                      downloadFile(
-                        `endo-daily-${today}.json`,
-                        JSON.stringify(jsonExportData, null, 2),
-                        "application/json"
-                      )
-                    }
-                  >
-                    <Download size={16} className="mr-2" /> JSON Export
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() =>
-                      downloadFile(
-                        `endo-daily-${today}.csv`,
-                        toCsv(dailyCsvRows),
-                        "text/csv"
-                      )
-                    }
-                  >
-                    <Download size={16} className="mr-2" /> CSV Export
-                  </Button>
                   <div className="flex flex-wrap items-center gap-2">
                     {[3, 6, 12].map((months) => (
                       <Button key={months} type="button" variant="outline" onClick={() => handleReportDownload(months)}>
