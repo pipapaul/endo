@@ -118,37 +118,13 @@ const MIGRAINE_WITH_AURA_LABEL = "Migräne mit Aura";
 const MIGRAINE_QUALITY_SET = new Set<string>(MIGRAINE_PAIN_QUALITIES);
 
 const sanitizeHeadRegionQualities = (
-  qualities: DailyEntry["painQuality"],
-  migraineEnabled: boolean
+  qualities: DailyEntry["painQuality"]
 ): DailyEntry["painQuality"] => {
   const base = Array.from(new Set(qualities)) as DailyEntry["painQuality"];
-  if (!migraineEnabled) {
-    return base.filter((quality) => !MIGRAINE_QUALITY_SET.has(quality)) as DailyEntry["painQuality"];
-  }
   if (base.includes(MIGRAINE_WITH_AURA_LABEL)) {
     return base.filter((quality) => quality !== MIGRAINE_LABEL) as DailyEntry["painQuality"];
   }
   return base;
-};
-
-const stripMigraineFromRegions = (
-  regions: DailyEntry["painRegions"] | undefined
-): DailyEntry["painRegions"] | undefined => {
-  if (!regions) return regions;
-  let changed = false;
-  const nextRegions = regions.map((region) => {
-    if (region.regionId !== HEAD_REGION_ID) {
-      return region;
-    }
-    const original = region.qualities ?? [];
-    const filtered = original.filter((quality) => !MIGRAINE_QUALITY_SET.has(quality)) as DailyEntry["painQuality"];
-    if (filtered.length === original.length) {
-      return region;
-    }
-    changed = true;
-    return { ...region, qualities: filtered };
-  });
-  return changed ? nextRegions : regions;
 };
 
 const mergeHeadacheOptIntoPainRegions = (
@@ -181,8 +157,8 @@ const mergeHeadacheOptIntoPainRegions = (
   const filtered = originalQualities.filter((quality) => !MIGRAINE_QUALITY_SET.has(quality));
   const hasDesired = originalQualities.includes(desiredQuality);
   const nextQualities = hasDesired && filtered.length === originalQualities.length
-    ? sanitizeHeadRegionQualities(originalQualities as DailyEntry["painQuality"], true)
-    : sanitizeHeadRegionQualities([...(filtered as DailyEntry["painQuality"]), desiredQuality], true);
+    ? sanitizeHeadRegionQualities(originalQualities as DailyEntry["painQuality"])
+    : sanitizeHeadRegionQualities([...(filtered as DailyEntry["painQuality"]), desiredQuality]);
   const nextNrs = typeof headRegion.nrs === "number" ? headRegion.nrs : targetNrs;
 
   if (nextQualities === headRegion.qualities && nextNrs === headRegion.nrs) {
@@ -2451,11 +2427,10 @@ export default function HomePage() {
   useEffect(() => {
     if (!activeHeadache) {
       setDailyDraft((prev) => {
-        const nextRegions = stripMigraineFromRegions(prev.painRegions);
-        if (!prev.headacheOpt && nextRegions === prev.painRegions) {
+        if (!prev.headacheOpt) {
           return prev;
         }
-        return { ...prev, painRegions: nextRegions, headacheOpt: undefined };
+        return { ...prev, headacheOpt: undefined };
       });
     }
   }, [activeHeadache, setDailyDraft]);
@@ -2477,11 +2452,10 @@ export default function HomePage() {
         return prev;
       }
       if (key === "moduleHeadache") {
-        const nextRegions = stripMigraineFromRegions(prev.painRegions);
-        if (!prev.headacheOpt && nextRegions === prev.painRegions) {
+        if (!prev.headacheOpt) {
           return prev;
         }
-        return { ...prev, painRegions: nextRegions, headacheOpt: undefined };
+        return { ...prev, headacheOpt: undefined };
       }
       if (key === "moduleDizziness" && prev.dizzinessOpt) {
         return { ...prev, dizzinessOpt: undefined };
@@ -3149,8 +3123,7 @@ export default function HomePage() {
       return null;
     }
     const region = regions[regionIndex];
-    const qualityChoices =
-      region.regionId === HEAD_REGION_ID && activeHeadache ? HEAD_PAIN_QUALITIES : PAIN_QUALITIES;
+    const qualityChoices = region.regionId === HEAD_REGION_ID ? HEAD_PAIN_QUALITIES : PAIN_QUALITIES;
     return (
       <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4">
         <p className="font-medium text-rose-800">Schmerzen in: {getRegionLabel(region.regionId)}</p>
@@ -3192,7 +3165,7 @@ export default function HomePage() {
               setDailyDraft((prev) => {
                 const updatedQualities =
                   region.regionId === HEAD_REGION_ID
-                    ? sanitizeHeadRegionQualities(next as DailyEntry["painQuality"], activeHeadache)
+                    ? sanitizeHeadRegionQualities(next as DailyEntry["painQuality"])
                     : (next as DailyEntry["painQuality"]);
                 const nextRegions = (prev.painRegions ?? []).map((r) =>
                   r.regionId === region.regionId
