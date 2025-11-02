@@ -312,14 +312,20 @@ type CycleOverviewChartPoint = CycleOverviewPoint & {
   bleedingLabel: string;
   bleedingValue: number;
   cycleDayLabel: string;
+  cycleDayValue: number | null;
   dateLabel: string;
   painValue: number;
+  isCurrentDay: boolean;
 };
 
 type PainDotProps = DotProps & { payload?: CycleOverviewChartPoint };
 
 const PainDot = ({ cx, cy, payload }: PainDotProps) => {
   if (typeof cx !== "number" || typeof cy !== "number" || !payload) {
+    return null;
+  }
+
+  if (!payload.isCurrentDay) {
     return null;
   }
 
@@ -335,6 +341,7 @@ const PainDot = ({ cx, cy, payload }: PainDotProps) => {
 
 const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
   const bleedingGradientId = useId();
+  const todayIso = useMemo(() => formatDate(new Date()), []);
   const chartPoints = useMemo<CycleOverviewChartPoint[]>(() => {
     return data.points.slice(0, CYCLE_OVERVIEW_MAX_DAYS).map((point) => {
       const bleeding = describeBleedingLevel(point);
@@ -347,11 +354,13 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
         bleedingLabel: bleeding.label,
         bleedingValue: bleeding.value,
         cycleDayLabel: point.cycleDay ? `ZT ${point.cycleDay}` : "ZT –",
+        cycleDayValue: point.cycleDay ?? null,
         dateLabel: formatShortGermanDate(point.date),
         painValue,
+        isCurrentDay: point.date === todayIso,
       };
     });
-  }, [data.points]);
+  }, [data.points, todayIso]);
 
   const renderTooltip = useCallback(
     (props: TooltipProps<number, string>) => {
@@ -380,33 +389,8 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
   }
 
   return (
-    <section
-      className="rounded-2xl border border-rose-200 bg-white/70 p-4 shadow-sm backdrop-blur"
-      role="group"
-      aria-labelledby="cycle-overview-heading"
-    >
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <div>
-          <p id="cycle-overview-heading" className="text-xs font-semibold uppercase tracking-wide text-rose-500">
-            Aktueller Zyklus
-          </p>
-          <p className="text-lg font-semibold text-rose-900">
-            Start {formatShortGermanDate(data.startDate)}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3 text-[11px] text-rose-600">
-          <span className="flex items-center gap-1">
-            <span className="block h-2.5 w-2.5 rounded-full bg-rose-700" aria-hidden /> Schmerz
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="block h-2 w-4 rounded bg-gradient-to-b from-rose-200 to-rose-400" aria-hidden /> Blutung
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="block h-2.5 w-2.5 rounded-full border border-amber-400 bg-amber-200" aria-hidden /> Eisprung
-          </span>
-        </div>
-      </div>
-      <div className="mt-4 h-56 w-full sm:h-64">
+    <section aria-label="Aktueller Zyklus">
+      <div className="mx-auto h-36 w-[80vw] max-w-full sm:h-44">
         <ResponsiveContainer>
           <ComposedChart data={chartPoints} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
             <defs>
@@ -416,10 +400,13 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               </linearGradient>
             </defs>
             <XAxis
-              dataKey="cycleDayLabel"
+              dataKey="cycleDayValue"
               axisLine={false}
               tickLine={false}
-              tick={{ fill: "#fb7185", fontSize: 11 }}
+              tick={{ fill: "#fb7185", fontSize: 12, fontWeight: 600 }}
+              tickFormatter={(value: number | null) =>
+                typeof value === "number" && Number.isFinite(value) ? `ZT ${value}` : ""
+              }
               minTickGap={6}
             />
             <YAxis domain={[0, 10]} hide />
