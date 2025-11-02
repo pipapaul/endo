@@ -1404,7 +1404,15 @@ function normalizeImportedMonthlyEntry(entry: MonthlyEntry & Record<string, unkn
   return normalized;
 }
 
-function BodyMap({ value, onChange }: { value: string[]; onChange: (next: string[]) => void }) {
+function BodyMap({
+  value,
+  onChange,
+  renderRegionCard,
+}: {
+  value: string[];
+  onChange: (next: string[]) => void;
+  renderRegionCard: (regionId: string) => ReactNode;
+}) {
   return (
     <div className="space-y-3">
       {BODY_REGION_GROUPS.map((group) => {
@@ -1449,6 +1457,22 @@ function BodyMap({ value, onChange }: { value: string[]; onChange: (next: string
                   );
                 })}
               </div>
+              {(() => {
+                const cards = group.regions
+                  .filter((region) => value.includes(region.id))
+                  .map((region) => ({ id: region.id, node: renderRegionCard(region.id) }))
+                  .filter((entry): entry is { id: string; node: ReactNode } => Boolean(entry.node));
+                if (cards.length === 0) {
+                  return null;
+                }
+                return (
+                  <div className="mt-3 space-y-3">
+                    {cards.map((entry) => (
+                      <div key={entry.id}>{entry.node}</div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           </details>
         );
@@ -3092,6 +3116,74 @@ export default function HomePage() {
       </p>
     ));
 
+  const renderPainRegionCard = (regionId: string) => {
+    const regions = dailyDraft.painRegions ?? [];
+    const regionIndex = regions.findIndex((region) => region.regionId === regionId);
+    if (regionIndex === -1) {
+      return null;
+    }
+    const region = regions[regionIndex];
+    return (
+      <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4">
+        <p className="font-medium text-rose-800">Schmerzen in: {getRegionLabel(region.regionId)}</p>
+        {renderIssuesForPath(`painRegions[${regionIndex}].regionId`)}
+        <div className="space-y-2">
+          <Label className="text-xs text-rose-600" htmlFor={`region-nrs-${region.regionId}`}>
+            Intensität (0–10)
+          </Label>
+          <NrsInput
+            id={`region-nrs-${region.regionId}`}
+            value={region.nrs}
+            onChange={(value) => {
+              setDailyDraft((prev) => {
+                const nextRegions = (prev.painRegions ?? []).map((r) =>
+                  r.regionId === region.regionId
+                    ? {
+                        ...r,
+                        nrs: Math.max(0, Math.min(10, Math.round(value))),
+                      }
+                    : r
+                );
+                return {
+                  ...prev,
+                  painRegions: nextRegions,
+                };
+              });
+            }}
+          />
+          {renderIssuesForPath(`painRegions[${regionIndex}].nrs`)}
+        </div>
+        <div className="space-y-2">
+          <Label className="text-xs text-rose-600">Schmerzcharakter in dieser Region</Label>
+          <MultiSelectChips
+            options={PAIN_QUALITIES.map((quality) => ({ value: quality, label: quality }))}
+            value={region.qualities}
+            onToggle={(next) => {
+              setDailyDraft((prev) => {
+                const nextRegions = (prev.painRegions ?? []).map((r) =>
+                  r.regionId === region.regionId
+                    ? {
+                        ...r,
+                        qualities: next as DailyEntry["painQuality"],
+                      }
+                    : r
+                );
+                return {
+                  ...prev,
+                  painRegions: nextRegions,
+                };
+              });
+            }}
+          />
+          {renderIssuesForPath(`painRegions[${regionIndex}].qualities`)}
+          {(region.qualities ?? []).map((_, qualityIndex) =>
+            renderIssuesForPath(`painRegions[${regionIndex}].qualities[${qualityIndex}]`)
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const optionalSensorsLabel = sensorsVisible ? "Optional (Hilfsmittel) ausblenden" : "Optional (Hilfsmittel) einblenden";
 
   const cycleOverlay = useMemo(() => {
@@ -3817,79 +3909,11 @@ export default function HomePage() {
                         <BodyMap
                           value={(dailyDraft.painRegions ?? []).map((region) => region.regionId)}
                           onChange={updatePainRegionsFromSelection}
+                          renderRegionCard={renderPainRegionCard}
                         />
                         {renderIssuesForPath("painRegions")}
                         {renderIssuesForPath("painMapRegionIds")}
                       </TermField>
-
-                      {(dailyDraft.painRegions ?? []).map((region, regionIndex) => (
-                        <div
-                          key={region.regionId}
-                          className="space-y-3 rounded-lg border border-rose-100 bg-white p-4"
-                        >
-                          <p className="font-medium text-rose-800">
-                            Schmerzen in: {getRegionLabel(region.regionId)}
-                          </p>
-                          {renderIssuesForPath(`painRegions[${regionIndex}].regionId`)}
-                          <div className="space-y-2">
-                            <Label className="text-xs text-rose-600" htmlFor={`region-nrs-${region.regionId}`}>
-                              Intensität (0–10)
-                            </Label>
-                            <NrsInput
-                              id={`region-nrs-${region.regionId}`}
-                              value={region.nrs}
-                              onChange={(value) => {
-                                setDailyDraft((prev) => {
-                                  const nextRegions = (prev.painRegions ?? []).map((r) =>
-                                    r.regionId === region.regionId
-                                      ? {
-                                          ...r,
-                                          nrs: Math.max(0, Math.min(10, Math.round(value))),
-                                        }
-                                      : r
-                                  );
-                                  return {
-                                    ...prev,
-                                    painRegions: nextRegions,
-                                  };
-                                });
-                              }}
-                            />
-                            {renderIssuesForPath(`painRegions[${regionIndex}].nrs`)}
-                          </div>
-                          <div className="space-y-2">
-                            <Label className="text-xs text-rose-600">
-                              Schmerzcharakter in dieser Region
-                            </Label>
-                            <MultiSelectChips
-                              options={PAIN_QUALITIES.map((quality) => ({ value: quality, label: quality }))}
-                              value={region.qualities}
-                              onToggle={(next) => {
-                                setDailyDraft((prev) => {
-                                  const nextRegions = (prev.painRegions ?? []).map((r) =>
-                                    r.regionId === region.regionId
-                                      ? {
-                                          ...r,
-                                          qualities: next as DailyEntry["painQuality"],
-                                        }
-                                      : r
-                                  );
-                                  return {
-                                    ...prev,
-                                    painRegions: nextRegions,
-                                  };
-                                });
-                              }}
-                            />
-                            {renderIssuesForPath(`painRegions[${regionIndex}].qualities`)}
-                            {(region.qualities ?? []).map((_, qualityIndex) =>
-                              renderIssuesForPath(
-                                `painRegions[${regionIndex}].qualities[${qualityIndex}]`
-                              )
-                            )}
-                          </div>
-                        </div>
-                      ))}
 
                       <TermField termKey="nrs">
                         <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4">
