@@ -75,25 +75,68 @@ export function validateDailyEntry(entry: DailyEntry): ValidationIssue[] {
     issues.push({ path: "date", message: "Datum muss im Format YYYY-MM-DD vorliegen." });
   }
 
-  if (!intRange(entry.painNRS, 0, 10)) {
+  const hasValidPainNRS = intRange(entry.painNRS, 0, 10);
+  const hasValidImpactNRS = intRange(entry.impactNRS, 0, 10);
+
+  if (!hasValidPainNRS && !hasValidImpactNRS) {
     issues.push({
-      path: "painNRS",
-      message: "Schmerzintensität muss als ganze Zahl zwischen 0 und 10 erfasst werden.",
+      path: "impactNRS",
+      message: "Bitte gib an, wie stark dich der Schmerz heute insgesamt belastet hat (0 bis 10).",
     });
   }
 
   const allowedPainQuality = new Set(["krampfend", "stechend", "brennend", "dumpf", "ziehend", "anders"]);
-  entry.painQuality.forEach((quality, index) => {
-    if (!allowedPainQuality.has(quality)) {
-      issues.push({
-        path: `painQuality[${index}]`,
-        message: "Ungültige Schmerzqualität ausgewählt.",
-      });
-    }
-  });
 
-  if (!Array.isArray(entry.painMapRegionIds)) {
-    issues.push({ path: "painMapRegionIds", message: "Schmerzorte müssen als Liste gespeichert werden." });
+  if (Array.isArray(entry.painRegions) && entry.painRegions.length > 0) {
+    entry.painRegions.forEach((region, idx) => {
+      if (!region || typeof region !== "object") {
+        issues.push({ path: `painRegions[${idx}]`, message: "Ungültiger Schmerzbereich." });
+        return;
+      }
+
+      if (typeof region.regionId !== "string" || !region.regionId) {
+        issues.push({ path: `painRegions[${idx}].regionId`, message: "Schmerzregion muss gesetzt sein." });
+      }
+
+      if (!intRange(region.nrs, 0, 10)) {
+        issues.push({
+          path: `painRegions[${idx}].nrs`,
+          message: "Schmerzintensität pro Region muss eine ganze Zahl zwischen 0 und 10 sein.",
+        });
+      }
+
+      if (!Array.isArray(region.qualities)) {
+        issues.push({
+          path: `painRegions[${idx}].qualities`,
+          message: "Schmerzcharakter muss als Liste vorliegen.",
+        });
+      } else {
+        region.qualities.forEach((q, qIndex) => {
+          if (!allowedPainQuality.has(q)) {
+            issues.push({
+              path: `painRegions[${idx}].qualities[${qIndex}]`,
+              message: "Ungültige Schmerzqualität ausgewählt.",
+            });
+          }
+        });
+      }
+    });
+  } else {
+    // Rückfall auf alte Felder für sehr alte Einträge oder falls Nutzerin oder Nutzer
+    // aus irgendeinem Grund noch nichts in painRegions eingetragen hat
+
+    entry.painQuality.forEach((quality, index) => {
+      if (!allowedPainQuality.has(quality)) {
+        issues.push({
+          path: `painQuality[${index}]`,
+          message: "Ungültige Schmerzqualität ausgewählt.",
+        });
+      }
+    });
+
+    if (!Array.isArray(entry.painMapRegionIds)) {
+      issues.push({ path: "painMapRegionIds", message: "Schmerzorte müssen als Liste gespeichert werden." });
+    }
   }
 
   if (entry.ovulationPain) {
