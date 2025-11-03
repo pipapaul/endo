@@ -1655,6 +1655,7 @@ export default function HomePage() {
   const draftStatusTimeoutRef = useRef<number | null>(null);
   const draftRestoredRef = useRef(false);
   const lastDraftSavedAtRef = useRef<number | null>(null);
+  const manualDailySelectionRef = useRef(false);
   const detailToolbarRef = useRef<HTMLElement | null>(null);
 
   const isBirthdayGreetingDay = () => {
@@ -1833,7 +1834,10 @@ export default function HomePage() {
   );
 
   const selectDailyDate = useCallback(
-    (targetDate: string) => {
+    (targetDate: string, options?: { manual?: boolean }) => {
+      if (options?.manual) {
+        manualDailySelectionRef.current = true;
+      }
       const existingEntry = dailyEntries.find((entry) => entry.date === targetDate);
       const baseEntry = existingEntry ?? createEmptyDailyEntry(targetDate);
       const clonedEntry =
@@ -1848,6 +1852,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!storageReady) return;
+    if (manualDailySelectionRef.current) return;
     if (isDailyDirty) return;
     if (dailyDraft.date >= today) return;
     const hasDraftEntry = dailyEntries.some((entry) => entry.date === dailyDraft.date);
@@ -2263,7 +2268,7 @@ export default function HomePage() {
     const base = parseIsoDate(dailyDraft.date || today);
     if (!base) return;
     base.setDate(base.getDate() - 1);
-    selectDailyDate(formatDate(base));
+    selectDailyDate(formatDate(base), { manual: true });
   }, [dailyDraft.date, selectDailyDate, today]);
 
   const goToNextDay = useCallback(() => {
@@ -2276,7 +2281,7 @@ export default function HomePage() {
     base.setDate(base.getDate() + 1);
     const nextDate = formatDate(base);
     if (nextDate > today) return;
-    selectDailyDate(nextDate);
+    selectDailyDate(nextDate, { manual: true });
   }, [dailyDraft.date, selectDailyDate, today]);
 
   const goToPreviousMonth = useCallback(() => {
@@ -3833,7 +3838,8 @@ export default function HomePage() {
                       <Input
                         type="date"
                         value={dailyDraft.date}
-                        onChange={(event) => selectDailyDate(event.target.value)}
+                        onChange={(event) =>
+                          selectDailyDate(event.target.value, { manual: true })}
                         className="w-full max-w-[11rem]"
                         max={today}
                         aria-label="Datum direkt auswählen"
