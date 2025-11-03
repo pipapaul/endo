@@ -1655,6 +1655,7 @@ export default function HomePage() {
   const draftStatusTimeoutRef = useRef<number | null>(null);
   const draftRestoredRef = useRef(false);
   const lastDraftSavedAtRef = useRef<number | null>(null);
+  const manualDailySelectionRef = useRef(false);
   const detailToolbarRef = useRef<HTMLElement | null>(null);
 
   const isBirthdayGreetingDay = () => {
@@ -1832,16 +1833,32 @@ export default function HomePage() {
     [dailyEntries, today]
   );
 
+  const selectDailyDate = useCallback(
+    (targetDate: string, options?: { manual?: boolean }) => {
+      if (options?.manual) {
+        manualDailySelectionRef.current = true;
+      }
+      const existingEntry = dailyEntries.find((entry) => entry.date === targetDate);
+      const baseEntry = existingEntry ?? createEmptyDailyEntry(targetDate);
+      const clonedEntry =
+        typeof structuredClone === "function"
+          ? structuredClone(baseEntry)
+          : (JSON.parse(JSON.stringify(baseEntry)) as DailyEntry);
+      setDailyDraft(clonedEntry);
+      setLastSavedDailySnapshot(clonedEntry);
+    },
+    [dailyEntries, setDailyDraft, setLastSavedDailySnapshot]
+  );
+
   useEffect(() => {
     if (!storageReady) return;
+    if (manualDailySelectionRef.current) return;
     if (isDailyDirty) return;
     if (dailyDraft.date >= today) return;
     const hasDraftEntry = dailyEntries.some((entry) => entry.date === dailyDraft.date);
     if (hasDraftEntry) return;
-    const next = createEmptyDailyEntry(today);
-    setDailyDraft(next);
-    setLastSavedDailySnapshot(next);
-  }, [storageReady, isDailyDirty, dailyDraft.date, dailyEntries, today, setDailyDraft, setLastSavedDailySnapshot]);
+    selectDailyDate(today);
+  }, [storageReady, isDailyDirty, dailyDraft.date, dailyEntries, today, selectDailyDate]);
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !("storage" in navigator) || !navigator.storage) {
@@ -2248,27 +2265,24 @@ export default function HomePage() {
   }, [daysUntilWeeklySuggested]);
 
   const goToPreviousDay = useCallback(() => {
-    setDailyDraft((prev) => {
-      const base = parseIsoDate(prev.date || today);
-      if (!base) return prev;
-      base.setDate(base.getDate() - 1);
-      return { ...prev, date: formatDate(base) };
-    });
-  }, [setDailyDraft, today]);
+    const base = parseIsoDate(dailyDraft.date || today);
+    if (!base) return;
+    base.setDate(base.getDate() - 1);
+    selectDailyDate(formatDate(base), { manual: true });
+  }, [dailyDraft.date, selectDailyDate, today]);
 
   const goToNextDay = useCallback(() => {
-    setDailyDraft((prev) => {
-      if ((prev.date || today) >= today) {
-        return prev;
-      }
-      const base = parseIsoDate(prev.date || today);
-      if (!base) return prev;
-      base.setDate(base.getDate() + 1);
-      const nextDate = formatDate(base);
-      if (nextDate > today) return prev;
-      return { ...prev, date: nextDate };
-    });
-  }, [setDailyDraft, today]);
+    const currentDate = dailyDraft.date || today;
+    if (currentDate >= today) {
+      return;
+    }
+    const base = parseIsoDate(currentDate);
+    if (!base) return;
+    base.setDate(base.getDate() + 1);
+    const nextDate = formatDate(base);
+    if (nextDate > today) return;
+    selectDailyDate(nextDate, { manual: true });
+  }, [dailyDraft.date, selectDailyDate, today]);
 
   const goToPreviousMonth = useCallback(() => {
     setMonthlyDraft((prev) => {
@@ -3824,7 +3838,8 @@ export default function HomePage() {
                       <Input
                         type="date"
                         value={dailyDraft.date}
-                        onChange={(event) => setDailyDraft({ ...dailyDraft, date: event.target.value })}
+                        onChange={(event) =>
+                          selectDailyDate(event.target.value, { manual: true })}
                         className="w-full max-w-[11rem]"
                         max={today}
                         aria-label="Datum direkt auswählen"
