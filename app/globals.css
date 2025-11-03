@@ -24,6 +24,77 @@ body {
   overflow-x: hidden;
 }
 
+.endo-slider {
+  touch-action: pan-y;
+  transition: background 0.2s ease;
+}
+
+.endo-slider::-webkit-slider-runnable-track {
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: transparent;
+}
+
+.endo-slider::-moz-range-track {
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: rgba(244, 114, 182, 0.16);
+}
+
+.endo-slider::-moz-range-progress {
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: rgba(225, 29, 72, 0.7);
+}
+
+.endo-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 9999px;
+  background: #fff;
+  border: 3px solid var(--endo-accent);
+  box-shadow: 0 12px 25px rgba(225, 29, 72, 0.18);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  cursor: pointer;
+  margin-top: -0.5rem;
+}
+
+.endo-slider::-moz-range-thumb {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 9999px;
+  background: #fff;
+  border: 3px solid var(--endo-accent);
+  box-shadow: 0 12px 25px rgba(225, 29, 72, 0.18);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  cursor: pointer;
+}
+
+.endo-slider:active::-webkit-slider-thumb,
+.endo-slider:focus-visible::-webkit-slider-thumb,
+.endo-slider:active::-moz-range-thumb,
+.endo-slider:focus-visible::-moz-range-thumb {
+  transform: scale(1.06);
+  box-shadow: 0 16px 32px rgba(225, 29, 72, 0.24);
+}
+
+.endo-slider:disabled::-webkit-slider-thumb,
+.endo-slider:disabled::-moz-range-thumb {
+  border-color: rgba(148, 163, 184, 0.55);
+  background: #f8fafc;
+  box-shadow: none;
+}
+
+.endo-slider:disabled::-moz-range-track {
+  background: rgba(148, 163, 184, 0.18);
+}
+
+.endo-slider:disabled::-moz-range-progress {
+  background: rgba(148, 163, 184, 0.35);
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,

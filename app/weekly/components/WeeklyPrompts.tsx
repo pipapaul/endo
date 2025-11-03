@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
+import { SliderValueDisplay } from "@/components/ui/slider-value-display";
 import { cn } from "@/lib/utils";
 import { getSuggestedChips, rememberChosenChips } from "@/lib/weekly/suggestions";
 import type { WeeklyDraft } from "@/lib/weekly/drafts";
@@ -235,7 +236,12 @@ export function WeeklyPrompts({ value, onChange }: { value: PromptAnswers; onCha
                     {field.label}
                     <InfoTip tech={field.label} help={field.tooltip} />
                   </Label>
-                  <span className="text-sm font-semibold text-rose-900">{value} %</span>
+                  <SliderValueDisplay
+                    value={value}
+                    unit="%"
+                    className="min-w-[6rem]"
+                    valueClassName="text-3xl"
+                  />
                 </div>
                 <Slider
                   id={sliderId}

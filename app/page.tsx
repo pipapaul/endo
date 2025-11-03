@@ -1,6 +1,16 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import {
   LineChart,
@@ -15,8 +25,10 @@ import {
   Bar,
   ScatterChart,
   Scatter,
+  Area,
+  ComposedChart,
 } from "recharts";
-import type { TooltipProps } from "recharts";
+import type { DotProps, TooltipProps } from "recharts";
 import {
   AlertTriangle,
   Calendar,
@@ -29,6 +41,7 @@ import {
   Home,
   ShieldCheck,
   Smartphone,
+  TrendingUp,
   Upload,
 } from "lucide-react";
 
@@ -42,8 +55,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
+import { SliderValueDisplay } from "@/components/ui/slider-value-display";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +74,9 @@ import {
   type PromptAnswers,
 } from "@/lib/weekly/reports";
 import { normalizeWpai, type WeeklyWpai } from "@/lib/weekly/wpai";
+import { isoWeekToDate } from "@/lib/isoWeek";
+
+const DETAIL_TOOLBAR_FALLBACK_HEIGHT = 96;
 
 type SymptomKey = keyof DailyEntry["symptoms"];
 
@@ -77,14 +94,105 @@ type BackupPayload = {
   featureFlags: FeatureFlags;
 };
 
-const PAIN_QUALITIES: DailyEntry["painQuality"] = [
+const BASE_PAIN_QUALITIES = [
   "krampfend",
   "stechend",
   "brennend",
   "dumpf",
   "ziehend",
   "anders",
-];
+] as const;
+
+const MIGRAINE_PAIN_QUALITIES = ["Migräne", "Migräne mit Aura"] as const;
+
+const PAIN_QUALITIES: DailyEntry["painQuality"] = [...BASE_PAIN_QUALITIES] as DailyEntry["painQuality"];
+const HEAD_PAIN_QUALITIES: DailyEntry["painQuality"] = [
+  ...BASE_PAIN_QUALITIES,
+  ...MIGRAINE_PAIN_QUALITIES,
+] as DailyEntry["painQuality"];
+const ALL_PAIN_QUALITIES: DailyEntry["painQuality"] = HEAD_PAIN_QUALITIES;
+
+const HEAD_REGION_ID = "head";
+const MIGRAINE_LABEL = "Migräne";
+const MIGRAINE_WITH_AURA_LABEL = "Migräne mit Aura";
+const MIGRAINE_QUALITY_SET = new Set<string>(MIGRAINE_PAIN_QUALITIES);
+
+const sanitizeHeadRegionQualities = (
+  qualities: DailyEntry["painQuality"]
+): DailyEntry["painQuality"] => {
+  const base = Array.from(new Set(qualities)) as DailyEntry["painQuality"];
+  if (base.includes(MIGRAINE_WITH_AURA_LABEL)) {
+    return base.filter((quality) => quality !== MIGRAINE_LABEL) as DailyEntry["painQuality"];
+  }
+  return base;
+};
+
+const mergeHeadacheOptIntoPainRegions = (
+  regions: DailyEntry["painRegions"] | undefined,
+  headacheOpt: DailyEntry["headacheOpt"] | undefined
+): DailyEntry["painRegions"] | undefined => {
+  if (!headacheOpt?.present) {
+    return regions;
+  }
+  const desiredQuality = headacheOpt.aura ? MIGRAINE_WITH_AURA_LABEL : MIGRAINE_LABEL;
+  const targetNrs =
+    typeof headacheOpt.nrs === "number" ? Math.max(0, Math.min(10, Math.round(headacheOpt.nrs))) : 0;
+
+  if (!regions || regions.length === 0) {
+    return [
+      { regionId: HEAD_REGION_ID, nrs: targetNrs, qualities: [desiredQuality] as DailyEntry["painQuality"] },
+    ];
+  }
+
+  const headIndex = regions.findIndex((region) => region.regionId === HEAD_REGION_ID);
+  if (headIndex === -1) {
+    return [
+      ...regions,
+      { regionId: HEAD_REGION_ID, nrs: targetNrs, qualities: [desiredQuality] as DailyEntry["painQuality"] },
+    ];
+  }
+
+  const headRegion = regions[headIndex];
+  const originalQualities = headRegion.qualities ?? [];
+  const filtered = originalQualities.filter((quality) => !MIGRAINE_QUALITY_SET.has(quality));
+  const hasDesired = originalQualities.includes(desiredQuality);
+  const nextQualities = hasDesired && filtered.length === originalQualities.length
+    ? sanitizeHeadRegionQualities(originalQualities as DailyEntry["painQuality"])
+    : sanitizeHeadRegionQualities([...(filtered as DailyEntry["painQuality"]), desiredQuality]);
+  const nextNrs = typeof headRegion.nrs === "number" ? headRegion.nrs : targetNrs;
+
+  if (nextQualities === headRegion.qualities && nextNrs === headRegion.nrs) {
+    return regions;
+  }
+
+  const updatedHead = { ...headRegion, nrs: nextNrs, qualities: nextQualities };
+  const nextRegions = [...regions];
+  nextRegions[headIndex] = updatedHead;
+  return nextRegions;
+};
+
+const deriveHeadacheFromPainRegions = (
+  regions: DailyEntry["painRegions"] | undefined,
+  previous: DailyEntry["headacheOpt"] | undefined
+): DailyEntry["headacheOpt"] | undefined => {
+  if (!regions) return undefined;
+  const headRegion = regions.find((region) => region.regionId === HEAD_REGION_ID);
+  if (!headRegion) return undefined;
+  const qualities = headRegion.qualities ?? [];
+  const hasMigraine = qualities.some((quality) => MIGRAINE_QUALITY_SET.has(quality));
+  if (!hasMigraine) return undefined;
+  const next: NonNullable<DailyEntry["headacheOpt"]> = {
+    present: true,
+    nrs: headRegion.nrs,
+  };
+  if (qualities.includes(MIGRAINE_WITH_AURA_LABEL)) {
+    next.aura = true;
+  }
+  if (previous?.meds?.length) {
+    next.meds = previous.meds;
+  }
+  return next;
+};
 
 type BodyRegion = { id: string; label: string };
 
@@ -167,6 +275,17 @@ const BODY_REGION_GROUPS: { id: string; label: string; regions: BodyRegion[] }[]
   },
 ];
 
+const getRegionLabel = (regionId: string): string => {
+  for (const group of BODY_REGION_GROUPS) {
+    for (const region of group.regions) {
+      if (region.id === regionId) {
+        return region.label;
+      }
+    }
+  }
+  return regionId;
+};
+
 const SYMPTOM_ITEMS: { key: SymptomKey; termKey: TermKey }[] = [
   { key: "dysmenorrhea", termKey: "dysmenorrhea" },
   { key: "deepDyspareunia", termKey: "deepDyspareunia" },
@@ -191,21 +310,7 @@ const PBAC_CLOT_ITEMS = [
 
 const PBAC_ITEMS = [...PBAC_PRODUCT_ITEMS, ...PBAC_CLOT_ITEMS] as const;
 
-type PbacProductItem = (typeof PBAC_PRODUCT_ITEMS)[number];
-type PbacProduct = PbacProductItem["product"];
-type PbacSaturation = PbacProductItem["saturation"];
 type PbacCounts = Record<(typeof PBAC_ITEMS)[number]["id"], number>;
-
-const PBAC_PRODUCT_OPTIONS: { id: PbacProduct; label: string }[] = [
-  { id: "pad", label: "Binde" },
-  { id: "tampon", label: "Tampon" },
-];
-
-const PBAC_SATURATION_OPTIONS: { id: PbacSaturation; label: string }[] = [
-  { id: "light", label: "leicht" },
-  { id: "medium", label: "mittel" },
-  { id: "heavy", label: "stark" },
-];
 
 const PBAC_FLOODING_SCORE = 5;
 const HEAVY_BLEED_PBAC = 100;
@@ -253,6 +358,179 @@ const PBAC_DEFAULT_COUNTS = PBAC_ITEMS.reduce<PbacCounts>((acc, item) => {
   return acc;
 }, {} as PbacCounts);
 
+type CycleOverviewPoint = {
+  date: string;
+  cycleDay: number | null;
+  painNRS: number;
+  pbacScore: number | null;
+  isBleeding: boolean;
+  ovulationPositive: boolean;
+  ovulationPainIntensity: number | null;
+};
+
+type CycleOverviewData = {
+  startDate: string;
+  points: CycleOverviewPoint[];
+};
+
+const CYCLE_OVERVIEW_MAX_DAYS = 30;
+
+const formatShortGermanDate = (iso: string) => {
+  const parsed = parseIsoDate(iso);
+  if (!parsed) return iso;
+  return parsed.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+};
+
+const describeBleedingLevel = (point: CycleOverviewPoint) => {
+  if (!point.isBleeding) {
+    return { label: "keine Blutung", value: 0 };
+  }
+  const score = point.pbacScore ?? 0;
+  if (score >= 100) {
+    return { label: "starke Blutung", value: 9 };
+  }
+  if (score >= 50) {
+    return { label: "mittlere Blutung", value: 7 };
+  }
+  if (score > 0) {
+    return { label: "leichte Blutung", value: 5 };
+  }
+  return { label: "Blutung ohne PBAC", value: 3 };
+};
+
+type CycleOverviewChartPoint = CycleOverviewPoint & {
+  bleedingLabel: string;
+  bleedingValue: number;
+  cycleDayLabel: string;
+  cycleDayValue: number | null;
+  dateLabel: string;
+  painValue: number;
+  isCurrentDay: boolean;
+};
+
+type PainDotProps = DotProps & { payload?: CycleOverviewChartPoint };
+
+const PainDot = ({ cx, cy, payload }: PainDotProps) => {
+  if (typeof cx !== "number" || typeof cy !== "number" || !payload) {
+    return null;
+  }
+
+  if (!payload.isCurrentDay) {
+    return null;
+  }
+
+  return (
+    <g>
+      {payload.ovulationPositive ? (
+        <circle cx={cx} cy={cy} r={7} fill="#fef3c7" stroke="#facc15" strokeWidth={2} />
+      ) : null}
+      <circle cx={cx} cy={cy} r={4} fill="#be123c" stroke="#fff" strokeWidth={2} />
+    </g>
+  );
+};
+
+const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
+  const bleedingGradientId = useId();
+  const todayIso = useMemo(() => formatDate(new Date()), []);
+  const chartPoints = useMemo<CycleOverviewChartPoint[]>(() => {
+    return data.points.slice(0, CYCLE_OVERVIEW_MAX_DAYS).map((point) => {
+      const bleeding = describeBleedingLevel(point);
+      const painValue = Number.isFinite(point.painNRS)
+        ? Math.max(0, Math.min(10, Number(point.painNRS)))
+        : 0;
+
+      return {
+        ...point,
+        bleedingLabel: bleeding.label,
+        bleedingValue: bleeding.value,
+        cycleDayLabel: point.cycleDay ? `ZT ${point.cycleDay}` : "ZT –",
+        cycleDayValue: point.cycleDay ?? null,
+        dateLabel: formatShortGermanDate(point.date),
+        painValue,
+        isCurrentDay: point.date === todayIso,
+      };
+    });
+  }, [data.points, todayIso]);
+
+  const renderTooltip = useCallback(
+    (props: TooltipProps<number, string>) => {
+      if (!props.active || !props.payload?.length) {
+        return null;
+      }
+
+      const payload = props.payload[0].payload as CycleOverviewChartPoint;
+
+      return (
+        <div className="rounded-lg border border-rose-100 bg-white p-3 text-xs text-rose-700 shadow-sm">
+          <p className="font-semibold text-rose-900">{payload.dateLabel}</p>
+          <p className="mt-1">ZT {payload.cycleDay ?? "–"}</p>
+          <p>Schmerz: {payload.painNRS}/10</p>
+          <p>Blutung: {payload.bleedingLabel}</p>
+          {payload.pbacScore !== null ? <p>PBAC: {payload.pbacScore}</p> : null}
+          {payload.ovulationPositive ? <p>Eisprung markiert</p> : null}
+        </div>
+      );
+    },
+    []
+  );
+
+  if (!chartPoints.length) {
+    return null;
+  }
+
+  return (
+    <section aria-label="Aktueller Zyklus">
+      <div className="mx-auto h-36 w-[80vw] max-w-full sm:h-44">
+        <ResponsiveContainer>
+          <ComposedChart data={chartPoints} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+            <defs>
+              <linearGradient id={bleedingGradientId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#fb7185" stopOpacity={0.45} />
+                <stop offset="100%" stopColor="#fbcfe8" stopOpacity={0.1} />
+              </linearGradient>
+            </defs>
+            <XAxis
+              dataKey="cycleDayValue"
+              axisLine={false}
+              tickLine={false}
+              tick={{ fill: "#fb7185", fontSize: 12, fontWeight: 600 }}
+              tickFormatter={(value: number | null) =>
+                typeof value === "number" && Number.isFinite(value) ? `ZT ${value}` : ""
+              }
+              minTickGap={6}
+            />
+            <YAxis domain={[0, 10]} hide />
+            <Tooltip
+              cursor={{ stroke: "#fb7185", strokeOpacity: 0.2, strokeWidth: 1 }}
+              content={renderTooltip}
+            />
+            <Area
+              type="monotone"
+              dataKey="bleedingValue"
+              fill={`url(#${bleedingGradientId})`}
+              stroke="#fb7185"
+              strokeWidth={1}
+              fillOpacity={1}
+              name="Blutung"
+              isAnimationActive={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="painValue"
+              stroke="#be123c"
+              strokeWidth={2}
+              dot={<PainDot />}
+              activeDot={{ r: 5, stroke: "#be123c", fill: "#fff", strokeWidth: 2 }}
+              name="Schmerz"
+              isAnimationActive={false}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </section>
+  );
+};
+
 const BRISTOL_TYPES = [
   { value: 1, label: "Typ 1" },
   { value: 2, label: "Typ 2" },
@@ -262,6 +540,8 @@ const BRISTOL_TYPES = [
   { value: 6, label: "Typ 6" },
   { value: 7, label: "Typ 7" },
 ] as const;
+
+const MS_PER_DAY = 86_400_000;
 
 const formatDate = (date: Date) => {
   const year = date.getFullYear();
@@ -278,9 +558,16 @@ const parseIsoDate = (iso: string) => {
 
 const createEmptyDailyEntry = (date: string): DailyEntry => ({
   date,
+
+  // Neu
+  painRegions: [], // noch keine Regionen ausgewählt
+  impactNRS: 0, // empfundene Gesamtbeeinträchtigung heute
+
+  // Alt (wird weiter gepflegt, damit Charts usw. funktionieren)
   painNRS: 0,
   painQuality: [],
   painMapRegionIds: [],
+
   bleeding: { isBleeding: false },
   symptoms: {},
   meds: [],
@@ -297,10 +584,13 @@ const createEmptyMonthlyEntry = (month: string): MonthlyEntry => ({
 const SectionScopeContext = createContext<string | number | null>(null);
 
 type SectionCompletionState = Record<string, Record<string, boolean>>;
+type SectionRegistryState = Record<string, Record<string, true>>;
 
 type SectionCompletionContextValue = {
   getCompletion: (scope: string | number | null, key: string) => boolean;
   setCompletion: (scope: string | number | null, key: string, completed: boolean) => void;
+  registerSection: (scope: string | number | null, key: string) => void;
+  unregisterSection: (scope: string | number | null, key: string) => void;
 };
 
 const SectionCompletionContext = createContext<SectionCompletionContextValue | null>(null);
@@ -340,6 +630,16 @@ function Section({
     if (!completionContext) return false;
     if (scope === null || scope === undefined) return false;
     return completionContext.getCompletion(scope, title);
+  }, [completionContext, completionEnabled, scope, title]);
+
+  useEffect(() => {
+    if (!completionEnabled) return;
+    if (!completionContext) return;
+    if (scope === null || scope === undefined) return;
+    completionContext.registerSection(scope, title);
+    return () => {
+      completionContext.unregisterSection(scope, title);
+    };
   }, [completionContext, completionEnabled, scope, title]);
 
   useEffect(() => {
@@ -549,22 +849,7 @@ function ScoreInput({
           <span>{max}</span>
         </div>
       </div>
-      <Input
-        className="w-20"
-        type="number"
-        inputMode="numeric"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        aria-describedby={rangeDescriptionId}
-        onChange={(event) => {
-          if (!disabled) {
-            onChange(Number(event.target.value));
-          }
-        }}
-        disabled={disabled}
-      />
+      <SliderValueDisplay value={value} className="sm:self-stretch" />
     </div>
   );
   if (termKey) {
@@ -641,12 +926,7 @@ const SYMPTOM_MODULE_TOGGLES: Array<{
   key: keyof FeatureFlags;
   label: string;
   term: TermDescriptor;
-}> = [
-  { key: "moduleHeadache", label: "Kopfschmerz/Migräne", term: MODULE_TERMS.headacheOpt.present },
-  { key: "moduleDizziness", label: "Schwindel", term: MODULE_TERMS.dizzinessOpt.present },
-];
-
-type HeadacheMed = NonNullable<NonNullable<DailyEntry["headacheOpt"]>["meds"]>[number];
+}> = [{ key: "moduleDizziness", label: "Schwindel", term: MODULE_TERMS.dizzinessOpt.present }];
 
 function ModuleToggleRow({
   label,
@@ -698,24 +978,7 @@ function NrsInput({ id, value, onChange }: { id: string; value: number; onChange
           <span>10 Stärkster Schmerz</span>
         </div>
       </div>
-      <Input
-        className="w-20"
-        type="number"
-        inputMode="numeric"
-        min={0}
-        max={10}
-        step={1}
-        value={value}
-        aria-describedby={rangeDescriptionId}
-        onChange={(event) => {
-          const parsed = Number(event.target.value);
-          if (Number.isNaN(parsed)) {
-            onChange(0);
-            return;
-          }
-          onChange(Math.max(0, Math.min(10, Math.round(parsed))));
-        }}
-      />
+      <SliderValueDisplay value={value} className="sm:self-stretch" />
     </div>
   );
 }
@@ -750,90 +1013,6 @@ function NumberField({
         onChange(Math.max(min, Math.round(parsed)));
       }}
     />
-  );
-}
-
-function MedList({
-  items,
-  onChange,
-  renderIssues,
-}: {
-  items: HeadacheMed[];
-  onChange: (items: HeadacheMed[]) => void;
-  renderIssues?: (path: string) => ReactNode;
-}) {
-  const updateItem = (index: number, patch: Partial<HeadacheMed>) => {
-    const next = items.slice();
-    next[index] = { ...next[index], ...patch };
-    onChange(next);
-  };
-
-  return (
-    <div className="space-y-3">
-      {items.map((item, index) => (
-        <div key={index} className="space-y-2 rounded-lg border border-rose-100 bg-white p-3 text-sm text-rose-700">
-          <div className="grid gap-2 md:grid-cols-3">
-            <div>
-              <Label htmlFor={`headache-med-name-${index}`} className="text-xs text-rose-600">
-                Name
-              </Label>
-              <Input
-                id={`headache-med-name-${index}`}
-                value={item.name}
-                onChange={(event) => updateItem(index, { name: event.target.value })}
-              />
-              {renderIssues?.(`headacheOpt.meds[${index}].name`)}
-            </div>
-            <div>
-              <Label htmlFor={`headache-med-dose-${index}`} className="text-xs text-rose-600">
-                Dosis (mg)
-              </Label>
-              <Input
-                id={`headache-med-dose-${index}`}
-                type="number"
-                min={0}
-                value={item.doseMg ?? ""}
-                onChange={(event) =>
-                  updateItem(index, {
-                    doseMg: event.target.value === "" ? undefined : Math.max(0, Math.round(Number(event.target.value))),
-                  })
-                }
-              />
-              {renderIssues?.(`headacheOpt.meds[${index}].doseMg`)}
-            </div>
-            <div>
-              <Label htmlFor={`headache-med-time-${index}`} className="text-xs text-rose-600">
-                Uhrzeit (optional)
-              </Label>
-              <Input
-                id={`headache-med-time-${index}`}
-                placeholder="08:00"
-                value={item.time ?? ""}
-                onChange={(event) => updateItem(index, { time: event.target.value || undefined })}
-              />
-              {renderIssues?.(`headacheOpt.meds[${index}].time`)}
-            </div>
-          </div>
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              variant="ghost"
-              className="text-xs text-rose-600"
-              onClick={() => onChange(items.filter((_, i) => i !== index))}
-            >
-              Entfernen
-            </Button>
-          </div>
-        </div>
-      ))}
-      <Button
-        type="button"
-        variant="secondary"
-        onClick={() => onChange([...items, { name: "" } as HeadacheMed])}
-      >
-        + Mittel ergänzen
-      </Button>
-    </div>
   );
 }
 
@@ -966,6 +1145,63 @@ function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>
   }
   delete extra["ovulation_pain_side"];
   delete extra["ovulation_pain_intensity"];
+
+  if (Array.isArray(clone.painRegions) && clone.painRegions.length > 0) {
+    const allowedQualities = new Set(ALL_PAIN_QUALITIES);
+    clone.painRegions = clone.painRegions
+      .filter(
+        (region): region is NonNullable<DailyEntry["painRegions"]>[number] & Record<string, unknown> =>
+          Boolean(region) && typeof region === "object" && typeof region.regionId === "string"
+      )
+      .map((region) => {
+        const normalizedNrs =
+          typeof region.nrs === "number" ? Math.max(0, Math.min(10, Math.round(region.nrs))) : 0;
+        const normalizedQualities = Array.isArray(region.qualities)
+          ? (region.qualities.filter((quality): quality is DailyEntry["painQuality"][number] =>
+              allowedQualities.has(quality)
+            ) as DailyEntry["painQuality"])
+          : ([] as DailyEntry["painQuality"]);
+
+        return {
+          regionId: region.regionId,
+          nrs: normalizedNrs,
+          qualities: normalizedQualities,
+        } satisfies NonNullable<DailyEntry["painRegions"]>[number];
+      });
+  } else {
+    const regions = Array.isArray(clone.painMapRegionIds) ? clone.painMapRegionIds : [];
+    const allowedQualities = new Set(ALL_PAIN_QUALITIES);
+    const qualities = Array.isArray(clone.painQuality)
+      ? (clone.painQuality.filter((quality): quality is DailyEntry["painQuality"][number] =>
+          allowedQualities.has(quality)
+        ) as DailyEntry["painQuality"])
+      : ([] as DailyEntry["painQuality"]);
+    const normalizedNrs =
+      typeof clone.painNRS === "number" ? Math.max(0, Math.min(10, Math.round(clone.painNRS))) : 0;
+
+    clone.painRegions = regions.map((regionId) => ({
+      regionId,
+      nrs: normalizedNrs,
+      qualities: [...qualities],
+    }));
+  }
+
+  const mergedPainRegions = mergeHeadacheOptIntoPainRegions(clone.painRegions, clone.headacheOpt);
+  if (mergedPainRegions) {
+    clone.painRegions = mergedPainRegions;
+  }
+  const derivedHeadache = deriveHeadacheFromPainRegions(clone.painRegions, clone.headacheOpt);
+  if (derivedHeadache) {
+    clone.headacheOpt = derivedHeadache;
+  } else if (clone.headacheOpt) {
+    delete (clone as { headacheOpt?: DailyEntry["headacheOpt"] }).headacheOpt;
+  }
+
+  if (clone.impactNRS === undefined || clone.impactNRS === null) {
+    if (typeof clone.painNRS === "number") {
+      clone.impactNRS = clone.painNRS;
+    }
+  }
 
   return clone;
 }
@@ -1136,7 +1372,15 @@ function normalizeImportedMonthlyEntry(entry: MonthlyEntry & Record<string, unkn
   return normalized;
 }
 
-function BodyMap({ value, onChange }: { value: string[]; onChange: (next: string[]) => void }) {
+function BodyMap({
+  value,
+  onChange,
+  renderRegionCard,
+}: {
+  value: string[];
+  onChange: (next: string[]) => void;
+  renderRegionCard: (regionId: string) => ReactNode;
+}) {
   return (
     <div className="space-y-3">
       {BODY_REGION_GROUPS.map((group) => {
@@ -1181,6 +1425,22 @@ function BodyMap({ value, onChange }: { value: string[]; onChange: (next: string
                   );
                 })}
               </div>
+              {(() => {
+                const cards = group.regions
+                  .filter((region) => value.includes(region.id))
+                  .map((region) => ({ id: region.id, node: renderRegionCard(region.id) }))
+                  .filter((entry): entry is { id: string; node: ReactNode } => Boolean(entry.node));
+                if (cards.length === 0) {
+                  return null;
+                }
+                return (
+                  <div className="mt-3 space-y-3">
+                    {cards.map((entry) => (
+                      <div key={entry.id}>{entry.node}</div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           </details>
         );
@@ -1192,10 +1452,6 @@ function BodyMap({ value, onChange }: { value: string[]; onChange: (next: string
 function computePbacScore(counts: PbacCounts, flooding: boolean) {
   const base = PBAC_ITEMS.reduce((total, item) => total + counts[item.id] * item.score, 0);
   return base + (flooding ? PBAC_FLOODING_SCORE : 0);
-}
-
-function findPbacProductItem(product: PbacProduct, saturation: PbacSaturation) {
-  return PBAC_PRODUCT_ITEMS.find((item) => item.product === product && item.saturation === saturation);
 }
 
 type SeverityLevel = "mild" | "moderat" | "hoch";
@@ -1327,6 +1583,27 @@ function monthToDate(month: string) {
   return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1));
 }
 
+function parseIsoWeekKey(isoWeek: string): { year: number; week: number } | null {
+  const match = isoWeek.match(/^(\d{4})-W(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const week = Number(match[2]);
+  if (!Number.isFinite(year) || !Number.isFinite(week)) return null;
+  return { year, week };
+}
+
+function formatIsoWeekCompactLabel(isoWeek: string | null): string | null {
+  if (!isoWeek) return null;
+  const parts = parseIsoWeekKey(isoWeek);
+  if (!parts) return null;
+  const start = isoWeekToDate(parts.year, parts.week);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 6);
+  const startLabel = start.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+  const endLabel = end.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" });
+  return `KW ${String(parts.week).padStart(2, "0")} · ${startLabel}–${endLabel}`;
+}
+
 function computePearson(pairs: { x: number; y: number }[]) {
   if (pairs.length < 2) return null;
   const n = pairs.length;
@@ -1353,16 +1630,12 @@ export default function HomePage() {
   const [featureFlags, setFeatureFlags, featureStorage] = usePersistentState<FeatureFlags>("endo.flags.v1", {});
   const [sectionCompletionState, setSectionCompletionState, sectionCompletionStorage] =
     usePersistentState<SectionCompletionState>("endo.sectionCompletion.v1", {});
+  const [sectionRegistry, setSectionRegistry] = useState<SectionRegistryState>({});
 
   const [dailyDraft, setDailyDraft, dailyDraftStorage] =
     usePersistentState<DailyEntry>("endo.draft.daily.v1", defaultDailyDraft);
   const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
   const [pbacCounts, setPbacCounts] = useState<PbacCounts>({ ...PBAC_DEFAULT_COUNTS });
-  const [pbacStep, setPbacStep] = useState(1);
-  const [pbacSelection, setPbacSelection] = useState<{ product: PbacProduct | null; saturation: PbacSaturation | null }>(
-    () => ({ product: null, saturation: null })
-  );
-  const [pbacCountDraft, setPbacCountDraft] = useState("0");
   const [sensorsVisible, setSensorsVisible] = useState(false);
   const [exploratoryVisible, setExploratoryVisible] = useState(false);
   const [notesTagDraft, setNotesTagDraft] = useState("");
@@ -1373,6 +1646,7 @@ export default function HomePage() {
   const [weeklyReportsReady, setWeeklyReportsReady] = useState(false);
   const [weeklyReportsError, setWeeklyReportsError] = useState<string | null>(null);
   const [weeklyReportsRevision, setWeeklyReportsRevision] = useState(0);
+  const [weeklyIsoWeek, setWeeklyIsoWeek] = useState<string | null>(null);
 
   const [monthlyDraft, setMonthlyDraft, monthlyDraftStorage] =
     usePersistentState<MonthlyEntry>("endo.draft.monthly.v1", defaultMonthlyDraft);
@@ -1381,6 +1655,8 @@ export default function HomePage() {
   const draftStatusTimeoutRef = useRef<number | null>(null);
   const draftRestoredRef = useRef(false);
   const lastDraftSavedAtRef = useRef<number | null>(null);
+  const manualDailySelectionRef = useRef(false);
+  const detailToolbarRef = useRef<HTMLElement | null>(null);
 
   const isBirthdayGreetingDay = () => {
     const now = new Date();
@@ -1495,12 +1771,47 @@ export default function HomePage() {
           };
         });
       },
+      registerSection: (scope, key) => {
+        if (scope === null || scope === undefined) return;
+        const scopeKey = String(scope);
+        setSectionRegistry((prev) => {
+          const prevForScope = prev[scopeKey] ?? {};
+          if (prevForScope[key]) {
+            return prev;
+          }
+          return {
+            ...prev,
+            [scopeKey]: { ...prevForScope, [key]: true },
+          };
+        });
+      },
+      unregisterSection: (scope, key) => {
+        if (scope === null || scope === undefined) return;
+        const scopeKey = String(scope);
+        setSectionRegistry((prev) => {
+          const prevForScope = prev[scopeKey];
+          if (!prevForScope || !prevForScope[key]) {
+            return prev;
+          }
+          const { [key]: _removed, ...restForScope } = prevForScope;
+          if (Object.keys(restForScope).length === 0) {
+            const { [scopeKey]: _scopeRemoved, ...restScopes } = prev;
+            return restScopes;
+          }
+          return {
+            ...prev,
+            [scopeKey]: restForScope,
+          };
+        });
+      },
     }),
-    [sectionCompletionState, setSectionCompletionState]
+    [sectionCompletionState, setSectionCompletionState, setSectionRegistry]
   );
 
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [detailToolbarHeight, setDetailToolbarHeight] = useState<number>(DETAIL_TOOLBAR_FALLBACK_HEIGHT);
+  const [activeView, setActiveView] = useState<"home" | "daily" | "weekly" | "monthly" | "analytics">("home");
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [persistWarning, setPersistWarning] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
@@ -1517,16 +1828,37 @@ export default function HomePage() {
     [dailyEntries, dailyDraft.date]
   );
 
+  const hasDailyEntryForToday = useMemo(
+    () => dailyEntries.some((entry) => entry.date === today),
+    [dailyEntries, today]
+  );
+
+  const selectDailyDate = useCallback(
+    (targetDate: string, options?: { manual?: boolean }) => {
+      if (options?.manual) {
+        manualDailySelectionRef.current = true;
+      }
+      const existingEntry = dailyEntries.find((entry) => entry.date === targetDate);
+      const baseEntry = existingEntry ?? createEmptyDailyEntry(targetDate);
+      const clonedEntry =
+        typeof structuredClone === "function"
+          ? structuredClone(baseEntry)
+          : (JSON.parse(JSON.stringify(baseEntry)) as DailyEntry);
+      setDailyDraft(clonedEntry);
+      setLastSavedDailySnapshot(clonedEntry);
+    },
+    [dailyEntries, setDailyDraft, setLastSavedDailySnapshot]
+  );
+
   useEffect(() => {
     if (!storageReady) return;
+    if (manualDailySelectionRef.current) return;
     if (isDailyDirty) return;
     if (dailyDraft.date >= today) return;
     const hasDraftEntry = dailyEntries.some((entry) => entry.date === dailyDraft.date);
     if (hasDraftEntry) return;
-    const next = createEmptyDailyEntry(today);
-    setDailyDraft(next);
-    setLastSavedDailySnapshot(next);
-  }, [storageReady, isDailyDirty, dailyDraft.date, dailyEntries, today, setDailyDraft, setLastSavedDailySnapshot]);
+    selectDailyDate(today);
+  }, [storageReady, isDailyDirty, dailyDraft.date, dailyEntries, today, selectDailyDate]);
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !("storage" in navigator) || !navigator.storage) {
@@ -1669,6 +2001,39 @@ export default function HomePage() {
     });
   }, [dailyDraft.date]);
 
+  const annotatedDailyEntries = useMemo(() => {
+    const sorted = dailyEntries.slice().sort((a, b) => a.date.localeCompare(b.date));
+    let cycleDay: number | null = null;
+    let previousDate: Date | null = null;
+    let previousBleeding = false;
+    return sorted.map((entry) => {
+      const currentDate = new Date(entry.date);
+      const diffDays = previousDate
+        ? Math.round((currentDate.getTime() - previousDate.getTime()) / 86_400_000)
+        : 0;
+      if (cycleDay !== null && diffDays > 0) {
+        cycleDay += diffDays;
+      }
+      const isBleeding = entry.bleeding.isBleeding;
+      const bleedingStartsToday = isBleeding && (!previousBleeding || diffDays > 1 || cycleDay === null);
+      if (bleedingStartsToday) {
+        cycleDay = 1;
+      }
+      const assignedCycleDay = cycleDay;
+      const weekday = currentDate.toLocaleDateString("de-DE", { weekday: "short" });
+      const symptomScores = Object.values(entry.symptoms ?? {}).flatMap((symptom) => {
+        if (!symptom || !symptom.present) return [] as number[];
+        return typeof symptom.score === "number" ? [symptom.score] : [];
+      });
+      const symptomAverage = symptomScores.length
+        ? symptomScores.reduce((sum, value) => sum + value, 0) / symptomScores.length
+        : null;
+      previousDate = currentDate;
+      previousBleeding = isBleeding;
+      return { entry, cycleDay: assignedCycleDay, weekday, symptomAverage };
+    });
+  }, [dailyEntries]);
+
   const selectedCycleDay = useMemo(() => {
     if (!dailyDraft.date) return null;
     const entries = dailyEntries.slice();
@@ -1709,6 +2074,45 @@ export default function HomePage() {
     return cycleDay;
   }, [dailyEntries, dailyDraft, isDailyDirty]);
 
+  const cycleOverview = useMemo((): CycleOverviewData | null => {
+    if (!annotatedDailyEntries.length) {
+      return null;
+    }
+
+    const enriched: CycleOverviewPoint[] = annotatedDailyEntries.map(({ entry, cycleDay }) => ({
+      date: entry.date,
+      cycleDay: cycleDay ?? null,
+      painNRS: entry.painNRS ?? 0,
+      pbacScore: entry.bleeding?.pbacScore ?? null,
+      isBleeding: entry.bleeding?.isBleeding ?? false,
+      ovulationPositive: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
+      ovulationPainIntensity: entry.ovulationPain?.intensity ?? null,
+    }));
+
+    const latestStartIndex = enriched.reduce((acc, point, index) => {
+      if (point.cycleDay === 1 && point.date <= today) {
+        return index;
+      }
+      return acc;
+    }, -1);
+
+    if (latestStartIndex === -1) {
+      return null;
+    }
+
+    let slice = enriched
+      .slice(latestStartIndex, latestStartIndex + CYCLE_OVERVIEW_MAX_DAYS)
+      .filter((point) => point.date <= today);
+    if (!slice.length) {
+      slice = [enriched[latestStartIndex]];
+    }
+
+    return {
+      startDate: enriched[latestStartIndex].date,
+      points: slice,
+    };
+  }, [annotatedDailyEntries, today]);
+
   const canGoToNextDay = useMemo(() => dailyDraft.date < today, [dailyDraft.date, today]);
 
   const currentIsoWeek = useMemo(() => {
@@ -1718,6 +2122,15 @@ export default function HomePage() {
 
   const currentMonth = useMemo(() => today.slice(0, 7), [today]);
   const todayDate = useMemo(() => parseIsoDate(today), [today]);
+  const todayLabel = useMemo(() => {
+    if (!todayDate) return null;
+    return todayDate.toLocaleDateString("de-DE", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  }, [todayDate]);
 
   const isSunday = useMemo(() => {
     if (!todayDate) return false;
@@ -1729,6 +2142,68 @@ export default function HomePage() {
     if (!monthDate) return null;
     return monthDate.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
   }, [monthlyDraft.month]);
+
+  const dailyToolbarLabel = useMemo(() => {
+    const parsed = parseIsoDate(dailyDraft.date);
+    if (!parsed) return null;
+    return parsed.toLocaleDateString("de-DE", {
+      weekday: "short",
+      day: "2-digit",
+      month: "2-digit",
+    });
+  }, [dailyDraft.date]);
+
+  const weeklyScopeIsoWeek = weeklyIsoWeek ?? currentIsoWeek;
+
+  const weeklyToolbarLabel = useMemo(
+    () => formatIsoWeekCompactLabel(weeklyScopeIsoWeek),
+    [weeklyScopeIsoWeek]
+  );
+
+  const monthlyToolbarLabel = useMemo(() => {
+    const monthDate = monthToDate(monthlyDraft.month || currentMonth);
+    if (!monthDate) return null;
+    return monthDate.toLocaleDateString("de-DE", { month: "short", year: "numeric" });
+  }, [monthlyDraft.month, currentMonth]);
+
+  const toolbarLabel = useMemo(() => {
+    if (activeView === "daily") return dailyToolbarLabel;
+    if (activeView === "weekly") return weeklyToolbarLabel;
+    if (activeView === "monthly") return monthlyToolbarLabel;
+    if (activeView === "analytics") return "Auswertungen";
+    return null;
+  }, [activeView, dailyToolbarLabel, monthlyToolbarLabel, weeklyToolbarLabel]);
+
+  const activeScopeKey = useMemo(() => {
+    if (activeView === "daily") {
+      return dailyDraft.date ? `daily:${dailyDraft.date}` : null;
+    }
+    if (activeView === "weekly") {
+      return `weekly:${weeklyScopeIsoWeek}`;
+    }
+    if (activeView === "monthly") {
+      const monthKey = monthlyDraft.month || currentMonth;
+      return monthKey ? `monthly:${monthKey}` : null;
+    }
+    if (activeView === "analytics") {
+      return "analytics";
+    }
+    return null;
+  }, [activeView, currentMonth, dailyDraft.date, monthlyDraft.month, weeklyScopeIsoWeek]);
+
+  const activeScopeProgress = useMemo(() => {
+    if (!activeScopeKey) {
+      return { completed: 0, total: 0 };
+    }
+    const registry = sectionRegistry[activeScopeKey];
+    const total = registry ? Object.keys(registry).length : 0;
+    if (!registry || total === 0) {
+      return { completed: 0, total: 0 };
+    }
+    const completions = sectionCompletionState[activeScopeKey] ?? {};
+    const completed = Object.keys(registry).filter((key) => Boolean(completions[key])).length;
+    return { completed, total };
+  }, [activeScopeKey, sectionCompletionState, sectionRegistry]);
 
   const canGoToNextMonth = useMemo(() => {
     const baseMonth = monthlyDraft.month || currentMonth;
@@ -1745,28 +2220,69 @@ export default function HomePage() {
     [monthlyEntries, currentMonth]
   );
 
+  const latestWeeklyReport = useMemo(
+    () =>
+      weeklyReports.reduce<WeeklyReport | null>((latest, report) => {
+        if (!latest || report.submittedAt > latest.submittedAt) {
+          return report;
+        }
+        return latest;
+      }, null),
+    [weeklyReports]
+  );
+
+  const daysUntilWeeklySuggested = useMemo(() => {
+    if (!todayDate) return null;
+    const startOfToday = new Date(todayDate.getFullYear(), todayDate.getMonth(), todayDate.getDate());
+    if (!latestWeeklyReport) {
+      const daysUntilSunday = (7 - startOfToday.getDay()) % 7;
+      return daysUntilSunday;
+    }
+    const lastCompleted = new Date(latestWeeklyReport.submittedAt);
+    const startOfLast = new Date(
+      lastCompleted.getFullYear(),
+      lastCompleted.getMonth(),
+      lastCompleted.getDate()
+    );
+    const nextDue = new Date(startOfLast);
+    nextDue.setDate(nextDue.getDate() + 7);
+    const diffMs = nextDue.getTime() - startOfToday.getTime();
+    const diffDays = Math.ceil(diffMs / MS_PER_DAY);
+    return diffDays > 0 ? diffDays : 0;
+  }, [todayDate, latestWeeklyReport]);
+
+  const weeklyInfoText = useMemo(() => {
+    if (daysUntilWeeklySuggested === null) {
+      return "Starte, wann immer du bereit bist";
+    }
+    if (daysUntilWeeklySuggested <= 0) {
+      return "Heute wieder ausfüllen";
+    }
+    if (daysUntilWeeklySuggested === 1) {
+      return "In 1 Tag wieder ausfüllen";
+    }
+    return `In ${daysUntilWeeklySuggested} Tagen wieder ausfüllen`;
+  }, [daysUntilWeeklySuggested]);
+
   const goToPreviousDay = useCallback(() => {
-    setDailyDraft((prev) => {
-      const base = parseIsoDate(prev.date || today);
-      if (!base) return prev;
-      base.setDate(base.getDate() - 1);
-      return { ...prev, date: formatDate(base) };
-    });
-  }, [setDailyDraft, today]);
+    const base = parseIsoDate(dailyDraft.date || today);
+    if (!base) return;
+    base.setDate(base.getDate() - 1);
+    selectDailyDate(formatDate(base), { manual: true });
+  }, [dailyDraft.date, selectDailyDate, today]);
 
   const goToNextDay = useCallback(() => {
-    setDailyDraft((prev) => {
-      if ((prev.date || today) >= today) {
-        return prev;
-      }
-      const base = parseIsoDate(prev.date || today);
-      if (!base) return prev;
-      base.setDate(base.getDate() + 1);
-      const nextDate = formatDate(base);
-      if (nextDate > today) return prev;
-      return { ...prev, date: nextDate };
-    });
-  }, [setDailyDraft, today]);
+    const currentDate = dailyDraft.date || today;
+    if (currentDate >= today) {
+      return;
+    }
+    const base = parseIsoDate(currentDate);
+    if (!base) return;
+    base.setDate(base.getDate() + 1);
+    const nextDate = formatDate(base);
+    if (nextDate > today) return;
+    selectDailyDate(nextDate, { manual: true });
+  }, [dailyDraft.date, selectDailyDate, today]);
 
   const goToPreviousMonth = useCallback(() => {
     setMonthlyDraft((prev) => {
@@ -1812,10 +2328,6 @@ export default function HomePage() {
   const currentPbacForNotice = dailyDraft.bleeding.isBleeding ? pbacScore : dailyDraft.bleeding.pbacScore ?? 0;
   const showDizzinessNotice =
     activeDizziness && dailyDraft.dizzinessOpt?.present && currentPbacForNotice >= HEAVY_BLEED_PBAC;
-  const selectedPbacItem =
-    pbacSelection.product && pbacSelection.saturation
-      ? findPbacProductItem(pbacSelection.product, pbacSelection.saturation)
-      : null;
   const phqSeverity = monthlyDraft.mental?.phq9Severity ?? mapPhqSeverity(monthlyDraft.mental?.phq9);
   const gadSeverity = monthlyDraft.mental?.gad7Severity ?? mapGadSeverity(monthlyDraft.mental?.gad7);
 
@@ -1826,18 +2338,20 @@ export default function HomePage() {
   }, [dailySaveNotice]);
 
   useEffect(() => {
-    if (dailyDraft.bleeding.isBleeding) {
-      setDailyDraft((prev) => ({
-        ...prev,
-        bleeding: {
-          ...prev.bleeding,
-          pbacScore,
-          clots: prev.bleeding.clots ?? false,
-          flooding: prev.bleeding.flooding ?? false,
-        },
-      }));
+    if (!dailyDraft.bleeding.isBleeding) {
+      return;
     }
-  }, [pbacScore, dailyDraft.bleeding.isBleeding, setDailyDraft]);
+
+    setDailyDraft((prev) => ({
+      ...prev,
+      bleeding: {
+        ...prev.bleeding,
+        pbacScore,
+        clots: prev.bleeding.clots ?? false,
+        flooding: prev.bleeding.flooding ?? false,
+      },
+    }));
+  }, [dailyDraft.bleeding.isBleeding, pbacScore, setDailyDraft]);
 
   useEffect(() => {
     const existingEntry = dailyEntries.find((entry) => entry.date === dailyDraft.date);
@@ -1889,7 +2403,9 @@ export default function HomePage() {
   useEffect(() => {
     if (!activeHeadache) {
       setDailyDraft((prev) => {
-        if (!prev.headacheOpt) return prev;
+        if (!prev.headacheOpt) {
+          return prev;
+        }
         return { ...prev, headacheOpt: undefined };
       });
     }
@@ -1911,7 +2427,10 @@ export default function HomePage() {
       if (key === "moduleUrinary") {
         return prev;
       }
-      if (key === "moduleHeadache" && prev.headacheOpt) {
+      if (key === "moduleHeadache") {
+        if (!prev.headacheOpt) {
+          return prev;
+        }
         return { ...prev, headacheOpt: undefined };
       }
       if (key === "moduleDizziness" && prev.dizzinessOpt) {
@@ -1980,26 +2499,6 @@ export default function HomePage() {
     [activeUrinary, activeHeadache, activeDizziness]
   );
 
-  const goToPbacProduct = (product: PbacProduct, saturation: PbacSaturation) => {
-    const item = findPbacProductItem(product, saturation);
-    if (!item) return;
-    setPbacSelection({ product, saturation });
-    setPbacCountDraft(String(pbacCounts[item.id] ?? 0));
-    setPbacStep(3);
-  };
-
-  const commitPbacCount = () => {
-    if (!selectedPbacItem) return;
-    const parsed = Math.max(0, Math.round(Number(pbacCountDraft) || 0));
-    setPbacCounts((prev) => {
-      if (prev[selectedPbacItem.id] === parsed) {
-        return prev;
-      }
-      return { ...prev, [selectedPbacItem.id]: parsed };
-    });
-    setPbacCountDraft(String(parsed));
-  };
-
   const handleEhp5ItemChange = (index: number, value: number | undefined) => {
     setMonthlyDraft((prev) => {
       const currentItems = prev.qol?.ehp5Items ?? Array(EHP5_ITEMS.length).fill(undefined);
@@ -2061,6 +2560,32 @@ export default function HomePage() {
       };
     });
   };
+
+  const updatePainRegionsFromSelection = useCallback(
+    (selectedIds: string[]) => {
+      setDailyDraft((prev) => {
+        const existing = prev.painRegions ?? [];
+        const nextList: NonNullable<DailyEntry["painRegions"]> = [];
+
+        selectedIds.forEach((id) => {
+          const found = existing.find((region) => region.regionId === id);
+          if (found) {
+            nextList.push(found);
+          } else {
+            nextList.push({ regionId: id, nrs: 0, qualities: [] });
+          }
+        });
+
+        const nextHeadache = deriveHeadacheFromPainRegions(nextList, prev.headacheOpt);
+        return {
+          ...prev,
+          painRegions: nextList,
+          headacheOpt: nextHeadache,
+        };
+      });
+    },
+    [setDailyDraft]
+  );
 
   const handleDailySubmit = () => {
     const payload: DailyEntry = {
@@ -2154,7 +2679,23 @@ export default function HomePage() {
       payload.dizzinessOpt = normalized;
     }
 
-    const validationIssues = validateDailyEntry(payload);
+    const syncedDraft: DailyEntry = { ...payload };
+
+    if (Array.isArray(syncedDraft.painRegions)) {
+      syncedDraft.painMapRegionIds = syncedDraft.painRegions.map((region) => region.regionId);
+
+      const qualitiesSet = new Set<string>();
+      syncedDraft.painRegions.forEach((region) => {
+        (region.qualities ?? []).forEach((quality) => qualitiesSet.add(quality));
+      });
+      syncedDraft.painQuality = Array.from(qualitiesSet) as DailyEntry["painQuality"];
+    }
+
+    if (typeof syncedDraft.impactNRS === "number") {
+      syncedDraft.painNRS = syncedDraft.impactNRS;
+    }
+
+    const validationIssues = validateDailyEntry(syncedDraft);
     setIssues(validationIssues);
     if (validationIssues.length) {
       setInfoMessage("Bitte prüfe die markierten Felder.");
@@ -2162,24 +2703,21 @@ export default function HomePage() {
     }
 
     setDailyEntries((prev) => {
-      const filtered = prev.filter((entry) => entry.date !== payload.date);
-      return [...filtered, payload].sort((a, b) => a.date.localeCompare(b.date));
+      const filtered = prev.filter((entry) => entry.date !== syncedDraft.date);
+      return [...filtered, syncedDraft].sort((a, b) => a.date.localeCompare(b.date));
     });
 
     setInfoMessage(null);
     setDailySaveNotice("Tagesdaten gespeichert.");
-    const nextEmptyDailyEntry = createEmptyDailyEntry(today);
-    setDailyDraft(nextEmptyDailyEntry);
-    setLastSavedDailySnapshot(nextEmptyDailyEntry);
-    setPbacCounts({ ...PBAC_DEFAULT_COUNTS });
-    setPbacStep(1);
-    setPbacSelection({ product: null, saturation: null });
-    setPbacCountDraft("0");
+    const nextDraft = syncedDraft;
+    setDailyDraft(nextDraft);
+    setLastSavedDailySnapshot(nextDraft);
     setPainQualityOther("");
     setNotesTagDraft("");
     setSensorsVisible(false);
     setExploratoryVisible(false);
     setIssues([]);
+    setActiveView("home");
   };
 
   const handleMonthlySubmit = () => {
@@ -2225,35 +2763,6 @@ export default function HomePage() {
     });
     setInfoMessage("Monatsdaten gespeichert.");
     setIssues([]);
-  };
-
-  const handleDailyImport = (event: ChangeEvent<HTMLInputElement>) => {
-    const input = event.target;
-    const file = input.files?.[0];
-    if (!file) {
-      input.value = "";
-      return;
-    }
-    file
-      .text()
-      .then((text) => {
-        try {
-          const parsed = JSON.parse(text);
-          if (!Array.isArray(parsed)) throw new Error("invalid");
-          const normalized = parsed
-            .filter((item): item is DailyEntry & Record<string, unknown> => typeof item === "object" && item !== null)
-            .map((item) => normalizeImportedDailyEntry(item));
-          const invalid = normalized.filter((entry) => validateDailyEntry(entry).length > 0);
-          if (invalid.length) throw new Error("invalid");
-          setDailyEntries(normalized);
-          setInfoMessage("Tagesdaten importiert.");
-        } catch {
-          setInfoMessage("Import fehlgeschlagen.");
-        }
-      })
-      .finally(() => {
-        input.value = "";
-      });
   };
 
   const handleBackupExport = () => {
@@ -2477,39 +2986,6 @@ export default function HomePage() {
     downloadFile(`endo-report-${months}m.pdf`, pdf, "application/pdf");
   };
 
-  const annotatedDailyEntries = useMemo(() => {
-    const sorted = dailyEntries.slice().sort((a, b) => a.date.localeCompare(b.date));
-    let cycleDay: number | null = null;
-    let previousDate: Date | null = null;
-    let previousBleeding = false;
-    return sorted.map((entry) => {
-      const currentDate = new Date(entry.date);
-      const diffDays = previousDate
-        ? Math.round((currentDate.getTime() - previousDate.getTime()) / 86_400_000)
-        : 0;
-      if (cycleDay !== null && diffDays > 0) {
-        cycleDay += diffDays;
-      }
-      const isBleeding = entry.bleeding.isBleeding;
-      const bleedingStartsToday = isBleeding && (!previousBleeding || diffDays > 1 || cycleDay === null);
-      if (bleedingStartsToday) {
-        cycleDay = 1;
-      }
-      const assignedCycleDay = cycleDay;
-      const weekday = currentDate.toLocaleDateString("de-DE", { weekday: "short" });
-      const symptomScores = Object.values(entry.symptoms ?? {}).flatMap((symptom) => {
-        if (!symptom || !symptom.present) return [] as number[];
-        return typeof symptom.score === "number" ? [symptom.score] : [];
-      });
-      const symptomAverage = symptomScores.length
-        ? symptomScores.reduce((sum, value) => sum + value, 0) / symptomScores.length
-        : null;
-      previousDate = currentDate;
-      previousBleeding = isBleeding;
-      return { entry, cycleDay: assignedCycleDay, weekday, symptomAverage };
-    });
-  }, [dailyEntries]);
-
   const latestCycleStartDate = useMemo(() => {
     for (let index = annotatedDailyEntries.length - 1; index >= 0; index -= 1) {
       const item = annotatedDailyEntries[index];
@@ -2524,9 +3000,39 @@ export default function HomePage() {
     if (!latestCycleStartDate || !todayDate) return false;
     const diffMs = todayDate.getTime() - latestCycleStartDate.getTime();
     if (diffMs < 0) return false;
-    const diffDays = Math.floor(diffMs / 86_400_000);
+    const diffDays = Math.floor(diffMs / MS_PER_DAY);
     return diffDays >= 28;
   }, [latestCycleStartDate, todayDate]);
+
+  const daysUntilMonthlySuggested = useMemo(() => {
+    if (!todayDate || !latestCycleStartDate) return null;
+    const startOfToday = new Date(todayDate.getFullYear(), todayDate.getMonth(), todayDate.getDate());
+    const cycleStart = new Date(
+      latestCycleStartDate.getFullYear(),
+      latestCycleStartDate.getMonth(),
+      latestCycleStartDate.getDate()
+    );
+    const diffMs = startOfToday.getTime() - cycleStart.getTime();
+    if (diffMs <= 0) {
+      return 0;
+    }
+    const diffDays = Math.floor(diffMs / MS_PER_DAY);
+    const remaining = 28 - diffDays;
+    return remaining > 0 ? remaining : 0;
+  }, [todayDate, latestCycleStartDate]);
+
+  const monthlyInfoText = useMemo(() => {
+    if (daysUntilMonthlySuggested === null) {
+      return "Trage deine Periode ein, um Erinnerungen zu erhalten";
+    }
+    if (daysUntilMonthlySuggested <= 0) {
+      return "Heute wieder ausfüllen";
+    }
+    if (daysUntilMonthlySuggested === 1) {
+      return "In 1 Tag wieder ausfüllen";
+    }
+    return `In ${daysUntilMonthlySuggested} Tagen wieder ausfüllen`;
+  }, [daysUntilMonthlySuggested]);
 
   const showWeeklyReminderBadge =
     storageReady && weeklyReportsReady && isSunday && !hasWeeklyReportForCurrentWeek;
@@ -2558,6 +3064,83 @@ export default function HomePage() {
         {issue.message}
       </p>
     ));
+
+  const renderPainRegionCard = (regionId: string) => {
+    const regions = dailyDraft.painRegions ?? [];
+    const regionIndex = regions.findIndex((region) => region.regionId === regionId);
+    if (regionIndex === -1) {
+      return null;
+    }
+    const region = regions[regionIndex];
+    const qualityChoices = region.regionId === HEAD_REGION_ID ? HEAD_PAIN_QUALITIES : PAIN_QUALITIES;
+    return (
+      <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4">
+        <p className="font-medium text-rose-800">Schmerzen in: {getRegionLabel(region.regionId)}</p>
+        {renderIssuesForPath(`painRegions[${regionIndex}].regionId`)}
+        <div className="space-y-2">
+          <Label className="text-xs text-rose-600" htmlFor={`region-nrs-${region.regionId}`}>
+            Intensität (0–10)
+          </Label>
+          <NrsInput
+            id={`region-nrs-${region.regionId}`}
+            value={region.nrs}
+            onChange={(value) => {
+              setDailyDraft((prev) => {
+                const nextRegions = (prev.painRegions ?? []).map((r) =>
+                  r.regionId === region.regionId
+                    ? {
+                        ...r,
+                        nrs: Math.max(0, Math.min(10, Math.round(value))),
+                      }
+                    : r
+                );
+                const nextHeadache = deriveHeadacheFromPainRegions(nextRegions, prev.headacheOpt);
+                return {
+                  ...prev,
+                  painRegions: nextRegions,
+                  headacheOpt: nextHeadache,
+                };
+              });
+            }}
+          />
+          {renderIssuesForPath(`painRegions[${regionIndex}].nrs`)}
+        </div>
+        <div className="space-y-2">
+          <Label className="text-xs text-rose-600">Schmerzcharakter in dieser Region</Label>
+          <MultiSelectChips
+            options={qualityChoices.map((quality) => ({ value: quality, label: quality }))}
+            value={region.qualities}
+            onToggle={(next) => {
+              setDailyDraft((prev) => {
+                const updatedQualities =
+                  region.regionId === HEAD_REGION_ID
+                    ? sanitizeHeadRegionQualities(next as DailyEntry["painQuality"])
+                    : (next as DailyEntry["painQuality"]);
+                const nextRegions = (prev.painRegions ?? []).map((r) =>
+                  r.regionId === region.regionId
+                    ? {
+                        ...r,
+                        qualities: updatedQualities,
+                      }
+                    : r
+                );
+                const nextHeadache = deriveHeadacheFromPainRegions(nextRegions, prev.headacheOpt);
+                return {
+                  ...prev,
+                  painRegions: nextRegions,
+                  headacheOpt: nextHeadache,
+                };
+              });
+            }}
+          />
+          {renderIssuesForPath(`painRegions[${regionIndex}].qualities`)}
+          {(region.qualities ?? []).map((_, qualityIndex) =>
+            renderIssuesForPath(`painRegions[${regionIndex}].qualities[${qualityIndex}]`)
+          )}
+        </div>
+      </div>
+    );
+  };
 
   const optionalSensorsLabel = sensorsVisible ? "Optional (Hilfsmittel) ausblenden" : "Optional (Hilfsmittel) einblenden";
 
@@ -2637,6 +3220,30 @@ export default function HomePage() {
       }));
   }, [annotatedDailyEntries]);
 
+  const todayCycleDay = useMemo(() => {
+    const todayEntry = annotatedDailyEntries.find(({ entry }) => entry.date === today);
+    return todayEntry?.cycleDay ?? null;
+  }, [annotatedDailyEntries, today]);
+
+  const todayCycleComparisonBadge = useMemo((): { label: string; className: string } | null => {
+    if (!hasDailyEntryForToday) return null;
+    const todayEntry = annotatedDailyEntries.find(({ entry }) => entry.date === today);
+    if (!todayEntry || !todayEntry.cycleDay) return null;
+    const painValue = typeof todayEntry.entry.painNRS === "number" ? todayEntry.entry.painNRS : null;
+    if (typeof painValue !== "number") return null;
+    const overlayEntry = cycleOverlay.find((item) => item.cycleDay === todayEntry.cycleDay);
+    if (!overlayEntry || typeof overlayEntry.painAvg !== "number") return null;
+    const diff = painValue - overlayEntry.painAvg;
+    const tolerance = 0.1;
+    if (diff < -tolerance) {
+      return { label: "Besser als Durchschnitt", className: "bg-emerald-100 text-emerald-700" };
+    }
+    if (diff > tolerance) {
+      return { label: "Schlechter als Durchschnitt", className: "bg-rose-100 text-rose-700" };
+    }
+    return { label: "Wie der Durchschnitt", className: "bg-amber-100 text-amber-700" };
+  }, [annotatedDailyEntries, cycleOverlay, hasDailyEntryForToday, today]);
+
   const weekdayOverlay = useMemo(() => {
     const order = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
     const bucket = new Map<string, { painSum: number; count: number }>();
@@ -2667,31 +3274,6 @@ export default function HomePage() {
       steps: { r: computePearson(stepsPairs), n: stepsPairs.length },
     };
   }, [annotatedDailyEntries, dailyEntries]);
-
-  const dailyCsvRows = useMemo(
-    () => dailyEntries.map((entry) => buildDailyExportRow(entry)),
-    [dailyEntries, buildDailyExportRow]
-  );
-
-  const jsonExportData = useMemo(
-    () =>
-      dailyEntries.map((entry) => ({
-        ...entry,
-        urinary_urgency: activeUrinary ? entry.urinaryOpt?.urgency ?? null : undefined,
-        urinary_leaks: activeUrinary ? entry.urinaryOpt?.leaksCount ?? null : undefined,
-        urinary_nocturia: activeUrinary ? entry.urinaryOpt?.nocturia ?? null : undefined,
-        ovulation_pain_side: entry.ovulationPain?.side ?? null,
-        ovulation_pain_intensity:
-          typeof entry.ovulationPain?.intensity === "number" ? entry.ovulationPain.intensity : null,
-        headache_present: activeHeadache ? entry.headacheOpt?.present ?? null : undefined,
-        headache_nrs: activeHeadache ? entry.headacheOpt?.nrs ?? null : undefined,
-        headache_aura: activeHeadache ? entry.headacheOpt?.aura ?? null : undefined,
-        dizziness_present: activeDizziness ? entry.dizzinessOpt?.present ?? null : undefined,
-        dizziness_nrs: activeDizziness ? entry.dizzinessOpt?.nrs ?? null : undefined,
-        dizziness_orthostatic: activeDizziness ? entry.dizzinessOpt?.orthostatic ?? null : undefined,
-      })),
-    [dailyEntries, activeUrinary, activeHeadache, activeDizziness]
-  );
 
   const backupPayload = useMemo<BackupPayload>(
     () => ({
@@ -2907,9 +3489,95 @@ export default function HomePage() {
     }
   }, [storageCompactPossible]);
   const installHintVisible = showInstallHint && !isStandalone;
+  const isHomeView = activeView === "home";
+  const currentDataView = isHomeView ? "daily" : activeView;
+
+  useLayoutEffect(() => {
+    if (isHomeView) {
+      return;
+    }
+
+    const updateHeight = () => {
+      const element = detailToolbarRef.current;
+      if (!element) {
+        setDetailToolbarHeight(DETAIL_TOOLBAR_FALLBACK_HEIGHT);
+        return;
+      }
+      setDetailToolbarHeight(element.getBoundingClientRect().height);
+    };
+
+    updateHeight();
+
+    const element = detailToolbarRef.current;
+    if (!element) {
+      return;
+    }
+
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(() => updateHeight());
+      observer.observe(element);
+      return () => {
+        observer.disconnect();
+      };
+    }
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("resize", updateHeight);
+      return () => {
+        window.removeEventListener("resize", updateHeight);
+      };
+    }
+
+    return;
+  }, [
+    isHomeView,
+    infoMessage,
+    toolbarLabel,
+    activeScopeProgress.completed,
+    activeScopeProgress.total,
+  ]);
+
+  const showScopeProgressCounter = activeView !== "analytics" && activeScopeProgress.total > 0;
+
+  const detailToolbar = !isHomeView ? (
+    <>
+      <header
+        ref={detailToolbarRef}
+        className="fixed inset-x-0 top-0 z-40 border-b border-rose-100 bg-white/90 shadow-sm backdrop-blur supports-[backdrop-filter:none]:bg-white"
+        style={{ backgroundColor: "var(--endo-bg, #fff)" }}
+      >
+        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setActiveView("home")}
+              className="flex items-center gap-2 text-rose-700 hover:text-rose-800"
+            >
+              <ChevronLeft className="h-4 w-4" /> Zurück
+            </Button>
+            <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
+              {toolbarLabel ? (
+                <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-700">{toolbarLabel}</span>
+              ) : null}
+              {showScopeProgressCounter ? (
+                <span className="rounded-full bg-rose-200 px-3 py-1 text-rose-800">{`${activeScopeProgress.completed}/${activeScopeProgress.total}`}</span>
+              ) : null}
+            </div>
+          </div>
+          {infoMessage ? <p className="text-xs text-rose-600 sm:text-sm">{infoMessage}</p> : null}
+        </div>
+      </header>
+      <div
+        aria-hidden="true"
+        className="w-full"
+        style={{ height: detailToolbarHeight || DETAIL_TOOLBAR_FALLBACK_HEIGHT }}
+      />
+    </>
+  ) : null;
 
   return (
-    <>
+    <div className="relative flex min-h-screen flex-col">
       {showBirthdayGreeting && (
         <div
           className="fixed inset-0 z-[100] flex flex-col bg-gradient-to-br from-rose-50 via-white to-rose-100 px-6 py-12 text-center"
@@ -2948,108 +3616,172 @@ export default function HomePage() {
         </div>
       )}
       <SectionCompletionContext.Provider value={sectionCompletionContextValue}>
-        <main className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8">
-        <header className="flex flex-col gap-2">
-          <h1 className="text-2xl font-semibold text-rose-900">Endometriose Symptomtracker</h1>
-          <p className="text-sm text-rose-700">Dein persönlicher Endometriose tracker</p>
-          {infoMessage && <p className="text-sm font-medium text-rose-600">{infoMessage}</p>}
-        </header>
-
-        {storageCompactPossible && !storageDetailsExpanded ? (
-          <button
-            type="button"
-            onClick={() => setStorageDetailsExpanded(true)}
-            className="flex w-fit items-center gap-2 rounded-full bg-emerald-100 px-4 py-2 text-[11px] font-semibold text-emerald-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2"
-          >
-            <ShieldCheck className="h-3.5 w-3.5" /> lokale Speicherung aktiv
-          </button>
-        ) : (
-          <div className="space-y-3 rounded-lg border border-rose-200 bg-white p-4 shadow-sm">
-            {storageCompactPossible && (
-              <div className="flex items-start justify-between gap-2 rounded-md bg-emerald-50 p-3 text-xs text-emerald-700">
-                <p className="font-medium">Solange die App installiert ist, bleiben die Daten dauerhaft gespeichert.</p>
+        {detailToolbar}
+        <main
+          className={cn(
+            "mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-4 pb-8",
+            isHomeView ? "pt-8" : "pt-6"
+          )}
+        >
+          {isHomeView ? (
+            <div className="flex flex-col gap-6">
+              <header className="space-y-1">
+                <h1 className="text-3xl font-semibold text-rose-900">Endometriose Symptomtracker</h1>
+                <div className="flex flex-wrap items-center gap-2 text-sm text-rose-700">
+                  <Badge
+                    className="bg-rose-200 text-rose-700"
+                    title={todayLabel ?? undefined}
+                    aria-label={
+                      todayCycleDay !== null
+                        ? `Zyklustag ${todayCycleDay}${todayLabel ? ` – ${todayLabel}` : ""}`
+                        : todayLabel ?? undefined
+                    }
+                  >
+                    {todayCycleDay !== null ? `Zyklustag ${todayCycleDay}` : "Zyklustag –"}
+                  </Badge>
+                  {todayCycleComparisonBadge ? (
+                    <Badge className={todayCycleComparisonBadge.className}>
+                      {todayCycleComparisonBadge.label}
+                    </Badge>
+                  ) : null}
+                </div>
+                {infoMessage && <p className="text-sm font-medium text-rose-600">{infoMessage}</p>}
+              </header>
+              {cycleOverview ? <CycleOverviewMiniChart data={cycleOverview} /> : null}
+              <div className="grid gap-3 sm:grid-cols-3">
+                <Button
+                  type="button"
+                  onClick={() => setActiveView("daily")}
+                  className="h-auto w-full flex-col items-start justify-start gap-2 rounded-2xl bg-rose-600 px-6 py-5 text-left text-white shadow-lg transition hover:bg-rose-500 sm:col-span-3 lg:col-span-2"
+                >
+                  <span className="text-lg font-semibold">Täglicher Check-in</span>
+                  <span className="text-sm text-rose-50/80">In unter einer Minute erledigt</span>
+                  {hasDailyEntryForToday && (
+                    <span className="flex items-center gap-1 text-sm font-medium text-rose-50">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-200" />
+                      Heute erledigt
+                    </span>
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setActiveView("weekly")}
+                  className="h-auto w-full flex-col items-start justify-start gap-2 rounded-2xl border-rose-200 px-5 py-4 text-left text-rose-800 transition hover:border-rose-300 hover:text-rose-900"
+                >
+                  <span className="text-base font-semibold">Wöchentlich</span>
+                  <div className="flex flex-col gap-1">
+                    {showWeeklyReminderBadge && (
+                      <Badge className="bg-amber-400 text-rose-900" aria-label="Wöchentlicher Check-in fällig">
+                        fällig
+                      </Badge>
+                    )}
+                    <span className="text-xs text-rose-500">{weeklyInfoText}</span>
+                  </div>
+                </Button>
+                <div className="flex flex-col gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setActiveView("monthly")}
+                    className="h-auto w-full flex-col items-start justify-start gap-2 rounded-2xl border-rose-200 px-5 py-4 text-left text-rose-800 transition hover:border-rose-300 hover:text-rose-900"
+                  >
+                    <span className="text-base font-semibold">Monatlich</span>
+                    <div className="flex flex-col gap-1">
+                      {showMonthlyReminderBadge && (
+                        <Badge className="bg-amber-400 text-rose-900" aria-label="Monatlicher Check-in fällig">
+                          fällig
+                        </Badge>
+                      )}
+                      <span className="text-xs text-rose-500">{monthlyInfoText}</span>
+                    </div>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setActiveView("analytics")}
+                    className="h-auto w-full items-center justify-start gap-2 rounded-xl border-rose-200 px-4 py-3 text-left text-sm font-semibold text-rose-700 transition hover:border-rose-300 hover:text-rose-900"
+                  >
+                    <TrendingUp className="h-4 w-4 text-rose-500" />
+                    Auswertungen
+                  </Button>
+                </div>
+              </div>
+              {storageCompactPossible && !storageDetailsExpanded ? (
                 <button
                   type="button"
-                  onClick={() => setStorageDetailsExpanded(false)}
-                  className="text-[11px] font-semibold uppercase tracking-wide text-emerald-600 transition hover:text-emerald-700"
+                  onClick={() => setStorageDetailsExpanded(true)}
+                  className="flex w-fit items-center gap-2 rounded-full bg-emerald-100 px-4 py-2 text-[11px] font-semibold text-emerald-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2"
                 >
-                  Ausblenden
+                  <ShieldCheck className="h-3.5 w-3.5" /> lokale Speicherung aktiv
                 </button>
-              </div>
-            )}
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="flex flex-wrap items-center gap-3 text-sm text-rose-700">
-                <span className="flex items-center gap-2 font-medium text-rose-800">
-                  <HardDrive className="h-4 w-4 text-rose-500" /> Speicher: {storageDriverText}
-                </span>
-                <span className={cn("flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold", persistedBadgeClass)}>
-                  <ShieldCheck className="h-3.5 w-3.5" /> {persistedLabel}
-                </span>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button type="button" variant="outline" className="text-rose-700" onClick={handleBackupExport}>
-                  <Download className="mr-2 h-4 w-4" /> Daten exportieren
-                </Button>
-                <label className="flex cursor-pointer items-center gap-2 rounded-md border border-rose-200 px-3 py-2 text-sm text-rose-700 hover:bg-rose-50">
-                  <Upload className="h-4 w-4" /> Daten importieren
-                  <input type="file" accept="application/json" className="hidden" onChange={handleBackupImport} />
-                </label>
-              </div>
-            </div>
-            {storageStatusMessages.length > 0 && (
-              <div className="space-y-1 text-xs text-amber-700">
-                {storageStatusMessages.map((message) => (
-                  <div key={message} className="flex items-start gap-2">
-                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-500" />
-                    <span>{message}</span>
+              ) : (
+                <div className="space-y-3 rounded-lg border border-rose-200 bg-white p-4 shadow-sm">
+                  {storageCompactPossible && (
+                    <div className="flex items-start justify-between gap-2 rounded-md bg-emerald-50 p-3 text-xs text-emerald-700">
+                      <p className="font-medium">Solange die App installiert ist, bleiben die Daten dauerhaft gespeichert.</p>
+                      <button
+                        type="button"
+                        onClick={() => setStorageDetailsExpanded(false)}
+                        className="text-[11px] font-semibold uppercase tracking-wide text-emerald-600 transition hover:text-emerald-700"
+                      >
+                        Ausblenden
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div className="flex flex-wrap items-center gap-3 text-sm text-rose-700">
+                      <span className="flex items-center gap-2 font-medium text-rose-800">
+                        <HardDrive className="h-4 w-4 text-rose-500" /> Speicher: {storageDriverText}
+                      </span>
+                      <span className={cn("flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold", persistedBadgeClass)}>
+                        <ShieldCheck className="h-3.5 w-3.5" /> {persistedLabel}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button type="button" variant="outline" className="text-rose-700" onClick={handleBackupExport}>
+                        <Download className="mr-2 h-4 w-4" /> Daten exportieren
+                      </Button>
+                      <label className="flex cursor-pointer items-center gap-2 rounded-md border border-rose-200 px-3 py-2 text-sm text-rose-700 hover:bg-rose-50">
+                        <Upload className="h-4 w-4" /> Daten importieren
+                        <input type="file" accept="application/json" className="hidden" onChange={handleBackupImport} />
+                      </label>
+                    </div>
                   </div>
-                ))}
-              </div>
-            )}
-            {installHintVisible && (
-              <div className="flex flex-col gap-2 rounded-md bg-rose-50 p-3 text-xs text-rose-700 sm:flex-row sm:items-center sm:justify-between">
-                <span className="flex items-center gap-2 font-medium text-rose-700">
-                  <Smartphone className="h-4 w-4 text-rose-500" /> Zum Home-Bildschirm hinzufügen für Offline-Nutzung.
-                </span>
-                {installPrompt ? (
-                  <Button type="button" size="sm" onClick={handleInstallClick} className="self-start sm:self-auto">
-                    <Home className="mr-2 h-4 w-4" /> Installieren
-                  </Button>
-                ) : (
-                  <span className="rounded-full bg-rose-100 px-3 py-1 text-[11px] font-medium text-rose-600">
-                    Im Browser-Menü „Zum Home-Bildschirm“ wählen.
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-      <Tabs defaultValue="daily" className="w-full">
-        <TabsList className="grid h-auto w-full grid-cols-1 gap-2 bg-rose-100 text-rose-700 sm:h-10 sm:grid-cols-3">
-          <TabsTrigger value="daily" className="gap-2">
-            Täglicher Check-in
-          </TabsTrigger>
-          <TabsTrigger value="weekly" className="gap-2">
-            Wöchentlich
-            {showWeeklyReminderBadge ? (
-              <Badge className="bg-amber-400 text-rose-900" aria-label="Wöchentlicher Check-in fällig">
-                fällig
-              </Badge>
-            ) : null}
-          </TabsTrigger>
-          <TabsTrigger value="monthly" className="gap-2">
-            Monatlich
-            {showMonthlyReminderBadge ? (
-              <Badge className="bg-amber-400 text-rose-900" aria-label="Monatlicher Check-in fällig">
-                fällig
-              </Badge>
-            ) : null}
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="daily" className="space-y-6">
-          <SectionScopeContext.Provider value={`daily:${dailyDraft.date}`}>
+                  {storageStatusMessages.length > 0 && (
+                    <div className="space-y-1 text-xs text-amber-700">
+                      {storageStatusMessages.map((message) => (
+                        <div key={message} className="flex items-start gap-2">
+                          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-500" />
+                          <span>{message}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {installHintVisible && (
+                    <div className="flex flex-col gap-2 rounded-md bg-rose-50 p-3 text-xs text-rose-700 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="flex items-center gap-2 font-medium text-rose-700">
+                        <Smartphone className="h-4 w-4 text-rose-500" /> Zum Home-Bildschirm hinzufügen für Offline-Nutzung.
+                      </span>
+                      {installPrompt ? (
+                        <Button type="button" size="sm" onClick={handleInstallClick} className="self-start sm:self-auto">
+                          <Home className="mr-2 h-4 w-4" /> Installieren
+                        </Button>
+                      ) : (
+                        <span className="rounded-full bg-rose-100 px-3 py-1 text-[11px] font-medium text-rose-600">
+                          Im Browser-Menü „Zum Home-Bildschirm“ wählen.
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-6">
+              <Tabs defaultValue="daily" value={currentDataView} className="w-full">
+                <TabsContent value="daily" className="space-y-6">
+                  <SectionScopeContext.Provider value={`daily:${dailyDraft.date}`}>
           <Section
             title="Tagescheck-in"
             description="Schmerz → Körperkarte → Symptome → Blutung → Medikation → Schlaf → Darm/Blase → Notizen"
@@ -3057,7 +3789,7 @@ export default function HomePage() {
             variant="plain"
             completionEnabled={false}
           >
-            <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+            <div className="space-y-6">
               <div className="space-y-6">
                 <div className="grid gap-4">
                   <Label className="text-sm font-medium text-rose-800">Datum</Label>
@@ -3106,7 +3838,8 @@ export default function HomePage() {
                       <Input
                         type="date"
                         value={dailyDraft.date}
-                        onChange={(event) => setDailyDraft({ ...dailyDraft, date: event.target.value })}
+                        onChange={(event) =>
+                          selectDailyDate(event.target.value, { manual: true })}
                         className="w-full max-w-[11rem]"
                         max={today}
                         aria-label="Datum direkt auswählen"
@@ -3126,47 +3859,42 @@ export default function HomePage() {
                 </div>
 
                 <Section
-                  title={`${TERMS.nrs.label} (NRS)`}
-                  description="Numerische Schmerzskala 0–10 – ganzzahlige Eingabe"
+                  title="Schmerzen heute"
+                  description="Zuerst betroffene Körperbereiche wählen, anschließend Intensität und Schmerzart je Region erfassen"
                 >
-                  <ScoreInput
-                    id="pain-nrs"
-                    label={TERMS.nrs.label}
-                    termKey="nrs"
-                    value={dailyDraft.painNRS}
-                    onChange={(value) =>
-                      setDailyDraft((prev) => ({ ...prev, painNRS: Math.max(0, Math.min(10, Math.round(value))) }))
-                    }
-                  />
-                  {renderIssuesForPath("painNRS")}
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <TermField termKey="painQuality">
-                      <div className="space-y-2">
-                        <MultiSelectChips
-                          options={PAIN_QUALITIES.map((quality) => ({ value: quality, label: quality }))}
-                          value={dailyDraft.painQuality}
-                          onToggle={(next) =>
-                            setDailyDraft((prev) => ({ ...prev, painQuality: next as DailyEntry["painQuality"] }))
-                          }
-                        />
-                        {dailyDraft.painQuality.includes("anders") && (
-                          <Input
-                            placeholder="Beschreibe den Schmerz"
-                            value={painQualityOther}
-                            onChange={(event) => setPainQualityOther(event.target.value)}
-                          />
-                        )}
-                      </div>
-                      {dailyDraft.painQuality.map((_, index) => renderIssuesForPath(`painQuality[${index}]`))}
-                    </TermField>
-                    <div className="space-y-4">
+                  <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                    <div className="space-y-6">
                       <TermField termKey="bodyMap">
                         <BodyMap
-                          value={dailyDraft.painMapRegionIds}
-                          onChange={(next) => setDailyDraft((prev) => ({ ...prev, painMapRegionIds: next }))}
+                          value={(dailyDraft.painRegions ?? []).map((region) => region.regionId)}
+                          onChange={updatePainRegionsFromSelection}
+                          renderRegionCard={renderPainRegionCard}
                         />
+                        {renderIssuesForPath("painRegions")}
                         {renderIssuesForPath("painMapRegionIds")}
                       </TermField>
+
+                      <TermField termKey="nrs">
+                        <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4">
+                          <p className="font-medium text-rose-800">
+                            Wie stark haben dich deine Schmerzen heute insgesamt eingeschränkt oder belastet?
+                          </p>
+                          <NrsInput
+                            id="impact-nrs"
+                            value={dailyDraft.impactNRS ?? 0}
+                            onChange={(value) => {
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                impactNRS: Math.max(0, Math.min(10, Math.round(value))),
+                              }));
+                            }}
+                          />
+                        </div>
+                      </TermField>
+                      {renderIssuesForPath("impactNRS")}
+                    </div>
+
+                    <div className="space-y-4">
                       <TermField termKey="ovulationPain">
                         <div className="space-y-3">
                           <Select
@@ -3325,256 +4053,187 @@ export default function HomePage() {
                         );
                         if (!checked) {
                           setPbacCounts({ ...PBAC_DEFAULT_COUNTS });
-                          setPbacStep(1);
-                          setPbacSelection({ product: null, saturation: null });
-                          setPbacCountDraft("0");
                         }
                       }}
                     />
                   </div>
                   {dailyDraft.bleeding.isBleeding && (
-                    <div className="space-y-4">
+                    <div className="space-y-6">
                       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                        <span>PBAC-Wizard • Schritt {pbacStep} von 5</span>
+                        <span>PBAC-Assistent</span>
                         <span>Aktueller Score: {pbacScore}</span>
                       </div>
-                      {pbacStep === 1 && (
-                        <div className="space-y-3">
-                          <TermHeadline termKey="pbac" />
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            {PBAC_PRODUCT_OPTIONS.map((option) => (
-                              <button
-                                key={option.id}
-                                type="button"
-                                onClick={() => {
-                                  setPbacSelection({ product: option.id, saturation: null });
-                                  setPbacStep(2);
-                                }}
-                                className={cn(
-                                  "rounded border px-3 py-2 text-left text-sm transition",
-                                  pbacSelection.product === option.id
-                                    ? "border-rose-400 bg-rose-100 text-rose-700"
-                                    : "border-rose-100 bg-white text-rose-600 hover:border-rose-300"
-                                )}
-                              >
-                                {option.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {pbacStep === 2 && (
-                        <div className="space-y-3">
-                          <TermHeadline termKey="pbac" />
-                          <div className="grid grid-cols-3 gap-2">
-                            {PBAC_SATURATION_OPTIONS.map((option) => (
-                              <button
-                                key={option.id}
-                                type="button"
-                                disabled={!pbacSelection.product}
-                                onClick={() => pbacSelection.product && goToPbacProduct(pbacSelection.product, option.id)}
-                                className={cn(
-                                  "rounded border px-3 py-2 text-sm transition",
-                                  pbacSelection.saturation === option.id
-                                    ? "border-rose-400 bg-rose-100 text-rose-700"
-                                    : "border-rose-100 bg-white text-rose-600 hover:border-rose-300",
-                                  !pbacSelection.product ? "opacity-50" : ""
-                                )}
-                              >
-                                {option.label}
-                              </button>
-                            ))}
-                          </div>
-                          <div className="flex justify-start">
-                            <Button type="button" variant="ghost" onClick={() => setPbacStep(1)}>
-                              Zurück
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                      {pbacStep === 3 && selectedPbacItem && (
-                        <div className="space-y-4">
-                          <Labeled
-                            label={`Anzahl ${selectedPbacItem.label}`}
-                            tech={TERMS.pbac.tech}
-                            help={TERMS.pbac.help}
-                            htmlFor="pbac-count"
-                          >
-                            <Input
-                              id="pbac-count"
-                              type="number"
-                              min={0}
-                              step={1}
-                              value={pbacCountDraft}
-                              onChange={(event) => setPbacCountDraft(event.target.value)}
-                            />
-                          </Labeled>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Button type="button" variant="ghost" onClick={() => setPbacStep(2)}>
-                              Zurück
-                            </Button>
-                            <div className="ml-auto flex flex-wrap gap-2">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => {
-                                  commitPbacCount();
-                                  setPbacSelection({ product: null, saturation: null });
-                                  setPbacCountDraft("0");
-                                  setPbacStep(1);
-                                }}
-                              >
-                                Weiteres Produkt
-                              </Button>
-                              <Button
-                                type="button"
-                                onClick={() => {
-                                  commitPbacCount();
-                                  setPbacStep(4);
-                                }}
-                              >
-                                Weiter zu Koageln
-                              </Button>
-                            </div>
-                          </div>
-                          <div className="space-y-2 rounded border border-rose-100 bg-rose-50 p-3 text-xs text-rose-700">
-                            <p className="font-semibold text-rose-800">Bisher erfasste Produkte</p>
-                            {PBAC_PRODUCT_ITEMS.some((item) => pbacCounts[item.id] > 0) ? (
-                              PBAC_PRODUCT_ITEMS.map((item) =>
-                                pbacCounts[item.id] > 0 ? (
-                                  <div key={item.id} className="flex flex-wrap items-center justify-between gap-2">
-                                    <span>
-                                      {pbacCounts[item.id]} × {item.label}
-                                    </span>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="ghost"
-                                      className="h-auto px-2 py-0 text-xs text-rose-600"
-                                      onClick={() => goToPbacProduct(item.product, item.saturation)}
-                                    >
-                                      Bearbeiten
-                                    </Button>
-                                  </div>
-                                ) : null
-                              )
-                            ) : (
-                              <p className="text-rose-500">Noch keine Produkte dokumentiert.</p>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                      {pbacStep === 4 && (
-                        <div className="space-y-3">
-                          <TermHeadline termKey="clots" />
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            {PBAC_CLOT_ITEMS.map((item) => (
+                      <div className="space-y-4">
+                        <TermHeadline termKey="pbac" />
+                        <p className="text-sm text-rose-600">
+                          Dokumentiere, wie viele Produkte du heute verwendet hast. Alle Angaben lassen sich jederzeit anpassen.
+                        </p>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          {PBAC_PRODUCT_ITEMS.map((item) => {
+                            const value = pbacCounts[item.id] ?? 0;
+                            const max = 12;
+                            const sliderId = `${item.id}-slider`;
+                            const sliderHintId = `${item.id}-slider-hint`;
+                            const sliderWarningId = `${item.id}-slider-warning`;
+                            const describedBy = value === max ? `${sliderHintId} ${sliderWarningId}` : sliderHintId;
+
+                            return (
                               <Labeled
                                 key={item.id}
                                 label={item.label}
-                                tech={TERMS.clots.tech}
-                                help={TERMS.clots.help}
-                                htmlFor={item.id}
+                                tech={TERMS.pbac.tech}
+                                help={TERMS.pbac.help}
+                                htmlFor={sliderId}
                               >
-                            <Input
-                              id={item.id}
-                              type="number"
-                              min={0}
-                              step={1}
-                              value={String(pbacCounts[item.id] ?? 0)}
-                              onChange={(event) => {
-                                const nextValue = Math.max(0, Math.round(Number(event.target.value) || 0));
-                                const updatedCounts: PbacCounts = { ...pbacCounts, [item.id]: nextValue };
-                                setPbacCounts(updatedCounts);
+                                <div className="space-y-2">
+                                  <Slider
+                                    id={sliderId}
+                                    min={0}
+                                    max={max}
+                                    step={1}
+                                    value={[value]}
+                                    onValueChange={([nextValue]) => {
+                                      const clampedValue = Math.min(max, Math.max(0, nextValue ?? 0));
+                                      setPbacCounts((prev) => {
+                                        if (prev[item.id] === clampedValue) {
+                                          return prev;
+                                        }
+                                        return { ...prev, [item.id]: clampedValue };
+                                      });
+                                    }}
+                                    aria-describedby={describedBy}
+                                  />
+                                  <div id={sliderHintId} className="flex justify-between text-xs text-rose-600">
+                                    <span>0</span>
+                                    <span>{max}</span>
+                                  </div>
+                                  <SliderValueDisplay
+                                    value={value}
+                                    label="Aktuelle Anzahl"
+                                    className="w-full sm:w-auto"
+                                  />
+                                  {value === max ? (
+                                    <p id={sliderWarningId} className="text-sm font-medium text-rose-800">
+                                      Bei mehr als zwölf bitte ärztlich abklären.
+                                    </p>
+                                  ) : null}
+                                </div>
+                              </Labeled>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        <TermHeadline termKey="clots" />
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {PBAC_CLOT_ITEMS.map((item) => {
+                            const value = pbacCounts[item.id] ?? 0;
+                            const max = item.id === "clot_small" ? 15 : 5;
+                            const labelHint =
+                              item.id === "clot_small"
+                                ? "Kleine, meist weichere Klümpchen im Blut, etwa erbsen- bis kirschgroß. Zähle jeden, den du deutlich erkennst."
+                                : "Deutlich größere, kompaktere Klumpen, oft dunkler. Notiere jede sichtbare Einheit, auch wenn mehrere in kurzer Zeit kommen.";
+                            const label = `${item.label} – ${labelHint}`;
+                            const sliderId = `${item.id}-slider`;
+                            const sliderHintId = `${item.id}-slider-hint`;
+
+                            return (
+                              <Labeled key={item.id} label={label} htmlFor={sliderId}>
+                                <div className="space-y-2">
+                                  <Slider
+                                    id={sliderId}
+                                    min={0}
+                                    max={max}
+                                    step={1}
+                                    value={[value]}
+                                    onValueChange={([nextValue]) => {
+                                      const clampedValue = Math.min(max, Math.max(0, nextValue ?? 0));
+                                      setPbacCounts((prev) => {
+                                        if (prev[item.id] === clampedValue) {
+                                          return prev;
+                                        }
+                                        const updatedCounts: PbacCounts = {
+                                          ...prev,
+                                          [item.id]: clampedValue,
+                                        };
+                                        setDailyDraft((prevDraft) => ({
+                                          ...prevDraft,
+                                          bleeding: {
+                                            ...prevDraft.bleeding,
+                                            clots:
+                                              (updatedCounts.clot_small ?? 0) + (updatedCounts.clot_large ?? 0) > 0,
+                                          },
+                                        }));
+                                        return updatedCounts;
+                                      });
+                                    }}
+                                    aria-describedby={sliderHintId}
+                                  />
+                                  <div id={sliderHintId} className="flex justify-between text-xs text-rose-600">
+                                    <span>0</span>
+                                    <span>{max}</span>
+                                  </div>
+                                  <SliderValueDisplay
+                                    value={value}
+                                    label="Aktuelle Anzahl"
+                                    className="w-full sm:w-auto"
+                                  />
+                                </div>
+                              </Labeled>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        <TermField termKey="flooding">
+                          <div className="flex items-center gap-3">
+                            <Switch
+                              checked={pbacFlooding}
+                              onCheckedChange={(checked) =>
                                 setDailyDraft((prev) => ({
                                   ...prev,
-                                  bleeding: {
-                                    ...prev.bleeding,
-                                    clots: (updatedCounts.clot_small ?? 0) + (updatedCounts.clot_large ?? 0) > 0,
-                                  },
-                                }));
-                              }}
+                                  bleeding: { ...prev.bleeding, flooding: checked },
+                                }))
+                              }
                             />
-                          </Labeled>
-                        ))}
+                            <span className="text-sm text-rose-700">Flooding heute beobachtet?</span>
                           </div>
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <Button type="button" variant="ghost" onClick={() => setPbacStep(3)}>
-                              Zurück
-                            </Button>
-                            <Button type="button" onClick={() => setPbacStep(5)}>
-                              Weiter zu Flooding
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                      {pbacStep === 5 && (
-                        <div className="space-y-3">
-                          <TermField termKey="flooding">
-                            <div className="flex items-center gap-3">
-                              <Switch
-                                checked={pbacFlooding}
-                                onCheckedChange={(checked) =>
-                                  setDailyDraft((prev) => ({
-                                    ...prev,
-                                    bleeding: { ...prev.bleeding, flooding: checked },
-                                  }))
-                                }
-                              />
-                              <span className="text-sm text-rose-700">Flooding heute beobachtet?</span>
-                            </div>
-                            {renderIssuesForPath("bleeding.flooding")}
-                          </TermField>
-                          <div className="space-y-2 rounded border border-rose-100 bg-rose-50 p-3 text-xs text-rose-700">
-                            <p className="font-semibold text-rose-800">PBAC-Zusammenfassung</p>
-                            <p className="text-sm">Score heute: {pbacScore}</p>
-                            <div className="space-y-1">
-                              {PBAC_PRODUCT_ITEMS.filter((item) => pbacCounts[item.id] > 0).map((item) => (
-                                <div key={item.id} className="flex flex-wrap items-center justify-between gap-2">
-                                  <span>
-                                    {pbacCounts[item.id]} × {item.label}
-                                  </span>
-                                  <span className="font-semibold text-rose-800">+{pbacCounts[item.id] * item.score}</span>
-                                </div>
-                              ))}
-                              {PBAC_CLOT_ITEMS.filter((item) => pbacCounts[item.id] > 0).map((item) => (
-                                <div key={item.id} className="flex flex-wrap items-center justify-between gap-2">
-                                  <span>
-                                    {pbacCounts[item.id]} × {item.label}
-                                  </span>
-                                  <span className="font-semibold text-rose-800">+{pbacCounts[item.id] * item.score}</span>
-                                </div>
-                              ))}
-                              {pbacFlooding ? (
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <span>Flooding</span>
-                                  <span className="font-semibold text-rose-800">+{PBAC_FLOODING_SCORE}</span>
-                                </div>
-                              ) : null}
-                              {PBAC_PRODUCT_ITEMS.every((item) => pbacCounts[item.id] === 0) &&
-                              PBAC_CLOT_ITEMS.every((item) => pbacCounts[item.id] === 0) &&
-                              !pbacFlooding ? (
-                                <p className="text-rose-500">Noch keine PBAC-Daten erfasst.</p>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <Button type="button" variant="ghost" onClick={() => setPbacStep(4)}>
-                              Zurück
-                            </Button>
-                            <Button
-                              type="button"
-                              onClick={() => {
-                                setPbacStep(1);
-                                setPbacSelection({ product: null, saturation: null });
-                                setPbacCountDraft("0");
-                              }}
-                            >
-                              Wizard schließen
-                            </Button>
+                          {renderIssuesForPath("bleeding.flooding")}
+                        </TermField>
+                        <div className="space-y-2 rounded border border-rose-100 bg-rose-50 p-3 text-xs text-rose-700">
+                          <p className="font-semibold text-rose-800">PBAC-Zusammenfassung</p>
+                          <p className="text-sm">Score heute: {pbacScore}</p>
+                          <div className="space-y-1">
+                            {PBAC_PRODUCT_ITEMS.filter((item) => pbacCounts[item.id] > 0).map((item) => (
+                              <div key={item.id} className="flex flex-wrap items-center justify-between gap-2">
+                                <span>
+                                  {pbacCounts[item.id]} × {item.label}
+                                </span>
+                                <span className="font-semibold text-rose-800">+{pbacCounts[item.id] * item.score}</span>
+                              </div>
+                            ))}
+                            {PBAC_CLOT_ITEMS.filter((item) => pbacCounts[item.id] > 0).map((item) => (
+                              <div key={item.id} className="flex flex-wrap items-center justify-between gap-2">
+                                <span>
+                                  {pbacCounts[item.id]} × {item.label}
+                                </span>
+                                <span className="font-semibold text-rose-800">+{pbacCounts[item.id] * item.score}</span>
+                              </div>
+                            ))}
+                            {pbacFlooding ? (
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span>Flooding</span>
+                                <span className="font-semibold text-rose-800">+{PBAC_FLOODING_SCORE}</span>
+                              </div>
+                            ) : null}
+                            {PBAC_PRODUCT_ITEMS.every((item) => pbacCounts[item.id] === 0) &&
+                            PBAC_CLOT_ITEMS.every((item) => pbacCounts[item.id] === 0) &&
+                            !pbacFlooding ? (
+                              <p className="text-rose-500">Noch keine PBAC-Daten erfasst.</p>
+                            ) : null}
                           </div>
                         </div>
-                      )}
+                      </div>
                       <div className="space-y-1 text-xs text-rose-600">
                         {renderIssuesForPath("bleeding.pbacScore")}
                         {renderIssuesForPath("bleeding.clots")}
@@ -4004,82 +4663,6 @@ export default function HomePage() {
                   </Section>
                 )}
 
-                {activeHeadache && (
-                  <Section title="Kopfschmerz/Migräne (Modul)" description="Nur wenn benötigt – Präsenz + Intensität">
-                    <div className="space-y-4">
-                      <label className="flex items-center gap-2 text-sm text-rose-800">
-                        <Checkbox
-                          checked={dailyDraft.headacheOpt?.present ?? false}
-                          onChange={(event) =>
-                            setDailyDraft((prev) => ({
-                              ...prev,
-                              headacheOpt: event.target.checked
-                                ? { ...(prev.headacheOpt ?? {}), present: true, nrs: prev.headacheOpt?.nrs ?? 0 }
-                                : { present: false },
-                            }))
-                          }
-                        />
-                        <span>{MODULE_TERMS.headacheOpt.present.label}</span>
-                        <InfoTip
-                          tech={MODULE_TERMS.headacheOpt.present.tech ?? MODULE_TERMS.headacheOpt.present.label}
-                          help={MODULE_TERMS.headacheOpt.present.help}
-                        />
-                      </label>
-                      {renderIssuesForPath("headacheOpt.present")}
-                      {dailyDraft.headacheOpt?.present && (
-                        <div className="space-y-3">
-                          <div className="space-y-1">
-                            <Labeled
-                              label={MODULE_TERMS.headacheOpt.nrs.label}
-                              tech={MODULE_TERMS.headacheOpt.nrs.tech}
-                              help={MODULE_TERMS.headacheOpt.nrs.help}
-                              htmlFor="headache-opt-nrs"
-                            >
-                              <NrsInput
-                                id="headache-opt-nrs"
-                                value={dailyDraft.headacheOpt?.nrs ?? 0}
-                                onChange={(value) =>
-                                  setDailyDraft((prev) => ({
-                                    ...prev,
-                                    headacheOpt: { ...(prev.headacheOpt ?? {}), nrs: value },
-                                  }))
-                                }
-                              />
-                            </Labeled>
-                            {renderIssuesForPath("headacheOpt.nrs")}
-                          </div>
-                          <label className="flex items-center gap-2 text-sm text-rose-800">
-                            <Checkbox
-                              checked={dailyDraft.headacheOpt?.aura ?? false}
-                              onChange={(event) =>
-                                setDailyDraft((prev) => ({
-                                  ...prev,
-                                  headacheOpt: { ...(prev.headacheOpt ?? {}), aura: event.target.checked },
-                                }))
-                              }
-                            />
-                            <span>{MODULE_TERMS.headacheOpt.aura.label}</span>
-                            <InfoTip
-                              tech={MODULE_TERMS.headacheOpt.aura.tech ?? MODULE_TERMS.headacheOpt.aura.label}
-                              help={MODULE_TERMS.headacheOpt.aura.help}
-                            />
-                          </label>
-                          <MedList
-                            items={dailyDraft.headacheOpt?.meds ?? []}
-                            onChange={(items) =>
-                              setDailyDraft((prev) => ({
-                                ...prev,
-                                headacheOpt: { ...(prev.headacheOpt ?? {}), meds: items },
-                              }))
-                            }
-                            renderIssues={renderIssuesForPath}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </Section>
-                )}
-
                 {activeDizziness && (
                   <Section title="Schwindel (Modul)" description="Präsenz, Stärke und Orthostatik">
                     <div className="space-y-4">
@@ -4375,37 +4958,6 @@ export default function HomePage() {
                       )}
                     </div>
                   )}
-                  <label className="flex cursor-pointer items-center gap-2 text-sm text-rose-600">
-                    <Upload size={16} />
-                    JSON importieren
-                    <input type="file" accept="application/json" className="hidden" onChange={handleDailyImport} />
-                  </label>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() =>
-                      downloadFile(
-                        `endo-daily-${today}.json`,
-                        JSON.stringify(jsonExportData, null, 2),
-                        "application/json"
-                      )
-                    }
-                  >
-                    <Download size={16} className="mr-2" /> JSON Export
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() =>
-                      downloadFile(
-                        `endo-daily-${today}.csv`,
-                        toCsv(dailyCsvRows),
-                        "text/csv"
-                      )
-                    }
-                  >
-                    <Download size={16} className="mr-2" /> CSV Export
-                  </Button>
                   <div className="flex flex-wrap items-center gap-2">
                     {[3, 6, 12].map((months) => (
                       <Button key={months} type="button" variant="outline" onClick={() => handleReportDownload(months)}>
@@ -4416,304 +4968,309 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <Section
-                  title="Trend"
-                  description={`${TERMS.nrs.label}, ${TERMS.pbac.label} sowie Symptom- und Schlafverlauf`}
-                  completionEnabled={false}
-                >
-                  <div className="flex justify-end gap-2 text-xs text-rose-600">
-                    <span>Achse:</span>
-                    <Button
-                      type="button"
-                      variant={trendXAxisMode === "date" ? "secondary" : "ghost"}
-                      size="sm"
-                      onClick={() => setTrendXAxisMode("date")}
-                    >
-                      Datum
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={trendXAxisMode === "cycleDay" ? "secondary" : "ghost"}
-                      size="sm"
-                      onClick={() => setTrendXAxisMode("cycleDay")}
-                    >
-                      Zyklustag
-                    </Button>
-                  </div>
-                  <div className="h-64 w-full">
+
+            </div>
+          </Section>
+                  </SectionScopeContext.Provider>
+                </TabsContent>
+        <TabsContent value="analytics" className="space-y-6">
+          <SectionScopeContext.Provider value="analytics">
+            <div className="space-y-4">
+              <Section
+                title="Trend"
+                description={`${TERMS.nrs.label}, ${TERMS.pbac.label} sowie Symptom- und Schlafverlauf`}
+                completionEnabled={false}
+              >
+                <div className="flex justify-end gap-2 text-xs text-rose-600">
+                  <span>Achse:</span>
+                  <Button
+                    type="button"
+                    variant={trendXAxisMode === "date" ? "secondary" : "ghost"}
+                    size="sm"
+                    onClick={() => setTrendXAxisMode("date")}
+                  >
+                    Datum
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={trendXAxisMode === "cycleDay" ? "secondary" : "ghost"}
+                    size="sm"
+                    onClick={() => setTrendXAxisMode("cycleDay")}
+                  >
+                    Zyklustag
+                  </Button>
+                </div>
+                <div className="h-64 w-full">
+                  <ResponsiveContainer>
+                    <LineChart data={painTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                      <XAxis
+                        dataKey={trendXAxisMode === "date" ? "date" : "cycleLabel"}
+                        stroke="#fb7185"
+                        tick={{ fontSize: 12 }}
+                      />
+                      <YAxis yAxisId="left" domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                      <YAxis yAxisId="right" orientation="right" domain={[0, 300]} stroke="#6366f1" tick={{ fontSize: 12 }} />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      <Line
+                        type="monotone"
+                        dataKey="pain"
+                        stroke="#f43f5e"
+                        strokeWidth={2}
+                        name={`${TERMS.nrs.label} (NRS)`}
+                        yAxisId="left"
+                        dot={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="pbac"
+                        stroke="#6366f1"
+                        strokeWidth={2}
+                        name={`${TERMS.pbac.label}`}
+                        yAxisId="right"
+                        connectNulls={false}
+                        dot={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="symptomAverage"
+                        stroke="#f97316"
+                        strokeWidth={1.5}
+                        name="Symptom-Schnitt"
+                        yAxisId="left"
+                        dot={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="sleepQuality"
+                        stroke="#22c55e"
+                        strokeWidth={1.5}
+                        name={TERMS.sleep_quality.label}
+                        yAxisId="left"
+                        dot={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </Section>
+
+              {activeUrinary && urinaryTrendData.length > 0 && (
+                <Section title="Blase/Drang Verlauf" description="Harndrang-NRS (0–10) an aktiven Tagen">
+                  <div className="h-56 w-full">
                     <ResponsiveContainer>
-                      <LineChart data={painTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                      <LineChart data={urinaryTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                        <XAxis
-                          dataKey={trendXAxisMode === "date" ? "date" : "cycleLabel"}
-                          stroke="#fb7185"
-                          tick={{ fontSize: 12 }}
-                        />
-                        <YAxis yAxisId="left" domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                        <YAxis yAxisId="right" orientation="right" domain={[0, 300]} stroke="#6366f1" tick={{ fontSize: 12 }} />
-                        <Tooltip content={<ChartTooltip />} />
-                        <Legend wrapperStyle={{ fontSize: 12 }} />
-                        <Line
-                          type="monotone"
-                          dataKey="pain"
-                          stroke="#f43f5e"
-                          strokeWidth={2}
-                          name={`${TERMS.nrs.label} (NRS)`}
-                          yAxisId="left"
-                          dot={false}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="pbac"
-                          stroke="#6366f1"
-                          strokeWidth={2}
-                          name={`${TERMS.pbac.label}`}
-                          yAxisId="right"
-                          connectNulls={false}
-                          dot={false}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="symptomAverage"
-                          stroke="#f97316"
-                          strokeWidth={1.5}
-                          name="Symptom-Schnitt"
-                          yAxisId="left"
-                          dot={false}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="sleepQuality"
-                          stroke="#22c55e"
-                          strokeWidth={1.5}
-                          name={TERMS.sleep_quality.label}
-                          yAxisId="left"
-                          dot={false}
-                        />
+                        <XAxis dataKey="date" stroke="#fb7185" tick={{ fontSize: 12 }} />
+                        <YAxis domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                        <Tooltip />
+                        <Line type="monotone" dataKey="urgency" stroke="#f43f5e" strokeWidth={2} dot={false} />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
                 </Section>
+              )}
 
-                {activeUrinary && urinaryTrendData.length > 0 && (
-                  <Section title="Blase/Drang Verlauf" description="Harndrang-NRS (0–10) an aktiven Tagen">
-                    <div className="h-56 w-full">
-                      <ResponsiveContainer>
-                        <LineChart data={urinaryTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                          <XAxis dataKey="date" stroke="#fb7185" tick={{ fontSize: 12 }} />
-                          <YAxis domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                          <Tooltip />
-                          <Line type="monotone" dataKey="urgency" stroke="#f43f5e" strokeWidth={2} dot={false} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </Section>
-                )}
+              {activeUrinary && urinaryMonthlyRates.length > 0 && (
+                <Section title="Leckage-Rate" description="Anteil Tage mit Leckage pro Monat">
+                  <div className="h-56 w-full">
+                    <ResponsiveContainer>
+                      <BarChart data={urinaryMonthlyRates} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                        <XAxis dataKey="month" stroke="#fb7185" tick={{ fontSize: 12 }} />
+                        <YAxis domain={[0, 100]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                        <Tooltip />
+                        <Bar dataKey="leakRate" fill="#fb7185" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Section>
+              )}
 
-                {activeUrinary && urinaryMonthlyRates.length > 0 && (
-                  <Section title="Leckage-Rate" description="Anteil Tage mit Leckage pro Monat">
-                    <div className="h-56 w-full">
-                      <ResponsiveContainer>
-                        <BarChart data={urinaryMonthlyRates} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                          <XAxis dataKey="month" stroke="#fb7185" tick={{ fontSize: 12 }} />
-                          <YAxis domain={[0, 100]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                          <Tooltip />
-                          <Bar dataKey="leakRate" fill="#fb7185" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </Section>
-                )}
+              {activeHeadache && headacheTrendData.length > 0 && (
+                <Section title="Kopfschmerz/Migräne Verlauf" description="NRS nur an Kopfschmerztagen">
+                  <div className="h-56 w-full">
+                    <ResponsiveContainer>
+                      <LineChart data={headacheTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                        <XAxis dataKey="date" stroke="#fb7185" tick={{ fontSize: 12 }} />
+                        <YAxis domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                        <Tooltip />
+                        <Line type="monotone" dataKey="nrs" stroke="#f43f5e" strokeWidth={2} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Section>
+              )}
 
-                {activeHeadache && headacheTrendData.length > 0 && (
-                  <Section title="Kopfschmerz/Migräne Verlauf" description="NRS nur an Kopfschmerztagen">
-                    <div className="h-56 w-full">
-                      <ResponsiveContainer>
-                        <LineChart data={headacheTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                          <XAxis dataKey="date" stroke="#fb7185" tick={{ fontSize: 12 }} />
-                          <YAxis domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                          <Tooltip />
-                          <Line type="monotone" dataKey="nrs" stroke="#f43f5e" strokeWidth={2} dot={false} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </Section>
-                )}
+              {activeHeadache && headacheMonthlyRates.length > 0 && (
+                <Section title="Migränetage je Monat" description="Prozentualer Anteil mit Kopfschmerz/Migräne">
+                  <div className="h-56 w-full">
+                    <ResponsiveContainer>
+                      <BarChart data={headacheMonthlyRates} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                        <XAxis dataKey="month" stroke="#fb7185" tick={{ fontSize: 12 }} />
+                        <YAxis domain={[0, 100]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                        <Tooltip />
+                        <Bar dataKey="rate" fill="#fb7185" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Section>
+              )}
 
-                {activeHeadache && headacheMonthlyRates.length > 0 && (
-                  <Section title="Migränetage je Monat" description="Prozentualer Anteil mit Kopfschmerz/Migräne">
-                    <div className="h-56 w-full">
-                      <ResponsiveContainer>
-                        <BarChart data={headacheMonthlyRates} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                          <XAxis dataKey="month" stroke="#fb7185" tick={{ fontSize: 12 }} />
-                          <YAxis domain={[0, 100]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                          <Tooltip />
-                          <Bar dataKey="rate" fill="#fb7185" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </Section>
-                )}
+              {activeDizziness && dizzinessTrendData.length > 0 && (
+                <Section title="Schwindel-Verlauf" description="NRS 0–10 an Schwindeltagen">
+                  <div className="h-56 w-full">
+                    <ResponsiveContainer>
+                      <LineChart data={dizzinessTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                        <XAxis dataKey="date" stroke="#fb7185" tick={{ fontSize: 12 }} />
+                        <YAxis domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                        <Tooltip />
+                        <Line type="monotone" dataKey="nrs" stroke="#f43f5e" strokeWidth={2} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Section>
+              )}
 
-                {activeDizziness && dizzinessTrendData.length > 0 && (
-                  <Section title="Schwindel-Verlauf" description="NRS 0–10 an Schwindeltagen">
-                    <div className="h-56 w-full">
-                      <ResponsiveContainer>
-                        <LineChart data={dizzinessTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                          <XAxis dataKey="date" stroke="#fb7185" tick={{ fontSize: 12 }} />
-                          <YAxis domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                          <Tooltip />
-                          <Line type="monotone" dataKey="nrs" stroke="#f43f5e" strokeWidth={2} dot={false} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </Section>
-                )}
-
-                {activeDizziness && dizzinessScatterData.length > 0 && (
-                  <Section
-                    title="PBAC vs. Schwindel"
-                    description="Streudiagramm: Blutungsstärke (PBAC) vs. Schwindel-NRS"
-                  >
-                    <div className="h-56 w-full">
-                      <ResponsiveContainer>
-                        <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                          <XAxis type="number" dataKey="pbac" name="PBAC" stroke="#fb7185" tick={{ fontSize: 12 }} />
-                          <YAxis type="number" dataKey="nrs" name="Schwindel" domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                          <Tooltip cursor={{ strokeDasharray: "3 3" }} />
-                          <Scatter data={dizzinessScatterData} fill="#22c55e" />
-                        </ScatterChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </Section>
-                )}
-
+              {activeDizziness && dizzinessScatterData.length > 0 && (
                 <Section
-                  title="Letzte Einträge"
-                  description="Kernmetriken kompakt"
-                  completionEnabled={false}
+                  title="PBAC vs. Schwindel"
+                  description="Streudiagramm: Blutungsstärke (PBAC) vs. Schwindel-NRS"
                 >
-                  <div className="space-y-3">
-                    {dailyEntries
-                      .slice()
-                      .sort((a, b) => b.date.localeCompare(a.date))
-                      .slice(0, 7)
-                      .map((entry) => (
-                        <div key={entry.date} className="rounded-lg border border-amber-100 bg-amber-50 p-3 text-sm">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="font-semibold text-rose-800">{entry.date}</span>
-                            <span className="text-rose-600">NRS {entry.painNRS}</span>
-                          </div>
-                          <div className="mt-1 flex flex-wrap gap-2 text-xs text-rose-700">
-                            <span>PBAC: {entry.bleeding.pbacScore ?? "–"}</span>
-                            <span>Schlafqualität: {entry.sleep?.quality ?? "–"}</span>
+                  <div className="h-56 w-full">
+                    <ResponsiveContainer>
+                      <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
+                        <XAxis type="number" dataKey="pbac" name="PBAC" stroke="#fb7185" tick={{ fontSize: 12 }} />
+                        <YAxis type="number" dataKey="nrs" name="Schwindel" domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
+                        <Tooltip cursor={{ strokeDasharray: "3 3" }} />
+                        <Scatter data={dizzinessScatterData} fill="#22c55e" />
+                      </ScatterChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Section>
+              )}
+
+              <Section
+                title="Letzte Einträge"
+                description="Kernmetriken kompakt"
+                completionEnabled={false}
+              >
+                <div className="space-y-3">
+                  {dailyEntries
+                    .slice()
+                    .sort((a, b) => b.date.localeCompare(a.date))
+                    .slice(0, 7)
+                    .map((entry) => (
+                      <div key={entry.date} className="rounded-lg border border-amber-100 bg-amber-50 p-3 text-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-semibold text-rose-800">{entry.date}</span>
+                          <span className="text-rose-600">NRS {entry.painNRS}</span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-2 text-xs text-rose-700">
+                          <span>PBAC: {entry.bleeding.pbacScore ?? "–"}</span>
+                          <span>Schlafqualität: {entry.sleep?.quality ?? "–"}</span>
+                          <span>
+                            Blasenschmerz:
+                            {entry.symptoms?.dysuria?.present && typeof entry.symptoms.dysuria.score === "number"
+                              ? entry.symptoms.dysuria.score
+                              : "–"}
+                          </span>
+                          {activeUrinary && (
+                            <span>Harndrang (Modul): {entry.urinaryOpt?.urgency ?? "–"}</span>
+                          )}
+                          {activeHeadache && (
                             <span>
-                              Blasenschmerz:
-                              {entry.symptoms?.dysuria?.present && typeof entry.symptoms.dysuria.score === "number"
-                                ? entry.symptoms.dysuria.score
+                              Kopfschmerz (Modul):
+                              {entry.headacheOpt?.present && typeof entry.headacheOpt.nrs === "number"
+                                ? entry.headacheOpt.nrs
                                 : "–"}
                             </span>
-                            {activeUrinary && (
-                              <span>Harndrang (Modul): {entry.urinaryOpt?.urgency ?? "–"}</span>
-                            )}
-                            {activeHeadache && (
-                              <span>
-                                Kopfschmerz (Modul):
-                                {entry.headacheOpt?.present && typeof entry.headacheOpt.nrs === "number"
-                                  ? entry.headacheOpt.nrs
-                                  : "–"}
-                              </span>
-                            )}
-                            {activeDizziness && (
-                              <span>
-                                Schwindel (Modul):
-                                {entry.dizzinessOpt?.present && typeof entry.dizzinessOpt.nrs === "number"
-                                  ? entry.dizzinessOpt.nrs
-                                  : "–"}
-                              </span>
-                            )}
-                          </div>
+                          )}
+                          {activeDizziness && (
+                            <span>
+                              Schwindel (Modul):
+                              {entry.dizzinessOpt?.present && typeof entry.dizzinessOpt.nrs === "number"
+                                ? entry.dizzinessOpt.nrs
+                                : "–"}
+                            </span>
+                          )}
                         </div>
-                      ))}
-                  </div>
-                </Section>
-                <Section
-                  title="Zyklus-Overlay"
-                  description="Durchschnittswerte je Zyklustag"
-                  completionEnabled={false}
-                >
-                  <div className="max-h-64 space-y-2 overflow-y-auto text-xs text-rose-700">
-                    {cycleOverlay.length === 0 && <p className="text-rose-500">Noch keine Zyklusdaten.</p>}
-                    {cycleOverlay.map((row) => (
-                      <div
-                        key={row.cycleDay}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-100 bg-amber-50 px-2 py-1"
-                      >
-                        <span className="font-semibold text-rose-800">ZT {row.cycleDay}</span>
-                        <span>{TERMS.nrs.label}: {row.painAvg.toFixed(1)}</span>
-                        <span>Symptome: {row.symptomAvg?.toFixed(1) ?? "–"}</span>
-                        <span>{TERMS.sleep_quality.label}: {row.sleepAvg?.toFixed(1) ?? "–"}</span>
-                        <span>{TERMS.pbac.label}: {row.pbacAvg?.toFixed(1) ?? "–"}</span>
-                        {activeUrinary && (
-                          <span>{MODULE_TERMS.urinaryOpt.urgency.label}: {row.urgencyAvg?.toFixed(1) ?? "–"}</span>
-                        )}
-                        {activeHeadache && (
-                          <span>
-                            {MODULE_TERMS.headacheOpt.nrs.label}: {row.headacheAvg?.toFixed(1) ?? "–"}
-                          </span>
-                        )}
-                        {activeDizziness && (
-                          <span>
-                            {MODULE_TERMS.dizzinessOpt.nrs.label}: {row.dizzinessAvg?.toFixed(1) ?? "–"}
-                          </span>
-                        )}
                       </div>
                     ))}
-                  </div>
-                </Section>
-                <Section
-                  title="Wochentag-Overlay"
-                  description="Durchschnittlicher NRS nach Wochentag"
-                  completionEnabled={false}
-                >
-                  <div className="grid grid-cols-1 gap-2 text-xs text-rose-700 sm:grid-cols-2 lg:grid-cols-4">
-                    {weekdayOverlay.map((row) => (
-                      <div key={row.weekday} className="rounded border border-amber-100 bg-amber-50 px-2 py-1">
-                        <p className="font-semibold text-rose-800">{row.weekday}</p>
-                        <p>{TERMS.nrs.label}: {row.painAvg.toFixed(1)}</p>
-                      </div>
-                    ))}
-                  </div>
-                </Section>
-                <Section
-                  title="Explorative Korrelationen"
-                  description="Lokal berechnete Pearson-r Werte – keine medizinische Bewertung"
-                  completionEnabled={false}
-                >
-                  <div className="space-y-2 text-xs text-rose-700">
-                    <p>
-                      Schlafqualität ↔ Schmerz: {correlations.sleep.r !== null ? correlations.sleep.r.toFixed(2) : "–"} (n=
-                      {correlations.sleep.n})
-                    </p>
-                    <p>
-                      Schritte ↔ Schmerz: {correlations.steps.r !== null ? correlations.steps.r.toFixed(2) : "–"} (n=
-                      {correlations.steps.n})
-                    </p>
-                    <p className="text-[10px] text-rose-500">
-                      Hinweis: nur zur Orientierung, Daten verlassen den Browser nicht.
-                    </p>
-                  </div>
-                </Section>
-              </div>
+                </div>
+              </Section>
+              <Section
+                title="Zyklus-Overlay"
+                description="Durchschnittswerte je Zyklustag"
+                completionEnabled={false}
+              >
+                <div className="max-h-64 space-y-2 overflow-y-auto text-xs text-rose-700">
+                  {cycleOverlay.length === 0 && <p className="text-rose-500">Noch keine Zyklusdaten.</p>}
+                  {cycleOverlay.map((row) => (
+                    <div
+                      key={row.cycleDay}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-100 bg-amber-50 px-2 py-1"
+                    >
+                      <span className="font-semibold text-rose-800">ZT {row.cycleDay}</span>
+                      <span>{TERMS.nrs.label}: {row.painAvg.toFixed(1)}</span>
+                      <span>Symptome: {row.symptomAvg?.toFixed(1) ?? "–"}</span>
+                      <span>{TERMS.sleep_quality.label}: {row.sleepAvg?.toFixed(1) ?? "–"}</span>
+                      <span>{TERMS.pbac.label}: {row.pbacAvg?.toFixed(1) ?? "–"}</span>
+                      {activeUrinary && (
+                        <span>{MODULE_TERMS.urinaryOpt.urgency.label}: {row.urgencyAvg?.toFixed(1) ?? "–"}</span>
+                      )}
+                      {activeHeadache && (
+                        <span>
+                          {MODULE_TERMS.headacheOpt.nrs.label}: {row.headacheAvg?.toFixed(1) ?? "–"}
+                        </span>
+                      )}
+                      {activeDizziness && (
+                        <span>
+                          {MODULE_TERMS.dizzinessOpt.nrs.label}: {row.dizzinessAvg?.toFixed(1) ?? "–"}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </Section>
+              <Section
+                title="Wochentag-Overlay"
+                description="Durchschnittlicher NRS nach Wochentag"
+                completionEnabled={false}
+              >
+                <div className="grid grid-cols-1 gap-2 text-xs text-rose-700 sm:grid-cols-2 lg:grid-cols-4">
+                  {weekdayOverlay.map((row) => (
+                    <div key={row.weekday} className="rounded border border-amber-100 bg-amber-50 px-2 py-1">
+                      <p className="font-semibold text-rose-800">{row.weekday}</p>
+                      <p>{TERMS.nrs.label}: {row.painAvg.toFixed(1)}</p>
+                    </div>
+                  ))}
+                </div>
+              </Section>
+              <Section
+                title="Explorative Korrelationen"
+                description="Lokal berechnete Pearson-r Werte – keine medizinische Bewertung"
+                completionEnabled={false}
+              >
+                <div className="space-y-2 text-xs text-rose-700">
+                  <p>
+                    Schlafqualität ↔ Schmerz: {correlations.sleep.r !== null ? correlations.sleep.r.toFixed(2) : "–"} (n={
+                    correlations.sleep.n})
+                  </p>
+                  <p>
+                    Schritte ↔ Schmerz: {correlations.steps.r !== null ? correlations.steps.r.toFixed(2) : "–"} (n={
+                    correlations.steps.n})
+                  </p>
+                  <p className="text-[10px] text-rose-500">
+                    Hinweis: nur zur Orientierung, Daten verlassen den Browser nicht.
+                  </p>
+                </div>
+              </Section>
             </div>
-          </Section>
           </SectionScopeContext.Provider>
         </TabsContent>
         <TabsContent value="weekly" className="space-y-6">
@@ -4723,9 +5280,13 @@ export default function HomePage() {
               <p className="mt-2 text-xs text-amber-700">{weeklyReportsError}</p>
             ) : null}
           </div>
-          <SectionScopeContext.Provider value={`weekly:${currentIsoWeek}`}>
+          <SectionScopeContext.Provider value={`weekly:${weeklyScopeIsoWeek}`}>
           {weeklyReportsReady ? (
-            <WeeklyTabShell dailyEntries={dailyEntries} currentIsoWeek={currentIsoWeek} />
+            <WeeklyTabShell
+              dailyEntries={dailyEntries}
+              currentIsoWeek={currentIsoWeek}
+              onSelectionChange={setWeeklyIsoWeek}
+            />
           ) : (
             <div className="rounded-xl border border-rose-100 bg-white/80 p-4 text-sm text-rose-700">
               Wöchentliche Daten werden geladen …
@@ -5052,9 +5613,11 @@ export default function HomePage() {
           </Section>
           </SectionScopeContext.Provider>
         </TabsContent>
-      </Tabs>
-      </main>
-    </SectionCompletionContext.Provider>
-    </>
+              </Tabs>
+            </div>
+          )}
+        </main>
+      </SectionCompletionContext.Provider>
+    </div>
   );
 }
