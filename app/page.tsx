@@ -1832,6 +1832,20 @@ export default function HomePage() {
     [dailyEntries, today]
   );
 
+  const selectDailyDate = useCallback(
+    (targetDate: string) => {
+      const existingEntry = dailyEntries.find((entry) => entry.date === targetDate);
+      const baseEntry = existingEntry ?? createEmptyDailyEntry(targetDate);
+      const clonedEntry =
+        typeof structuredClone === "function"
+          ? structuredClone(baseEntry)
+          : (JSON.parse(JSON.stringify(baseEntry)) as DailyEntry);
+      setDailyDraft(clonedEntry);
+      setLastSavedDailySnapshot(clonedEntry);
+    },
+    [dailyEntries, setDailyDraft, setLastSavedDailySnapshot]
+  );
+
   useEffect(() => {
     if (!storageReady) return;
     if (isDailyDirty) return;
@@ -2244,20 +2258,6 @@ export default function HomePage() {
     }
     return `In ${daysUntilWeeklySuggested} Tagen wieder ausfüllen`;
   }, [daysUntilWeeklySuggested]);
-
-  const selectDailyDate = useCallback(
-    (targetDate: string) => {
-      const existingEntry = dailyEntries.find((entry) => entry.date === targetDate);
-      const baseEntry = existingEntry ?? createEmptyDailyEntry(targetDate);
-      const clonedEntry =
-        typeof structuredClone === "function"
-          ? structuredClone(baseEntry)
-          : (JSON.parse(JSON.stringify(baseEntry)) as DailyEntry);
-      setDailyDraft(clonedEntry);
-      setLastSavedDailySnapshot(clonedEntry);
-    },
-    [dailyEntries, setDailyDraft, setLastSavedDailySnapshot]
-  );
 
   const goToPreviousDay = useCallback(() => {
     const base = parseIsoDate(dailyDraft.date || today);
