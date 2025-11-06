@@ -4147,7 +4147,7 @@ export default function HomePage() {
                                 key={region.regionId}
                                 className="flex items-center gap-2 bg-rose-100 px-3 py-1 text-xs font-medium text-rose-700"
                               >
-                                <span>{getBodyRegionLabel(region.regionId)}</span>
+                                <span>{getRegionLabel(region.regionId)}</span>
                                 <button
                                   type="button"
                                   onClick={() => removePainRegion(region.regionId)}
@@ -4166,7 +4166,7 @@ export default function HomePage() {
                           <div key={region.regionId} className="space-y-4 rounded-lg border border-rose-100 bg-rose-50 p-4">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <div className="flex items-center gap-2">
-                                <p className="font-medium text-rose-800">{getBodyRegionLabel(region.regionId)}</p>
+                                <p className="font-medium text-rose-800">{getRegionLabel(region.regionId)}</p>
                                 <InfoTip
                                   tech={TERMS.pain_regions.tech ?? TERMS.pain_regions.label}
                                   help={TERMS.pain_regions.help}
