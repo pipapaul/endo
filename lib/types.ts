@@ -67,9 +67,11 @@ export interface DailyEntry {
   };
 
   urinaryOpt?: {
+    present?: boolean;
     urgency?: number;
     leaksCount?: number;
     nocturia?: number;
+    padsCount?: number;
   };
 
   headacheOpt?: {

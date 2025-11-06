@@ -19,9 +19,11 @@ export const zDailyEntry = z
   .object({
     urinaryOpt: z
       .object({
+        present: z.boolean().optional(),
         urgency: zInt01.optional(),
         leaksCount: zNonNeg.optional(),
         nocturia: zNonNeg.optional(),
+        padsCount: zNonNeg.optional(),
       })
       .optional(),
     headacheOpt: z

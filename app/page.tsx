@@ -196,6 +196,30 @@ const deriveHeadacheFromPainRegions = (
   return next;
 };
 
+const collectPainRegionQualities = (
+  regions: NonNullable<DailyEntry["painRegions"]>
+): DailyEntry["painQuality"] => {
+  const qualities = new Set<string>();
+  regions.forEach((region) => {
+    (region.qualities ?? []).forEach((quality) => qualities.add(quality));
+  });
+  return Array.from(qualities) as DailyEntry["painQuality"];
+};
+
+const buildDailyDraftWithPainRegions = (
+  prev: DailyEntry,
+  nextRegions: NonNullable<DailyEntry["painRegions"]>
+): DailyEntry => {
+  const nextHeadache = deriveHeadacheFromPainRegions(nextRegions, prev.headacheOpt);
+  return {
+    ...prev,
+    painRegions: nextRegions,
+    painMapRegionIds: nextRegions.map((region) => region.regionId),
+    painQuality: collectPainRegionQualities(nextRegions),
+    headacheOpt: nextHeadache,
+  };
+};
+
 type BodyRegion = { id: string; label: string };
 
 type DailyCategoryId =
@@ -288,6 +312,16 @@ const BODY_REGION_GROUPS: { id: string; label: string; regions: BodyRegion[] }[]
     ],
   },
 ];
+
+const REGION_TO_GROUP_ID: Record<string, string> = BODY_REGION_GROUPS.reduce(
+  (acc, group) => {
+    group.regions.forEach((region) => {
+      acc[region.id] = group.id;
+    });
+    return acc;
+  },
+  {} as Record<string, string>
+);
 
 const ABDOMEN_REGION_IDS = new Set(
   (BODY_REGION_GROUPS.find((group) => group.id === "abdomen")?.regions ?? []).map((region) => region.id)
@@ -1493,6 +1527,7 @@ function BodyMap({
         return (
           <details
             key={group.id}
+            id={`body-map-group-${group.id}`}
             className="group rounded-lg border border-rose-100 bg-rose-50 text-rose-700 [&[open]>summary]:border-b [&[open]>summary]:bg-rose-100"
           >
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-rose-800 [&::-webkit-details-marker]:hidden">
@@ -2708,16 +2743,94 @@ export default function HomePage() {
           }
         });
 
-        const nextHeadache = deriveHeadacheFromPainRegions(nextList, prev.headacheOpt);
-        return {
-          ...prev,
-          painRegions: nextList,
-          headacheOpt: nextHeadache,
-        };
+        return buildDailyDraftWithPainRegions(prev, nextList);
       });
     },
     [setDailyDraft]
   );
+
+  const removePainRegion = useCallback(
+    (regionId: string) => {
+      setDailyDraft((prev) => {
+        const current = prev.painRegions ?? [];
+        if (!current.some((region) => region.regionId === regionId)) {
+          return prev;
+        }
+        const nextRegions = current
+          .filter((region) => region.regionId !== regionId) as NonNullable<DailyEntry["painRegions"]>;
+        return buildDailyDraftWithPainRegions(prev, nextRegions);
+      });
+    },
+    [setDailyDraft]
+  );
+
+  const updatePainRegionNrs = useCallback(
+    (index: number, value: number) => {
+      setDailyDraft((prev) => {
+        const regions = prev.painRegions ?? [];
+        if (!regions[index]) {
+          return prev;
+        }
+        const nextRegions = regions.map((region, regionIndex) =>
+          regionIndex === index
+            ? { ...region, nrs: Math.max(0, Math.min(10, Math.round(value))) }
+            : region
+        ) as NonNullable<DailyEntry["painRegions"]>;
+        return buildDailyDraftWithPainRegions(prev, nextRegions);
+      });
+    },
+    [setDailyDraft]
+  );
+
+  const updatePainRegionQuality = useCallback(
+    (index: number, quality: string) => {
+      setDailyDraft((prev) => {
+        const regions = prev.painRegions ?? [];
+        const target = regions[index];
+        if (!target) {
+          return prev;
+        }
+        let nextQualities: DailyEntry["painQuality"] = [];
+        if (quality) {
+          const single = [quality] as DailyEntry["painQuality"];
+          nextQualities =
+            target.regionId === HEAD_REGION_ID
+              ? sanitizeHeadRegionQualities(single)
+              : single;
+        }
+        const nextRegions = regions.map((region, regionIndex) =>
+          regionIndex === index
+            ? {
+                ...region,
+                qualities: nextQualities,
+              }
+            : region
+        ) as NonNullable<DailyEntry["painRegions"]>;
+        return buildDailyDraftWithPainRegions(prev, nextRegions);
+      });
+    },
+    [setDailyDraft]
+  );
+
+  const focusPainRegion = useCallback((regionId: string) => {
+    if (typeof document === "undefined") return;
+    const groupId = REGION_TO_GROUP_ID[regionId];
+    if (groupId) {
+      const groupElement = document.getElementById(`body-map-group-${groupId}`) as HTMLDetailsElement | null;
+      if (groupElement) {
+        groupElement.open = true;
+      }
+    }
+    const target = document.getElementById(`body-map-region-${regionId}`);
+    if (target instanceof HTMLElement) {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      try {
+        target.focus({ preventScroll: true });
+      } catch (_error) {
+        target.focus();
+      }
+    }
+  }, []);
 
   const handleDailySubmit = () => {
     const payload: DailyEntry = {
@@ -2756,6 +2869,9 @@ export default function HomePage() {
       delete (payload as { urinaryOpt?: DailyEntry["urinaryOpt"] }).urinaryOpt;
     } else if (payload.urinaryOpt) {
       const normalized: NonNullable<DailyEntry["urinaryOpt"]> = {};
+      if (typeof payload.urinaryOpt.present === "boolean") {
+        normalized.present = payload.urinaryOpt.present;
+      }
       if (typeof payload.urinaryOpt.urgency === "number") {
         normalized.urgency = Math.max(0, Math.min(10, Math.round(payload.urinaryOpt.urgency)));
       }
@@ -2764,6 +2880,9 @@ export default function HomePage() {
       }
       if (typeof payload.urinaryOpt.nocturia === "number") {
         normalized.nocturia = Math.max(0, Math.round(payload.urinaryOpt.nocturia));
+      }
+      if (typeof payload.urinaryOpt.padsCount === "number") {
+        normalized.padsCount = Math.max(0, Math.round(payload.urinaryOpt.padsCount));
       }
       payload.urinaryOpt = Object.keys(normalized).length ? normalized : undefined;
       if (!payload.urinaryOpt) {
@@ -3224,7 +3343,11 @@ export default function HomePage() {
     const region = regions[regionIndex];
     const qualityChoices = region.regionId === HEAD_REGION_ID ? HEAD_PAIN_QUALITIES : PAIN_QUALITIES;
     return (
-      <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4">
+      <div
+        id={`body-map-region-${region.regionId}`}
+        tabIndex={-1}
+        className="space-y-3 rounded-lg border border-rose-100 bg-white p-4"
+      >
         <p className="font-medium text-rose-800">Schmerzen in: {getRegionLabel(region.regionId)}</p>
         {renderIssuesForPath(`painRegions[${regionIndex}].regionId`)}
         <div className="space-y-2">
@@ -3243,13 +3366,8 @@ export default function HomePage() {
                         nrs: Math.max(0, Math.min(10, Math.round(value))),
                       }
                     : r
-                );
-                const nextHeadache = deriveHeadacheFromPainRegions(nextRegions, prev.headacheOpt);
-                return {
-                  ...prev,
-                  painRegions: nextRegions,
-                  headacheOpt: nextHeadache,
-                };
+                ) as NonNullable<DailyEntry["painRegions"]>;
+                return buildDailyDraftWithPainRegions(prev, nextRegions);
               });
             }}
           />
@@ -3273,13 +3391,8 @@ export default function HomePage() {
                         qualities: updatedQualities,
                       }
                     : r
-                );
-                const nextHeadache = deriveHeadacheFromPainRegions(nextRegions, prev.headacheOpt);
-                return {
-                  ...prev,
-                  painRegions: nextRegions,
-                  headacheOpt: nextHeadache,
-                };
+                ) as NonNullable<DailyEntry["painRegions"]>;
+                return buildDailyDraftWithPainRegions(prev, nextRegions);
               });
             }}
           />
@@ -4167,10 +4280,7 @@ export default function HomePage() {
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <div className="flex items-center gap-2">
                                 <p className="font-medium text-rose-800">{getRegionLabel(region.regionId)}</p>
-                                <InfoTip
-                                  tech={TERMS.pain_regions.tech ?? TERMS.pain_regions.label}
-                                  help={TERMS.pain_regions.help}
-                                />
+                                <InfoTip tech={TERMS.bodyMap.label} help={TERMS.bodyMap.help} />
                               </div>
                               <div className="flex items-center gap-2 text-xs text-rose-500">
                                 <button
