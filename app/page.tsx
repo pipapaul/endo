@@ -27,6 +27,8 @@ import {
   Scatter,
   Area,
   ComposedChart,
+  ReferenceDot,
+  ReferenceLine,
 } from "recharts";
 import type { DotProps, TooltipProps } from "recharts";
 import {
@@ -425,6 +427,27 @@ const PainDot = ({ cx, cy, payload }: PainDotProps) => {
         <circle cx={cx} cy={cy} r={7} fill="#fef3c7" stroke="#facc15" strokeWidth={2} />
       ) : null}
       <circle cx={cx} cy={cy} r={4} fill="#be123c" stroke="#fff" strokeWidth={2} />
+    </g>
+  );
+};
+
+const CycleStartDrop = ({ cx, cy }: DotProps) => {
+  if (typeof cx !== "number" || typeof cy !== "number") {
+    return null;
+  }
+
+  const topY = cy - 4;
+  const bottomY = cy + 6;
+
+  return (
+    <g>
+      <path
+        d={`M ${cx} ${topY} C ${cx + 4} ${topY + 2}, ${cx + 3.5} ${cy + 2}, ${cx} ${bottomY} C ${cx - 3.5} ${cy + 2}, ${cx - 4} ${topY + 2}, ${cx} ${topY} Z`}
+        fill="#ef4444"
+        stroke="#b91c1c"
+        strokeWidth={1}
+      />
+      <circle cx={cx} cy={topY + 2} r={1.2} fill="#fca5a5" />
     </g>
   );
 };
@@ -3043,20 +3066,36 @@ export default function HomePage() {
     ? "Es ist Sonntag. Zeit für deinen wöchentlichen Check In."
     : "Fülle diese Fragen möglichst jeden Sonntag aus.";
 
-  const painTrendData = useMemo(
-    () =>
-      annotatedDailyEntries.map(({ entry, cycleDay, weekday, symptomAverage }) => ({
-        date: entry.date,
-        cycleDay,
-        cycleLabel: cycleDay ? `ZT ${cycleDay}` : "–",
-        weekday,
-        pain: entry.painNRS,
-        pbac: entry.bleeding.pbacScore ?? null,
-        symptomAverage,
-        sleepQuality: entry.sleep?.quality ?? null,
-      })),
-    [annotatedDailyEntries]
-  );
+  const trendWindowStartIso = useMemo(() => {
+    if (!todayDate) {
+      return null;
+    }
+    const threshold = new Date(todayDate);
+    threshold.setDate(threshold.getDate() - 30);
+    return formatDate(threshold);
+  }, [todayDate]);
+
+  const { painTrendData, painTrendCycleStarts } = useMemo(() => {
+    const thresholdIso = trendWindowStartIso;
+    const filteredEntries = thresholdIso
+      ? annotatedDailyEntries.filter(({ entry }) => entry.date >= thresholdIso)
+      : annotatedDailyEntries;
+    const effectiveEntries = filteredEntries.length > 0 ? filteredEntries : annotatedDailyEntries;
+    const mapped = effectiveEntries.map(({ entry, cycleDay, weekday, symptomAverage }) => ({
+      date: entry.date,
+      cycleDay,
+      cycleLabel: cycleDay ? `ZT ${cycleDay}` : "–",
+      weekday,
+      pain: entry.painNRS,
+      pbac: entry.bleeding.pbacScore ?? null,
+      symptomAverage,
+      sleepQuality: entry.sleep?.quality ?? null,
+    }));
+    return {
+      painTrendData: mapped,
+      painTrendCycleStarts: mapped.filter((item) => item.cycleDay === 1),
+    };
+  }, [annotatedDailyEntries, trendWindowStartIso]);
 
   const renderIssuesForPath = (path: string) =>
     issues.filter((issue) => issue.path === path).map((issue) => (
@@ -5013,6 +5052,31 @@ export default function HomePage() {
                       <YAxis yAxisId="right" orientation="right" domain={[0, 300]} stroke="#6366f1" tick={{ fontSize: 12 }} />
                       <Tooltip content={<ChartTooltip />} />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
+                      {painTrendCycleStarts.map((item) => {
+                        const xValue = trendXAxisMode === "date" ? item.date : item.cycleLabel;
+                        return (
+                          <ReferenceLine
+                            key={`cycle-start-line-${item.date}`}
+                            x={xValue}
+                            stroke="#ef4444"
+                            strokeDasharray="4 2"
+                            isFront
+                          />
+                        );
+                      })}
+                      {painTrendCycleStarts.map((item) => {
+                        const xValue = trendXAxisMode === "date" ? item.date : item.cycleLabel;
+                        return (
+                          <ReferenceDot
+                            key={`cycle-start-dot-${item.date}`}
+                            x={xValue}
+                            y={9.5}
+                            yAxisId="left"
+                            isFront
+                            shape={<CycleStartDrop />}
+                          />
+                        );
+                      })}
                       <Line
                         type="monotone"
                         dataKey="pain"
