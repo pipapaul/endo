@@ -224,7 +224,6 @@ type BodyRegion = { id: string; label: string };
 
 type DailyCategoryId =
   | "overview"
-  | "date"
   | "pain"
   | "symptoms"
   | "bleeding"
@@ -2293,7 +2292,6 @@ export default function HomePage() {
       : null;
     const categoryLabels: Record<DailyCategoryId, string> = {
       overview: "Check-in Übersicht",
-      date: "Tagesdaten",
       pain: "Schmerzen",
       symptoms: "Symptome",
       bleeding: "Blutung",
@@ -3755,19 +3753,74 @@ export default function HomePage() {
     }
   }, [activeView]);
 
+  const handleQuickNoPain = useCallback(() => {
+    setDailyDraft((prev) => ({
+      ...prev,
+      painRegions: [],
+      painMapRegionIds: [],
+      painQuality: [],
+      painNRS: 0,
+      impactNRS: 0,
+    }));
+  }, [setDailyDraft]);
+
+  const handleQuickNoSymptoms = useCallback(() => {
+    setDailyDraft((prev) => {
+      const existing = prev.symptoms ?? {};
+      const cleared: DailyEntry["symptoms"] = {};
+      (Object.keys(existing) as SymptomKey[]).forEach((key) => {
+        cleared[key] = { present: false };
+      });
+      return { ...prev, symptoms: cleared };
+    });
+  }, [setDailyDraft]);
+
+  const handleQuickNoBleeding = useCallback(() => {
+    setDailyDraft((prev) => ({
+      ...prev,
+      bleeding: { isBleeding: false },
+    }));
+    setPbacCounts({ ...PBAC_DEFAULT_COUNTS });
+  }, [setDailyDraft, setPbacCounts]);
+
+  const handleQuickNoMedication = useCallback(() => {
+    setDailyDraft((prev) => ({
+      ...prev,
+      meds: [],
+      rescueDosesCount: undefined,
+    }));
+  }, [setDailyDraft]);
+
   const dailyCategoryButtons: Array<{
     id: Exclude<DailyCategoryId, "overview">;
     title: string;
     description: string;
+    quickActions?: Array<{ label: string; onClick: () => void }>;
   }> = [
-    { id: "pain", title: "Schmerzen heute", description: "Körperkarte, Intensität & Auswirkungen" },
-    { id: "symptoms", title: "Symptome", description: "Typische Endometriose-Symptome dokumentieren" },
+    {
+      id: "pain",
+      title: "Schmerzen heute",
+      description: "Körperkarte, Intensität & Auswirkungen",
+      quickActions: [{ label: "Keine Schmerzen", onClick: handleQuickNoPain }],
+    },
+    {
+      id: "symptoms",
+      title: "Symptome",
+      description: "Typische Endometriose-Symptome dokumentieren",
+      quickActions: [{ label: "Keine Symptome", onClick: handleQuickNoSymptoms }],
+    },
     {
       id: "bleeding",
       title: `${TERMS.bleeding_active.label} & ${TERMS.pbac.label}`,
       description: "Blutung, PBAC-Score & Begleitsymptome",
+      quickActions: [{ label: "Keine Periode", onClick: handleQuickNoBleeding }],
     },
-    { id: "medication", title: TERMS.meds.label, description: "Eingenommene Medikamente & Hilfen" },
+    {
+      id: "medication",
+      title: TERMS.meds.label,
+      description: "Eingenommene Medikamente & Hilfen",
+      quickActions: [{ label: "Keine Medikamente", onClick: handleQuickNoMedication }],
+    },
     { id: "sleep", title: "Schlaf", description: "Dauer, Qualität & Aufwachphasen" },
     { id: "bowelBladder", title: "Darm & Blase", description: "Verdauung & Blase im Blick behalten" },
     { id: "notes", title: "Notizen & Tags", description: "Freitextnotizen und Tags ergänzen" },
@@ -4105,53 +4158,128 @@ export default function HomePage() {
           >
             <div className="space-y-6">
               <div className={cn("space-y-6", dailyActiveCategory === "overview" ? "" : "hidden")}>
-                <div className="rounded-xl border border-rose-100 bg-white p-4 shadow-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <CalendarDays className="h-6 w-6 flex-shrink-0 text-rose-500" />
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-rose-400">Ausgewählter Tag</p>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-semibold text-rose-700">
-                            {selectedDateLabel ?? "Bitte Datum wählen"}
-                          </span>
-                          {selectedCycleDay !== null && (
-                            <Badge className="flex-shrink-0 bg-rose-200 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
-                              ZT {selectedCycleDay}
-                            </Badge>
-                          )}
+                <div className="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50 via-white to-white p-5 shadow-sm">
+                  <div className="flex flex-col gap-5">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-rose-100 text-rose-600">
+                          <CalendarDays className="h-5 w-5" aria-hidden="true" />
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase tracking-wide text-rose-400">Ausgewählter Tag</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-base font-semibold text-rose-900">
+                              {selectedDateLabel ?? "Bitte Datum wählen"}
+                            </span>
+                            {selectedCycleDay !== null && (
+                              <Badge className="flex-shrink-0 bg-rose-200 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
+                                ZT {selectedCycleDay}
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="mt-1 text-xs text-rose-500">
+                            Passe das Datum direkt hier an oder wechsle über die Pfeile zum Vortag bzw. Folgetag.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={goToPreviousDay}
+                            aria-label="Vorheriger Tag"
+                            className="text-rose-500 hover:text-rose-700"
+                          >
+                            <ChevronLeft className="h-5 w-5" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={goToNextDay}
+                            aria-label="Nächster Tag"
+                            className="text-rose-500 hover:text-rose-700"
+                            disabled={!canGoToNextDay}
+                          >
+                            <ChevronRight className="h-5 w-5" />
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-2 rounded-xl border border-rose-100 bg-white px-3 py-2 text-sm text-rose-700 shadow-inner">
+                          <Calendar className="h-4 w-4 text-rose-400" aria-hidden="true" />
+                          <Input
+                            type="date"
+                            value={dailyDraft.date}
+                            onChange={(event) => selectDailyDate(event.target.value, { manual: true })}
+                            className="h-auto w-full border-none bg-transparent px-0 py-0 text-sm font-medium text-rose-700 shadow-none focus-visible:outline-none focus-visible:ring-0"
+                            max={today}
+                            aria-label="Datum direkt auswählen"
+                          />
                         </div>
                       </div>
                     </div>
-                    <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("date")}>
-                      Datum bearbeiten
-                    </Button>
+                    {hasEntryForSelectedDate && (
+                      <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                        <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-500" aria-hidden="true" />
+                        <div>
+                          <p className="font-semibold">Für dieses Datum wurden bereits Angaben gespeichert.</p>
+                          <p className="text-xs text-amber-600">Beim Speichern werden die bestehenden Daten aktualisiert.</p>
+                        </div>
+                      </div>
+                    )}
+                    {renderIssuesForPath("date")}
                   </div>
                 </div>
                 <div className="space-y-3">
                   <p className="text-sm font-semibold text-rose-800">Kategorien</p>
-                  <div className="grid gap-2">
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     {dailyCategoryButtons.map((category) => {
                       const isCompleted = dailyCategoryCompletion[category.id] ?? false;
                       return (
-                        <Button
+                        <div
                           key={category.id}
-                          type="button"
-                          variant="outline"
-                          onClick={() => setDailyActiveCategory(category.id)}
-                          className="flex h-auto w-full items-center justify-between gap-3 rounded-xl border-rose-200 bg-white px-4 py-3 text-left text-rose-800 transition hover:border-rose-300 hover:text-rose-900"
+                          className="group rounded-2xl border border-rose-100 bg-white/80 p-4 shadow-sm transition hover:border-rose-200 hover:shadow-md"
                         >
-                          <div className="flex flex-1 flex-col gap-2 text-left">
-                            <span className="text-sm font-semibold">{category.title}</span>
-                            <span className="text-xs text-rose-600">{category.description}</span>
-                            {isCompleted ? (
-                              <span className="mt-1 inline-flex items-center gap-2 self-start rounded-full bg-emerald-100 px-3 py-1.5 text-sm font-semibold text-emerald-700">
-                                <CheckCircle2 className="h-4 w-4" /> abgeschlossen
-                              </span>
-                            ) : null}
-                          </div>
-                          <ChevronRight className="h-4 w-4 text-rose-500" />
-                        </Button>
+                          <button
+                            type="button"
+                            onClick={() => setDailyActiveCategory(category.id)}
+                            className="flex w-full items-start justify-between gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:ring-offset-2"
+                          >
+                            <div className="flex-1">
+                              <p className="text-sm font-semibold text-rose-900">{category.title}</p>
+                              <p className="mt-1 text-xs text-rose-600">{category.description}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {isCompleted ? (
+                                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                                  <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                                  <span className="sr-only">Bereits abgeschlossen</span>
+                                </span>
+                              ) : null}
+                              <ChevronRight className="h-4 w-4 text-rose-400 transition group-hover:text-rose-500" aria-hidden="true" />
+                            </div>
+                          </button>
+                          {category.quickActions?.length ? (
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              {category.quickActions.map((action) => (
+                                <Button
+                                  key={action.label}
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="rounded-full border border-rose-100 bg-rose-50/80 text-xs font-medium text-rose-700 shadow-none transition hover:border-rose-200 hover:bg-rose-100"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    action.onClick();
+                                  }}
+                                >
+                                  {action.label}
+                                </Button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
                       );
                     })}
                   </div>
@@ -4186,82 +4314,6 @@ export default function HomePage() {
                   </div>
                 </div>
               </div>
-
-              <div className={cn("space-y-6", dailyActiveCategory === "date" ? "" : "hidden")}>
-                <div className="grid gap-4">
-                  <Label className="text-sm font-medium text-rose-800">Datum</Label>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-                    <div className="flex w-full max-w-xl items-center justify-between gap-2 rounded-lg border border-rose-200 bg-white px-3 py-2 shadow-sm">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={goToPreviousDay}
-                        aria-label="Vorheriger Tag"
-                        className="text-rose-500 hover:text-rose-700"
-                      >
-                        <ChevronLeft className="h-5 w-5" />
-                      </Button>
-                      <div className="flex min-w-0 flex-1 items-center gap-3 text-left">
-                        <CalendarDays className="h-6 w-6 flex-shrink-0 text-rose-500" />
-                        <div className="min-w-0">
-                          <p className="text-xs uppercase tracking-wide text-rose-400">Ausgewählter Tag</p>
-                          <div className="flex items-center gap-2">
-                            <p className="truncate text-sm font-semibold text-rose-700">
-                              {selectedDateLabel ?? "Bitte Datum wählen"}
-                            </p>
-                            {selectedCycleDay !== null && (
-                              <Badge className="flex-shrink-0 bg-rose-200 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
-                                ZT {selectedCycleDay}
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={goToNextDay}
-                        aria-label="Nächster Tag"
-                        className="text-rose-500 hover:text-rose-700"
-                        disabled={!canGoToNextDay}
-                      >
-                        <ChevronRight className="h-5 w-5" />
-                      </Button>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4 text-rose-400" aria-hidden="true" />
-                      <Input
-                        type="date"
-                        value={dailyDraft.date}
-                        onChange={(event) =>
-                          selectDailyDate(event.target.value, { manual: true })
-                        }
-                        className="w-full max-w-[11rem]"
-                        max={today}
-                        aria-label="Datum direkt auswählen"
-                      />
-                    </div>
-                  </div>
-                  {hasEntryForSelectedDate && (
-                    <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                      <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-500" />
-                      <div>
-                        <p className="font-semibold">Für dieses Datum wurden bereits Angaben gespeichert.</p>
-                        <p className="text-xs text-amber-600">Beim Speichern werden die bestehenden Daten aktualisiert.</p>
-                      </div>
-                    </div>
-                  )}
-                  {renderIssuesForPath("date")}
-                </div>
-                <div className="flex justify-end">
-                  <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("overview")}>
-                    Fertig
-                  </Button>
-                </div>
-              </div>
-
               <div className={cn("space-y-6", dailyActiveCategory === "pain" ? "" : "hidden")}> 
                 <Section
                   title="Schmerzen heute"
