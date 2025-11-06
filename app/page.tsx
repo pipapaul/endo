@@ -196,7 +196,43 @@ const deriveHeadacheFromPainRegions = (
   return next;
 };
 
+const collectPainRegionQualities = (
+  regions: NonNullable<DailyEntry["painRegions"]>
+): DailyEntry["painQuality"] => {
+  const qualities = new Set<string>();
+  regions.forEach((region) => {
+    (region.qualities ?? []).forEach((quality) => qualities.add(quality));
+  });
+  return Array.from(qualities) as DailyEntry["painQuality"];
+};
+
+const buildDailyDraftWithPainRegions = (
+  prev: DailyEntry,
+  nextRegions: NonNullable<DailyEntry["painRegions"]>
+): DailyEntry => {
+  const nextHeadache = deriveHeadacheFromPainRegions(nextRegions, prev.headacheOpt);
+  return {
+    ...prev,
+    painRegions: nextRegions,
+    painMapRegionIds: nextRegions.map((region) => region.regionId),
+    painQuality: collectPainRegionQualities(nextRegions),
+    headacheOpt: nextHeadache,
+  };
+};
+
 type BodyRegion = { id: string; label: string };
+
+type DailyCategoryId =
+  | "overview"
+  | "date"
+  | "pain"
+  | "symptoms"
+  | "bleeding"
+  | "medication"
+  | "sleep"
+  | "bowelBladder"
+  | "notes"
+  | "optional";
 
 const BODY_REGION_GROUPS: { id: string; label: string; regions: BodyRegion[] }[] = [
   {
@@ -276,6 +312,16 @@ const BODY_REGION_GROUPS: { id: string; label: string; regions: BodyRegion[] }[]
     ],
   },
 ];
+
+const REGION_TO_GROUP_ID: Record<string, string> = BODY_REGION_GROUPS.reduce(
+  (acc, group) => {
+    group.regions.forEach((region) => {
+      acc[region.id] = group.id;
+    });
+    return acc;
+  },
+  {} as Record<string, string>
+);
 
 const ABDOMEN_REGION_IDS = new Set(
   (BODY_REGION_GROUPS.find((group) => group.id === "abdomen")?.regions ?? []).map((region) => region.id)
@@ -1481,6 +1527,7 @@ function BodyMap({
         return (
           <details
             key={group.id}
+            id={`body-map-group-${group.id}`}
             className="group rounded-lg border border-rose-100 bg-rose-50 text-rose-700 [&[open]>summary]:border-b [&[open]>summary]:bg-rose-100"
           >
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-rose-800 [&::-webkit-details-marker]:hidden">
@@ -1909,6 +1956,7 @@ export default function HomePage() {
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [detailToolbarHeight, setDetailToolbarHeight] = useState<number>(DETAIL_TOOLBAR_FALLBACK_HEIGHT);
   const [activeView, setActiveView] = useState<"home" | "daily" | "weekly" | "monthly" | "analytics">("home");
+  const [dailyActiveCategory, setDailyActiveCategory] = useState<DailyCategoryId>("overview");
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [persistWarning, setPersistWarning] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
@@ -2242,13 +2290,31 @@ export default function HomePage() {
 
   const dailyToolbarLabel = useMemo(() => {
     const parsed = parseIsoDate(dailyDraft.date);
-    if (!parsed) return null;
-    return parsed.toLocaleDateString("de-DE", {
-      weekday: "short",
-      day: "2-digit",
-      month: "2-digit",
-    });
-  }, [dailyDraft.date]);
+    const dateLabel = parsed
+      ? parsed.toLocaleDateString("de-DE", {
+          weekday: "short",
+          day: "2-digit",
+          month: "2-digit",
+        })
+      : null;
+    const categoryLabels: Record<DailyCategoryId, string> = {
+      overview: "Check-in Übersicht",
+      date: "Tagesdaten",
+      pain: "Schmerzen",
+      symptoms: "Symptome",
+      bleeding: "Blutung",
+      medication: "Medikation",
+      sleep: "Schlaf",
+      bowelBladder: "Darm & Blase",
+      notes: "Notizen",
+      optional: "Optionale Werte",
+    };
+    const baseLabel = categoryLabels[dailyActiveCategory] ?? null;
+    if (baseLabel && dateLabel) {
+      return `${baseLabel} · ${dateLabel}`;
+    }
+    return baseLabel ?? dateLabel;
+  }, [dailyActiveCategory, dailyDraft.date]);
 
   const weeklyScopeIsoWeek = weeklyIsoWeek ?? currentIsoWeek;
 
@@ -2677,16 +2743,94 @@ export default function HomePage() {
           }
         });
 
-        const nextHeadache = deriveHeadacheFromPainRegions(nextList, prev.headacheOpt);
-        return {
-          ...prev,
-          painRegions: nextList,
-          headacheOpt: nextHeadache,
-        };
+        return buildDailyDraftWithPainRegions(prev, nextList);
       });
     },
     [setDailyDraft]
   );
+
+  const removePainRegion = useCallback(
+    (regionId: string) => {
+      setDailyDraft((prev) => {
+        const current = prev.painRegions ?? [];
+        if (!current.some((region) => region.regionId === regionId)) {
+          return prev;
+        }
+        const nextRegions = current
+          .filter((region) => region.regionId !== regionId) as NonNullable<DailyEntry["painRegions"]>;
+        return buildDailyDraftWithPainRegions(prev, nextRegions);
+      });
+    },
+    [setDailyDraft]
+  );
+
+  const updatePainRegionNrs = useCallback(
+    (index: number, value: number) => {
+      setDailyDraft((prev) => {
+        const regions = prev.painRegions ?? [];
+        if (!regions[index]) {
+          return prev;
+        }
+        const nextRegions = regions.map((region, regionIndex) =>
+          regionIndex === index
+            ? { ...region, nrs: Math.max(0, Math.min(10, Math.round(value))) }
+            : region
+        ) as NonNullable<DailyEntry["painRegions"]>;
+        return buildDailyDraftWithPainRegions(prev, nextRegions);
+      });
+    },
+    [setDailyDraft]
+  );
+
+  const updatePainRegionQuality = useCallback(
+    (index: number, quality: string) => {
+      setDailyDraft((prev) => {
+        const regions = prev.painRegions ?? [];
+        const target = regions[index];
+        if (!target) {
+          return prev;
+        }
+        let nextQualities: DailyEntry["painQuality"] = [];
+        if (quality) {
+          const single = [quality] as DailyEntry["painQuality"];
+          nextQualities =
+            target.regionId === HEAD_REGION_ID
+              ? sanitizeHeadRegionQualities(single)
+              : single;
+        }
+        const nextRegions = regions.map((region, regionIndex) =>
+          regionIndex === index
+            ? {
+                ...region,
+                qualities: nextQualities,
+              }
+            : region
+        ) as NonNullable<DailyEntry["painRegions"]>;
+        return buildDailyDraftWithPainRegions(prev, nextRegions);
+      });
+    },
+    [setDailyDraft]
+  );
+
+  const focusPainRegion = useCallback((regionId: string) => {
+    if (typeof document === "undefined") return;
+    const groupId = REGION_TO_GROUP_ID[regionId];
+    if (groupId) {
+      const groupElement = document.getElementById(`body-map-group-${groupId}`) as HTMLDetailsElement | null;
+      if (groupElement) {
+        groupElement.open = true;
+      }
+    }
+    const target = document.getElementById(`body-map-region-${regionId}`);
+    if (target instanceof HTMLElement) {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      try {
+        target.focus({ preventScroll: true });
+      } catch (_error) {
+        target.focus();
+      }
+    }
+  }, []);
 
   const handleDailySubmit = () => {
     const payload: DailyEntry = {
@@ -2725,6 +2869,9 @@ export default function HomePage() {
       delete (payload as { urinaryOpt?: DailyEntry["urinaryOpt"] }).urinaryOpt;
     } else if (payload.urinaryOpt) {
       const normalized: NonNullable<DailyEntry["urinaryOpt"]> = {};
+      if (typeof payload.urinaryOpt.present === "boolean") {
+        normalized.present = payload.urinaryOpt.present;
+      }
       if (typeof payload.urinaryOpt.urgency === "number") {
         normalized.urgency = Math.max(0, Math.min(10, Math.round(payload.urinaryOpt.urgency)));
       }
@@ -2733,6 +2880,9 @@ export default function HomePage() {
       }
       if (typeof payload.urinaryOpt.nocturia === "number") {
         normalized.nocturia = Math.max(0, Math.round(payload.urinaryOpt.nocturia));
+      }
+      if (typeof payload.urinaryOpt.padsCount === "number") {
+        normalized.padsCount = Math.max(0, Math.round(payload.urinaryOpt.padsCount));
       }
       payload.urinaryOpt = Object.keys(normalized).length ? normalized : undefined;
       if (!payload.urinaryOpt) {
@@ -3193,7 +3343,11 @@ export default function HomePage() {
     const region = regions[regionIndex];
     const qualityChoices = region.regionId === HEAD_REGION_ID ? HEAD_PAIN_QUALITIES : PAIN_QUALITIES;
     return (
-      <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4">
+      <div
+        id={`body-map-region-${region.regionId}`}
+        tabIndex={-1}
+        className="space-y-3 rounded-lg border border-rose-100 bg-white p-4"
+      >
         <p className="font-medium text-rose-800">Schmerzen in: {getRegionLabel(region.regionId)}</p>
         {renderIssuesForPath(`painRegions[${regionIndex}].regionId`)}
         <div className="space-y-2">
@@ -3212,13 +3366,8 @@ export default function HomePage() {
                         nrs: Math.max(0, Math.min(10, Math.round(value))),
                       }
                     : r
-                );
-                const nextHeadache = deriveHeadacheFromPainRegions(nextRegions, prev.headacheOpt);
-                return {
-                  ...prev,
-                  painRegions: nextRegions,
-                  headacheOpt: nextHeadache,
-                };
+                ) as NonNullable<DailyEntry["painRegions"]>;
+                return buildDailyDraftWithPainRegions(prev, nextRegions);
               });
             }}
           />
@@ -3242,13 +3391,8 @@ export default function HomePage() {
                         qualities: updatedQualities,
                       }
                     : r
-                );
-                const nextHeadache = deriveHeadacheFromPainRegions(nextRegions, prev.headacheOpt);
-                return {
-                  ...prev,
-                  painRegions: nextRegions,
-                  headacheOpt: nextHeadache,
-                };
+                ) as NonNullable<DailyEntry["painRegions"]>;
+                return buildDailyDraftWithPainRegions(prev, nextRegions);
               });
             }}
           />
@@ -3611,6 +3755,32 @@ export default function HomePage() {
   const isHomeView = activeView === "home";
   const currentDataView = isHomeView ? "daily" : activeView;
 
+  useEffect(() => {
+    if (activeView !== "daily") {
+      setDailyActiveCategory("overview");
+    }
+  }, [activeView]);
+
+  const dailyCategoryButtons: Array<{
+    id: Exclude<DailyCategoryId, "overview">;
+    title: string;
+    description: string;
+  }> = [
+    { id: "date", title: "Tagesdaten", description: "Datum & Zyklusinformationen festlegen" },
+    { id: "pain", title: "Schmerzen heute", description: "Körperkarte, Intensität & Auswirkungen" },
+    { id: "symptoms", title: "Symptome", description: "Typische Endometriose-Symptome dokumentieren" },
+    {
+      id: "bleeding",
+      title: `${TERMS.bleeding_active.label} & ${TERMS.pbac.label}`,
+      description: "Blutung, PBAC-Score & Begleitsymptome",
+    },
+    { id: "medication", title: TERMS.meds.label, description: "Eingenommene Medikamente & Hilfen" },
+    { id: "sleep", title: "Schlaf", description: "Dauer, Qualität & Aufwachphasen" },
+    { id: "bowelBladder", title: "Darm & Blase", description: "Verdauung & Blase im Blick behalten" },
+    { id: "notes", title: "Notizen & Tags", description: "Freitextnotizen und Tags ergänzen" },
+    { id: "optional", title: "Optionale Werte", description: "Hilfsmittel- & Wearable-Daten erfassen" },
+  ];
+
   useLayoutEffect(() => {
     if (isHomeView) {
       return;
@@ -3770,7 +3940,10 @@ export default function HomePage() {
               <div className="grid gap-3 sm:grid-cols-3">
                 <Button
                   type="button"
-                  onClick={() => setActiveView("daily")}
+                  onClick={() => {
+                    setDailyActiveCategory("overview");
+                    setActiveView("daily");
+                  }}
                   className="h-auto w-full flex-col items-start justify-start gap-2 rounded-2xl bg-rose-600 px-6 py-5 text-left text-white shadow-lg transition hover:bg-rose-500 sm:col-span-3 lg:col-span-2"
                 >
                   <span className="text-lg font-semibold">Täglicher Check-in</span>
@@ -3909,7 +4082,82 @@ export default function HomePage() {
             completionEnabled={false}
           >
             <div className="space-y-6">
-              <div className="space-y-6">
+              <div className={cn("space-y-6", dailyActiveCategory === "overview" ? "" : "hidden")}>
+                <div className="rounded-xl border border-rose-100 bg-white p-4 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <CalendarDays className="h-6 w-6 flex-shrink-0 text-rose-500" />
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-rose-400">Ausgewählter Tag</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-semibold text-rose-700">
+                            {selectedDateLabel ?? "Bitte Datum wählen"}
+                          </span>
+                          {selectedCycleDay !== null && (
+                            <Badge className="flex-shrink-0 bg-rose-200 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
+                              ZT {selectedCycleDay}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("date")}>
+                      Datum bearbeiten
+                    </Button>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <p className="text-sm font-semibold text-rose-800">Kategorien</p>
+                  <div className="grid gap-2">
+                    {dailyCategoryButtons.map((category) => (
+                      <Button
+                        key={category.id}
+                        type="button"
+                        variant="outline"
+                        onClick={() => setDailyActiveCategory(category.id)}
+                        className="flex h-auto w-full items-center justify-between gap-3 rounded-xl border-rose-200 px-4 py-3 text-left text-rose-800 transition hover:border-rose-300 hover:text-rose-900"
+                      >
+                        <div className="flex flex-col text-left">
+                          <span className="text-sm font-semibold">{category.title}</span>
+                          <span className="text-xs text-rose-600">{category.description}</span>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-rose-500" />
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button type="button" onClick={handleDailySubmit} disabled={!isDailyDirty}>
+                    Tagesdaten speichern
+                  </Button>
+                  {(draftStatus || dailySaveNotice) && (
+                    <div className="flex items-center gap-2">
+                      {draftStatus && (
+                        <span
+                          className={cn(
+                            "text-sm",
+                            draftStatus === "Wiederhergestellt" ? "text-sky-600" : "text-emerald-600"
+                          )}
+                        >
+                          {draftStatus}
+                        </span>
+                      )}
+                      {dailySaveNotice && (
+                        <span className="text-sm text-amber-600">{dailySaveNotice}</span>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {[3, 6, 12].map((months) => (
+                      <Button key={months} type="button" variant="outline" onClick={() => handleReportDownload(months)}>
+                        {months} Monate PDF
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className={cn("space-y-6", dailyActiveCategory === "date" ? "" : "hidden")}>
                 <div className="grid gap-4">
                   <Label className="text-sm font-medium text-rose-800">Datum</Label>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
@@ -3958,7 +4206,8 @@ export default function HomePage() {
                         type="date"
                         value={dailyDraft.date}
                         onChange={(event) =>
-                          selectDailyDate(event.target.value, { manual: true })}
+                          selectDailyDate(event.target.value, { manual: true })
+                        }
                         className="w-full max-w-[11rem]"
                         max={today}
                         aria-label="Datum direkt auswählen"
@@ -3976,7 +4225,14 @@ export default function HomePage() {
                   )}
                   {renderIssuesForPath("date")}
                 </div>
+                <div className="flex justify-end">
+                  <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("overview")}>
+                    Fertig
+                  </Button>
+                </div>
+              </div>
 
+              <div className={cn("space-y-6", dailyActiveCategory === "pain" ? "" : "hidden")}>
                 <Section
                   title="Schmerzen heute"
                   description="Zuerst betroffene Körperbereiche wählen, anschließend Intensität und Schmerzart je Region erfassen"
@@ -3995,124 +4251,89 @@ export default function HomePage() {
                     </div>
 
                     <div className="space-y-4">
-                      <TermField termKey="ovulationPain">
+                      <div className="space-y-4 rounded-lg border border-rose-100 bg-white p-4">
                         <div className="space-y-3">
-                          <Select
-                            value={dailyDraft.ovulationPain?.side ?? ""}
-                            onValueChange={(value) =>
-                              setDailyDraft((prev) => {
-                                if (!value) {
-                                  if (!prev.ovulationPain) {
-                                    return prev;
-                                  }
-                                  return { ...prev, ovulationPain: undefined };
-                                }
-                                return {
-                                  ...prev,
-                                  ovulationPain: {
-                                    side: value as NonNullable<DailyEntry["ovulationPain"]>["side"],
-                                    intensity: prev.ovulationPain?.intensity,
-                                  },
-                                };
-                              })
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Auswählen" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="">Keine Auswahl</SelectItem>
-                              <SelectItem value="links">Links</SelectItem>
-                              <SelectItem value="rechts">Rechts</SelectItem>
-                              <SelectItem value="beidseitig">Beidseitig</SelectItem>
-                              <SelectItem value="unsicher">Unsicher</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          {renderIssuesForPath("ovulationPain.side")}
-                          {dailyDraft.ovulationPain?.side ? (
-                            <>
-                              <ScoreInput
-                                id="ovulation-pain-intensity"
-                                label="Intensität (0–10)"
-                                value={dailyDraft.ovulationPain?.intensity ?? 0}
-                                onChange={(value) =>
-                                  setDailyDraft((prev) => {
-                                    const side = prev.ovulationPain?.side;
-                                    if (!side) {
-                                      return prev;
-                                    }
-                                    return {
-                                      ...prev,
-                                      ovulationPain: {
-                                        side,
-                                        intensity: Math.max(0, Math.min(10, Math.round(value))),
-                                      },
-                                    };
-                                  })
-                                }
-                              />
-                              {renderIssuesForPath("ovulationPain.intensity")}
-                            </>
-                          ) : null}
+                          <p className="font-medium text-rose-800">Ausgewählte Bereiche</p>
+                          <div className="flex flex-wrap gap-2">
+                            {(dailyDraft.painRegions ?? []).map((region) => (
+                              <Badge
+                                key={region.regionId}
+                                className="flex items-center gap-2 bg-rose-100 px-3 py-1 text-xs font-medium text-rose-700"
+                              >
+                                <span>{getRegionLabel(region.regionId)}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => removePainRegion(region.regionId)}
+                                  className="text-[10px] uppercase tracking-wide text-rose-500 hover:text-rose-700"
+                                >
+                                  entfernen
+                                </button>
+                              </Badge>
+                            ))}
+                            {(dailyDraft.painRegions ?? []).length === 0 && (
+                              <span className="text-sm text-rose-500">Bitte mindestens einen Bereich wählen.</span>
+                            )}
+                          </div>
                         </div>
-                      </TermField>
-
-                      <TermField termKey="deepDyspareunia">
-                        <div className="space-y-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <p className="font-medium text-rose-800">{TERMS.deepDyspareunia.label}</p>
-                              <InfoTip
-                                tech={TERMS.deepDyspareunia.tech ?? TERMS.deepDyspareunia.label}
-                                help={TERMS.deepDyspareunia.help}
-                              />
+                        {dailyDraft.painRegions?.map((region, index) => (
+                          <div key={region.regionId} className="space-y-4 rounded-lg border border-rose-100 bg-rose-50 p-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <p className="font-medium text-rose-800">{getRegionLabel(region.regionId)}</p>
+                                <InfoTip tech={TERMS.bodyMap.label} help={TERMS.bodyMap.help} />
+                              </div>
+                              <div className="flex items-center gap-2 text-xs text-rose-500">
+                                <button
+                                  type="button"
+                                  onClick={() => focusPainRegion(region.regionId)}
+                                  className="uppercase tracking-wide hover:text-rose-700"
+                                >
+                                  Fokus
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removePainRegion(region.regionId)}
+                                  className="uppercase tracking-wide hover:text-rose-700"
+                                >
+                                  Entfernen
+                                </button>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <Label className="text-xs text-rose-600">vorhanden</Label>
-                              <Switch
-                                checked={deepDyspareuniaSymptom.present}
-                                onCheckedChange={(checked) =>
-                                  setDailyDraft((prev) => ({
-                                    ...prev,
-                                    symptoms: {
-                                      ...prev.symptoms,
-                                      deepDyspareunia: checked
-                                        ? { present: true, score: deepDyspareuniaSymptom.score ?? 0 }
-                                        : { present: false },
-                                    },
-                                  }))
-                                }
+                            <div className="space-y-3">
+                              <Label className="text-xs text-rose-600">Intensität (0–10)</Label>
+                              <Slider
+                                value={[region.nrs ?? 0]}
+                                min={0}
+                                max={10}
+                                step={1}
+                                onValueChange={([value]) => updatePainRegionNrs(index, value ?? 0)}
                               />
+                              <SliderValueDisplay value={region.nrs ?? 0} label="Aktueller Wert" />
+                              {renderIssuesForPath(`painRegions[${index}].nrs`)}
+                            </div>
+                            <div className="space-y-3">
+                              <Label className="text-xs text-rose-600">Schmerzqualität</Label>
+                              <Select
+                                value={(region.qualities ?? [])[0] ?? ""}
+                                onValueChange={(value) => updatePainRegionQuality(index, value)}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Auswählen" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {(region.regionId === HEAD_REGION_ID ? HEAD_PAIN_QUALITIES : ALL_PAIN_QUALITIES).map((quality) => (
+                                    <SelectItem key={quality} value={quality}>
+                                      {quality}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              {renderIssuesForPath(`painRegions[${index}].qualities`)}
                             </div>
                           </div>
-                          {deepDyspareuniaSymptom.present ? (
-                            <div className="mt-3">
-                              <ScoreInput
-                                id="symptom-deepDyspareunia"
-                                label={`${TERMS.deepDyspareunia.label} – Stärke (0–10)`}
-                                value={deepDyspareuniaSymptom.score ?? 0}
-                                onChange={(value) =>
-                                  setDailyDraft((prev) => ({
-                                    ...prev,
-                                    symptoms: {
-                                      ...prev.symptoms,
-                                      deepDyspareunia: {
-                                        present: true,
-                                        score: Math.max(0, Math.min(10, Math.round(value))),
-                                      },
-                                    },
-                                  }))
-                                }
-                              />
-                              {renderIssuesForPath("symptoms.deepDyspareunia.score")}
-                            </div>
-                          ) : null}
-                          {renderIssuesForPath("symptoms.deepDyspareunia.present")}
-                        </div>
-                      </TermField>
-                    </div>
+                        ))}
+                      </div>
 
-                    <div className="space-y-6">
                       <TermField termKey="nrs">
                         <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4">
                           <p className="font-medium text-rose-800">
@@ -4134,7 +4355,14 @@ export default function HomePage() {
                     </div>
                   </div>
                 </Section>
+                <div className="flex justify-end">
+                  <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("overview")}>
+                    Fertig
+                  </Button>
+                </div>
+              </div>
 
+              <div className={cn("space-y-6", dailyActiveCategory === "symptoms" ? "" : "hidden")}>
                 <Section
                   title="Typische Endometriose-Symptome"
                   description="Je Symptom: Ja/Nein plus Stärke auf der 0–10 Skala"
@@ -4214,7 +4442,14 @@ export default function HomePage() {
                     })}
                   </div>
                 </Section>
+                <div className="flex justify-end">
+                  <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("overview")}>
+                    Fertig
+                  </Button>
+                </div>
+              </div>
 
+              <div className={cn("space-y-6", dailyActiveCategory === "bleeding" ? "" : "hidden")}>
                 <Section title={`${TERMS.bleeding_active.label} & ${TERMS.pbac.label}`}>
                   <div className="flex flex-wrap items-center gap-3">
                     <TermHeadline termKey="bleeding_active" />
@@ -4300,59 +4535,42 @@ export default function HomePage() {
                       </div>
                       <div className="space-y-4">
                         <TermHeadline termKey="clots" />
-                        <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="grid gap-4 sm:grid-cols-2">
                           {PBAC_CLOT_ITEMS.map((item) => {
                             const value = pbacCounts[item.id] ?? 0;
-                            const max = item.id === "clot_small" ? 15 : 5;
-                            const labelHint =
-                              item.id === "clot_small"
-                                ? "Kleine, meist weichere Klümpchen im Blut, etwa erbsen- bis kirschgroß. Zähle jeden, den du deutlich erkennst."
-                                : "Deutlich größere, kompaktere Klumpen, oft dunkler. Notiere jede sichtbare Einheit, auch wenn mehrere in kurzer Zeit kommen.";
-                            const label = `${item.label} – ${labelHint}`;
                             const sliderId = `${item.id}-slider`;
                             const sliderHintId = `${item.id}-slider-hint`;
-
                             return (
-                              <Labeled key={item.id} label={label} htmlFor={sliderId}>
+                              <Labeled
+                                key={item.id}
+                                label={item.label}
+                                tech={TERMS.pbac.tech}
+                                help={TERMS.pbac.help}
+                                htmlFor={sliderId}
+                              >
                                 <div className="space-y-2">
                                   <Slider
                                     id={sliderId}
                                     min={0}
-                                    max={max}
+                                    max={6}
                                     step={1}
                                     value={[value]}
                                     onValueChange={([nextValue]) => {
-                                      const clampedValue = Math.min(max, Math.max(0, nextValue ?? 0));
+                                      const clampedValue = Math.min(6, Math.max(0, nextValue ?? 0));
                                       setPbacCounts((prev) => {
                                         if (prev[item.id] === clampedValue) {
                                           return prev;
                                         }
-                                        const updatedCounts: PbacCounts = {
-                                          ...prev,
-                                          [item.id]: clampedValue,
-                                        };
-                                        setDailyDraft((prevDraft) => ({
-                                          ...prevDraft,
-                                          bleeding: {
-                                            ...prevDraft.bleeding,
-                                            clots:
-                                              (updatedCounts.clot_small ?? 0) + (updatedCounts.clot_large ?? 0) > 0,
-                                          },
-                                        }));
-                                        return updatedCounts;
+                                        return { ...prev, [item.id]: clampedValue };
                                       });
                                     }}
                                     aria-describedby={sliderHintId}
                                   />
                                   <div id={sliderHintId} className="flex justify-between text-xs text-rose-600">
                                     <span>0</span>
-                                    <span>{max}</span>
+                                    <span>6</span>
                                   </div>
-                                  <SliderValueDisplay
-                                    value={value}
-                                    label="Aktuelle Anzahl"
-                                    className="w-full sm:w-auto"
-                                  />
+                                  <SliderValueDisplay value={value} label="Aktuelle Anzahl" className="w-full sm:w-auto" />
                                 </div>
                               </Labeled>
                             );
@@ -4416,7 +4634,14 @@ export default function HomePage() {
                     </div>
                   )}
                 </Section>
+                <div className="flex justify-end">
+                  <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("overview")}>
+                    Fertig
+                  </Button>
+                </div>
+              </div>
 
+              <div className={cn("space-y-6", dailyActiveCategory === "medication" ? "" : "hidden")}>
                 <Section title={TERMS.meds.label} description="Eingenommene Medikamente & Hilfen des Tages">
                   <div className="grid gap-4">
                     <TermHeadline termKey="meds" />
@@ -4490,6 +4715,7 @@ export default function HomePage() {
                     <Button
                       type="button"
                       variant="secondary"
+                      className="justify-start"
                       onClick={() =>
                         setDailyDraft((prev) => ({
                           ...prev,
@@ -4519,7 +4745,14 @@ export default function HomePage() {
                     </div>
                   </div>
                 </Section>
+                <div className="flex justify-end">
+                  <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("overview")}>
+                    Fertig
+                  </Button>
+                </div>
+              </div>
 
+              <div className={cn("space-y-6", dailyActiveCategory === "sleep" ? "" : "hidden")}>
                 <Section title="Schlaf" description="Kurzabfrage ohne Hilfsmittel">
                   <div className="grid gap-4 md:grid-cols-3">
                     <TermField termKey="sleep_hours" htmlFor="sleep-hours">
@@ -4578,7 +4811,14 @@ export default function HomePage() {
                     </TermField>
                   </div>
                 </Section>
+                <div className="flex justify-end">
+                  <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("overview")}>
+                    Fertig
+                  </Button>
+                </div>
+              </div>
 
+              <div className={cn("space-y-6", dailyActiveCategory === "bowelBladder" ? "" : "hidden")}>
                 <Section title="Darm & Blase" description="Situativ erfassbar">
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="grid gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
@@ -4778,7 +5018,10 @@ export default function HomePage() {
                                 onChange={(value) =>
                                   setDailyDraft((prev) => ({
                                     ...prev,
-                                    urinaryOpt: { ...(prev.urinaryOpt ?? {}), leaksCount: value },
+                                    urinaryOpt: {
+                                      ...(prev.urinaryOpt ?? {}),
+                                      leaksCount: value ?? undefined,
+                                    },
                                   }))
                                 }
                               />
@@ -4787,69 +5030,70 @@ export default function HomePage() {
                           </div>
                           <div className="space-y-1">
                             <Labeled
-                              label={MODULE_TERMS.urinaryOpt.nocturia.label}
-                              tech={MODULE_TERMS.urinaryOpt.nocturia.tech}
-                              help={MODULE_TERMS.urinaryOpt.nocturia.help}
-                              htmlFor="urinary-opt-nocturia"
+                              label={MODULE_TERMS.urinaryOpt.padsCount.label}
+                              tech={MODULE_TERMS.urinaryOpt.padsCount.tech}
+                              help={MODULE_TERMS.urinaryOpt.padsCount.help}
+                              htmlFor="urinary-opt-pads"
                             >
                               <NumberField
-                                id="urinary-opt-nocturia"
-                                value={dailyDraft.urinaryOpt?.nocturia}
+                                id="urinary-opt-pads"
+                                value={dailyDraft.urinaryOpt?.padsCount}
                                 onChange={(value) =>
                                   setDailyDraft((prev) => ({
                                     ...prev,
-                                    urinaryOpt: { ...(prev.urinaryOpt ?? {}), nocturia: value },
+                                    urinaryOpt: {
+                                      ...(prev.urinaryOpt ?? {}),
+                                      padsCount: value ?? undefined,
+                                    },
                                   }))
                                 }
                               />
                             </Labeled>
-                            {renderIssuesForPath("urinaryOpt.nocturia")}
+                            {renderIssuesForPath("urinaryOpt.padsCount")}
                           </div>
                         </div>
                       ) : null}
                     </div>
                   </div>
-                </Section>
-
-                {activeUrinary && (
-                  <Section title="Blase/Drang (Modul)" description="Fokus auf Drang und Leckagen (Opt-in)">
-                    <div className="grid gap-4">
-                      <div className="space-y-1">
-                        <Labeled
-                          label={MODULE_TERMS.urinaryOpt.urgency.label}
-                          tech={MODULE_TERMS.urinaryOpt.urgency.tech}
-                          help={MODULE_TERMS.urinaryOpt.urgency.help}
-                          htmlFor="urinary-opt-urgency"
-                        >
-                          <NrsInput
-                            id="urinary-opt-urgency"
-                            value={dailyDraft.urinaryOpt?.urgency ?? 0}
-                            onChange={(value) =>
-                              setDailyDraft((prev) => ({
-                                ...prev,
-                                urinaryOpt: { ...(prev.urinaryOpt ?? {}), urgency: value },
-                              }))
-                            }
-                          />
-                        </Labeled>
-                        {renderIssuesForPath("urinaryOpt.urgency")}
-                      </div>
-                    </div>
-                  </Section>
-                )}
-
-                {activeDizziness && (
-                  <Section title="Schwindel (Modul)" description="Präsenz, Stärke und Orthostatik">
-                    <div className="space-y-4">
+                  {renderIssuesForPath("urinaryOpt.leaksCount")}
+                  {renderIssuesForPath("urinaryOpt.padsCount")}
+                  <ModuleToggleRow
+                    label="Blasensymptome"
+                    tech={MODULE_TERMS.urinaryOpt.present.tech}
+                    help={MODULE_TERMS.urinaryOpt.present.help}
+                    checked={activeUrinary}
+                    onCheckedChange={(checked) => handleFeatureToggle("moduleUrinary", checked)}
+                    className="hidden"
+                  />
+                  <ModuleToggleRow
+                    label={MODULE_TERMS.urinaryOpt.present.label}
+                    tech={MODULE_TERMS.urinaryOpt.present.tech}
+                    help={MODULE_TERMS.urinaryOpt.present.help}
+                    checked={dailyDraft.urinaryOpt?.present ?? false}
+                    onCheckedChange={(checked) =>
+                      setDailyDraft((prev) => ({
+                        ...prev,
+                        urinaryOpt: {
+                          ...(prev.urinaryOpt ?? {}),
+                          present: checked,
+                        },
+                      }))
+                    }
+                    className="hidden"
+                  />
+                  {renderIssuesForPath("urinaryOpt.present")}
+                  <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <label className="flex items-center gap-2 text-sm text-rose-800">
                         <Checkbox
                           checked={dailyDraft.dizzinessOpt?.present ?? false}
                           onChange={(event) =>
                             setDailyDraft((prev) => ({
                               ...prev,
-                              dizzinessOpt: event.target.checked
-                                ? { ...(prev.dizzinessOpt ?? {}), present: true, nrs: prev.dizzinessOpt?.nrs ?? 0 }
-                                : { present: false },
+                              dizzinessOpt: {
+                                ...(prev.dizzinessOpt ?? {}),
+                                present: event.target.checked,
+                              },
                             }))
                           }
                         />
@@ -4859,61 +5103,68 @@ export default function HomePage() {
                           help={MODULE_TERMS.dizzinessOpt.present.help}
                         />
                       </label>
-                      {renderIssuesForPath("dizzinessOpt.present")}
-                      {dailyDraft.dizzinessOpt?.present && (
-                        <div className="space-y-3">
-                          {showDizzinessNotice && (
-                            <InlineNotice
-                              title="Schwindel an starken Blutungstagen"
-                              text="Mehrfacher Schwindel bei starker Blutung – ärztliche Abklärung (Eisenstatus) erwägen."
-                            />
-                          )}
-                          <div className="space-y-1">
-                            <Labeled
-                              label={MODULE_TERMS.dizzinessOpt.nrs.label}
-                              tech={MODULE_TERMS.dizzinessOpt.nrs.tech}
-                              help={MODULE_TERMS.dizzinessOpt.nrs.help}
-                              htmlFor="dizziness-opt-nrs"
-                            >
-                              <NrsInput
-                                id="dizziness-opt-nrs"
-                                value={dailyDraft.dizzinessOpt?.nrs ?? 0}
-                                onChange={(value) =>
-                                  setDailyDraft((prev) => ({
-                                    ...prev,
-                                    dizzinessOpt: { ...(prev.dizzinessOpt ?? {}), nrs: value },
-                                  }))
-                                }
-                              />
-                            </Labeled>
-                            {renderIssuesForPath("dizzinessOpt.nrs")}
-                          </div>
-                          <label className="flex items-center gap-2 text-sm text-rose-800">
-                            <Checkbox
-                              checked={dailyDraft.dizzinessOpt?.orthostatic ?? false}
-                              onChange={(event) =>
+                    </div>
+                    {renderIssuesForPath("dizzinessOpt.present")}
+                    {dailyDraft.dizzinessOpt?.present && (
+                      <div className="space-y-3">
+                        {showDizzinessNotice && (
+                          <InlineNotice
+                            title="Schwindel an starken Blutungstagen"
+                            text="Mehrfacher Schwindel bei starker Blutung – ärztliche Abklärung (Eisenstatus) erwägen."
+                          />
+                        )}
+                        <div className="space-y-1">
+                          <Labeled
+                            label={MODULE_TERMS.dizzinessOpt.nrs.label}
+                            tech={MODULE_TERMS.dizzinessOpt.nrs.tech}
+                            help={MODULE_TERMS.dizzinessOpt.nrs.help}
+                            htmlFor="dizziness-opt-nrs"
+                          >
+                            <NrsInput
+                              id="dizziness-opt-nrs"
+                              value={dailyDraft.dizzinessOpt?.nrs ?? 0}
+                              onChange={(value) =>
                                 setDailyDraft((prev) => ({
                                   ...prev,
-                                  dizzinessOpt: {
-                                    ...(prev.dizzinessOpt ?? {}),
-                                    orthostatic: event.target.checked,
-                                  },
+                                  dizzinessOpt: { ...(prev.dizzinessOpt ?? {}), nrs: value },
                                 }))
                               }
                             />
-                            <span>{MODULE_TERMS.dizzinessOpt.orthostatic.label}</span>
-                            <InfoTip
-                              tech={MODULE_TERMS.dizzinessOpt.orthostatic.tech ?? MODULE_TERMS.dizzinessOpt.orthostatic.label}
-                              help={MODULE_TERMS.dizzinessOpt.orthostatic.help}
-                            />
-                          </label>
-                          {renderIssuesForPath("dizzinessOpt.orthostatic")}
+                          </Labeled>
+                          {renderIssuesForPath("dizzinessOpt.nrs")}
                         </div>
-                      )}
-                    </div>
-                  </Section>
-                )}
+                        <label className="flex items-center gap-2 text-sm text-rose-800">
+                          <Checkbox
+                            checked={dailyDraft.dizzinessOpt?.orthostatic ?? false}
+                            onChange={(event) =>
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                dizzinessOpt: {
+                                  ...(prev.dizzinessOpt ?? {}),
+                                  orthostatic: event.target.checked,
+                                },
+                              }))
+                            }
+                          />
+                          <span>{MODULE_TERMS.dizzinessOpt.orthostatic.label}</span>
+                          <InfoTip
+                            tech={MODULE_TERMS.dizzinessOpt.orthostatic.tech ?? MODULE_TERMS.dizzinessOpt.orthostatic.label}
+                            help={MODULE_TERMS.dizzinessOpt.orthostatic.help}
+                          />
+                        </label>
+                        {renderIssuesForPath("dizzinessOpt.orthostatic")}
+                      </div>
+                    )}
+                  </div>
+                </Section>
+                <div className="flex justify-end">
+                  <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("overview")}>
+                    Fertig
+                  </Button>
+                </div>
+              </div>
 
+              <div className={cn("space-y-6", dailyActiveCategory === "notes" ? "" : "hidden")}>
                 <Section
                   title="Notizen & Tags"
                   description="Freitext oder wiederkehrende Muster markieren"
@@ -4953,7 +5204,14 @@ export default function HomePage() {
                     </TermField>
                   </div>
                 </Section>
+                <div className="flex justify-end">
+                  <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("overview")}>
+                    Fertig
+                  </Button>
+                </div>
+              </div>
 
+              <div className={cn("space-y-6", dailyActiveCategory === "optional" ? "" : "hidden")}>
                 <Section
                   title="Optionale Werte (Hilfsmittel nötig)"
                   description="Standardmäßig ausgeblendet – Wearables, LH-Tests, BBT"
@@ -5111,39 +5369,12 @@ export default function HomePage() {
                     </div>
                   )}
                 </Section>
-
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button type="button" onClick={handleDailySubmit} disabled={!isDailyDirty}>
-                    Tagesdaten speichern
+                <div className="flex justify-end">
+                  <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("overview")}>
+                    Fertig
                   </Button>
-                  {(draftStatus || dailySaveNotice) && (
-                    <div className="flex items-center gap-2">
-                      {draftStatus && (
-                        <span
-                          className={cn(
-                            "text-sm",
-                            draftStatus === "Wiederhergestellt" ? "text-sky-600" : "text-emerald-600"
-                          )}
-                        >
-                          {draftStatus}
-                        </span>
-                      )}
-                      {dailySaveNotice && (
-                        <span className="text-sm text-amber-600">{dailySaveNotice}</span>
-                      )}
-                    </div>
-                  )}
-                  <div className="flex flex-wrap items-center gap-2">
-                    {[3, 6, 12].map((months) => (
-                      <Button key={months} type="button" variant="outline" onClick={() => handleReportDownload(months)}>
-                        {months} Monate PDF
-                      </Button>
-                    ))}
-                  </div>
                 </div>
               </div>
-
-
             </div>
           </Section>
                   </SectionScopeContext.Provider>
