@@ -27,6 +27,8 @@ import {
   Scatter,
   Area,
   ComposedChart,
+  ReferenceDot,
+  ReferenceLine,
 } from "recharts";
 import type { DotProps, TooltipProps } from "recharts";
 import {
@@ -194,7 +196,43 @@ const deriveHeadacheFromPainRegions = (
   return next;
 };
 
+const collectPainRegionQualities = (
+  regions: NonNullable<DailyEntry["painRegions"]>
+): DailyEntry["painQuality"] => {
+  const qualities = new Set<string>();
+  regions.forEach((region) => {
+    (region.qualities ?? []).forEach((quality) => qualities.add(quality));
+  });
+  return Array.from(qualities) as DailyEntry["painQuality"];
+};
+
+const buildDailyDraftWithPainRegions = (
+  prev: DailyEntry,
+  nextRegions: NonNullable<DailyEntry["painRegions"]>
+): DailyEntry => {
+  const nextHeadache = deriveHeadacheFromPainRegions(nextRegions, prev.headacheOpt);
+  return {
+    ...prev,
+    painRegions: nextRegions,
+    painMapRegionIds: nextRegions.map((region) => region.regionId),
+    painQuality: collectPainRegionQualities(nextRegions),
+    headacheOpt: nextHeadache,
+  };
+};
+
 type BodyRegion = { id: string; label: string };
+
+type DailyCategoryId =
+  | "overview"
+  | "date"
+  | "pain"
+  | "symptoms"
+  | "bleeding"
+  | "medication"
+  | "sleep"
+  | "bowelBladder"
+  | "notes"
+  | "optional";
 
 const BODY_REGION_GROUPS: { id: string; label: string; regions: BodyRegion[] }[] = [
   {
@@ -275,6 +313,89 @@ const BODY_REGION_GROUPS: { id: string; label: string; regions: BodyRegion[] }[]
   },
 ];
 
+const REGION_TO_GROUP_ID: Record<string, string> = BODY_REGION_GROUPS.reduce(
+  (acc, group) => {
+    group.regions.forEach((region) => {
+      acc[region.id] = group.id;
+    });
+    return acc;
+  },
+  {} as Record<string, string>
+);
+
+const ABDOMEN_REGION_IDS = new Set(
+  (BODY_REGION_GROUPS.find((group) => group.id === "abdomen")?.regions ?? []).map((region) => region.id)
+);
+
+const clampScore = (value: number | undefined | null): number | null => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+  return Math.max(0, Math.min(10, Math.round(value)));
+};
+
+const computeMaxPainIntensity = (entry: DailyEntry): number | null => {
+  const intensities: number[] = [];
+  const impact = clampScore(entry.impactNRS);
+  if (impact !== null) {
+    intensities.push(impact);
+  }
+  const generalPain = clampScore(entry.painNRS);
+  if (generalPain !== null) {
+    intensities.push(generalPain);
+  }
+  (entry.painRegions ?? []).forEach((region) => {
+    const regionScore = clampScore(region?.nrs);
+    if (regionScore !== null) {
+      intensities.push(regionScore);
+    }
+  });
+  if (!intensities.length) {
+    return null;
+  }
+  return Math.max(...intensities);
+};
+
+const computePelvicPainOutsidePeriodIntensity = (entry: DailyEntry): number | null => {
+  const pelvicScores = (entry.painRegions ?? [])
+    .filter((region) => ABDOMEN_REGION_IDS.has(region.regionId))
+    .map((region) => clampScore(region?.nrs))
+    .filter((score): score is number => score !== null);
+  if (!pelvicScores.length) {
+    return null;
+  }
+  return Math.max(...pelvicScores);
+};
+
+const applyAutomatedPainSymptoms = (entry: DailyEntry): DailyEntry => {
+  const symptoms: DailyEntry["symptoms"] = { ...(entry.symptoms ?? {}) };
+  const result: DailyEntry = { ...entry, symptoms };
+
+  if (entry.bleeding.isBleeding) {
+    const maxPain = computeMaxPainIntensity(entry);
+    if (maxPain !== null && maxPain > 0) {
+      symptoms.dysmenorrhea = { present: true, score: maxPain };
+    } else {
+      delete symptoms.dysmenorrhea;
+    }
+    delete symptoms.pelvicPainNonMenses;
+  } else {
+    const pelvicPain = computePelvicPainOutsidePeriodIntensity(entry);
+    if (pelvicPain !== null && pelvicPain > 0) {
+      symptoms.pelvicPainNonMenses = { present: true, score: pelvicPain };
+    } else {
+      delete symptoms.pelvicPainNonMenses;
+    }
+    delete symptoms.dysmenorrhea;
+  }
+
+  if (Object.keys(symptoms).length === 0) {
+    result.symptoms = {};
+  }
+
+  return result;
+};
+
 const getRegionLabel = (regionId: string): string => {
   for (const group of BODY_REGION_GROUPS) {
     for (const region of group.regions) {
@@ -287,9 +408,6 @@ const getRegionLabel = (regionId: string): string => {
 };
 
 const SYMPTOM_ITEMS: { key: SymptomKey; termKey: TermKey }[] = [
-  { key: "dysmenorrhea", termKey: "dysmenorrhea" },
-  { key: "deepDyspareunia", termKey: "deepDyspareunia" },
-  { key: "pelvicPainNonMenses", termKey: "pelvicPainNonMenses" },
   { key: "fatigue", termKey: "fatigue" },
   { key: "bloating", termKey: "bloating" },
 ];
@@ -425,6 +543,27 @@ const PainDot = ({ cx, cy, payload }: PainDotProps) => {
         <circle cx={cx} cy={cy} r={7} fill="#fef3c7" stroke="#facc15" strokeWidth={2} />
       ) : null}
       <circle cx={cx} cy={cy} r={4} fill="#be123c" stroke="#fff" strokeWidth={2} />
+    </g>
+  );
+};
+
+const CycleStartDrop = ({ cx, cy }: DotProps) => {
+  if (typeof cx !== "number" || typeof cy !== "number") {
+    return null;
+  }
+
+  const topY = cy - 4;
+  const bottomY = cy + 6;
+
+  return (
+    <g>
+      <path
+        d={`M ${cx} ${topY} C ${cx + 4} ${topY + 2}, ${cx + 3.5} ${cy + 2}, ${cx} ${bottomY} C ${cx - 3.5} ${cy + 2}, ${cx - 4} ${topY + 2}, ${cx} ${topY} Z`}
+        fill="#ef4444"
+        stroke="#b91c1c"
+        strokeWidth={1}
+      />
+      <circle cx={cx} cy={topY + 2} r={1.2} fill="#fca5a5" />
     </g>
   );
 };
@@ -602,6 +741,8 @@ function Section({
   children,
   completionEnabled = true,
   variant = "card",
+  onComplete,
+  hideHeader = false,
 }: {
   title: string;
   description?: string;
@@ -609,6 +750,8 @@ function Section({
   children: ReactNode;
   completionEnabled?: boolean;
   variant?: "card" | "plain";
+  onComplete?: () => void;
+  hideHeader?: boolean;
 }) {
   const scope = useContext(SectionScopeContext);
   const completionContext = useContext(SectionCompletionContext);
@@ -676,20 +819,6 @@ function Section({
     setIsCompleted(true);
   }, [completedFromContext, completionEnabled]);
 
-  const scrollToNextSection = () => {
-    if (!cardRef.current) return;
-    const sections = Array.from(document.querySelectorAll<HTMLElement>("[data-section-card]"));
-    const currentIndex = sections.indexOf(cardRef.current);
-    if (currentIndex === -1) return;
-    for (let index = currentIndex + 1; index < sections.length; index += 1) {
-      const next = sections[index];
-      if (next) {
-        next.scrollIntoView({ behavior: "smooth", block: "start" });
-        break;
-      }
-    }
-  };
-
   const handleComplete = () => {
     if (!completionEnabled || isCompleted || showConfetti) return;
     setIsCompleted(true);
@@ -699,7 +828,9 @@ function Section({
     setShowConfetti(true);
     timeoutRef.current = window.setTimeout(() => {
       setShowConfetti(false);
-      scrollToNextSection();
+      if (onComplete) {
+        onComplete();
+      }
       timeoutRef.current = null;
     }, 400);
   };
@@ -717,13 +848,15 @@ function Section({
         variant === "card" && isCompleted ? "border-amber-200 shadow-md" : null
       )}
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <h2 className="text-base font-semibold text-rose-900">{title}</h2>
-          {description && <p className="text-sm text-rose-600">{description}</p>}
+      {!hideHeader ? (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <h2 className="text-base font-semibold text-rose-900">{title}</h2>
+            {description && <p className="text-sm text-rose-600">{description}</p>}
+          </div>
+          {aside ? <div className="flex-shrink-0 sm:self-start">{aside}</div> : null}
         </div>
-        {aside ? <div className="flex-shrink-0 sm:self-start">{aside}</div> : null}
-      </div>
+      ) : null}
       <div className="space-y-4">
         {children}
         {completionEnabled ? (
@@ -1203,7 +1336,7 @@ function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>
     }
   }
 
-  return clone;
+  return applyAutomatedPainSymptoms(clone);
 }
 
 type RawWeeklyReport = Record<string, unknown> & { stats?: Record<string, unknown> };
@@ -1388,6 +1521,7 @@ function BodyMap({
         return (
           <details
             key={group.id}
+            id={`body-map-group-${group.id}`}
             className="group rounded-lg border border-rose-100 bg-rose-50 text-rose-700 [&[open]>summary]:border-b [&[open]>summary]:bg-rose-100"
           >
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-rose-800 [&::-webkit-details-marker]:hidden">
@@ -1628,6 +1762,10 @@ export default function HomePage() {
   const [dailyEntries, setDailyEntries, dailyStorage] = usePersistentState<DailyEntry[]>("endo.daily.v2", []);
   const [monthlyEntries, setMonthlyEntries, monthlyStorage] = usePersistentState<MonthlyEntry[]>("endo.monthly.v2", []);
   const [featureFlags, setFeatureFlags, featureStorage] = usePersistentState<FeatureFlags>("endo.flags.v1", {});
+  const derivedDailyEntries = useMemo(
+    () => dailyEntries.map((entry) => applyAutomatedPainSymptoms(entry)),
+    [dailyEntries]
+  );
   const [sectionCompletionState, setSectionCompletionState, sectionCompletionStorage] =
     usePersistentState<SectionCompletionState>("endo.sectionCompletion.v1", {});
   const [sectionRegistry, setSectionRegistry] = useState<SectionRegistryState>({});
@@ -1812,6 +1950,7 @@ export default function HomePage() {
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [detailToolbarHeight, setDetailToolbarHeight] = useState<number>(DETAIL_TOOLBAR_FALLBACK_HEIGHT);
   const [activeView, setActiveView] = useState<"home" | "daily" | "weekly" | "monthly" | "analytics">("home");
+  const [dailyActiveCategory, setDailyActiveCategory] = useState<DailyCategoryId>("overview");
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [persistWarning, setPersistWarning] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
@@ -1838,7 +1977,7 @@ export default function HomePage() {
       if (options?.manual) {
         manualDailySelectionRef.current = true;
       }
-      const existingEntry = dailyEntries.find((entry) => entry.date === targetDate);
+      const existingEntry = derivedDailyEntries.find((entry) => entry.date === targetDate);
       const baseEntry = existingEntry ?? createEmptyDailyEntry(targetDate);
       const clonedEntry =
         typeof structuredClone === "function"
@@ -1847,7 +1986,7 @@ export default function HomePage() {
       setDailyDraft(clonedEntry);
       setLastSavedDailySnapshot(clonedEntry);
     },
-    [dailyEntries, setDailyDraft, setLastSavedDailySnapshot]
+    [derivedDailyEntries, setDailyDraft, setLastSavedDailySnapshot]
   );
 
   useEffect(() => {
@@ -1855,10 +1994,10 @@ export default function HomePage() {
     if (manualDailySelectionRef.current) return;
     if (isDailyDirty) return;
     if (dailyDraft.date >= today) return;
-    const hasDraftEntry = dailyEntries.some((entry) => entry.date === dailyDraft.date);
+    const hasDraftEntry = derivedDailyEntries.some((entry) => entry.date === dailyDraft.date);
     if (hasDraftEntry) return;
     selectDailyDate(today);
-  }, [storageReady, isDailyDirty, dailyDraft.date, dailyEntries, today, selectDailyDate]);
+  }, [storageReady, isDailyDirty, dailyDraft.date, derivedDailyEntries, today, selectDailyDate]);
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !("storage" in navigator) || !navigator.storage) {
@@ -2002,7 +2141,7 @@ export default function HomePage() {
   }, [dailyDraft.date]);
 
   const annotatedDailyEntries = useMemo(() => {
-    const sorted = dailyEntries.slice().sort((a, b) => a.date.localeCompare(b.date));
+    const sorted = derivedDailyEntries.slice().sort((a, b) => a.date.localeCompare(b.date));
     let cycleDay: number | null = null;
     let previousDate: Date | null = null;
     let previousBleeding = false;
@@ -2032,11 +2171,11 @@ export default function HomePage() {
       previousBleeding = isBleeding;
       return { entry, cycleDay: assignedCycleDay, weekday, symptomAverage };
     });
-  }, [dailyEntries]);
+  }, [derivedDailyEntries]);
 
   const selectedCycleDay = useMemo(() => {
     if (!dailyDraft.date) return null;
-    const entries = dailyEntries.slice();
+    const entries = derivedDailyEntries.slice();
     const draftIndex = entries.findIndex((entry) => entry.date === dailyDraft.date);
     if (draftIndex >= 0) {
       if (isDailyDirty) {
@@ -2072,7 +2211,7 @@ export default function HomePage() {
       previousBleeding = isBleeding;
     }
     return cycleDay;
-  }, [dailyEntries, dailyDraft, isDailyDirty]);
+  }, [derivedDailyEntries, dailyDraft, isDailyDirty]);
 
   const cycleOverview = useMemo((): CycleOverviewData | null => {
     if (!annotatedDailyEntries.length) {
@@ -2145,13 +2284,31 @@ export default function HomePage() {
 
   const dailyToolbarLabel = useMemo(() => {
     const parsed = parseIsoDate(dailyDraft.date);
-    if (!parsed) return null;
-    return parsed.toLocaleDateString("de-DE", {
-      weekday: "short",
-      day: "2-digit",
-      month: "2-digit",
-    });
-  }, [dailyDraft.date]);
+    const dateLabel = parsed
+      ? parsed.toLocaleDateString("de-DE", {
+          weekday: "short",
+          day: "2-digit",
+          month: "2-digit",
+        })
+      : null;
+    const categoryLabels: Record<DailyCategoryId, string> = {
+      overview: "Check-in Übersicht",
+      date: "Tagesdaten",
+      pain: "Schmerzen",
+      symptoms: "Symptome",
+      bleeding: "Blutung",
+      medication: "Medikation",
+      sleep: "Schlaf",
+      bowelBladder: "Darm & Blase",
+      notes: "Notizen",
+      optional: "Optionale Werte",
+    };
+    const baseLabel = categoryLabels[dailyActiveCategory] ?? null;
+    if (baseLabel && dateLabel) {
+      return `${baseLabel} · ${dateLabel}`;
+    }
+    return baseLabel ?? dateLabel;
+  }, [dailyActiveCategory, dailyDraft.date]);
 
   const weeklyScopeIsoWeek = weeklyIsoWeek ?? currentIsoWeek;
 
@@ -2322,6 +2479,7 @@ export default function HomePage() {
   const activeDizziness = Boolean(featureFlags.moduleDizziness);
   const dyscheziaSymptom = dailyDraft.symptoms.dyschezia;
   const dysuriaSymptom = dailyDraft.symptoms.dysuria;
+  const deepDyspareuniaSymptom = dailyDraft.symptoms.deepDyspareunia ?? { present: false };
 
   const pbacFlooding = dailyDraft.bleeding.flooding ?? false;
   const pbacScore = useMemo(() => computePbacScore(pbacCounts, pbacFlooding), [pbacCounts, pbacFlooding]);
@@ -2354,7 +2512,7 @@ export default function HomePage() {
   }, [dailyDraft.bleeding.isBleeding, pbacScore, setDailyDraft]);
 
   useEffect(() => {
-    const existingEntry = dailyEntries.find((entry) => entry.date === dailyDraft.date);
+    const existingEntry = derivedDailyEntries.find((entry) => entry.date === dailyDraft.date);
     if (!existingEntry) return;
     const serializedExisting = JSON.stringify(existingEntry);
     if (serializedExisting === JSON.stringify(lastSavedDailySnapshot)) {
@@ -2363,7 +2521,7 @@ export default function HomePage() {
     if (serializedExisting === JSON.stringify(dailyDraft)) {
       setLastSavedDailySnapshot(existingEntry);
     }
-  }, [dailyDraft, dailyEntries, lastSavedDailySnapshot]);
+  }, [dailyDraft, derivedDailyEntries, lastSavedDailySnapshot]);
 
   useEffect(() => {
     if (activeUrinary) {
@@ -2459,40 +2617,43 @@ export default function HomePage() {
 
   const buildDailyExportRow = useCallback(
     (entry: DailyEntry) => {
-      const symptomScores = Object.entries(entry.symptoms ?? {})
+      const normalizedEntry = applyAutomatedPainSymptoms(entry);
+      const symptomScores = Object.entries(normalizedEntry.symptoms ?? {})
         .map(([key, value]) => (value?.present && typeof value.score === "number" ? `${key}:${value.score}` : null))
         .filter(Boolean)
         .join(";");
       const row: Record<string, unknown> = {
-        Datum: entry.date,
-        [`${TERMS.nrs.label} (NRS)`]: entry.painNRS,
-        Schmerzarten: entry.painQuality.join(";"),
-        "Schmerzorte (IDs)": entry.painMapRegionIds.join(";"),
-        [`${TERMS.ovulationPain.label} – Seite`]: entry.ovulationPain?.side ?? "",
+        Datum: normalizedEntry.date,
+        [`${TERMS.nrs.label} (NRS)`]: normalizedEntry.painNRS,
+        Schmerzarten: normalizedEntry.painQuality.join(";"),
+        "Schmerzorte (IDs)": normalizedEntry.painMapRegionIds.join(";"),
+        [`${TERMS.ovulationPain.label} – Seite`]: normalizedEntry.ovulationPain?.side ?? "",
         [`${TERMS.ovulationPain.label} – Intensität`]:
-          typeof entry.ovulationPain?.intensity === "number" ? entry.ovulationPain.intensity : "",
-        [`${TERMS.pbac.label}`]: entry.bleeding.pbacScore ?? "",
+          typeof normalizedEntry.ovulationPain?.intensity === "number"
+            ? normalizedEntry.ovulationPain.intensity
+            : "",
+        [`${TERMS.pbac.label}`]: normalizedEntry.bleeding.pbacScore ?? "",
         "Symptom-Scores": symptomScores,
-        [`${TERMS.sleep_quality.label}`]: entry.sleep?.quality ?? "",
+        [`${TERMS.sleep_quality.label}`]: normalizedEntry.sleep?.quality ?? "",
         [`${TERMS.urinary_pain.label}`]:
-          entry.symptoms?.dysuria?.present && typeof entry.symptoms.dysuria.score === "number"
-            ? entry.symptoms.dysuria.score
+          normalizedEntry.symptoms?.dysuria?.present && typeof normalizedEntry.symptoms.dysuria?.score === "number"
+            ? normalizedEntry.symptoms.dysuria.score
             : "",
       };
       if (activeUrinary) {
-        row.urinary_urgency = entry.urinaryOpt?.urgency ?? "";
-        row.urinary_leaks = entry.urinaryOpt?.leaksCount ?? "";
-        row.urinary_nocturia = entry.urinaryOpt?.nocturia ?? "";
+        row.urinary_urgency = normalizedEntry.urinaryOpt?.urgency ?? "";
+        row.urinary_leaks = normalizedEntry.urinaryOpt?.leaksCount ?? "";
+        row.urinary_nocturia = normalizedEntry.urinaryOpt?.nocturia ?? "";
       }
       if (activeHeadache) {
-        row.headache_present = entry.headacheOpt?.present ?? false;
-        row.headache_nrs = entry.headacheOpt?.nrs ?? "";
-        row.headache_aura = entry.headacheOpt?.aura ?? false;
+        row.headache_present = normalizedEntry.headacheOpt?.present ?? false;
+        row.headache_nrs = normalizedEntry.headacheOpt?.nrs ?? "";
+        row.headache_aura = normalizedEntry.headacheOpt?.aura ?? false;
       }
       if (activeDizziness) {
-        row.dizziness_present = entry.dizzinessOpt?.present ?? false;
-        row.dizziness_nrs = entry.dizzinessOpt?.nrs ?? "";
-        row.dizziness_orthostatic = entry.dizzinessOpt?.orthostatic ?? false;
+        row.dizziness_present = normalizedEntry.dizzinessOpt?.present ?? false;
+        row.dizziness_nrs = normalizedEntry.dizzinessOpt?.nrs ?? "";
+        row.dizziness_orthostatic = normalizedEntry.dizzinessOpt?.orthostatic ?? false;
       }
       return row;
     },
@@ -2576,16 +2737,94 @@ export default function HomePage() {
           }
         });
 
-        const nextHeadache = deriveHeadacheFromPainRegions(nextList, prev.headacheOpt);
-        return {
-          ...prev,
-          painRegions: nextList,
-          headacheOpt: nextHeadache,
-        };
+        return buildDailyDraftWithPainRegions(prev, nextList);
       });
     },
     [setDailyDraft]
   );
+
+  const removePainRegion = useCallback(
+    (regionId: string) => {
+      setDailyDraft((prev) => {
+        const current = prev.painRegions ?? [];
+        if (!current.some((region) => region.regionId === regionId)) {
+          return prev;
+        }
+        const nextRegions = current
+          .filter((region) => region.regionId !== regionId) as NonNullable<DailyEntry["painRegions"]>;
+        return buildDailyDraftWithPainRegions(prev, nextRegions);
+      });
+    },
+    [setDailyDraft]
+  );
+
+  const updatePainRegionNrs = useCallback(
+    (index: number, value: number) => {
+      setDailyDraft((prev) => {
+        const regions = prev.painRegions ?? [];
+        if (!regions[index]) {
+          return prev;
+        }
+        const nextRegions = regions.map((region, regionIndex) =>
+          regionIndex === index
+            ? { ...region, nrs: Math.max(0, Math.min(10, Math.round(value))) }
+            : region
+        ) as NonNullable<DailyEntry["painRegions"]>;
+        return buildDailyDraftWithPainRegions(prev, nextRegions);
+      });
+    },
+    [setDailyDraft]
+  );
+
+  const updatePainRegionQuality = useCallback(
+    (index: number, quality: string) => {
+      setDailyDraft((prev) => {
+        const regions = prev.painRegions ?? [];
+        const target = regions[index];
+        if (!target) {
+          return prev;
+        }
+        let nextQualities: DailyEntry["painQuality"] = [];
+        if (quality) {
+          const single = [quality] as DailyEntry["painQuality"];
+          nextQualities =
+            target.regionId === HEAD_REGION_ID
+              ? sanitizeHeadRegionQualities(single)
+              : single;
+        }
+        const nextRegions = regions.map((region, regionIndex) =>
+          regionIndex === index
+            ? {
+                ...region,
+                qualities: nextQualities,
+              }
+            : region
+        ) as NonNullable<DailyEntry["painRegions"]>;
+        return buildDailyDraftWithPainRegions(prev, nextRegions);
+      });
+    },
+    [setDailyDraft]
+  );
+
+  const focusPainRegion = useCallback((regionId: string) => {
+    if (typeof document === "undefined") return;
+    const groupId = REGION_TO_GROUP_ID[regionId];
+    if (groupId) {
+      const groupElement = document.getElementById(`body-map-group-${groupId}`) as HTMLDetailsElement | null;
+      if (groupElement) {
+        groupElement.open = true;
+      }
+    }
+    const target = document.getElementById(`body-map-region-${regionId}`);
+    if (target instanceof HTMLElement) {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      try {
+        target.focus({ preventScroll: true });
+      } catch (_error) {
+        target.focus();
+      }
+    }
+  }, []);
 
   const handleDailySubmit = () => {
     const payload: DailyEntry = {
@@ -2624,6 +2863,9 @@ export default function HomePage() {
       delete (payload as { urinaryOpt?: DailyEntry["urinaryOpt"] }).urinaryOpt;
     } else if (payload.urinaryOpt) {
       const normalized: NonNullable<DailyEntry["urinaryOpt"]> = {};
+      if (typeof payload.urinaryOpt.present === "boolean") {
+        normalized.present = payload.urinaryOpt.present;
+      }
       if (typeof payload.urinaryOpt.urgency === "number") {
         normalized.urgency = Math.max(0, Math.min(10, Math.round(payload.urinaryOpt.urgency)));
       }
@@ -2632,6 +2874,9 @@ export default function HomePage() {
       }
       if (typeof payload.urinaryOpt.nocturia === "number") {
         normalized.nocturia = Math.max(0, Math.round(payload.urinaryOpt.nocturia));
+      }
+      if (typeof payload.urinaryOpt.padsCount === "number") {
+        normalized.padsCount = Math.max(0, Math.round(payload.urinaryOpt.padsCount));
       }
       payload.urinaryOpt = Object.keys(normalized).length ? normalized : undefined;
       if (!payload.urinaryOpt) {
@@ -2695,7 +2940,9 @@ export default function HomePage() {
       syncedDraft.painNRS = syncedDraft.impactNRS;
     }
 
-    const validationIssues = validateDailyEntry(syncedDraft);
+    const automatedDraft = applyAutomatedPainSymptoms(syncedDraft);
+
+    const validationIssues = validateDailyEntry(automatedDraft);
     setIssues(validationIssues);
     if (validationIssues.length) {
       setInfoMessage("Bitte prüfe die markierten Felder.");
@@ -2703,13 +2950,13 @@ export default function HomePage() {
     }
 
     setDailyEntries((prev) => {
-      const filtered = prev.filter((entry) => entry.date !== syncedDraft.date);
-      return [...filtered, syncedDraft].sort((a, b) => a.date.localeCompare(b.date));
+      const filtered = prev.filter((entry) => entry.date !== automatedDraft.date);
+      return [...filtered, automatedDraft].sort((a, b) => a.date.localeCompare(b.date));
     });
 
     setInfoMessage(null);
     setDailySaveNotice("Tagesdaten gespeichert.");
-    const nextDraft = syncedDraft;
+    const nextDraft = automatedDraft;
     setDailyDraft(nextDraft);
     setLastSavedDailySnapshot(nextDraft);
     setPainQualityOther("");
@@ -2852,7 +3099,7 @@ export default function HomePage() {
     threshold.setMonth(threshold.getMonth() - months);
     const thresholdIso = formatDate(threshold);
     const thresholdMonth = thresholdIso.slice(0, 7);
-    const dailyFiltered = dailyEntries.filter((entry) => entry.date >= thresholdIso);
+    const dailyFiltered = derivedDailyEntries.filter((entry) => entry.date >= thresholdIso);
     const weeklyFiltered = weeklyReports
       .filter((report) => report.stats.endISO >= thresholdIso)
       .sort((a, b) => a.stats.startISO.localeCompare(b.stats.startISO));
@@ -3043,20 +3290,36 @@ export default function HomePage() {
     ? "Es ist Sonntag. Zeit für deinen wöchentlichen Check In."
     : "Fülle diese Fragen möglichst jeden Sonntag aus.";
 
-  const painTrendData = useMemo(
-    () =>
-      annotatedDailyEntries.map(({ entry, cycleDay, weekday, symptomAverage }) => ({
-        date: entry.date,
-        cycleDay,
-        cycleLabel: cycleDay ? `ZT ${cycleDay}` : "–",
-        weekday,
-        pain: entry.painNRS,
-        pbac: entry.bleeding.pbacScore ?? null,
-        symptomAverage,
-        sleepQuality: entry.sleep?.quality ?? null,
-      })),
-    [annotatedDailyEntries]
-  );
+  const trendWindowStartIso = useMemo(() => {
+    if (!todayDate) {
+      return null;
+    }
+    const threshold = new Date(todayDate);
+    threshold.setDate(threshold.getDate() - 30);
+    return formatDate(threshold);
+  }, [todayDate]);
+
+  const { painTrendData, painTrendCycleStarts } = useMemo(() => {
+    const thresholdIso = trendWindowStartIso;
+    const filteredEntries = thresholdIso
+      ? annotatedDailyEntries.filter(({ entry }) => entry.date >= thresholdIso)
+      : annotatedDailyEntries;
+    const effectiveEntries = filteredEntries.length > 0 ? filteredEntries : annotatedDailyEntries;
+    const mapped = effectiveEntries.map(({ entry, cycleDay, weekday, symptomAverage }) => ({
+      date: entry.date,
+      cycleDay,
+      cycleLabel: cycleDay ? `ZT ${cycleDay}` : "–",
+      weekday,
+      pain: entry.painNRS,
+      pbac: entry.bleeding.pbacScore ?? null,
+      symptomAverage,
+      sleepQuality: entry.sleep?.quality ?? null,
+    }));
+    return {
+      painTrendData: mapped,
+      painTrendCycleStarts: mapped.filter((item) => item.cycleDay === 1),
+    };
+  }, [annotatedDailyEntries, trendWindowStartIso]);
 
   const renderIssuesForPath = (path: string) =>
     issues.filter((issue) => issue.path === path).map((issue) => (
@@ -3074,7 +3337,11 @@ export default function HomePage() {
     const region = regions[regionIndex];
     const qualityChoices = region.regionId === HEAD_REGION_ID ? HEAD_PAIN_QUALITIES : PAIN_QUALITIES;
     return (
-      <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4">
+      <div
+        id={`body-map-region-${region.regionId}`}
+        tabIndex={-1}
+        className="space-y-3 rounded-lg border border-rose-100 bg-white p-4"
+      >
         <p className="font-medium text-rose-800">Schmerzen in: {getRegionLabel(region.regionId)}</p>
         {renderIssuesForPath(`painRegions[${regionIndex}].regionId`)}
         <div className="space-y-2">
@@ -3093,13 +3360,8 @@ export default function HomePage() {
                         nrs: Math.max(0, Math.min(10, Math.round(value))),
                       }
                     : r
-                );
-                const nextHeadache = deriveHeadacheFromPainRegions(nextRegions, prev.headacheOpt);
-                return {
-                  ...prev,
-                  painRegions: nextRegions,
-                  headacheOpt: nextHeadache,
-                };
+                ) as NonNullable<DailyEntry["painRegions"]>;
+                return buildDailyDraftWithPainRegions(prev, nextRegions);
               });
             }}
           />
@@ -3123,13 +3385,8 @@ export default function HomePage() {
                         qualities: updatedQualities,
                       }
                     : r
-                );
-                const nextHeadache = deriveHeadacheFromPainRegions(nextRegions, prev.headacheOpt);
-                return {
-                  ...prev,
-                  painRegions: nextRegions,
-                  headacheOpt: nextHeadache,
-                };
+                ) as NonNullable<DailyEntry["painRegions"]>;
+                return buildDailyDraftWithPainRegions(prev, nextRegions);
               });
             }}
           />
@@ -3266,25 +3523,25 @@ export default function HomePage() {
     const sleepPairs = annotatedDailyEntries
       .map(({ entry }) => ({ x: entry.sleep?.quality, y: entry.painNRS }))
       .filter((pair): pair is { x: number; y: number } => typeof pair.x === "number");
-    const stepsPairs = dailyEntries
+    const stepsPairs = derivedDailyEntries
       .filter((entry) => typeof entry.activity?.steps === "number")
       .map((entry) => ({ x: entry.activity!.steps as number, y: entry.painNRS }));
     return {
       sleep: { r: computePearson(sleepPairs), n: sleepPairs.length },
       steps: { r: computePearson(stepsPairs), n: stepsPairs.length },
     };
-  }, [annotatedDailyEntries, dailyEntries]);
+  }, [annotatedDailyEntries, derivedDailyEntries]);
 
   const backupPayload = useMemo<BackupPayload>(
     () => ({
       version: 1,
       exportedAt: new Date().toISOString(),
-      dailyEntries,
+      dailyEntries: derivedDailyEntries,
       weeklyReports,
       monthlyEntries,
       featureFlags,
     }),
-    [dailyEntries, weeklyReports, monthlyEntries, featureFlags]
+    [derivedDailyEntries, weeklyReports, monthlyEntries, featureFlags]
   );
 
   const urinaryTrendData = useMemo(() => {
@@ -3492,6 +3749,55 @@ export default function HomePage() {
   const isHomeView = activeView === "home";
   const currentDataView = isHomeView ? "daily" : activeView;
 
+  useEffect(() => {
+    if (activeView !== "daily") {
+      setDailyActiveCategory("overview");
+    }
+  }, [activeView]);
+
+  const dailyCategoryButtons: Array<{
+    id: Exclude<DailyCategoryId, "overview">;
+    title: string;
+    description: string;
+  }> = [
+    { id: "pain", title: "Schmerzen heute", description: "Körperkarte, Intensität & Auswirkungen" },
+    { id: "symptoms", title: "Symptome", description: "Typische Endometriose-Symptome dokumentieren" },
+    {
+      id: "bleeding",
+      title: `${TERMS.bleeding_active.label} & ${TERMS.pbac.label}`,
+      description: "Blutung, PBAC-Score & Begleitsymptome",
+    },
+    { id: "medication", title: TERMS.meds.label, description: "Eingenommene Medikamente & Hilfen" },
+    { id: "sleep", title: "Schlaf", description: "Dauer, Qualität & Aufwachphasen" },
+    { id: "bowelBladder", title: "Darm & Blase", description: "Verdauung & Blase im Blick behalten" },
+    { id: "notes", title: "Notizen & Tags", description: "Freitextnotizen und Tags ergänzen" },
+    { id: "optional", title: "Optionale Werte", description: "Hilfsmittel- & Wearable-Daten erfassen" },
+  ];
+
+  const dailyScopeKey = dailyDraft.date ? `daily:${dailyDraft.date}` : null;
+  const dailySectionCompletion = useMemo<Record<string, boolean>>(
+    () => (dailyScopeKey ? sectionCompletionState[dailyScopeKey] ?? {} : {}),
+    [dailyScopeKey, sectionCompletionState]
+  );
+
+  const dailyCategoryCompletionTitles: Partial<Record<Exclude<DailyCategoryId, "overview">, string>> = {
+    pain: "Schmerzen heute",
+    symptoms: "Typische Endometriose-Symptome",
+    bleeding: `${TERMS.bleeding_active.label} & ${TERMS.pbac.label}`,
+    medication: TERMS.meds.label,
+    sleep: "Schlaf",
+    bowelBladder: "Darm & Blase",
+  };
+
+  const dailyCategoryCompletion = dailyCategoryButtons.reduce(
+    (acc, category) => {
+      const sectionTitle = dailyCategoryCompletionTitles[category.id];
+      acc[category.id] = sectionTitle ? Boolean(dailySectionCompletion[sectionTitle]) : false;
+      return acc;
+    },
+    {} as Record<Exclude<DailyCategoryId, "overview">, boolean>
+  );
+
   useLayoutEffect(() => {
     if (isHomeView) {
       return;
@@ -3551,7 +3857,13 @@ export default function HomePage() {
             <Button
               type="button"
               variant="ghost"
-              onClick={() => setActiveView("home")}
+              onClick={() => {
+                if (activeView === "daily" && dailyActiveCategory !== "overview") {
+                  setDailyActiveCategory("overview");
+                  return;
+                }
+                setActiveView("home");
+              }}
               className="flex items-center gap-2 text-rose-700 hover:text-rose-800"
             >
               <ChevronLeft className="h-4 w-4" /> Zurück
@@ -3651,7 +3963,10 @@ export default function HomePage() {
               <div className="grid gap-3 sm:grid-cols-3">
                 <Button
                   type="button"
-                  onClick={() => setActiveView("daily")}
+                  onClick={() => {
+                    setDailyActiveCategory("overview");
+                    setActiveView("daily");
+                  }}
                   className="h-auto w-full flex-col items-start justify-start gap-2 rounded-2xl bg-rose-600 px-6 py-5 text-left text-white shadow-lg transition hover:bg-rose-500 sm:col-span-3 lg:col-span-2"
                 >
                   <span className="text-lg font-semibold">Täglicher Check-in</span>
@@ -3784,13 +4099,95 @@ export default function HomePage() {
                   <SectionScopeContext.Provider value={`daily:${dailyDraft.date}`}>
           <Section
             title="Tagescheck-in"
-            description="Schmerz → Körperkarte → Symptome → Blutung → Medikation → Schlaf → Darm/Blase → Notizen"
-            aside={<Badge className="bg-rose-200 text-rose-700">max. 60 Sekunden</Badge>}
             variant="plain"
             completionEnabled={false}
+            hideHeader
           >
             <div className="space-y-6">
-              <div className="space-y-6">
+              <div className={cn("space-y-6", dailyActiveCategory === "overview" ? "" : "hidden")}>
+                <div className="rounded-xl border border-rose-100 bg-white p-4 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <CalendarDays className="h-6 w-6 flex-shrink-0 text-rose-500" />
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-rose-400">Ausgewählter Tag</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-semibold text-rose-700">
+                            {selectedDateLabel ?? "Bitte Datum wählen"}
+                          </span>
+                          {selectedCycleDay !== null && (
+                            <Badge className="flex-shrink-0 bg-rose-200 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
+                              ZT {selectedCycleDay}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("date")}>
+                      Datum bearbeiten
+                    </Button>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <p className="text-sm font-semibold text-rose-800">Kategorien</p>
+                  <div className="grid gap-2">
+                    {dailyCategoryButtons.map((category) => {
+                      const isCompleted = dailyCategoryCompletion[category.id] ?? false;
+                      return (
+                        <Button
+                          key={category.id}
+                          type="button"
+                          variant="outline"
+                          onClick={() => setDailyActiveCategory(category.id)}
+                          className="flex h-auto w-full items-center justify-between gap-3 rounded-xl border-rose-200 bg-white px-4 py-3 text-left text-rose-800 transition hover:border-rose-300 hover:text-rose-900"
+                        >
+                          <div className="flex flex-1 flex-col gap-2 text-left">
+                            <span className="text-sm font-semibold">{category.title}</span>
+                            <span className="text-xs text-rose-600">{category.description}</span>
+                            {isCompleted ? (
+                              <span className="mt-1 inline-flex items-center gap-2 self-start rounded-full bg-emerald-100 px-3 py-1.5 text-sm font-semibold text-emerald-700">
+                                <CheckCircle2 className="h-4 w-4" /> abgeschlossen
+                              </span>
+                            ) : null}
+                          </div>
+                          <ChevronRight className="h-4 w-4 text-rose-500" />
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button type="button" onClick={handleDailySubmit} disabled={!isDailyDirty}>
+                    Tagesdaten speichern
+                  </Button>
+                  {(draftStatus || dailySaveNotice) && (
+                    <div className="flex items-center gap-2">
+                      {draftStatus && (
+                        <span
+                          className={cn(
+                            "text-sm",
+                            draftStatus === "Wiederhergestellt" ? "text-sky-600" : "text-emerald-600"
+                          )}
+                        >
+                          {draftStatus}
+                        </span>
+                      )}
+                      {dailySaveNotice && (
+                        <span className="text-sm text-amber-600">{dailySaveNotice}</span>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {[3, 6, 12].map((months) => (
+                      <Button key={months} type="button" variant="outline" onClick={() => handleReportDownload(months)}>
+                        {months} Monate PDF
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className={cn("space-y-6", dailyActiveCategory === "date" ? "" : "hidden")}>
                 <div className="grid gap-4">
                   <Label className="text-sm font-medium text-rose-800">Datum</Label>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
@@ -3839,7 +4236,8 @@ export default function HomePage() {
                         type="date"
                         value={dailyDraft.date}
                         onChange={(event) =>
-                          selectDailyDate(event.target.value, { manual: true })}
+                          selectDailyDate(event.target.value, { manual: true })
+                        }
                         className="w-full max-w-[11rem]"
                         max={today}
                         aria-label="Datum direkt auswählen"
@@ -3857,10 +4255,18 @@ export default function HomePage() {
                   )}
                   {renderIssuesForPath("date")}
                 </div>
+                <div className="flex justify-end">
+                  <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("overview")}>
+                    Fertig
+                  </Button>
+                </div>
+              </div>
 
+              <div className={cn("space-y-6", dailyActiveCategory === "pain" ? "" : "hidden")}> 
                 <Section
                   title="Schmerzen heute"
                   description="Zuerst betroffene Körperbereiche wählen, anschließend Intensität und Schmerzart je Region erfassen"
+                  onComplete={() => setDailyActiveCategory("overview")}
                 >
                   <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                     <div className="space-y-6">
@@ -3873,6 +4279,91 @@ export default function HomePage() {
                         {renderIssuesForPath("painRegions")}
                         {renderIssuesForPath("painMapRegionIds")}
                       </TermField>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="space-y-4 rounded-lg border border-rose-100 bg-white p-4">
+                        <div className="space-y-3">
+                          <p className="font-medium text-rose-800">Ausgewählte Bereiche</p>
+                          <div className="flex flex-wrap gap-2">
+                            {(dailyDraft.painRegions ?? []).map((region) => (
+                              <Badge
+                                key={region.regionId}
+                                className="flex items-center gap-2 bg-rose-100 px-3 py-1 text-xs font-medium text-rose-700"
+                              >
+                                <span>{getRegionLabel(region.regionId)}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => removePainRegion(region.regionId)}
+                                  className="text-[10px] uppercase tracking-wide text-rose-500 hover:text-rose-700"
+                                >
+                                  entfernen
+                                </button>
+                              </Badge>
+                            ))}
+                            {(dailyDraft.painRegions ?? []).length === 0 && (
+                              <span className="text-sm text-rose-500">Bitte mindestens einen Bereich wählen.</span>
+                            )}
+                          </div>
+                        </div>
+                        {dailyDraft.painRegions?.map((region, index) => (
+                          <div key={region.regionId} className="space-y-4 rounded-lg border border-rose-100 bg-rose-50 p-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <p className="font-medium text-rose-800">{getRegionLabel(region.regionId)}</p>
+                                <InfoTip tech={TERMS.bodyMap.label} help={TERMS.bodyMap.help} />
+                              </div>
+                              <div className="flex items-center gap-2 text-xs text-rose-500">
+                                <button
+                                  type="button"
+                                  onClick={() => focusPainRegion(region.regionId)}
+                                  className="uppercase tracking-wide hover:text-rose-700"
+                                >
+                                  Fokus
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removePainRegion(region.regionId)}
+                                  className="uppercase tracking-wide hover:text-rose-700"
+                                >
+                                  Entfernen
+                                </button>
+                              </div>
+                            </div>
+                            <div className="space-y-3">
+                              <Label className="text-xs text-rose-600">Intensität (0–10)</Label>
+                              <Slider
+                                value={[region.nrs ?? 0]}
+                                min={0}
+                                max={10}
+                                step={1}
+                                onValueChange={([value]) => updatePainRegionNrs(index, value ?? 0)}
+                              />
+                              <SliderValueDisplay value={region.nrs ?? 0} label="Aktueller Wert" />
+                              {renderIssuesForPath(`painRegions[${index}].nrs`)}
+                            </div>
+                            <div className="space-y-3">
+                              <Label className="text-xs text-rose-600">Schmerzqualität</Label>
+                              <Select
+                                value={(region.qualities ?? [])[0] ?? ""}
+                                onValueChange={(value) => updatePainRegionQuality(index, value)}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Auswählen" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {(region.regionId === HEAD_REGION_ID ? HEAD_PAIN_QUALITIES : ALL_PAIN_QUALITIES).map((quality) => (
+                                    <SelectItem key={quality} value={quality}>
+                                      {quality}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              {renderIssuesForPath(`painRegions[${index}].qualities`)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
 
                       <TermField termKey="nrs">
                         <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4">
@@ -3893,76 +4384,15 @@ export default function HomePage() {
                       </TermField>
                       {renderIssuesForPath("impactNRS")}
                     </div>
-
-                    <div className="space-y-4">
-                      <TermField termKey="ovulationPain">
-                        <div className="space-y-3">
-                          <Select
-                            value={dailyDraft.ovulationPain?.side ?? ""}
-                            onValueChange={(value) =>
-                              setDailyDraft((prev) => {
-                                if (!value) {
-                                  if (!prev.ovulationPain) {
-                                    return prev;
-                                  }
-                                  return { ...prev, ovulationPain: undefined };
-                                }
-                                return {
-                                  ...prev,
-                                  ovulationPain: {
-                                    side: value as NonNullable<DailyEntry["ovulationPain"]>["side"],
-                                    intensity: prev.ovulationPain?.intensity,
-                                  },
-                                };
-                              })
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Auswählen" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="">Keine Auswahl</SelectItem>
-                              <SelectItem value="links">Links</SelectItem>
-                              <SelectItem value="rechts">Rechts</SelectItem>
-                              <SelectItem value="beidseitig">Beidseitig</SelectItem>
-                              <SelectItem value="unsicher">Unsicher</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          {renderIssuesForPath("ovulationPain.side")}
-                          {dailyDraft.ovulationPain?.side ? (
-                            <>
-                              <ScoreInput
-                                id="ovulation-pain-intensity"
-                                label="Intensität (0–10)"
-                                value={dailyDraft.ovulationPain?.intensity ?? 0}
-                                onChange={(value) =>
-                                  setDailyDraft((prev) => {
-                                    const side = prev.ovulationPain?.side;
-                                    if (!side) {
-                                      return prev;
-                                    }
-                                    return {
-                                      ...prev,
-                                      ovulationPain: {
-                                        side,
-                                        intensity: Math.max(0, Math.min(10, Math.round(value))),
-                                      },
-                                    };
-                                  })
-                                }
-                              />
-                              {renderIssuesForPath("ovulationPain.intensity")} 
-                            </>
-                          ) : null}
-                        </div>
-                      </TermField>
-                    </div>
                   </div>
                 </Section>
+              </div>
 
+              <div className={cn("space-y-6", dailyActiveCategory === "symptoms" ? "" : "hidden")}> 
                 <Section
                   title="Typische Endometriose-Symptome"
                   description="Je Symptom: Ja/Nein plus Stärke auf der 0–10 Skala"
+                  onComplete={() => setDailyActiveCategory("overview")}
                 >
                   <div className="grid gap-4">
                     {SYMPTOM_ITEMS.map((item) => {
@@ -4039,8 +4469,13 @@ export default function HomePage() {
                     })}
                   </div>
                 </Section>
+              </div>
 
-                <Section title={`${TERMS.bleeding_active.label} & ${TERMS.pbac.label}`}>
+              <div className={cn("space-y-6", dailyActiveCategory === "bleeding" ? "" : "hidden")}> 
+                <Section
+                  title={`${TERMS.bleeding_active.label} & ${TERMS.pbac.label}`}
+                  onComplete={() => setDailyActiveCategory("overview")}
+                >
                   <div className="flex flex-wrap items-center gap-3">
                     <TermHeadline termKey="bleeding_active" />
                     <Switch
@@ -4125,59 +4560,42 @@ export default function HomePage() {
                       </div>
                       <div className="space-y-4">
                         <TermHeadline termKey="clots" />
-                        <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="grid gap-4 sm:grid-cols-2">
                           {PBAC_CLOT_ITEMS.map((item) => {
                             const value = pbacCounts[item.id] ?? 0;
-                            const max = item.id === "clot_small" ? 15 : 5;
-                            const labelHint =
-                              item.id === "clot_small"
-                                ? "Kleine, meist weichere Klümpchen im Blut, etwa erbsen- bis kirschgroß. Zähle jeden, den du deutlich erkennst."
-                                : "Deutlich größere, kompaktere Klumpen, oft dunkler. Notiere jede sichtbare Einheit, auch wenn mehrere in kurzer Zeit kommen.";
-                            const label = `${item.label} – ${labelHint}`;
                             const sliderId = `${item.id}-slider`;
                             const sliderHintId = `${item.id}-slider-hint`;
-
                             return (
-                              <Labeled key={item.id} label={label} htmlFor={sliderId}>
+                              <Labeled
+                                key={item.id}
+                                label={item.label}
+                                tech={TERMS.pbac.tech}
+                                help={TERMS.pbac.help}
+                                htmlFor={sliderId}
+                              >
                                 <div className="space-y-2">
                                   <Slider
                                     id={sliderId}
                                     min={0}
-                                    max={max}
+                                    max={6}
                                     step={1}
                                     value={[value]}
                                     onValueChange={([nextValue]) => {
-                                      const clampedValue = Math.min(max, Math.max(0, nextValue ?? 0));
+                                      const clampedValue = Math.min(6, Math.max(0, nextValue ?? 0));
                                       setPbacCounts((prev) => {
                                         if (prev[item.id] === clampedValue) {
                                           return prev;
                                         }
-                                        const updatedCounts: PbacCounts = {
-                                          ...prev,
-                                          [item.id]: clampedValue,
-                                        };
-                                        setDailyDraft((prevDraft) => ({
-                                          ...prevDraft,
-                                          bleeding: {
-                                            ...prevDraft.bleeding,
-                                            clots:
-                                              (updatedCounts.clot_small ?? 0) + (updatedCounts.clot_large ?? 0) > 0,
-                                          },
-                                        }));
-                                        return updatedCounts;
+                                        return { ...prev, [item.id]: clampedValue };
                                       });
                                     }}
                                     aria-describedby={sliderHintId}
                                   />
                                   <div id={sliderHintId} className="flex justify-between text-xs text-rose-600">
                                     <span>0</span>
-                                    <span>{max}</span>
+                                    <span>6</span>
                                   </div>
-                                  <SliderValueDisplay
-                                    value={value}
-                                    label="Aktuelle Anzahl"
-                                    className="w-full sm:w-auto"
-                                  />
+                                  <SliderValueDisplay value={value} label="Aktuelle Anzahl" className="w-full sm:w-auto" />
                                 </div>
                               </Labeled>
                             );
@@ -4241,8 +4659,14 @@ export default function HomePage() {
                     </div>
                   )}
                 </Section>
+              </div>
 
-                <Section title={TERMS.meds.label} description="Eingenommene Medikamente & Hilfen des Tages">
+              <div className={cn("space-y-6", dailyActiveCategory === "medication" ? "" : "hidden")}> 
+                <Section
+                  title={TERMS.meds.label}
+                  description="Eingenommene Medikamente & Hilfen des Tages"
+                  onComplete={() => setDailyActiveCategory("overview")}
+                >
                   <div className="grid gap-4">
                     <TermHeadline termKey="meds" />
                     {dailyDraft.meds.map((med, index) => (
@@ -4315,6 +4739,7 @@ export default function HomePage() {
                     <Button
                       type="button"
                       variant="secondary"
+                      className="justify-start"
                       onClick={() =>
                         setDailyDraft((prev) => ({
                           ...prev,
@@ -4344,8 +4769,14 @@ export default function HomePage() {
                     </div>
                   </div>
                 </Section>
+              </div>
 
-                <Section title="Schlaf" description="Kurzabfrage ohne Hilfsmittel">
+              <div className={cn("space-y-6", dailyActiveCategory === "sleep" ? "" : "hidden")}> 
+                <Section
+                  title="Schlaf"
+                  description="Kurzabfrage ohne Hilfsmittel"
+                  onComplete={() => setDailyActiveCategory("overview")}
+                >
                   <div className="grid gap-4 md:grid-cols-3">
                     <TermField termKey="sleep_hours" htmlFor="sleep-hours">
                       <Input
@@ -4403,8 +4834,14 @@ export default function HomePage() {
                     </TermField>
                   </div>
                 </Section>
+              </div>
 
-                <Section title="Darm & Blase" description="Situativ erfassbar">
+              <div className={cn("space-y-6", dailyActiveCategory === "bowelBladder" ? "" : "hidden")}> 
+                <Section
+                  title="Darm & Blase"
+                  description="Situativ erfassbar"
+                  onComplete={() => setDailyActiveCategory("overview")}
+                >
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="grid gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
                       <p className="font-medium text-rose-800">Darm</p>
@@ -4603,7 +5040,10 @@ export default function HomePage() {
                                 onChange={(value) =>
                                   setDailyDraft((prev) => ({
                                     ...prev,
-                                    urinaryOpt: { ...(prev.urinaryOpt ?? {}), leaksCount: value },
+                                    urinaryOpt: {
+                                      ...(prev.urinaryOpt ?? {}),
+                                      leaksCount: value ?? undefined,
+                                    },
                                   }))
                                 }
                               />
@@ -4612,69 +5052,70 @@ export default function HomePage() {
                           </div>
                           <div className="space-y-1">
                             <Labeled
-                              label={MODULE_TERMS.urinaryOpt.nocturia.label}
-                              tech={MODULE_TERMS.urinaryOpt.nocturia.tech}
-                              help={MODULE_TERMS.urinaryOpt.nocturia.help}
-                              htmlFor="urinary-opt-nocturia"
+                              label={MODULE_TERMS.urinaryOpt.padsCount.label}
+                              tech={MODULE_TERMS.urinaryOpt.padsCount.tech}
+                              help={MODULE_TERMS.urinaryOpt.padsCount.help}
+                              htmlFor="urinary-opt-pads"
                             >
                               <NumberField
-                                id="urinary-opt-nocturia"
-                                value={dailyDraft.urinaryOpt?.nocturia}
+                                id="urinary-opt-pads"
+                                value={dailyDraft.urinaryOpt?.padsCount}
                                 onChange={(value) =>
                                   setDailyDraft((prev) => ({
                                     ...prev,
-                                    urinaryOpt: { ...(prev.urinaryOpt ?? {}), nocturia: value },
+                                    urinaryOpt: {
+                                      ...(prev.urinaryOpt ?? {}),
+                                      padsCount: value ?? undefined,
+                                    },
                                   }))
                                 }
                               />
                             </Labeled>
-                            {renderIssuesForPath("urinaryOpt.nocturia")}
+                            {renderIssuesForPath("urinaryOpt.padsCount")}
                           </div>
                         </div>
                       ) : null}
                     </div>
                   </div>
-                </Section>
-
-                {activeUrinary && (
-                  <Section title="Blase/Drang (Modul)" description="Fokus auf Drang und Leckagen (Opt-in)">
-                    <div className="grid gap-4">
-                      <div className="space-y-1">
-                        <Labeled
-                          label={MODULE_TERMS.urinaryOpt.urgency.label}
-                          tech={MODULE_TERMS.urinaryOpt.urgency.tech}
-                          help={MODULE_TERMS.urinaryOpt.urgency.help}
-                          htmlFor="urinary-opt-urgency"
-                        >
-                          <NrsInput
-                            id="urinary-opt-urgency"
-                            value={dailyDraft.urinaryOpt?.urgency ?? 0}
-                            onChange={(value) =>
-                              setDailyDraft((prev) => ({
-                                ...prev,
-                                urinaryOpt: { ...(prev.urinaryOpt ?? {}), urgency: value },
-                              }))
-                            }
-                          />
-                        </Labeled>
-                        {renderIssuesForPath("urinaryOpt.urgency")}
-                      </div>
-                    </div>
-                  </Section>
-                )}
-
-                {activeDizziness && (
-                  <Section title="Schwindel (Modul)" description="Präsenz, Stärke und Orthostatik">
-                    <div className="space-y-4">
+                  {renderIssuesForPath("urinaryOpt.leaksCount")}
+                  {renderIssuesForPath("urinaryOpt.padsCount")}
+                  <ModuleToggleRow
+                    label="Blasensymptome"
+                    tech={MODULE_TERMS.urinaryOpt.present.tech}
+                    help={MODULE_TERMS.urinaryOpt.present.help}
+                    checked={activeUrinary}
+                    onCheckedChange={(checked) => handleFeatureToggle("moduleUrinary", checked)}
+                    className="hidden"
+                  />
+                  <ModuleToggleRow
+                    label={MODULE_TERMS.urinaryOpt.present.label}
+                    tech={MODULE_TERMS.urinaryOpt.present.tech}
+                    help={MODULE_TERMS.urinaryOpt.present.help}
+                    checked={dailyDraft.urinaryOpt?.present ?? false}
+                    onCheckedChange={(checked) =>
+                      setDailyDraft((prev) => ({
+                        ...prev,
+                        urinaryOpt: {
+                          ...(prev.urinaryOpt ?? {}),
+                          present: checked,
+                        },
+                      }))
+                    }
+                    className="hidden"
+                  />
+                  {renderIssuesForPath("urinaryOpt.present")}
+                  <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <label className="flex items-center gap-2 text-sm text-rose-800">
                         <Checkbox
                           checked={dailyDraft.dizzinessOpt?.present ?? false}
                           onChange={(event) =>
                             setDailyDraft((prev) => ({
                               ...prev,
-                              dizzinessOpt: event.target.checked
-                                ? { ...(prev.dizzinessOpt ?? {}), present: true, nrs: prev.dizzinessOpt?.nrs ?? 0 }
-                                : { present: false },
+                              dizzinessOpt: {
+                                ...(prev.dizzinessOpt ?? {}),
+                                present: event.target.checked,
+                              },
                             }))
                           }
                         />
@@ -4684,61 +5125,63 @@ export default function HomePage() {
                           help={MODULE_TERMS.dizzinessOpt.present.help}
                         />
                       </label>
-                      {renderIssuesForPath("dizzinessOpt.present")}
-                      {dailyDraft.dizzinessOpt?.present && (
-                        <div className="space-y-3">
-                          {showDizzinessNotice && (
-                            <InlineNotice
-                              title="Schwindel an starken Blutungstagen"
-                              text="Mehrfacher Schwindel bei starker Blutung – ärztliche Abklärung (Eisenstatus) erwägen."
-                            />
-                          )}
-                          <div className="space-y-1">
-                            <Labeled
-                              label={MODULE_TERMS.dizzinessOpt.nrs.label}
-                              tech={MODULE_TERMS.dizzinessOpt.nrs.tech}
-                              help={MODULE_TERMS.dizzinessOpt.nrs.help}
-                              htmlFor="dizziness-opt-nrs"
-                            >
-                              <NrsInput
-                                id="dizziness-opt-nrs"
-                                value={dailyDraft.dizzinessOpt?.nrs ?? 0}
-                                onChange={(value) =>
-                                  setDailyDraft((prev) => ({
-                                    ...prev,
-                                    dizzinessOpt: { ...(prev.dizzinessOpt ?? {}), nrs: value },
-                                  }))
-                                }
-                              />
-                            </Labeled>
-                            {renderIssuesForPath("dizzinessOpt.nrs")}
-                          </div>
-                          <label className="flex items-center gap-2 text-sm text-rose-800">
-                            <Checkbox
-                              checked={dailyDraft.dizzinessOpt?.orthostatic ?? false}
-                              onChange={(event) =>
+                    </div>
+                    {renderIssuesForPath("dizzinessOpt.present")}
+                    {dailyDraft.dizzinessOpt?.present && (
+                      <div className="space-y-3">
+                        {showDizzinessNotice && (
+                          <InlineNotice
+                            title="Schwindel an starken Blutungstagen"
+                            text="Mehrfacher Schwindel bei starker Blutung – ärztliche Abklärung (Eisenstatus) erwägen."
+                          />
+                        )}
+                        <div className="space-y-1">
+                          <Labeled
+                            label={MODULE_TERMS.dizzinessOpt.nrs.label}
+                            tech={MODULE_TERMS.dizzinessOpt.nrs.tech}
+                            help={MODULE_TERMS.dizzinessOpt.nrs.help}
+                            htmlFor="dizziness-opt-nrs"
+                          >
+                            <NrsInput
+                              id="dizziness-opt-nrs"
+                              value={dailyDraft.dizzinessOpt?.nrs ?? 0}
+                              onChange={(value) =>
                                 setDailyDraft((prev) => ({
                                   ...prev,
-                                  dizzinessOpt: {
-                                    ...(prev.dizzinessOpt ?? {}),
-                                    orthostatic: event.target.checked,
-                                  },
+                                  dizzinessOpt: { ...(prev.dizzinessOpt ?? {}), nrs: value },
                                 }))
                               }
                             />
-                            <span>{MODULE_TERMS.dizzinessOpt.orthostatic.label}</span>
-                            <InfoTip
-                              tech={MODULE_TERMS.dizzinessOpt.orthostatic.tech ?? MODULE_TERMS.dizzinessOpt.orthostatic.label}
-                              help={MODULE_TERMS.dizzinessOpt.orthostatic.help}
-                            />
-                          </label>
-                          {renderIssuesForPath("dizzinessOpt.orthostatic")}
+                          </Labeled>
+                          {renderIssuesForPath("dizzinessOpt.nrs")}
                         </div>
-                      )}
-                    </div>
-                  </Section>
-                )}
+                        <label className="flex items-center gap-2 text-sm text-rose-800">
+                          <Checkbox
+                            checked={dailyDraft.dizzinessOpt?.orthostatic ?? false}
+                            onChange={(event) =>
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                dizzinessOpt: {
+                                  ...(prev.dizzinessOpt ?? {}),
+                                  orthostatic: event.target.checked,
+                                },
+                              }))
+                            }
+                          />
+                          <span>{MODULE_TERMS.dizzinessOpt.orthostatic.label}</span>
+                          <InfoTip
+                            tech={MODULE_TERMS.dizzinessOpt.orthostatic.tech ?? MODULE_TERMS.dizzinessOpt.orthostatic.label}
+                            help={MODULE_TERMS.dizzinessOpt.orthostatic.help}
+                          />
+                        </label>
+                        {renderIssuesForPath("dizzinessOpt.orthostatic")}
+                      </div>
+                    )}
+                  </div>
+                </Section>
+              </div>
 
+              <div className={cn("space-y-6", dailyActiveCategory === "notes" ? "" : "hidden")}>
                 <Section
                   title="Notizen & Tags"
                   description="Freitext oder wiederkehrende Muster markieren"
@@ -4778,7 +5221,9 @@ export default function HomePage() {
                     </TermField>
                   </div>
                 </Section>
+              </div>
 
+              <div className={cn("space-y-6", dailyActiveCategory === "optional" ? "" : "hidden")}> 
                 <Section
                   title="Optionale Werte (Hilfsmittel nötig)"
                   description="Standardmäßig ausgeblendet – Wearables, LH-Tests, BBT"
@@ -4936,39 +5381,7 @@ export default function HomePage() {
                     </div>
                   )}
                 </Section>
-
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button type="button" onClick={handleDailySubmit} disabled={!isDailyDirty}>
-                    Tagesdaten speichern
-                  </Button>
-                  {(draftStatus || dailySaveNotice) && (
-                    <div className="flex items-center gap-2">
-                      {draftStatus && (
-                        <span
-                          className={cn(
-                            "text-sm",
-                            draftStatus === "Wiederhergestellt" ? "text-sky-600" : "text-emerald-600"
-                          )}
-                        >
-                          {draftStatus}
-                        </span>
-                      )}
-                      {dailySaveNotice && (
-                        <span className="text-sm text-amber-600">{dailySaveNotice}</span>
-                      )}
-                    </div>
-                  )}
-                  <div className="flex flex-wrap items-center gap-2">
-                    {[3, 6, 12].map((months) => (
-                      <Button key={months} type="button" variant="outline" onClick={() => handleReportDownload(months)}>
-                        {months} Monate PDF
-                      </Button>
-                    ))}
-                  </div>
-                </div>
               </div>
-
-
             </div>
           </Section>
                   </SectionScopeContext.Provider>
@@ -5013,6 +5426,31 @@ export default function HomePage() {
                       <YAxis yAxisId="right" orientation="right" domain={[0, 300]} stroke="#6366f1" tick={{ fontSize: 12 }} />
                       <Tooltip content={<ChartTooltip />} />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
+                      {painTrendCycleStarts.map((item) => {
+                        const xValue = trendXAxisMode === "date" ? item.date : item.cycleLabel;
+                        return (
+                          <ReferenceLine
+                            key={`cycle-start-line-${item.date}`}
+                            x={xValue}
+                            stroke="#ef4444"
+                            strokeDasharray="4 2"
+                            isFront
+                          />
+                        );
+                      })}
+                      {painTrendCycleStarts.map((item) => {
+                        const xValue = trendXAxisMode === "date" ? item.date : item.cycleLabel;
+                        return (
+                          <ReferenceDot
+                            key={`cycle-start-dot-${item.date}`}
+                            x={xValue}
+                            y={9.5}
+                            yAxisId="left"
+                            isFront
+                            shape={<CycleStartDrop />}
+                          />
+                        );
+                      })}
                       <Line
                         type="monotone"
                         dataKey="pain"
@@ -5160,7 +5598,7 @@ export default function HomePage() {
                 completionEnabled={false}
               >
                 <div className="space-y-3">
-                  {dailyEntries
+                  {derivedDailyEntries
                     .slice()
                     .sort((a, b) => b.date.localeCompare(a.date))
                     .slice(0, 7)
@@ -5283,7 +5721,7 @@ export default function HomePage() {
           <SectionScopeContext.Provider value={`weekly:${weeklyScopeIsoWeek}`}>
           {weeklyReportsReady ? (
             <WeeklyTabShell
-              dailyEntries={dailyEntries}
+              dailyEntries={derivedDailyEntries}
               currentIsoWeek={currentIsoWeek}
               onSelectionChange={setWeeklyIsoWeek}
             />

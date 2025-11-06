@@ -139,6 +139,11 @@ export const TERMS = {
   notesTags: { label: "Schlagworte/Trigger", help: "Kurze Begriffe für Muster & Filter" },
   notesFree: { label: "Notizen", help: "Freier Text für Besonderheiten" },
   urinaryOpt: {
+    present: {
+      label: "Blasensymptome heute?",
+      tech: "Blasensymptome",
+      help: "Gab es Beschwerden wie starken Drang oder Schmerzen?",
+    },
     urgency: {
       label: "Harndrang (0–10)",
       tech: "Dranginkontinenz/LUTS",
@@ -153,6 +158,11 @@ export const TERMS = {
       label: "Nächtliche Toilettengänge",
       tech: "Nykturie",
       help: "Wie oft nachts urinieren?",
+    },
+    padsCount: {
+      label: "Schutzwechsel (Anzahl)",
+      tech: "Anzahl Binden/Slipeinlagen",
+      help: "Wie oft musstest du heute Schutz (Pad/Tampon) wechseln?",
     },
   },
   headacheOpt: {
