@@ -741,6 +741,8 @@ function Section({
   children,
   completionEnabled = true,
   variant = "card",
+  onComplete,
+  hideHeader = false,
 }: {
   title: string;
   description?: string;
@@ -748,6 +750,8 @@ function Section({
   children: ReactNode;
   completionEnabled?: boolean;
   variant?: "card" | "plain";
+  onComplete?: () => void;
+  hideHeader?: boolean;
 }) {
   const scope = useContext(SectionScopeContext);
   const completionContext = useContext(SectionCompletionContext);
@@ -815,20 +819,6 @@ function Section({
     setIsCompleted(true);
   }, [completedFromContext, completionEnabled]);
 
-  const scrollToNextSection = () => {
-    if (!cardRef.current) return;
-    const sections = Array.from(document.querySelectorAll<HTMLElement>("[data-section-card]"));
-    const currentIndex = sections.indexOf(cardRef.current);
-    if (currentIndex === -1) return;
-    for (let index = currentIndex + 1; index < sections.length; index += 1) {
-      const next = sections[index];
-      if (next) {
-        next.scrollIntoView({ behavior: "smooth", block: "start" });
-        break;
-      }
-    }
-  };
-
   const handleComplete = () => {
     if (!completionEnabled || isCompleted || showConfetti) return;
     setIsCompleted(true);
@@ -838,7 +828,9 @@ function Section({
     setShowConfetti(true);
     timeoutRef.current = window.setTimeout(() => {
       setShowConfetti(false);
-      scrollToNextSection();
+      if (onComplete) {
+        onComplete();
+      }
       timeoutRef.current = null;
     }, 400);
   };
@@ -856,13 +848,15 @@ function Section({
         variant === "card" && isCompleted ? "border-amber-200 shadow-md" : null
       )}
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <h2 className="text-base font-semibold text-rose-900">{title}</h2>
-          {description && <p className="text-sm text-rose-600">{description}</p>}
+      {!hideHeader ? (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <h2 className="text-base font-semibold text-rose-900">{title}</h2>
+            {description && <p className="text-sm text-rose-600">{description}</p>}
+          </div>
+          {aside ? <div className="flex-shrink-0 sm:self-start">{aside}</div> : null}
         </div>
-        {aside ? <div className="flex-shrink-0 sm:self-start">{aside}</div> : null}
-      </div>
+      ) : null}
       <div className="space-y-4">
         {children}
         {completionEnabled ? (
@@ -3766,7 +3760,6 @@ export default function HomePage() {
     title: string;
     description: string;
   }> = [
-    { id: "date", title: "Tagesdaten", description: "Datum & Zyklusinformationen festlegen" },
     { id: "pain", title: "Schmerzen heute", description: "Körperkarte, Intensität & Auswirkungen" },
     { id: "symptoms", title: "Symptome", description: "Typische Endometriose-Symptome dokumentieren" },
     {
@@ -3780,6 +3773,30 @@ export default function HomePage() {
     { id: "notes", title: "Notizen & Tags", description: "Freitextnotizen und Tags ergänzen" },
     { id: "optional", title: "Optionale Werte", description: "Hilfsmittel- & Wearable-Daten erfassen" },
   ];
+
+  const dailyScopeKey = dailyDraft.date ? `daily:${dailyDraft.date}` : null;
+  const dailySectionCompletion = useMemo<Record<string, boolean>>(
+    () => (dailyScopeKey ? sectionCompletionState[dailyScopeKey] ?? {} : {}),
+    [dailyScopeKey, sectionCompletionState]
+  );
+
+  const dailyCategoryCompletionTitles: Partial<Record<Exclude<DailyCategoryId, "overview">, string>> = {
+    pain: "Schmerzen heute",
+    symptoms: "Typische Endometriose-Symptome",
+    bleeding: `${TERMS.bleeding_active.label} & ${TERMS.pbac.label}`,
+    medication: TERMS.meds.label,
+    sleep: "Schlaf",
+    bowelBladder: "Darm & Blase",
+  };
+
+  const dailyCategoryCompletion = dailyCategoryButtons.reduce(
+    (acc, category) => {
+      const sectionTitle = dailyCategoryCompletionTitles[category.id];
+      acc[category.id] = sectionTitle ? Boolean(dailySectionCompletion[sectionTitle]) : false;
+      return acc;
+    },
+    {} as Record<Exclude<DailyCategoryId, "overview">, boolean>
+  );
 
   useLayoutEffect(() => {
     if (isHomeView) {
@@ -3840,7 +3857,13 @@ export default function HomePage() {
             <Button
               type="button"
               variant="ghost"
-              onClick={() => setActiveView("home")}
+              onClick={() => {
+                if (activeView === "daily" && dailyActiveCategory !== "overview") {
+                  setDailyActiveCategory("overview");
+                  return;
+                }
+                setActiveView("home");
+              }}
               className="flex items-center gap-2 text-rose-700 hover:text-rose-800"
             >
               <ChevronLeft className="h-4 w-4" /> Zurück
@@ -4076,10 +4099,9 @@ export default function HomePage() {
                   <SectionScopeContext.Provider value={`daily:${dailyDraft.date}`}>
           <Section
             title="Tagescheck-in"
-            description="Schmerz → Körperkarte → Symptome → Blutung → Medikation → Schlaf → Darm/Blase → Notizen"
-            aside={<Badge className="bg-rose-200 text-rose-700">max. 60 Sekunden</Badge>}
             variant="plain"
             completionEnabled={false}
+            hideHeader
           >
             <div className="space-y-6">
               <div className={cn("space-y-6", dailyActiveCategory === "overview" ? "" : "hidden")}>
@@ -4109,21 +4131,29 @@ export default function HomePage() {
                 <div className="space-y-3">
                   <p className="text-sm font-semibold text-rose-800">Kategorien</p>
                   <div className="grid gap-2">
-                    {dailyCategoryButtons.map((category) => (
-                      <Button
-                        key={category.id}
-                        type="button"
-                        variant="outline"
-                        onClick={() => setDailyActiveCategory(category.id)}
-                        className="flex h-auto w-full items-center justify-between gap-3 rounded-xl border-rose-200 px-4 py-3 text-left text-rose-800 transition hover:border-rose-300 hover:text-rose-900"
-                      >
-                        <div className="flex flex-col text-left">
-                          <span className="text-sm font-semibold">{category.title}</span>
-                          <span className="text-xs text-rose-600">{category.description}</span>
-                        </div>
-                        <ChevronRight className="h-4 w-4 text-rose-500" />
-                      </Button>
-                    ))}
+                    {dailyCategoryButtons.map((category) => {
+                      const isCompleted = dailyCategoryCompletion[category.id] ?? false;
+                      return (
+                        <Button
+                          key={category.id}
+                          type="button"
+                          variant="outline"
+                          onClick={() => setDailyActiveCategory(category.id)}
+                          className="flex h-auto w-full items-center justify-between gap-3 rounded-xl border-rose-200 bg-white px-4 py-3 text-left text-rose-800 transition hover:border-rose-300 hover:text-rose-900"
+                        >
+                          <div className="flex flex-1 flex-col gap-2 text-left">
+                            <span className="text-sm font-semibold">{category.title}</span>
+                            <span className="text-xs text-rose-600">{category.description}</span>
+                            {isCompleted ? (
+                              <span className="mt-1 inline-flex items-center gap-2 self-start rounded-full bg-emerald-100 px-3 py-1.5 text-sm font-semibold text-emerald-700">
+                                <CheckCircle2 className="h-4 w-4" /> abgeschlossen
+                              </span>
+                            ) : null}
+                          </div>
+                          <ChevronRight className="h-4 w-4 text-rose-500" />
+                        </Button>
+                      );
+                    })}
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
@@ -4232,10 +4262,11 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className={cn("space-y-6", dailyActiveCategory === "pain" ? "" : "hidden")}>
+              <div className={cn("space-y-6", dailyActiveCategory === "pain" ? "" : "hidden")}> 
                 <Section
                   title="Schmerzen heute"
                   description="Zuerst betroffene Körperbereiche wählen, anschließend Intensität und Schmerzart je Region erfassen"
+                  onComplete={() => setDailyActiveCategory("overview")}
                 >
                   <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                     <div className="space-y-6">
@@ -4355,17 +4386,13 @@ export default function HomePage() {
                     </div>
                   </div>
                 </Section>
-                <div className="flex justify-end">
-                  <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("overview")}>
-                    Fertig
-                  </Button>
-                </div>
               </div>
 
-              <div className={cn("space-y-6", dailyActiveCategory === "symptoms" ? "" : "hidden")}>
+              <div className={cn("space-y-6", dailyActiveCategory === "symptoms" ? "" : "hidden")}> 
                 <Section
                   title="Typische Endometriose-Symptome"
                   description="Je Symptom: Ja/Nein plus Stärke auf der 0–10 Skala"
+                  onComplete={() => setDailyActiveCategory("overview")}
                 >
                   <div className="grid gap-4">
                     {SYMPTOM_ITEMS.map((item) => {
@@ -4442,15 +4469,13 @@ export default function HomePage() {
                     })}
                   </div>
                 </Section>
-                <div className="flex justify-end">
-                  <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("overview")}>
-                    Fertig
-                  </Button>
-                </div>
               </div>
 
-              <div className={cn("space-y-6", dailyActiveCategory === "bleeding" ? "" : "hidden")}>
-                <Section title={`${TERMS.bleeding_active.label} & ${TERMS.pbac.label}`}>
+              <div className={cn("space-y-6", dailyActiveCategory === "bleeding" ? "" : "hidden")}> 
+                <Section
+                  title={`${TERMS.bleeding_active.label} & ${TERMS.pbac.label}`}
+                  onComplete={() => setDailyActiveCategory("overview")}
+                >
                   <div className="flex flex-wrap items-center gap-3">
                     <TermHeadline termKey="bleeding_active" />
                     <Switch
@@ -4634,15 +4659,14 @@ export default function HomePage() {
                     </div>
                   )}
                 </Section>
-                <div className="flex justify-end">
-                  <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("overview")}>
-                    Fertig
-                  </Button>
-                </div>
               </div>
 
-              <div className={cn("space-y-6", dailyActiveCategory === "medication" ? "" : "hidden")}>
-                <Section title={TERMS.meds.label} description="Eingenommene Medikamente & Hilfen des Tages">
+              <div className={cn("space-y-6", dailyActiveCategory === "medication" ? "" : "hidden")}> 
+                <Section
+                  title={TERMS.meds.label}
+                  description="Eingenommene Medikamente & Hilfen des Tages"
+                  onComplete={() => setDailyActiveCategory("overview")}
+                >
                   <div className="grid gap-4">
                     <TermHeadline termKey="meds" />
                     {dailyDraft.meds.map((med, index) => (
@@ -4745,15 +4769,14 @@ export default function HomePage() {
                     </div>
                   </div>
                 </Section>
-                <div className="flex justify-end">
-                  <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("overview")}>
-                    Fertig
-                  </Button>
-                </div>
               </div>
 
-              <div className={cn("space-y-6", dailyActiveCategory === "sleep" ? "" : "hidden")}>
-                <Section title="Schlaf" description="Kurzabfrage ohne Hilfsmittel">
+              <div className={cn("space-y-6", dailyActiveCategory === "sleep" ? "" : "hidden")}> 
+                <Section
+                  title="Schlaf"
+                  description="Kurzabfrage ohne Hilfsmittel"
+                  onComplete={() => setDailyActiveCategory("overview")}
+                >
                   <div className="grid gap-4 md:grid-cols-3">
                     <TermField termKey="sleep_hours" htmlFor="sleep-hours">
                       <Input
@@ -4811,15 +4834,14 @@ export default function HomePage() {
                     </TermField>
                   </div>
                 </Section>
-                <div className="flex justify-end">
-                  <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("overview")}>
-                    Fertig
-                  </Button>
-                </div>
               </div>
 
-              <div className={cn("space-y-6", dailyActiveCategory === "bowelBladder" ? "" : "hidden")}>
-                <Section title="Darm & Blase" description="Situativ erfassbar">
+              <div className={cn("space-y-6", dailyActiveCategory === "bowelBladder" ? "" : "hidden")}> 
+                <Section
+                  title="Darm & Blase"
+                  description="Situativ erfassbar"
+                  onComplete={() => setDailyActiveCategory("overview")}
+                >
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="grid gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
                       <p className="font-medium text-rose-800">Darm</p>
@@ -5157,11 +5179,6 @@ export default function HomePage() {
                     )}
                   </div>
                 </Section>
-                <div className="flex justify-end">
-                  <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("overview")}>
-                    Fertig
-                  </Button>
-                </div>
               </div>
 
               <div className={cn("space-y-6", dailyActiveCategory === "notes" ? "" : "hidden")}>
@@ -5204,14 +5221,9 @@ export default function HomePage() {
                     </TermField>
                   </div>
                 </Section>
-                <div className="flex justify-end">
-                  <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("overview")}>
-                    Fertig
-                  </Button>
-                </div>
               </div>
 
-              <div className={cn("space-y-6", dailyActiveCategory === "optional" ? "" : "hidden")}>
+              <div className={cn("space-y-6", dailyActiveCategory === "optional" ? "" : "hidden")}> 
                 <Section
                   title="Optionale Werte (Hilfsmittel nötig)"
                   description="Standardmäßig ausgeblendet – Wearables, LH-Tests, BBT"
@@ -5369,11 +5381,6 @@ export default function HomePage() {
                     </div>
                   )}
                 </Section>
-                <div className="flex justify-end">
-                  <Button type="button" variant="secondary" onClick={() => setDailyActiveCategory("overview")}>
-                    Fertig
-                  </Button>
-                </div>
               </div>
             </div>
           </Section>
