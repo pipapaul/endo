@@ -277,6 +277,79 @@ const BODY_REGION_GROUPS: { id: string; label: string; regions: BodyRegion[] }[]
   },
 ];
 
+const ABDOMEN_REGION_IDS = new Set(
+  (BODY_REGION_GROUPS.find((group) => group.id === "abdomen")?.regions ?? []).map((region) => region.id)
+);
+
+const clampScore = (value: number | undefined | null): number | null => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+  return Math.max(0, Math.min(10, Math.round(value)));
+};
+
+const computeMaxPainIntensity = (entry: DailyEntry): number | null => {
+  const intensities: number[] = [];
+  const impact = clampScore(entry.impactNRS);
+  if (impact !== null) {
+    intensities.push(impact);
+  }
+  const generalPain = clampScore(entry.painNRS);
+  if (generalPain !== null) {
+    intensities.push(generalPain);
+  }
+  (entry.painRegions ?? []).forEach((region) => {
+    const regionScore = clampScore(region?.nrs);
+    if (regionScore !== null) {
+      intensities.push(regionScore);
+    }
+  });
+  if (!intensities.length) {
+    return null;
+  }
+  return Math.max(...intensities);
+};
+
+const computePelvicPainOutsidePeriodIntensity = (entry: DailyEntry): number | null => {
+  const pelvicScores = (entry.painRegions ?? [])
+    .filter((region) => ABDOMEN_REGION_IDS.has(region.regionId))
+    .map((region) => clampScore(region?.nrs))
+    .filter((score): score is number => score !== null);
+  if (!pelvicScores.length) {
+    return null;
+  }
+  return Math.max(...pelvicScores);
+};
+
+const applyAutomatedPainSymptoms = (entry: DailyEntry): DailyEntry => {
+  const symptoms: DailyEntry["symptoms"] = { ...(entry.symptoms ?? {}) };
+  const result: DailyEntry = { ...entry, symptoms };
+
+  if (entry.bleeding.isBleeding) {
+    const maxPain = computeMaxPainIntensity(entry);
+    if (maxPain !== null && maxPain > 0) {
+      symptoms.dysmenorrhea = { present: true, score: maxPain };
+    } else {
+      delete symptoms.dysmenorrhea;
+    }
+    delete symptoms.pelvicPainNonMenses;
+  } else {
+    const pelvicPain = computePelvicPainOutsidePeriodIntensity(entry);
+    if (pelvicPain !== null && pelvicPain > 0) {
+      symptoms.pelvicPainNonMenses = { present: true, score: pelvicPain };
+    } else {
+      delete symptoms.pelvicPainNonMenses;
+    }
+    delete symptoms.dysmenorrhea;
+  }
+
+  if (Object.keys(symptoms).length === 0) {
+    result.symptoms = {};
+  }
+
+  return result;
+};
+
 const getRegionLabel = (regionId: string): string => {
   for (const group of BODY_REGION_GROUPS) {
     for (const region of group.regions) {
@@ -289,9 +362,7 @@ const getRegionLabel = (regionId: string): string => {
 };
 
 const SYMPTOM_ITEMS: { key: SymptomKey; termKey: TermKey }[] = [
-  { key: "dysmenorrhea", termKey: "dysmenorrhea" },
   { key: "deepDyspareunia", termKey: "deepDyspareunia" },
-  { key: "pelvicPainNonMenses", termKey: "pelvicPainNonMenses" },
   { key: "fatigue", termKey: "fatigue" },
   { key: "bloating", termKey: "bloating" },
 ];
@@ -1226,7 +1297,7 @@ function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>
     }
   }
 
-  return clone;
+  return applyAutomatedPainSymptoms(clone);
 }
 
 type RawWeeklyReport = Record<string, unknown> & { stats?: Record<string, unknown> };
@@ -1651,6 +1722,10 @@ export default function HomePage() {
   const [dailyEntries, setDailyEntries, dailyStorage] = usePersistentState<DailyEntry[]>("endo.daily.v2", []);
   const [monthlyEntries, setMonthlyEntries, monthlyStorage] = usePersistentState<MonthlyEntry[]>("endo.monthly.v2", []);
   const [featureFlags, setFeatureFlags, featureStorage] = usePersistentState<FeatureFlags>("endo.flags.v1", {});
+  const derivedDailyEntries = useMemo(
+    () => dailyEntries.map((entry) => applyAutomatedPainSymptoms(entry)),
+    [dailyEntries]
+  );
   const [sectionCompletionState, setSectionCompletionState, sectionCompletionStorage] =
     usePersistentState<SectionCompletionState>("endo.sectionCompletion.v1", {});
   const [sectionRegistry, setSectionRegistry] = useState<SectionRegistryState>({});
@@ -1861,7 +1936,7 @@ export default function HomePage() {
       if (options?.manual) {
         manualDailySelectionRef.current = true;
       }
-      const existingEntry = dailyEntries.find((entry) => entry.date === targetDate);
+      const existingEntry = derivedDailyEntries.find((entry) => entry.date === targetDate);
       const baseEntry = existingEntry ?? createEmptyDailyEntry(targetDate);
       const clonedEntry =
         typeof structuredClone === "function"
@@ -1870,7 +1945,7 @@ export default function HomePage() {
       setDailyDraft(clonedEntry);
       setLastSavedDailySnapshot(clonedEntry);
     },
-    [dailyEntries, setDailyDraft, setLastSavedDailySnapshot]
+    [derivedDailyEntries, setDailyDraft, setLastSavedDailySnapshot]
   );
 
   useEffect(() => {
@@ -1878,10 +1953,10 @@ export default function HomePage() {
     if (manualDailySelectionRef.current) return;
     if (isDailyDirty) return;
     if (dailyDraft.date >= today) return;
-    const hasDraftEntry = dailyEntries.some((entry) => entry.date === dailyDraft.date);
+    const hasDraftEntry = derivedDailyEntries.some((entry) => entry.date === dailyDraft.date);
     if (hasDraftEntry) return;
     selectDailyDate(today);
-  }, [storageReady, isDailyDirty, dailyDraft.date, dailyEntries, today, selectDailyDate]);
+  }, [storageReady, isDailyDirty, dailyDraft.date, derivedDailyEntries, today, selectDailyDate]);
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !("storage" in navigator) || !navigator.storage) {
@@ -2025,7 +2100,7 @@ export default function HomePage() {
   }, [dailyDraft.date]);
 
   const annotatedDailyEntries = useMemo(() => {
-    const sorted = dailyEntries.slice().sort((a, b) => a.date.localeCompare(b.date));
+    const sorted = derivedDailyEntries.slice().sort((a, b) => a.date.localeCompare(b.date));
     let cycleDay: number | null = null;
     let previousDate: Date | null = null;
     let previousBleeding = false;
@@ -2055,11 +2130,11 @@ export default function HomePage() {
       previousBleeding = isBleeding;
       return { entry, cycleDay: assignedCycleDay, weekday, symptomAverage };
     });
-  }, [dailyEntries]);
+  }, [derivedDailyEntries]);
 
   const selectedCycleDay = useMemo(() => {
     if (!dailyDraft.date) return null;
-    const entries = dailyEntries.slice();
+    const entries = derivedDailyEntries.slice();
     const draftIndex = entries.findIndex((entry) => entry.date === dailyDraft.date);
     if (draftIndex >= 0) {
       if (isDailyDirty) {
@@ -2095,7 +2170,7 @@ export default function HomePage() {
       previousBleeding = isBleeding;
     }
     return cycleDay;
-  }, [dailyEntries, dailyDraft, isDailyDirty]);
+  }, [derivedDailyEntries, dailyDraft, isDailyDirty]);
 
   const cycleOverview = useMemo((): CycleOverviewData | null => {
     if (!annotatedDailyEntries.length) {
@@ -2377,7 +2452,7 @@ export default function HomePage() {
   }, [dailyDraft.bleeding.isBleeding, pbacScore, setDailyDraft]);
 
   useEffect(() => {
-    const existingEntry = dailyEntries.find((entry) => entry.date === dailyDraft.date);
+    const existingEntry = derivedDailyEntries.find((entry) => entry.date === dailyDraft.date);
     if (!existingEntry) return;
     const serializedExisting = JSON.stringify(existingEntry);
     if (serializedExisting === JSON.stringify(lastSavedDailySnapshot)) {
@@ -2386,7 +2461,7 @@ export default function HomePage() {
     if (serializedExisting === JSON.stringify(dailyDraft)) {
       setLastSavedDailySnapshot(existingEntry);
     }
-  }, [dailyDraft, dailyEntries, lastSavedDailySnapshot]);
+  }, [dailyDraft, derivedDailyEntries, lastSavedDailySnapshot]);
 
   useEffect(() => {
     if (activeUrinary) {
@@ -2482,40 +2557,43 @@ export default function HomePage() {
 
   const buildDailyExportRow = useCallback(
     (entry: DailyEntry) => {
-      const symptomScores = Object.entries(entry.symptoms ?? {})
+      const normalizedEntry = applyAutomatedPainSymptoms(entry);
+      const symptomScores = Object.entries(normalizedEntry.symptoms ?? {})
         .map(([key, value]) => (value?.present && typeof value.score === "number" ? `${key}:${value.score}` : null))
         .filter(Boolean)
         .join(";");
       const row: Record<string, unknown> = {
-        Datum: entry.date,
-        [`${TERMS.nrs.label} (NRS)`]: entry.painNRS,
-        Schmerzarten: entry.painQuality.join(";"),
-        "Schmerzorte (IDs)": entry.painMapRegionIds.join(";"),
-        [`${TERMS.ovulationPain.label} – Seite`]: entry.ovulationPain?.side ?? "",
+        Datum: normalizedEntry.date,
+        [`${TERMS.nrs.label} (NRS)`]: normalizedEntry.painNRS,
+        Schmerzarten: normalizedEntry.painQuality.join(";"),
+        "Schmerzorte (IDs)": normalizedEntry.painMapRegionIds.join(";"),
+        [`${TERMS.ovulationPain.label} – Seite`]: normalizedEntry.ovulationPain?.side ?? "",
         [`${TERMS.ovulationPain.label} – Intensität`]:
-          typeof entry.ovulationPain?.intensity === "number" ? entry.ovulationPain.intensity : "",
-        [`${TERMS.pbac.label}`]: entry.bleeding.pbacScore ?? "",
+          typeof normalizedEntry.ovulationPain?.intensity === "number"
+            ? normalizedEntry.ovulationPain.intensity
+            : "",
+        [`${TERMS.pbac.label}`]: normalizedEntry.bleeding.pbacScore ?? "",
         "Symptom-Scores": symptomScores,
-        [`${TERMS.sleep_quality.label}`]: entry.sleep?.quality ?? "",
+        [`${TERMS.sleep_quality.label}`]: normalizedEntry.sleep?.quality ?? "",
         [`${TERMS.urinary_pain.label}`]:
-          entry.symptoms?.dysuria?.present && typeof entry.symptoms.dysuria.score === "number"
-            ? entry.symptoms.dysuria.score
+          normalizedEntry.symptoms?.dysuria?.present && typeof normalizedEntry.symptoms.dysuria?.score === "number"
+            ? normalizedEntry.symptoms.dysuria.score
             : "",
       };
       if (activeUrinary) {
-        row.urinary_urgency = entry.urinaryOpt?.urgency ?? "";
-        row.urinary_leaks = entry.urinaryOpt?.leaksCount ?? "";
-        row.urinary_nocturia = entry.urinaryOpt?.nocturia ?? "";
+        row.urinary_urgency = normalizedEntry.urinaryOpt?.urgency ?? "";
+        row.urinary_leaks = normalizedEntry.urinaryOpt?.leaksCount ?? "";
+        row.urinary_nocturia = normalizedEntry.urinaryOpt?.nocturia ?? "";
       }
       if (activeHeadache) {
-        row.headache_present = entry.headacheOpt?.present ?? false;
-        row.headache_nrs = entry.headacheOpt?.nrs ?? "";
-        row.headache_aura = entry.headacheOpt?.aura ?? false;
+        row.headache_present = normalizedEntry.headacheOpt?.present ?? false;
+        row.headache_nrs = normalizedEntry.headacheOpt?.nrs ?? "";
+        row.headache_aura = normalizedEntry.headacheOpt?.aura ?? false;
       }
       if (activeDizziness) {
-        row.dizziness_present = entry.dizzinessOpt?.present ?? false;
-        row.dizziness_nrs = entry.dizzinessOpt?.nrs ?? "";
-        row.dizziness_orthostatic = entry.dizzinessOpt?.orthostatic ?? false;
+        row.dizziness_present = normalizedEntry.dizzinessOpt?.present ?? false;
+        row.dizziness_nrs = normalizedEntry.dizzinessOpt?.nrs ?? "";
+        row.dizziness_orthostatic = normalizedEntry.dizzinessOpt?.orthostatic ?? false;
       }
       return row;
     },
@@ -2718,7 +2796,9 @@ export default function HomePage() {
       syncedDraft.painNRS = syncedDraft.impactNRS;
     }
 
-    const validationIssues = validateDailyEntry(syncedDraft);
+    const automatedDraft = applyAutomatedPainSymptoms(syncedDraft);
+
+    const validationIssues = validateDailyEntry(automatedDraft);
     setIssues(validationIssues);
     if (validationIssues.length) {
       setInfoMessage("Bitte prüfe die markierten Felder.");
@@ -2726,13 +2806,13 @@ export default function HomePage() {
     }
 
     setDailyEntries((prev) => {
-      const filtered = prev.filter((entry) => entry.date !== syncedDraft.date);
-      return [...filtered, syncedDraft].sort((a, b) => a.date.localeCompare(b.date));
+      const filtered = prev.filter((entry) => entry.date !== automatedDraft.date);
+      return [...filtered, automatedDraft].sort((a, b) => a.date.localeCompare(b.date));
     });
 
     setInfoMessage(null);
     setDailySaveNotice("Tagesdaten gespeichert.");
-    const nextDraft = syncedDraft;
+    const nextDraft = automatedDraft;
     setDailyDraft(nextDraft);
     setLastSavedDailySnapshot(nextDraft);
     setPainQualityOther("");
@@ -2875,7 +2955,7 @@ export default function HomePage() {
     threshold.setMonth(threshold.getMonth() - months);
     const thresholdIso = formatDate(threshold);
     const thresholdMonth = thresholdIso.slice(0, 7);
-    const dailyFiltered = dailyEntries.filter((entry) => entry.date >= thresholdIso);
+    const dailyFiltered = derivedDailyEntries.filter((entry) => entry.date >= thresholdIso);
     const weeklyFiltered = weeklyReports
       .filter((report) => report.stats.endISO >= thresholdIso)
       .sort((a, b) => a.stats.startISO.localeCompare(b.stats.startISO));
@@ -3305,25 +3385,25 @@ export default function HomePage() {
     const sleepPairs = annotatedDailyEntries
       .map(({ entry }) => ({ x: entry.sleep?.quality, y: entry.painNRS }))
       .filter((pair): pair is { x: number; y: number } => typeof pair.x === "number");
-    const stepsPairs = dailyEntries
+    const stepsPairs = derivedDailyEntries
       .filter((entry) => typeof entry.activity?.steps === "number")
       .map((entry) => ({ x: entry.activity!.steps as number, y: entry.painNRS }));
     return {
       sleep: { r: computePearson(sleepPairs), n: sleepPairs.length },
       steps: { r: computePearson(stepsPairs), n: stepsPairs.length },
     };
-  }, [annotatedDailyEntries, dailyEntries]);
+  }, [annotatedDailyEntries, derivedDailyEntries]);
 
   const backupPayload = useMemo<BackupPayload>(
     () => ({
       version: 1,
       exportedAt: new Date().toISOString(),
-      dailyEntries,
+      dailyEntries: derivedDailyEntries,
       weeklyReports,
       monthlyEntries,
       featureFlags,
     }),
-    [dailyEntries, weeklyReports, monthlyEntries, featureFlags]
+    [derivedDailyEntries, weeklyReports, monthlyEntries, featureFlags]
   );
 
   const urinaryTrendData = useMemo(() => {
@@ -5224,7 +5304,7 @@ export default function HomePage() {
                 completionEnabled={false}
               >
                 <div className="space-y-3">
-                  {dailyEntries
+                  {derivedDailyEntries
                     .slice()
                     .sort((a, b) => b.date.localeCompare(a.date))
                     .slice(0, 7)
@@ -5347,7 +5427,7 @@ export default function HomePage() {
           <SectionScopeContext.Provider value={`weekly:${weeklyScopeIsoWeek}`}>
           {weeklyReportsReady ? (
             <WeeklyTabShell
-              dailyEntries={dailyEntries}
+              dailyEntries={derivedDailyEntries}
               currentIsoWeek={currentIsoWeek}
               onSelectionChange={setWeeklyIsoWeek}
             />
