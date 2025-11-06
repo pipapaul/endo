@@ -362,7 +362,6 @@ const getRegionLabel = (regionId: string): string => {
 };
 
 const SYMPTOM_ITEMS: { key: SymptomKey; termKey: TermKey }[] = [
-  { key: "deepDyspareunia", termKey: "deepDyspareunia" },
   { key: "fatigue", termKey: "fatigue" },
   { key: "bloating", termKey: "bloating" },
 ];
@@ -2420,6 +2419,7 @@ export default function HomePage() {
   const activeDizziness = Boolean(featureFlags.moduleDizziness);
   const dyscheziaSymptom = dailyDraft.symptoms.dyschezia;
   const dysuriaSymptom = dailyDraft.symptoms.dysuria;
+  const deepDyspareuniaSymptom = dailyDraft.symptoms.deepDyspareunia ?? { present: false };
 
   const pbacFlooding = dailyDraft.bleeding.flooding ?? false;
   const pbacScore = useMemo(() => computePbacScore(pbacCounts, pbacFlooding), [pbacCounts, pbacFlooding]);
@@ -3992,25 +3992,6 @@ export default function HomePage() {
                         {renderIssuesForPath("painRegions")}
                         {renderIssuesForPath("painMapRegionIds")}
                       </TermField>
-
-                      <TermField termKey="nrs">
-                        <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4">
-                          <p className="font-medium text-rose-800">
-                            Wie stark haben dich deine Schmerzen heute insgesamt eingeschränkt oder belastet?
-                          </p>
-                          <NrsInput
-                            id="impact-nrs"
-                            value={dailyDraft.impactNRS ?? 0}
-                            onChange={(value) => {
-                              setDailyDraft((prev) => ({
-                                ...prev,
-                                impactNRS: Math.max(0, Math.min(10, Math.round(value))),
-                              }));
-                            }}
-                          />
-                        </div>
-                      </TermField>
-                      {renderIssuesForPath("impactNRS")}
                     </div>
 
                     <div className="space-y-4">
@@ -4070,11 +4051,86 @@ export default function HomePage() {
                                   })
                                 }
                               />
-                              {renderIssuesForPath("ovulationPain.intensity")} 
+                              {renderIssuesForPath("ovulationPain.intensity")}
                             </>
                           ) : null}
                         </div>
                       </TermField>
+
+                      <TermField termKey="deepDyspareunia">
+                        <div className="space-y-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-rose-800">{TERMS.deepDyspareunia.label}</p>
+                              <InfoTip
+                                tech={TERMS.deepDyspareunia.tech ?? TERMS.deepDyspareunia.label}
+                                help={TERMS.deepDyspareunia.help}
+                              />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Label className="text-xs text-rose-600">vorhanden</Label>
+                              <Switch
+                                checked={deepDyspareuniaSymptom.present}
+                                onCheckedChange={(checked) =>
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    symptoms: {
+                                      ...prev.symptoms,
+                                      deepDyspareunia: checked
+                                        ? { present: true, score: deepDyspareuniaSymptom.score ?? 0 }
+                                        : { present: false },
+                                    },
+                                  }))
+                                }
+                              />
+                            </div>
+                          </div>
+                          {deepDyspareuniaSymptom.present ? (
+                            <div className="mt-3">
+                              <ScoreInput
+                                id="symptom-deepDyspareunia"
+                                label={`${TERMS.deepDyspareunia.label} – Stärke (0–10)`}
+                                value={deepDyspareuniaSymptom.score ?? 0}
+                                onChange={(value) =>
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    symptoms: {
+                                      ...prev.symptoms,
+                                      deepDyspareunia: {
+                                        present: true,
+                                        score: Math.max(0, Math.min(10, Math.round(value))),
+                                      },
+                                    },
+                                  }))
+                                }
+                              />
+                              {renderIssuesForPath("symptoms.deepDyspareunia.score")}
+                            </div>
+                          ) : null}
+                          {renderIssuesForPath("symptoms.deepDyspareunia.present")}
+                        </div>
+                      </TermField>
+                    </div>
+
+                    <div className="space-y-6">
+                      <TermField termKey="nrs">
+                        <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4">
+                          <p className="font-medium text-rose-800">
+                            Wie stark haben dich deine Schmerzen heute insgesamt eingeschränkt oder belastet?
+                          </p>
+                          <NrsInput
+                            id="impact-nrs"
+                            value={dailyDraft.impactNRS ?? 0}
+                            onChange={(value) => {
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                impactNRS: Math.max(0, Math.min(10, Math.round(value))),
+                              }));
+                            }}
+                          />
+                        </div>
+                      </TermField>
+                      {renderIssuesForPath("impactNRS")}
                     </div>
                   </div>
                 </Section>
