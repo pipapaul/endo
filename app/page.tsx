@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   createContext,
   useCallback,
   useContext,
@@ -27,6 +28,8 @@ import {
   Scatter,
   Area,
   ComposedChart,
+  ReferenceDot,
+  ReferenceLine,
 } from "recharts";
 import type { DotProps, TooltipProps } from "recharts";
 import {
@@ -79,6 +82,18 @@ import { isoWeekToDate } from "@/lib/isoWeek";
 const DETAIL_TOOLBAR_FALLBACK_HEIGHT = 96;
 
 type SymptomKey = keyof DailyEntry["symptoms"];
+
+type PainTrendPoint = {
+  date: string;
+  cycleDay: number | null;
+  cycleLabel: string;
+  weekday: string;
+  pain: number | null;
+  pbac: number | null;
+  symptomAverage: number | null;
+  sleepQuality: number | null;
+  isCycleStart: boolean;
+};
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -1480,13 +1495,38 @@ function severityLabel(level: SeverityLevel) {
   return level.charAt(0).toUpperCase() + level.slice(1);
 }
 
+type CycleStartDropletProps = Pick<DotProps, "cx" | "cy">;
+
+const CycleStartDroplet = ({ cx, cy }: CycleStartDropletProps) => {
+  if (typeof cx !== "number" || typeof cy !== "number") {
+    return null;
+  }
+
+  return (
+    <svg
+      x={cx - 6}
+      y={cy - 2}
+      width={12}
+      height={14}
+      viewBox="0 0 24 28"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M12 0C16 6 20 11 20 16.5C20 22.299 15.523 27 10 27C4.477 27 0 22.299 0 16.5C0 11 4 6 8 0H12Z"
+        fill="#ef4444"
+      />
+    </svg>
+  );
+};
+
 function ChartTooltip({ active, payload }: TooltipProps<number, string>) {
   if (!active || !payload?.length) return null;
   const data = payload[0].payload as {
     date: string;
     cycleDay: number | null;
     weekday: string;
-    pain: number;
+    pain: number | null;
     pbac: number | null;
     symptomAverage: number | null;
     sleepQuality: number | null;
@@ -1496,7 +1536,7 @@ function ChartTooltip({ active, payload }: TooltipProps<number, string>) {
       <p className="font-semibold text-rose-800">{data.date}</p>
       <p>Zyklustag: {data.cycleDay ?? "–"}</p>
       <p>Wochentag: {data.weekday}</p>
-      <p>{TERMS.nrs.label}: {data.pain}</p>
+      <p>{TERMS.nrs.label}: {typeof data.pain === "number" ? data.pain : "–"}</p>
       <p>{TERMS.pbac.label}: {data.pbac ?? "–"}</p>
       <p>Symptom-Schnitt: {data.symptomAverage?.toFixed(1) ?? "–"}</p>
       <p>{TERMS.sleep_quality.label}: {data.sleepQuality ?? "–"}</p>
@@ -3043,19 +3083,71 @@ export default function HomePage() {
     ? "Es ist Sonntag. Zeit für deinen wöchentlichen Check In."
     : "Fülle diese Fragen möglichst jeden Sonntag aus.";
 
-  const painTrendData = useMemo(
-    () =>
-      annotatedDailyEntries.map(({ entry, cycleDay, weekday, symptomAverage }) => ({
-        date: entry.date,
+  const painTrendData = useMemo<PainTrendPoint[]>(() => {
+    const endDate = parseIsoDate(today);
+    if (!endDate) {
+      return [];
+    }
+
+    const startDate = new Date(endDate.getTime() - 29 * MS_PER_DAY);
+    const entryMap = new Map(annotatedDailyEntries.map((item) => [item.entry.date, item]));
+    let lastCycleDay: number | null = null;
+    const points: PainTrendPoint[] = [];
+
+    for (let index = 0; index < 30; index += 1) {
+      const currentDate = new Date(startDate.getTime() + index * MS_PER_DAY);
+      const isoDate = formatDate(currentDate);
+      const annotated = entryMap.get(isoDate);
+      let cycleDay: number | null = null;
+      let isCycleStart = false;
+
+      if (annotated?.cycleDay === 1) {
+        cycleDay = 1;
+        lastCycleDay = 1;
+        isCycleStart = true;
+      } else if (typeof annotated?.cycleDay === "number") {
+        cycleDay = annotated.cycleDay;
+        lastCycleDay = annotated.cycleDay;
+      } else if (lastCycleDay !== null) {
+        lastCycleDay += 1;
+        cycleDay = lastCycleDay;
+      } else {
+        cycleDay = null;
+      }
+
+      const weekday = currentDate.toLocaleDateString("de-DE", { weekday: "short" });
+      const painRaw = annotated?.entry.painNRS;
+      const sleepQualityRaw = annotated?.entry.sleep?.quality;
+      const painValue = typeof painRaw === "number" ? painRaw : null;
+      const sleepQualityValue = typeof sleepQualityRaw === "number" ? sleepQualityRaw : null;
+
+      points.push({
+        date: isoDate,
         cycleDay,
-        cycleLabel: cycleDay ? `ZT ${cycleDay}` : "–",
+        cycleLabel: cycleDay ? `ZT ${cycleDay}` : "",
         weekday,
-        pain: entry.painNRS,
-        pbac: entry.bleeding.pbacScore ?? null,
-        symptomAverage,
-        sleepQuality: entry.sleep?.quality ?? null,
-      })),
-    [annotatedDailyEntries]
+        pain: painValue,
+        pbac: annotated?.entry.bleeding?.pbacScore ?? null,
+        symptomAverage: annotated?.symptomAverage ?? null,
+        sleepQuality: sleepQualityValue,
+        isCycleStart,
+      });
+    }
+
+    return points;
+  }, [annotatedDailyEntries, today]);
+
+  const cycleStartMarkers = useMemo(
+    () =>
+      painTrendData
+        .map((point, index) => ({ point, index }))
+        .filter(({ point }) => point.isCycleStart)
+        .map(({ point, index }) => ({
+          key: `${point.date}-${index}`,
+          date: point.date,
+          cycleLabel: point.cycleLabel,
+        })),
+    [painTrendData]
   );
 
   const renderIssuesForPath = (path: string) =>
@@ -5008,11 +5100,27 @@ export default function HomePage() {
                         dataKey={trendXAxisMode === "date" ? "date" : "cycleLabel"}
                         stroke="#fb7185"
                         tick={{ fontSize: 12 }}
+                        allowDuplicatedCategory
                       />
                       <YAxis yAxisId="left" domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
                       <YAxis yAxisId="right" orientation="right" domain={[0, 300]} stroke="#6366f1" tick={{ fontSize: 12 }} />
                       <Tooltip content={<ChartTooltip />} />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
+                      {cycleStartMarkers.map(({ key, date, cycleLabel }) => {
+                        const xValue = trendXAxisMode === "date" ? date : cycleLabel;
+                        return (
+                          <Fragment key={`${key}-${trendXAxisMode}`}>
+                            <ReferenceLine x={xValue} stroke="#ef4444" strokeDasharray="4 2" strokeWidth={1} />
+                            <ReferenceDot
+                              x={xValue}
+                              y={0}
+                              yAxisId="left"
+                              isFront
+                              shape={CycleStartDroplet}
+                            />
+                          </Fragment>
+                        );
+                      })}
                       <Line
                         type="monotone"
                         dataKey="pain"
