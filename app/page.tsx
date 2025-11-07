@@ -1793,6 +1793,7 @@ export default function HomePage() {
   const draftRestoredRef = useRef(false);
   const lastDraftSavedAtRef = useRef<number | null>(null);
   const manualDailySelectionRef = useRef(false);
+  const dailyDateInputRef = useRef<HTMLInputElement | null>(null);
   const detailToolbarRef = useRef<HTMLElement | null>(null);
 
   const isBirthdayGreetingDay = () => {
@@ -2438,6 +2439,18 @@ export default function HomePage() {
     if (nextDate > today) return;
     selectDailyDate(nextDate, { manual: true });
   }, [dailyDraft.date, selectDailyDate, today]);
+
+  const openDailyDatePicker = useCallback(() => {
+    const input = dailyDateInputRef.current;
+    if (!input) return;
+    const pickerInput = input as HTMLInputElement & { showPicker?: () => void };
+    if (typeof pickerInput.showPicker === "function") {
+      pickerInput.showPicker();
+      return;
+    }
+    input.focus();
+    input.click();
+  }, []);
 
   const goToPreviousMonth = useCallback(() => {
     setMonthlyDraft((prev) => {
@@ -4165,56 +4178,58 @@ export default function HomePage() {
                         <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-rose-100 text-rose-600">
                           <CalendarDays className="h-5 w-5" aria-hidden="true" />
                         </div>
-                        <div>
+                        <div className="flex flex-col gap-2">
                           <p className="text-xs uppercase tracking-wide text-rose-400">Ausgewählter Tag</p>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-base font-semibold text-rose-900">
-                              {selectedDateLabel ?? "Bitte Datum wählen"}
-                            </span>
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                            <div className="flex flex-nowrap items-center gap-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={goToPreviousDay}
+                                aria-label="Vorheriger Tag"
+                                className="flex-shrink-0 text-rose-500 hover:text-rose-700"
+                              >
+                                <ChevronLeft className="h-5 w-5" />
+                              </Button>
+                              <button
+                                type="button"
+                                onClick={openDailyDatePicker}
+                                className="flex items-center gap-2 rounded-xl border border-rose-100 bg-white px-3 py-2 text-sm font-medium text-rose-700 shadow-inner focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
+                                aria-label="Datum auswählen"
+                              >
+                                <Calendar className="h-4 w-4 text-rose-400" aria-hidden="true" />
+                                <span className="whitespace-nowrap">
+                                  {selectedDateLabel ?? "Bitte Datum wählen"}
+                                </span>
+                              </button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={goToNextDay}
+                                aria-label="Nächster Tag"
+                                className="flex-shrink-0 text-rose-500 hover:text-rose-700"
+                                disabled={!canGoToNextDay}
+                              >
+                                <ChevronRight className="h-5 w-5" />
+                              </Button>
+                            </div>
                             {selectedCycleDay !== null && (
                               <Badge className="flex-shrink-0 bg-rose-200 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
                                 ZT {selectedCycleDay}
                               </Badge>
                             )}
                           </div>
-                          <p className="mt-1 text-xs text-rose-500">
-                            Passe das Datum direkt hier an oder wechsle über die Pfeile zum Vortag bzw. Folgetag.
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-                        <div className="flex items-center gap-2">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={goToPreviousDay}
-                            aria-label="Vorheriger Tag"
-                            className="text-rose-500 hover:text-rose-700"
-                          >
-                            <ChevronLeft className="h-5 w-5" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={goToNextDay}
-                            aria-label="Nächster Tag"
-                            className="text-rose-500 hover:text-rose-700"
-                            disabled={!canGoToNextDay}
-                          >
-                            <ChevronRight className="h-5 w-5" />
-                          </Button>
-                        </div>
-                        <div className="flex items-center gap-2 rounded-xl border border-rose-100 bg-white px-3 py-2 text-sm text-rose-700 shadow-inner">
-                          <Calendar className="h-4 w-4 text-rose-400" aria-hidden="true" />
                           <Input
+                            ref={dailyDateInputRef}
                             type="date"
                             value={dailyDraft.date}
                             onChange={(event) => selectDailyDate(event.target.value, { manual: true })}
-                            className="h-auto w-full border-none bg-transparent px-0 py-0 text-sm font-medium text-rose-700 shadow-none focus-visible:outline-none focus-visible:ring-0"
+                            className="sr-only"
                             max={today}
-                            aria-label="Datum direkt auswählen"
+                            aria-hidden="true"
+                            tabIndex={-1}
                           />
                         </div>
                       </div>
