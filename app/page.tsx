@@ -11,7 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ChangeEvent, ReactNode, SVGProps } from "react";
+import type { ChangeEvent, ComponentType, ReactNode, SVGProps } from "react";
 import {
   LineChart,
   Line,
@@ -45,7 +45,10 @@ import {
   Smartphone,
   TrendingUp,
   Upload,
+  Gauge,
+  NotebookPen,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 import { DailyEntry, FeatureFlags, MonthlyEntry } from "@/lib/types";
 import { TERMS } from "@/lib/terms";
@@ -137,6 +140,14 @@ const MIGRAINE_LABEL = "Migräne";
 const MIGRAINE_WITH_AURA_LABEL = "Migräne mit Aura";
 const MIGRAINE_QUALITY_SET = new Set<string>(MIGRAINE_PAIN_QUALITIES);
 type OvulationPainSide = Exclude<NonNullable<DailyEntry["ovulationPain"]>["side"], undefined>;
+
+const createLucideCategoryIcon = (Icon: LucideIcon) =>
+  function LucideCategoryIcon(props: SVGProps<SVGSVGElement>) {
+    return <Icon {...props} />;
+  };
+
+const NotebookPenCategoryIcon = createLucideCategoryIcon(NotebookPen);
+const GaugeCategoryIcon = createLucideCategoryIcon(Gauge);
 
 const OVULATION_PAIN_SIDES: OvulationPainSide[] = [
   "links",
@@ -488,42 +499,39 @@ const SYMPTOM_ITEMS: { key: SymptomKey; termKey: TermKey }[] = [
 
 type PbacSaturation = "light" | "medium" | "heavy";
 
-const PBAC_ICON_SATURATION_OPACITY: Record<PbacSaturation, number> = {
-  light: 0.35,
-  medium: 0.55,
-  heavy: 0.8,
-};
+const PBAC_ICON_BASE_OPACITY = 0.12;
+const PBAC_ICON_DETAIL_OPACITY = 0.75;
+const PBAC_ICON_STRING_OPACITY = 0.35;
 
 const PBAC_PAD_BASE_PATH =
-  "M54.59,78.7c-4.36,2.02-8.73,2.02-13.09,0-2.81-1.33-4.71-5.56-4.34-8.23,1.79-14.65,1.79-29.3,0-43.95-.37-2.68,1.53-6.9,4.34-8.23,4.36-2.02,8.73-2.02,13.09,0,2.81,1.33,4.71,5.56,4.34,8.23-1.79,14.65-1.79,29.3,0,43.95.37,2.68-1.53,6.9-4.34,8.23Z";
+  "M56.3,86.58c-5.5,2.54-11.01,2.54-16.51,0-3.54-1.68-5.94-7.01-5.47-10.38,2.26-18.47,2.26-36.95,0-55.42-.47-3.38,1.93-8.7,5.47-10.38,5.5-2.54,11.01-2.54,16.51,0,3.54,1.68,5.94,7.01,5.47,10.38-2.26,18.47-2.26,36.95,0,55.42.47,3.38-1.93,8.7-5.47,10.38Z";
 
 const PBAC_PAD_DETAIL_PATHS: Record<PbacSaturation, string> = {
   light:
-    "M48.85,55.95c-.62.95-.8.83-1.42-.12-.95-1.46-1.28-1.4-1.28-3.14s1.52-1.74,1.52-3.48-1.62-1.74-1.62-3.48,1.34-1.74,1.34-3.49-.78-1.61.17-3.07c.62-.95,1.27-1.54,1.89-.59.95,1.46-.3,1.91-.3,3.65s.65,1.74.65,3.48-.83,1.74-.83,3.48.43,1.71.63,3.44.2,1.86-.75,3.32Z",
+    "M49.05,57.89c-.78,1.2-1,1.05-1.78-.15-1.2-1.84-1.62-1.77-1.62-3.96s1.92-2.19,1.92-4.39-2.05-2.2-2.05-4.39,1.69-2.2,1.69-4.4-.99-2.03.21-3.87c.78-1.2,1.6-1.94,2.38-.75,1.2,1.84-.38,2.41-.38,4.61s.82,2.19.82,4.39-1.04,2.2-1.04,4.39.54,2.15.79,4.33.25,2.34-.94,4.18Z",
   medium:
-    "M51.45,69.1c-3.03,2.23-3.58,1.96-6.61-.27-2.23-1.64-1.72-2-1.72-4.77s2.32-2.77,2.32-5.53-2.48-2.77-2.48-5.53,2.05-2.77,2.05-5.53.44-2.76.44-5.53-1.65-2.77-1.65-5.53.54-2.77.54-5.54-2.85-4.65-.62-6.29c3.03-2.23,4.86-1.21,7.89,1.02,2.23,1.64.83,2.5.83,5.27s-.23,2.77-.23,5.53-.57,2.77-.57,5.53-.51,2.77-.51,5.53,1.14,2.76,1.14,5.53.65,2.77.65,5.53-1.71,2.83-1.14,5.54,1.89,3.4-.34,5.04Z",
+    "M52.34,74.48c-3.82,2.81-4.51,2.47-8.34-.34-2.81-2.06-2.18-2.53-2.18-6.01s2.93-3.49,2.93-6.97-3.13-3.49-3.13-6.97,2.58-3.49,2.58-6.98.56-3.49.56-6.97-2.08-3.49-2.08-6.98.68-3.49.68-6.98-3.59-5.86-.78-7.93c3.82-2.81,6.12-1.53,9.95,1.28,2.81,2.06,1.05,3.16,1.05,6.64s-.29,3.49-.29,6.97-.72,3.49-.72,6.97-.65,3.49-.65,6.98,1.44,3.49,1.44,6.97.82,3.49.82,6.98-2.15,3.57-1.44,6.99,2.39,4.29-.42,6.36Z",
   heavy:
-    "M54.93,75.13c-1.68,1.62-2.01-.38-4.34-.38s-2.33,1.59-4.66,1.59-2.38.11-4.05-1.5-1.6-1.61-1.6-3.85,1.54-2.24,1.54-4.48.33-2.24.33-4.48-1.24-2.24-1.24-4.48.41-2.24.41-4.48-.75-2.24-.75-4.48.95-2.24.95-4.48-.73-2.24-.73-4.48.17-2.24.17-4.48.43-2.24.43-4.49.39-2.24.39-4.49-2.37-3.18-.75-4.74,2.57-.59,4.9-.59,2.33.86,4.66.86,2.95-1.6,4.63.01-.53,2.21-.53,4.44.99,2.24.99,4.48-.92,2.24-.92,4.48,1.38,2.24,1.38,4.48-1.42,2.24-1.42,4.48.2,2.24.2,4.48-.59,2.24-.59,4.48.08,2.24.08,4.48,1.54,2.24,1.54,4.48-.84,2.24-.84,4.49-1.11,2.43-.7,4.64,2.14,2.45.52,4.01Z",
+    "M56.73,82.08c-2.11,2.04-2.53-.48-5.47-.48s-2.94,2-5.87,2-3,.14-5.11-1.9-2.02-2.03-2.02-4.86,1.95-2.82,1.95-5.65.42-2.82.42-5.65-1.57-2.82-1.57-5.65.52-2.83.52-5.65-.95-2.83-.95-5.65,1.2-2.83,1.2-5.65-.92-2.83-.92-5.65.22-2.82.22-5.65.54-2.83.54-5.65.49-2.83.49-5.66-2.99-4.01-.95-5.98,3.24-.74,6.18-.74,2.94,1.08,5.87,1.08,3.72-2.02,5.84.02-.67,2.79-.67,5.61,1.25,2.82,1.25,5.65-1.16,2.82-1.16,5.65,1.74,2.82,1.74,5.65-1.79,2.83-1.79,5.65.25,2.83.25,5.65-.74,2.83-.74,5.65.1,2.83.1,5.65,1.94,2.82,1.94,5.65-1.06,2.83-1.06,5.65-1.4,3.07-.89,5.85,2.69,3.09.66,5.05Z",
 };
 
 const PBAC_TAMPON_BODY_PATH =
-  "M48.39,21.94h0c5.27,0,9.55,4.28,9.55,9.55v33.12c0,3.8-3.09,6.89-6.89,6.89h-5.32c-3.8,0-6.89-3.09-6.89-6.89V31.5c0-5.27,4.28-9.55,9.55-9.55Z";
+  "M48.2,15.62h0c6.26,0,11.35,5.09,11.35,11.35v39.34c0,4.52-3.67,8.19-8.19,8.19h-6.32c-4.52,0-8.19-3.67-8.19-8.19V26.97c0-6.26,5.09-11.35,11.35-11.35Z";
 
 const PBAC_TAMPON_DETAIL_PATHS: Record<PbacSaturation, string | null> = {
   light:
-    "M38.93,30.28c2.12,1.01,4.55,1.59,7.13,1.59,4.38,0,8.31-1.66,11.04-4.3-1.5-3.32-4.83-5.63-8.7-5.63-4.86,0-8.87,3.64-9.47,8.34Z",
+    "M36.96,25.52c2.52,1.2,5.4,1.89,8.47,1.89,5.21,0,9.87-1.98,13.11-5.1-1.78-3.94-5.73-6.68-10.34-6.68-5.78,0-10.53,4.32-11.25,9.9Z",
   medium:
-    "M57.02,46.28c.29-.12.6-.26.93-.41v-14.37c0-5.28-4.28-9.55-9.55-9.55s-9.55,4.28-9.55,9.55v17.66c6.11-2.4,13.88-1.16,18.18-2.88Z",
+    "M58.45,44.52c.34-.14.71-.3,1.1-.49v-17.06c0-6.27-5.08-11.35-11.35-11.35s-11.35,5.08-11.35,11.35v20.98c7.26-2.86,16.49-1.38,21.6-3.43Z",
   heavy: null,
 };
 
 const PBAC_TAMPON_STRING_PATH =
-  "M58.05,89.3c-.17-.69-.26-1.18-.34-1.57-.19-.98-.25-1.28-1.14-3.1-.75-1.54-2.24-2.75-3.82-4.02-2.62-2.12-5.59-4.52-5.59-9.05h2c0,3.58,2.35,5.48,4.85,7.5,1.68,1.35,3.41,2.76,4.36,4.7.96,1.96,1.08,2.43,1.31,3.6.07.37.16.83.32,1.49l-1.95.46Z";
+  "M59.67,95.62c-.2-.82-.31-1.4-.4-1.86-.23-1.17-.3-1.52-1.35-3.68-.9-1.84-2.67-3.26-4.54-4.78-3.11-2.51-6.64-5.36-6.64-10.75h2.38c0,4.25,2.8,6.51,5.76,8.91,1.99,1.61,4.05,3.27,5.18,5.58,1.14,2.33,1.28,2.88,1.55,4.27.09.44.19.99.38,1.77l-2.31.55Z";
 
 type PbacIconProps = SVGProps<SVGSVGElement> & { saturation: PbacSaturation };
 
 const PbacPadIcon = ({ saturation, ...props }: PbacIconProps) => {
-  const detailOpacity = PBAC_ICON_SATURATION_OPACITY[saturation];
   return (
     <svg
       viewBox="0 0 96.91 96.91"
@@ -532,15 +540,14 @@ const PbacPadIcon = ({ saturation, ...props }: PbacIconProps) => {
       focusable="false"
       {...props}
     >
-      <circle cx="48.97" cy="47.94" r="48.45" fill="currentColor" fillOpacity={0.12} />
-      <path d={PBAC_PAD_BASE_PATH} fill="currentColor" fillOpacity={0.12} />
-      <path d={PBAC_PAD_DETAIL_PATHS[saturation]} fill="currentColor" fillOpacity={detailOpacity} />
+      <circle cx="48.97" cy="47.94" r="48.45" fill="currentColor" fillOpacity={PBAC_ICON_BASE_OPACITY} />
+      <path d={PBAC_PAD_BASE_PATH} fill="currentColor" fillOpacity={PBAC_ICON_BASE_OPACITY} />
+      <path d={PBAC_PAD_DETAIL_PATHS[saturation]} fill="currentColor" fillOpacity={PBAC_ICON_DETAIL_OPACITY} />
     </svg>
   );
 };
 
 const PbacTamponIcon = ({ saturation, ...props }: PbacIconProps) => {
-  const bodyOpacity = PBAC_ICON_SATURATION_OPACITY[saturation];
   const detailPath = PBAC_TAMPON_DETAIL_PATHS[saturation];
   return (
     <svg
@@ -550,12 +557,10 @@ const PbacTamponIcon = ({ saturation, ...props }: PbacIconProps) => {
       focusable="false"
       {...props}
     >
-      <circle cx="48.97" cy="47.94" r="48.45" fill="currentColor" fillOpacity={0.12} />
-      <path d={PBAC_TAMPON_BODY_PATH} fill="currentColor" fillOpacity={bodyOpacity} />
-      {detailPath ? (
-        <path d={detailPath} fill="currentColor" fillOpacity={Math.min(1, bodyOpacity + 0.15)} />
-      ) : null}
-      <path d={PBAC_TAMPON_STRING_PATH} fill="currentColor" fillOpacity={0.35} />
+      <circle cx="48.97" cy="47.94" r="48.45" fill="currentColor" fillOpacity={PBAC_ICON_BASE_OPACITY} />
+      <path d={PBAC_TAMPON_BODY_PATH} fill="currentColor" fillOpacity={PBAC_ICON_DETAIL_OPACITY} />
+      {detailPath ? <path d={detailPath} fill="currentColor" fillOpacity={PBAC_ICON_DETAIL_OPACITY} /> : null}
+      <path d={PBAC_TAMPON_STRING_PATH} fill="currentColor" fillOpacity={PBAC_ICON_STRING_OPACITY} />
     </svg>
   );
 };
@@ -666,7 +671,15 @@ const PBAC_DEFAULT_COUNTS = PBAC_ITEMS.reduce<PbacCounts>((acc, item) => {
   return acc;
 }, {} as PbacCounts);
 
-type TrackableDailyCategoryId = "pain" | "symptoms" | "bleeding" | "medication" | "sleep" | "bowelBladder";
+type TrackableDailyCategoryId =
+  | "pain"
+  | "symptoms"
+  | "bleeding"
+  | "medication"
+  | "sleep"
+  | "bowelBladder"
+  | "notes"
+  | "optional";
 
 const TRACKED_DAILY_CATEGORY_IDS: TrackableDailyCategoryId[] = [
   "pain",
@@ -675,6 +688,8 @@ const TRACKED_DAILY_CATEGORY_IDS: TrackableDailyCategoryId[] = [
   "medication",
   "sleep",
   "bowelBladder",
+  "notes",
+  "optional",
 ];
 
 const PAIN_FREE_MESSAGES = [
@@ -716,6 +731,74 @@ const createEmptyCategoryCompletion = (): Record<TrackableDailyCategoryId, boole
     acc[categoryId] = false;
     return acc;
   }, {} as Record<TrackableDailyCategoryId, boolean>);
+
+const pruneDailyEntryByCompletion = (
+  entry: DailyEntry,
+  completion: Record<Exclude<DailyCategoryId, "overview">, boolean>
+): DailyEntry => {
+  const next: DailyEntry = {
+    ...entry,
+    symptoms: { ...(entry.symptoms ?? {}) },
+  };
+
+  if (!completion.pain) {
+    next.painRegions = [];
+    next.painMapRegionIds = [];
+    next.painQuality = [] as DailyEntry["painQuality"];
+    next.painNRS = 0;
+    next.impactNRS = 0;
+    delete (next as { ovulationPain?: DailyEntry["ovulationPain"] }).ovulationPain;
+    delete (next.symptoms as Partial<DailyEntry["symptoms"]>).deepDyspareunia;
+  }
+
+  if (!completion.symptoms) {
+    SYMPTOM_ITEMS.forEach((item) => {
+      delete (next.symptoms as Partial<DailyEntry["symptoms"]>)[item.key];
+    });
+  }
+
+  if (!completion.bleeding) {
+    next.bleeding = { isBleeding: false };
+  }
+
+  if (!completion.medication) {
+    next.meds = [];
+    delete (next as { rescueDosesCount?: DailyEntry["rescueDosesCount"] }).rescueDosesCount;
+  }
+
+  if (!completion.sleep) {
+    delete (next as { sleep?: DailyEntry["sleep"] }).sleep;
+  }
+
+  if (!completion.bowelBladder) {
+    delete (next.symptoms as Partial<DailyEntry["symptoms"]>).dyschezia;
+    delete (next.symptoms as Partial<DailyEntry["symptoms"]>).dysuria;
+    delete (next as { gi?: DailyEntry["gi"] }).gi;
+    delete (next as { urinary?: DailyEntry["urinary"] }).urinary;
+    delete (next as { urinaryOpt?: DailyEntry["urinaryOpt"] }).urinaryOpt;
+    delete (next as { dizzinessOpt?: DailyEntry["dizzinessOpt"] }).dizzinessOpt;
+  }
+
+  if (!completion.notes) {
+    delete (next as { notesTags?: DailyEntry["notesTags"] }).notesTags;
+    delete (next as { notesFree?: DailyEntry["notesFree"] }).notesFree;
+  }
+
+  if (!completion.optional) {
+    delete (next as { ovulation?: DailyEntry["ovulation"] }).ovulation;
+    delete (next as { activity?: DailyEntry["activity"] }).activity;
+    delete (next as { exploratory?: DailyEntry["exploratory"] }).exploratory;
+    delete (next as { headacheOpt?: DailyEntry["headacheOpt"] }).headacheOpt;
+  }
+
+  const cleanedSymptomsEntries = Object.entries(next.symptoms ?? {}).filter(([, value]) => value !== undefined);
+  next.symptoms = cleanedSymptomsEntries.reduce<DailyEntry["symptoms"]>((acc, [key, value]) => {
+    acc[key as keyof DailyEntry["symptoms"]] = value as DailyEntry["symptoms"][keyof DailyEntry["symptoms"]];
+    return acc;
+  }, {} as DailyEntry["symptoms"]);
+
+  return next;
+};
 
 type SymptomSnapshot = { present: boolean; score: number | null };
 
@@ -888,6 +971,25 @@ const extractDailyCategorySnapshot = (
             : null,
         },
         featureFlags: pickFeatureFlags(featureFlags, ["moduleUrinary"]),
+      };
+    }
+    case "notes": {
+      return {
+        entry: {
+          notesTags: [...(entry.notesTags ?? [])],
+          notesFree: entry.notesFree ?? null,
+        },
+      };
+    }
+    case "optional": {
+      return {
+        entry: {
+          ovulation: entry.ovulation ? deepClone(entry.ovulation) : null,
+          activity: entry.activity ? deepClone(entry.activity) : null,
+          exploratory: entry.exploratory ? deepClone(entry.exploratory) : null,
+          headacheOpt: entry.headacheOpt ? deepClone(entry.headacheOpt) : null,
+        },
+        featureFlags: pickFeatureFlags(featureFlags, ["moduleHeadache", "moduleDizziness"]),
       };
     }
     default:
@@ -1112,6 +1214,35 @@ const restoreDailyCategorySnapshot = (
         Object.entries(snapshot.featureFlags).forEach(([key, value]) => {
           nextFeatureFlags[key as keyof FeatureFlags] = Boolean(value);
         });
+      }
+      break;
+    }
+    case "notes": {
+      const data = snapshot.entry as { notesTags?: string[]; notesFree?: string | null } | undefined;
+      if (data) {
+        nextEntry.notesTags = Array.isArray(data.notesTags) ? [...data.notesTags] : undefined;
+        if (typeof data.notesFree === "string") {
+          nextEntry.notesFree = data.notesFree;
+        } else {
+          delete (nextEntry as { notesFree?: DailyEntry["notesFree"] }).notesFree;
+        }
+      }
+      break;
+    }
+    case "optional": {
+      const data = snapshot.entry as
+        | {
+            ovulation?: DailyEntry["ovulation"] | null;
+            activity?: DailyEntry["activity"] | null;
+            exploratory?: DailyEntry["exploratory"] | null;
+            headacheOpt?: DailyEntry["headacheOpt"] | null;
+          }
+        | undefined;
+      if (data) {
+        nextEntry.ovulation = data.ovulation ? deepClone(data.ovulation) : undefined;
+        nextEntry.activity = data.activity ? deepClone(data.activity) : undefined;
+        nextEntry.exploratory = data.exploratory ? deepClone(data.exploratory) : undefined;
+        nextEntry.headacheOpt = data.headacheOpt ? deepClone(data.headacheOpt) : undefined;
       }
       break;
     }
@@ -3592,7 +3723,9 @@ export default function HomePage() {
       payload.dizzinessOpt = normalized;
     }
 
-    const syncedDraft: DailyEntry = { ...payload };
+    const prunedPayload = pruneDailyEntryByCompletion(payload, dailyCategoryCompletion);
+
+    const syncedDraft: DailyEntry = { ...prunedPayload };
 
     if (Array.isArray(syncedDraft.painRegions)) {
       syncedDraft.painMapRegionIds = syncedDraft.painRegions.map((region) => region.regionId);
@@ -4435,6 +4568,8 @@ export default function HomePage() {
       medication: TERMS.meds.label,
       sleep: "Schlaf",
       bowelBladder: "Darm & Blase",
+      notes: "Notizen & Tags",
+      optional: "Optionale Werte (Hilfsmittel nötig)",
     }),
     []
   );
@@ -4640,17 +4775,23 @@ export default function HomePage() {
           description: "Verdauung & Blase im Blick behalten",
           icon: BauchIcon,
         },
-        { id: "notes" as const, title: "Notizen & Tags", description: "Freitextnotizen und Tags ergänzen" },
+        {
+          id: "notes" as const,
+          title: "Notizen & Tags",
+          description: "Freitextnotizen und Tags ergänzen",
+          icon: NotebookPenCategoryIcon,
+        },
         {
           id: "optional" as const,
           title: "Optionale Werte",
           description: "Hilfsmittel- & Wearable-Daten erfassen",
+          icon: GaugeCategoryIcon,
         },
       ] satisfies Array<{
         id: Exclude<DailyCategoryId, "overview">;
         title: string;
         description: string;
-        icon?: (props: SVGProps<SVGSVGElement>) => JSX.Element;
+        icon?: ComponentType<SVGProps<SVGSVGElement>>;
         quickActions?: Array<{ label: string; onClick: () => void }>;
       }>,
     [handleQuickNoBleeding, handleQuickNoMedication, handleQuickNoPain, handleQuickNoSymptoms]
@@ -5590,6 +5731,9 @@ export default function HomePage() {
                     })}
                   </div>
                 </div>
+                <p className="text-xs text-rose-600">
+                  Es werden nur Daten von den Bereichen gespeichert, die einen grünen Haken haben.
+                </p>
                 <div className="flex flex-wrap items-center gap-3">
                   <Button type="button" onClick={handleDailySubmit} disabled={!isDailyDirty}>
                     Tagesdaten speichern
@@ -6630,7 +6774,7 @@ export default function HomePage() {
                 <Section
                   title="Notizen & Tags"
                   description="Freitext oder wiederkehrende Muster markieren"
-                  completionEnabled={false}
+                  onComplete={() => setDailyActiveCategory("overview")}
                 >
                   <div className="grid gap-3">
                     <TermField termKey="notesTags" htmlFor="notes-tag-input">
@@ -6679,7 +6823,7 @@ export default function HomePage() {
                       aria-label="Hilfsmittel-Optionen"
                     />
                   }
-                  completionEnabled={false}
+                  onComplete={() => setDailyActiveCategory("overview")}
                 >
                   <Button type="button" variant="secondary" onClick={() => setSensorsVisible((prev) => !prev)}>
                     {optionalSensorsLabel}
