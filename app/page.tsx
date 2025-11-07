@@ -892,9 +892,10 @@ const restoreDailyCategorySnapshot = (
         }
         nextEntry.symptoms = nextSymptoms;
         if (data.gi) {
+          const bristolType = data.gi?.bristolType;
           nextEntry.gi =
-            typeof data.gi.bristolType === "number"
-              ? { bristolType: data.gi.bristolType as DailyEntry["gi"]["bristolType"] }
+            typeof bristolType === "number"
+              ? { bristolType: bristolType as DailyEntry["gi"]["bristolType"] }
               : undefined;
         } else {
           nextEntry.gi = undefined;
