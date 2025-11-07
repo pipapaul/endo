@@ -486,13 +486,129 @@ const SYMPTOM_ITEMS: { key: SymptomKey; termKey: TermKey }[] = [
   { key: "bloating", termKey: "bloating" },
 ];
 
+type PbacSaturation = "light" | "medium" | "heavy";
+
+const PBAC_ICON_SATURATION_OPACITY: Record<PbacSaturation, number> = {
+  light: 0.35,
+  medium: 0.55,
+  heavy: 0.8,
+};
+
+const PBAC_PAD_BASE_PATH =
+  "M54.59,78.7c-4.36,2.02-8.73,2.02-13.09,0-2.81-1.33-4.71-5.56-4.34-8.23,1.79-14.65,1.79-29.3,0-43.95-.37-2.68,1.53-6.9,4.34-8.23,4.36-2.02,8.73-2.02,13.09,0,2.81,1.33,4.71,5.56,4.34,8.23-1.79,14.65-1.79,29.3,0,43.95.37,2.68-1.53,6.9-4.34,8.23Z";
+
+const PBAC_PAD_DETAIL_PATHS: Record<PbacSaturation, string> = {
+  light:
+    "M48.85,55.95c-.62.95-.8.83-1.42-.12-.95-1.46-1.28-1.4-1.28-3.14s1.52-1.74,1.52-3.48-1.62-1.74-1.62-3.48,1.34-1.74,1.34-3.49-.78-1.61.17-3.07c.62-.95,1.27-1.54,1.89-.59.95,1.46-.3,1.91-.3,3.65s.65,1.74.65,3.48-.83,1.74-.83,3.48.43,1.71.63,3.44.2,1.86-.75,3.32Z",
+  medium:
+    "M51.45,69.1c-3.03,2.23-3.58,1.96-6.61-.27-2.23-1.64-1.72-2-1.72-4.77s2.32-2.77,2.32-5.53-2.48-2.77-2.48-5.53,2.05-2.77,2.05-5.53.44-2.76.44-5.53-1.65-2.77-1.65-5.53.54-2.77.54-5.54-2.85-4.65-.62-6.29c3.03-2.23,4.86-1.21,7.89,1.02,2.23,1.64.83,2.5.83,5.27s-.23,2.77-.23,5.53-.57,2.77-.57,5.53-.51,2.77-.51,5.53,1.14,2.76,1.14,5.53.65,2.77.65,5.53-1.71,2.83-1.14,5.54,1.89,3.4-.34,5.04Z",
+  heavy:
+    "M54.93,75.13c-1.68,1.62-2.01-.38-4.34-.38s-2.33,1.59-4.66,1.59-2.38.11-4.05-1.5-1.6-1.61-1.6-3.85,1.54-2.24,1.54-4.48.33-2.24.33-4.48-1.24-2.24-1.24-4.48.41-2.24.41-4.48-.75-2.24-.75-4.48.95-2.24.95-4.48-.73-2.24-.73-4.48.17-2.24.17-4.48.43-2.24.43-4.49.39-2.24.39-4.49-2.37-3.18-.75-4.74,2.57-.59,4.9-.59,2.33.86,4.66.86,2.95-1.6,4.63.01-.53,2.21-.53,4.44.99,2.24.99,4.48-.92,2.24-.92,4.48,1.38,2.24,1.38,4.48-1.42,2.24-1.42,4.48.2,2.24.2,4.48-.59,2.24-.59,4.48.08,2.24.08,4.48,1.54,2.24,1.54,4.48-.84,2.24-.84,4.49-1.11,2.43-.7,4.64,2.14,2.45.52,4.01Z",
+};
+
+const PBAC_TAMPON_BODY_PATH =
+  "M48.39,21.94h0c5.27,0,9.55,4.28,9.55,9.55v33.12c0,3.8-3.09,6.89-6.89,6.89h-5.32c-3.8,0-6.89-3.09-6.89-6.89V31.5c0-5.27,4.28-9.55,9.55-9.55Z";
+
+const PBAC_TAMPON_DETAIL_PATHS: Record<PbacSaturation, string | null> = {
+  light:
+    "M38.93,30.28c2.12,1.01,4.55,1.59,7.13,1.59,4.38,0,8.31-1.66,11.04-4.3-1.5-3.32-4.83-5.63-8.7-5.63-4.86,0-8.87,3.64-9.47,8.34Z",
+  medium:
+    "M57.02,46.28c.29-.12.6-.26.93-.41v-14.37c0-5.28-4.28-9.55-9.55-9.55s-9.55,4.28-9.55,9.55v17.66c6.11-2.4,13.88-1.16,18.18-2.88Z",
+  heavy: null,
+};
+
+const PBAC_TAMPON_STRING_PATH =
+  "M58.05,89.3c-.17-.69-.26-1.18-.34-1.57-.19-.98-.25-1.28-1.14-3.1-.75-1.54-2.24-2.75-3.82-4.02-2.62-2.12-5.59-4.52-5.59-9.05h2c0,3.58,2.35,5.48,4.85,7.5,1.68,1.35,3.41,2.76,4.36,4.7.96,1.96,1.08,2.43,1.31,3.6.07.37.16.83.32,1.49l-1.95.46Z";
+
+type PbacIconProps = SVGProps<SVGSVGElement> & { saturation: PbacSaturation };
+
+const PbacPadIcon = ({ saturation, ...props }: PbacIconProps) => {
+  const detailOpacity = PBAC_ICON_SATURATION_OPACITY[saturation];
+  return (
+    <svg
+      viewBox="0 0 96.91 96.91"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      focusable="false"
+      {...props}
+    >
+      <circle cx="48.97" cy="47.94" r="48.45" fill="currentColor" fillOpacity={0.12} />
+      <path d={PBAC_PAD_BASE_PATH} fill="currentColor" fillOpacity={0.12} />
+      <path d={PBAC_PAD_DETAIL_PATHS[saturation]} fill="currentColor" fillOpacity={detailOpacity} />
+    </svg>
+  );
+};
+
+const PbacTamponIcon = ({ saturation, ...props }: PbacIconProps) => {
+  const bodyOpacity = PBAC_ICON_SATURATION_OPACITY[saturation];
+  const detailPath = PBAC_TAMPON_DETAIL_PATHS[saturation];
+  return (
+    <svg
+      viewBox="0 0 96.91 96.91"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      focusable="false"
+      {...props}
+    >
+      <circle cx="48.97" cy="47.94" r="48.45" fill="currentColor" fillOpacity={0.12} />
+      <path d={PBAC_TAMPON_BODY_PATH} fill="currentColor" fillOpacity={bodyOpacity} />
+      {detailPath ? (
+        <path d={detailPath} fill="currentColor" fillOpacity={Math.min(1, bodyOpacity + 0.15)} />
+      ) : null}
+      <path d={PBAC_TAMPON_STRING_PATH} fill="currentColor" fillOpacity={0.35} />
+    </svg>
+  );
+};
+
 const PBAC_PRODUCT_ITEMS = [
-  { id: "pad_light", label: "Binde – leicht", score: 1, product: "pad", saturation: "light" },
-  { id: "pad_medium", label: "Binde – mittel", score: 5, product: "pad", saturation: "medium" },
-  { id: "pad_heavy", label: "Binde – stark", score: 20, product: "pad", saturation: "heavy" },
-  { id: "tampon_light", label: "Tampon – leicht", score: 1, product: "tampon", saturation: "light" },
-  { id: "tampon_medium", label: "Tampon – mittel", score: 5, product: "tampon", saturation: "medium" },
-  { id: "tampon_heavy", label: "Tampon – stark", score: 10, product: "tampon", saturation: "heavy" },
+  {
+    id: "pad_light",
+    label: "Binde – leicht",
+    score: 1,
+    product: "pad",
+    saturation: "light",
+    Icon: (props: SVGProps<SVGSVGElement>) => <PbacPadIcon saturation="light" {...props} />,
+  },
+  {
+    id: "pad_medium",
+    label: "Binde – mittel",
+    score: 5,
+    product: "pad",
+    saturation: "medium",
+    Icon: (props: SVGProps<SVGSVGElement>) => <PbacPadIcon saturation="medium" {...props} />,
+  },
+  {
+    id: "pad_heavy",
+    label: "Binde – stark",
+    score: 20,
+    product: "pad",
+    saturation: "heavy",
+    Icon: (props: SVGProps<SVGSVGElement>) => <PbacPadIcon saturation="heavy" {...props} />,
+  },
+  {
+    id: "tampon_light",
+    label: "Tampon – leicht",
+    score: 1,
+    product: "tampon",
+    saturation: "light",
+    Icon: (props: SVGProps<SVGSVGElement>) => <PbacTamponIcon saturation="light" {...props} />,
+  },
+  {
+    id: "tampon_medium",
+    label: "Tampon – mittel",
+    score: 5,
+    product: "tampon",
+    saturation: "medium",
+    Icon: (props: SVGProps<SVGSVGElement>) => <PbacTamponIcon saturation="medium" {...props} />,
+  },
+  {
+    id: "tampon_heavy",
+    label: "Tampon – stark",
+    score: 10,
+    product: "tampon",
+    saturation: "heavy",
+    Icon: (props: SVGProps<SVGSVGElement>) => <PbacTamponIcon saturation="heavy" {...props} />,
+  },
 ] as const;
 
 const PBAC_CLOT_ITEMS = [
@@ -4819,12 +4935,23 @@ export default function HomePage() {
       ]>;
       const presentSymptoms = symptomEntries.filter(([, value]) => value?.present);
       const symptomLines: string[] = [];
-      if (presentSymptoms.length) {
+      if (presentSymptoms.length || entry.dizzinessOpt?.present) {
         const labels = presentSymptoms.map(([key, value]) => {
           const descriptor = SYMPTOM_TERMS[key];
           const label = descriptor?.label ?? key;
           return typeof value?.score === "number" ? `${label} (${value.score}/10)` : label;
         });
+        if (entry.dizzinessOpt?.present) {
+          const dizzinessLabel = MODULE_TERMS.dizzinessOpt.present.label;
+          const details: string[] = [];
+          if (typeof entry.dizzinessOpt.nrs === "number") {
+            details.push(`${formatNumber(entry.dizzinessOpt.nrs, { maximumFractionDigits: 1 })}/10`);
+          }
+          if (entry.dizzinessOpt.orthostatic) {
+            details.push("orthostatisch");
+          }
+          labels.push(details.length ? `${dizzinessLabel} (${details.join(", ")})` : dizzinessLabel);
+        }
         symptomLines.push(`Vorhanden: ${formatList(labels, 3)}`);
       } else {
         symptomLines.push(`${pickRandom(SYMPTOM_FREE_MESSAGES)} ${pickRandom(SYMPTOM_FREE_EMOJIS)}`);
@@ -5407,7 +5534,7 @@ export default function HomePage() {
                           >
                             {Icon ? (
                               <span className={iconWrapperClasses} aria-hidden="true">
-                                <Icon className="h-8 w-8" />
+                                <Icon className="h-full w-full" />
                               </span>
                             ) : null}
                             <div className="flex flex-1 items-start justify-between gap-3">
@@ -5906,6 +6033,11 @@ export default function HomePage() {
                                 tech={TERMS.pbac.tech}
                                 help={TERMS.pbac.help}
                                 htmlFor={sliderId}
+                                meta={
+                                  <span className="ml-1 flex h-12 w-12 flex-none items-center justify-center rounded-full border border-rose-100 bg-rose-50 text-rose-500">
+                                    <item.Icon className="h-full w-full" />
+                                  </span>
+                                }
                               >
                                 <div className="space-y-2">
                                   <Slider
