@@ -561,6 +561,40 @@ const TRACKED_DAILY_CATEGORY_IDS: TrackableDailyCategoryId[] = [
   "bowelBladder",
 ];
 
+const PAIN_FREE_MESSAGES = [
+  "Juhu, schmerzfrei",
+  "Hurra, heute ohne Schmerzen",
+  "Wie schön, kein Schmerz weit und breit",
+  "Yes, alles schmerzfrei",
+  "Heute nur Wohlfühlmomente",
+  "Super, null Schmerzen",
+  "Frei von jedem Zwicken",
+  "Ein Tag ganz ohne Schmerzen",
+  "Schmerzlevel? Glatte Null",
+  "Pure Leichtigkeit ohne Schmerzen",
+] as const;
+
+const PAIN_FREE_EMOJIS = ["😄", "🥳", "😊", "🤩", "🙌", "🎉", "🌈", "💖", "😌", "💃"] as const;
+
+const SYMPTOM_FREE_MESSAGES = [
+  "Yes! Keine Symptome",
+  "Alles ruhig auf der Symptomfront",
+  "So gut, keine Symptome heute",
+  "Was für ein Glückstag ohne Symptome",
+  "Frei von Symptomen – juhu",
+  "Heute kein Symptom in Sicht",
+  "Symptomfreie Zone aktiviert",
+  "Wunderbar symptomlos",
+  "Null Symptome, nur Freude",
+  "Alles entspannt, keine Symptome",
+] as const;
+
+const SYMPTOM_FREE_EMOJIS = ["✨", "🎉", "😊", "🥳", "🌟", "😄", "🙌", "🍀", "🤗", "💫"] as const;
+
+const pickRandom = <T,>(values: readonly T[]): T => {
+  return values[Math.floor(Math.random() * values.length)];
+};
+
 const createEmptyCategoryCompletion = (): Record<TrackableDailyCategoryId, boolean> =>
   TRACKED_DAILY_CATEGORY_IDS.reduce((acc, categoryId) => {
     acc[categoryId] = false;
@@ -4323,7 +4357,20 @@ export default function HomePage() {
     ]
   );
 
+  const confirmQuickActionReset = useCallback(
+    (categoryId: TrackableDailyCategoryId) => {
+      if (!dailyCategoryCompletion[categoryId]) {
+        return true;
+      }
+      return window.confirm("Sollen die eingegebenen Werte gelöscht und auf 0 gesetzt werden?");
+    },
+    [dailyCategoryCompletion]
+  );
+
   const handleQuickNoPain = useCallback(() => {
+    if (!confirmQuickActionReset("pain")) {
+      return;
+    }
     setDailyDraft((prev) => ({
       ...prev,
       painRegions: [],
@@ -4333,9 +4380,12 @@ export default function HomePage() {
       impactNRS: 0,
     }));
     toggleCategoryCompletion("pain");
-  }, [setDailyDraft, toggleCategoryCompletion]);
+  }, [confirmQuickActionReset, setDailyDraft, toggleCategoryCompletion]);
 
   const handleQuickNoSymptoms = useCallback(() => {
+    if (!confirmQuickActionReset("symptoms")) {
+      return;
+    }
     setDailyDraft((prev) => {
       const existing = prev.symptoms ?? {};
       const cleared: DailyEntry["symptoms"] = {};
@@ -4345,25 +4395,31 @@ export default function HomePage() {
       return { ...prev, symptoms: cleared };
     });
     toggleCategoryCompletion("symptoms");
-  }, [setDailyDraft, toggleCategoryCompletion]);
+  }, [confirmQuickActionReset, setDailyDraft, toggleCategoryCompletion]);
 
   const handleQuickNoBleeding = useCallback(() => {
+    if (!confirmQuickActionReset("bleeding")) {
+      return;
+    }
     setDailyDraft((prev) => ({
       ...prev,
       bleeding: { isBleeding: false },
     }));
     setPbacCounts({ ...PBAC_DEFAULT_COUNTS });
     toggleCategoryCompletion("bleeding");
-  }, [setDailyDraft, setPbacCounts, toggleCategoryCompletion]);
+  }, [confirmQuickActionReset, setDailyDraft, setPbacCounts, toggleCategoryCompletion]);
 
   const handleQuickNoMedication = useCallback(() => {
+    if (!confirmQuickActionReset("medication")) {
+      return;
+    }
     setDailyDraft((prev) => ({
       ...prev,
       meds: [],
       rescueDosesCount: undefined,
     }));
     toggleCategoryCompletion("medication");
-  }, [setDailyDraft, toggleCategoryCompletion]);
+  }, [confirmQuickActionReset, setDailyDraft, toggleCategoryCompletion]);
 
   const dailyCategoryButtons = useMemo(
     () =>
@@ -4693,7 +4749,7 @@ export default function HomePage() {
         painLines.push(`Belastung: ${entry.impactNRS}/10`);
       }
       if (!painLines.length) {
-        painLines.push("Keine Schmerzen dokumentiert.");
+        painLines.push(`${pickRandom(PAIN_FREE_MESSAGES)} ${pickRandom(PAIN_FREE_EMOJIS)}`);
       }
       summaries.pain = painLines;
 
@@ -4711,7 +4767,7 @@ export default function HomePage() {
         });
         symptomLines.push(`Vorhanden: ${formatList(labels, 3)}`);
       } else {
-        symptomLines.push("Keine Symptome markiert.");
+        symptomLines.push(`${pickRandom(SYMPTOM_FREE_MESSAGES)} ${pickRandom(SYMPTOM_FREE_EMOJIS)}`);
       }
       summaries.symptoms = symptomLines;
 
