@@ -233,6 +233,17 @@ type DailyCategoryId =
   | "notes"
   | "optional";
 
+const DAILY_CATEGORY_KEYS: Exclude<DailyCategoryId, "overview">[] = [
+  "pain",
+  "symptoms",
+  "bleeding",
+  "medication",
+  "sleep",
+  "bowelBladder",
+  "notes",
+  "optional",
+];
+
 const BODY_REGION_GROUPS: { id: string; label: string; regions: BodyRegion[] }[] = [
   {
     id: "head-neck",
@@ -3766,6 +3777,56 @@ export default function HomePage() {
     }
   }, [activeView]);
 
+  const dailyScopeKey = dailyDraft.date ? `daily:${dailyDraft.date}` : null;
+
+  const dailyCategoryCompletionTitles: Partial<
+    Record<Exclude<DailyCategoryId, "overview">, string>
+  > = useMemo(
+    () => ({
+      pain: "Schmerzen",
+      symptoms: "Typische Endometriose-Symptome",
+      bleeding: "Periode und Blutung",
+      medication: TERMS.meds.label,
+      sleep: "Schlaf",
+      bowelBladder: "Darm & Blase",
+    }),
+    []
+  );
+
+  const dailySectionCompletion: Record<string, boolean> = useMemo(
+    () => (dailyScopeKey ? sectionCompletionState[dailyScopeKey] ?? {} : {}),
+    [dailyScopeKey, sectionCompletionState]
+  );
+
+  const dailyCategoryCompletion: Record<Exclude<DailyCategoryId, "overview">, boolean> = useMemo(
+    () =>
+      DAILY_CATEGORY_KEYS.reduce(
+        (acc, categoryId) => {
+          const sectionTitle = dailyCategoryCompletionTitles[categoryId];
+          acc[categoryId] = sectionTitle ? Boolean(dailySectionCompletion[sectionTitle]) : false;
+          return acc;
+        },
+        {} as Record<Exclude<DailyCategoryId, "overview">, boolean>
+      ),
+    [dailyCategoryCompletionTitles, dailySectionCompletion]
+  );
+
+  const toggleCategoryCompletion = useCallback(
+    (categoryId: Exclude<DailyCategoryId, "overview">) => {
+      if (!dailyScopeKey) return;
+      const sectionTitle = dailyCategoryCompletionTitles[categoryId];
+      if (!sectionTitle) return;
+      const isCompleted = dailyCategoryCompletion[categoryId] ?? false;
+      sectionCompletionContextValue.setCompletion(dailyScopeKey, sectionTitle, !isCompleted);
+    },
+    [
+      dailyCategoryCompletion,
+      dailyCategoryCompletionTitles,
+      dailyScopeKey,
+      sectionCompletionContextValue,
+    ]
+  );
+
   const handleQuickNoPain = useCallback(() => {
     setDailyDraft((prev) => ({
       ...prev,
@@ -3775,7 +3836,8 @@ export default function HomePage() {
       painNRS: 0,
       impactNRS: 0,
     }));
-  }, [setDailyDraft]);
+    toggleCategoryCompletion("pain");
+  }, [setDailyDraft, toggleCategoryCompletion]);
 
   const handleQuickNoSymptoms = useCallback(() => {
     setDailyDraft((prev) => {
@@ -3786,7 +3848,8 @@ export default function HomePage() {
       });
       return { ...prev, symptoms: cleared };
     });
-  }, [setDailyDraft]);
+    toggleCategoryCompletion("symptoms");
+  }, [setDailyDraft, toggleCategoryCompletion]);
 
   const handleQuickNoBleeding = useCallback(() => {
     setDailyDraft((prev) => ({
@@ -3794,7 +3857,8 @@ export default function HomePage() {
       bleeding: { isBleeding: false },
     }));
     setPbacCounts({ ...PBAC_DEFAULT_COUNTS });
-  }, [setDailyDraft, setPbacCounts]);
+    toggleCategoryCompletion("bleeding");
+  }, [setDailyDraft, setPbacCounts, toggleCategoryCompletion]);
 
   const handleQuickNoMedication = useCallback(() => {
     setDailyDraft((prev) => ({
@@ -3802,7 +3866,8 @@ export default function HomePage() {
       meds: [],
       rescueDosesCount: undefined,
     }));
-  }, [setDailyDraft]);
+    toggleCategoryCompletion("medication");
+  }, [setDailyDraft, toggleCategoryCompletion]);
 
   const dailyCategoryButtons: Array<{
     id: Exclude<DailyCategoryId, "overview">;
@@ -3812,7 +3877,7 @@ export default function HomePage() {
   }> = [
     {
       id: "pain",
-      title: "Schmerzen heute",
+      title: "Schmerzen",
       description: "Körperkarte, Intensität & Auswirkungen",
       quickActions: [{ label: "Keine Schmerzen", onClick: handleQuickNoPain }],
     },
@@ -3824,7 +3889,7 @@ export default function HomePage() {
     },
     {
       id: "bleeding",
-      title: `${TERMS.bleeding_active.label} & ${TERMS.pbac.label}`,
+      title: "Periode und Blutung",
       description: "Blutung, PBAC-Score & Begleitsymptome",
       quickActions: [{ label: "Keine Periode", onClick: handleQuickNoBleeding }],
     },
@@ -3839,30 +3904,6 @@ export default function HomePage() {
     { id: "notes", title: "Notizen & Tags", description: "Freitextnotizen und Tags ergänzen" },
     { id: "optional", title: "Optionale Werte", description: "Hilfsmittel- & Wearable-Daten erfassen" },
   ];
-
-  const dailyScopeKey = dailyDraft.date ? `daily:${dailyDraft.date}` : null;
-  const dailySectionCompletion = useMemo<Record<string, boolean>>(
-    () => (dailyScopeKey ? sectionCompletionState[dailyScopeKey] ?? {} : {}),
-    [dailyScopeKey, sectionCompletionState]
-  );
-
-  const dailyCategoryCompletionTitles: Partial<Record<Exclude<DailyCategoryId, "overview">, string>> = {
-    pain: "Schmerzen heute",
-    symptoms: "Typische Endometriose-Symptome",
-    bleeding: `${TERMS.bleeding_active.label} & ${TERMS.pbac.label}`,
-    medication: TERMS.meds.label,
-    sleep: "Schlaf",
-    bowelBladder: "Darm & Blase",
-  };
-
-  const dailyCategoryCompletion = dailyCategoryButtons.reduce(
-    (acc, category) => {
-      const sectionTitle = dailyCategoryCompletionTitles[category.id];
-      acc[category.id] = sectionTitle ? Boolean(dailySectionCompletion[sectionTitle]) : false;
-      return acc;
-    },
-    {} as Record<Exclude<DailyCategoryId, "overview">, boolean>
-  );
 
   useLayoutEffect(() => {
     if (isHomeView) {
@@ -4254,7 +4295,12 @@ export default function HomePage() {
                       return (
                         <div
                           key={category.id}
-                          className="group rounded-2xl border border-rose-100 bg-white/80 p-4 shadow-sm transition hover:border-rose-200 hover:shadow-md"
+                          className={cn(
+                            "group rounded-2xl border p-4 shadow-sm transition hover:shadow-md",
+                            isCompleted
+                              ? "border-amber-200 bg-amber-50 hover:border-amber-300"
+                              : "border-rose-100 bg-white/80 hover:border-rose-200"
+                          )}
                         >
                           <button
                             type="button"
@@ -4331,7 +4377,7 @@ export default function HomePage() {
               </div>
               <div className={cn("space-y-6", dailyActiveCategory === "pain" ? "" : "hidden")}> 
                 <Section
-                  title="Schmerzen heute"
+                  title="Schmerzen"
                   description="Zuerst betroffene Körperbereiche wählen, anschließend Intensität und Schmerzart je Region erfassen"
                   onComplete={() => setDailyActiveCategory("overview")}
                 >
@@ -4540,7 +4586,7 @@ export default function HomePage() {
 
               <div className={cn("space-y-6", dailyActiveCategory === "bleeding" ? "" : "hidden")}> 
                 <Section
-                  title={`${TERMS.bleeding_active.label} & ${TERMS.pbac.label}`}
+                  title="Periode und Blutung"
                   onComplete={() => setDailyActiveCategory("overview")}
                 >
                   <div className="flex flex-wrap items-center gap-3">
