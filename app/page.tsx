@@ -128,6 +128,20 @@ const HEAD_REGION_ID = "head";
 const MIGRAINE_LABEL = "Migräne";
 const MIGRAINE_WITH_AURA_LABEL = "Migräne mit Aura";
 const MIGRAINE_QUALITY_SET = new Set<string>(MIGRAINE_PAIN_QUALITIES);
+type OvulationPainSide = Exclude<NonNullable<DailyEntry["ovulationPain"]>["side"], undefined>;
+
+const OVULATION_PAIN_SIDES: OvulationPainSide[] = [
+  "links",
+  "rechts",
+  "beidseitig",
+  "unsicher",
+];
+const OVULATION_PAIN_SIDE_LABELS: Record<OvulationPainSide, string> = {
+  links: "Links",
+  rechts: "Rechts",
+  beidseitig: "Beidseitig",
+  unsicher: "Unsicher",
+};
 
 const sanitizeHeadRegionQualities = (
   qualities: DailyEntry["painQuality"]
@@ -2539,6 +2553,7 @@ export default function HomePage() {
   const dyscheziaSymptom = dailyDraft.symptoms.dyschezia;
   const dysuriaSymptom = dailyDraft.symptoms.dysuria;
   const deepDyspareuniaSymptom = dailyDraft.symptoms.deepDyspareunia ?? { present: false };
+  const ovulationPainDraft = dailyDraft.ovulationPain ?? {};
 
   const pbacFlooding = dailyDraft.bleeding.flooding ?? false;
   const pbacScore = useMemo(() => computePbacScore(pbacCounts, pbacFlooding), [pbacCounts, pbacFlooding]);
@@ -2811,54 +2826,6 @@ export default function HomePage() {
         }
         const nextRegions = current
           .filter((region) => region.regionId !== regionId) as NonNullable<DailyEntry["painRegions"]>;
-        return buildDailyDraftWithPainRegions(prev, nextRegions);
-      });
-    },
-    [setDailyDraft]
-  );
-
-  const updatePainRegionNrs = useCallback(
-    (index: number, value: number) => {
-      setDailyDraft((prev) => {
-        const regions = prev.painRegions ?? [];
-        if (!regions[index]) {
-          return prev;
-        }
-        const nextRegions = regions.map((region, regionIndex) =>
-          regionIndex === index
-            ? { ...region, nrs: Math.max(0, Math.min(10, Math.round(value))) }
-            : region
-        ) as NonNullable<DailyEntry["painRegions"]>;
-        return buildDailyDraftWithPainRegions(prev, nextRegions);
-      });
-    },
-    [setDailyDraft]
-  );
-
-  const updatePainRegionQuality = useCallback(
-    (index: number, quality: string) => {
-      setDailyDraft((prev) => {
-        const regions = prev.painRegions ?? [];
-        const target = regions[index];
-        if (!target) {
-          return prev;
-        }
-        let nextQualities: DailyEntry["painQuality"] = [];
-        if (quality) {
-          const single = [quality] as DailyEntry["painQuality"];
-          nextQualities =
-            target.regionId === HEAD_REGION_ID
-              ? sanitizeHeadRegionQualities(single)
-              : single;
-        }
-        const nextRegions = regions.map((region, regionIndex) =>
-          regionIndex === index
-            ? {
-                ...region,
-                qualities: nextQualities,
-              }
-            : region
-        ) as NonNullable<DailyEntry["painRegions"]>;
         return buildDailyDraftWithPainRegions(prev, nextRegions);
       });
     },
@@ -4670,7 +4637,7 @@ export default function HomePage() {
                             )}
                           </div>
                         </div>
-                        {dailyDraft.painRegions?.map((region, index) => (
+                        {dailyDraft.painRegions?.map((region) => (
                           <div key={region.regionId} className="space-y-4 rounded-lg border border-rose-100 bg-rose-50 p-4">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <div className="flex items-center gap-2">
@@ -4694,40 +4661,177 @@ export default function HomePage() {
                                 </button>
                               </div>
                             </div>
-                            <div className="space-y-3">
-                              <Label className="text-xs text-rose-600">Intensität (0–10)</Label>
-                              <Slider
-                                value={[region.nrs ?? 0]}
-                                min={0}
-                                max={10}
-                                step={1}
-                                onValueChange={([value]) => updatePainRegionNrs(index, value ?? 0)}
-                              />
-                              <SliderValueDisplay value={region.nrs ?? 0} label="Aktueller Wert" />
-                              {renderIssuesForPath(`painRegions[${index}].nrs`)}
+                            <div className="space-y-1">
+                              <p className="text-xs uppercase tracking-wide text-rose-500">Intensität</p>
+                              <p className="text-sm font-semibold text-rose-800">{region.nrs ?? 0} / 10</p>
+                              <p className="text-xs text-rose-500">Bearbeitung direkt in der Körperkarte.</p>
                             </div>
-                            <div className="space-y-3">
-                              <Label className="text-xs text-rose-600">Schmerzqualität</Label>
-                              <Select
-                                value={(region.qualities ?? [])[0] ?? ""}
-                                onValueChange={(value) => updatePainRegionQuality(index, value)}
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Auswählen" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {(region.regionId === HEAD_REGION_ID ? HEAD_PAIN_QUALITIES : ALL_PAIN_QUALITIES).map((quality) => (
-                                    <SelectItem key={quality} value={quality}>
+                            <div className="space-y-2">
+                              <p className="text-xs uppercase tracking-wide text-rose-500">Schmerzqualitäten</p>
+                              {region.qualities && region.qualities.length > 0 ? (
+                                <div className="flex flex-wrap gap-2">
+                                  {region.qualities.map((quality) => (
+                                    <Badge
+                                      key={`${region.regionId}-${quality}`}
+                                      className="bg-white px-2 py-1 text-xs font-medium text-rose-700"
+                                    >
                                       {quality}
-                                    </SelectItem>
+                                    </Badge>
                                   ))}
-                                </SelectContent>
-                              </Select>
-                              {renderIssuesForPath(`painRegions[${index}].qualities`)}
+                                </div>
+                              ) : (
+                                <p className="text-sm text-rose-500">Qualitäten über die Körperkarte wählen.</p>
+                              )}
                             </div>
                           </div>
                         ))}
                       </div>
+
+                        <div className="space-y-4 rounded-lg border border-rose-100 bg-white p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-rose-800">{TERMS.deepDyspareunia.label}</p>
+                              <InfoTip
+                                tech={TERMS.deepDyspareunia.tech ?? TERMS.deepDyspareunia.label}
+                                help={TERMS.deepDyspareunia.help}
+                              />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Label className="text-xs text-rose-600">vorhanden</Label>
+                              <Switch
+                                checked={deepDyspareuniaSymptom.present}
+                                onCheckedChange={(checked) =>
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    symptoms: {
+                                      ...prev.symptoms,
+                                      deepDyspareunia: checked
+                                        ? {
+                                            present: true,
+                                            score: prev.symptoms.deepDyspareunia?.score ?? 0,
+                                          }
+                                        : { present: false },
+                                    },
+                                  }))
+                                }
+                              />
+                            </div>
+                          </div>
+                          {renderIssuesForPath("symptoms.deepDyspareunia.present")}
+                          {deepDyspareuniaSymptom.present ? (
+                            <div className="space-y-2">
+                              <ScoreInput
+                                id="pain-deep-dyspareunia"
+                                label={`${TERMS.deepDyspareunia.label} – Stärke (0–10)`}
+                                value={deepDyspareuniaSymptom.score ?? 0}
+                                onChange={(value) =>
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    symptoms: {
+                                      ...prev.symptoms,
+                                      deepDyspareunia: {
+                                        present: true,
+                                        score: Math.max(0, Math.min(10, Math.round(value))),
+                                      },
+                                    },
+                                  }))
+                                }
+                              />
+                              {renderIssuesForPath("symptoms.deepDyspareunia.score")}
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <div className="space-y-4 rounded-lg border border-rose-100 bg-white p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <TermHeadline termKey="ovulationPain" />
+                            </div>
+                            {dailyDraft.ovulationPain ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="rounded-full border border-rose-100 bg-rose-50/80 text-xs font-medium text-rose-700 hover:border-rose-200 hover:bg-rose-100"
+                                onClick={() =>
+                                  setDailyDraft((prev) => {
+                                    const next = { ...prev } as { ovulationPain?: DailyEntry["ovulationPain"] };
+                                    delete next.ovulationPain;
+                                    return next as DailyEntry;
+                                  })
+                                }
+                              >
+                                Zurücksetzen
+                              </Button>
+                            ) : null}
+                          </div>
+                          <div className="space-y-3">
+                            <Label className="text-xs text-rose-600">Seite</Label>
+                            <Select
+                              value={ovulationPainDraft.side ?? ""}
+                              onValueChange={(value) => {
+                                if (value === "__clear") {
+                                  setDailyDraft((prev) => {
+                                    const next = { ...prev } as { ovulationPain?: DailyEntry["ovulationPain"] };
+                                    delete next.ovulationPain;
+                                    return next as DailyEntry;
+                                  });
+                                  return;
+                                }
+                                setDailyDraft((prev) => {
+                                  const previousIntensity = prev.ovulationPain?.intensity;
+                                  const next: NonNullable<DailyEntry["ovulationPain"]> = {
+                                    side: value as NonNullable<DailyEntry["ovulationPain"]>["side"],
+                                  };
+                                  if (typeof previousIntensity === "number") {
+                                    next.intensity = Math.max(0, Math.min(10, Math.round(previousIntensity)));
+                                  }
+                                  return {
+                                    ...prev,
+                                    ovulationPain: next,
+                                  };
+                                });
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Auswählen" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {OVULATION_PAIN_SIDES.map((side) => (
+                                  <SelectItem key={side} value={side}>
+                                    {OVULATION_PAIN_SIDE_LABELS[side]}
+                                  </SelectItem>
+                                ))}
+                                <SelectItem value="__clear">Keine Angabe</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            {renderIssuesForPath("ovulationPain.side")}
+                          </div>
+                          <div className="space-y-2">
+                            <ScoreInput
+                              id="ovulation-pain-intensity"
+                              label="Intensität (0–10)"
+                              value={ovulationPainDraft.intensity ?? 0}
+                              onChange={(value) =>
+                                setDailyDraft((prev) => {
+                                  const side = prev.ovulationPain?.side;
+                                  if (!side) {
+                                    return prev;
+                                  }
+                                  return {
+                                    ...prev,
+                                    ovulationPain: {
+                                      side,
+                                      intensity: Math.max(0, Math.min(10, Math.round(value))),
+                                    },
+                                  };
+                                })
+                              }
+                              disabled={!ovulationPainDraft.side}
+                            />
+                            {renderIssuesForPath("ovulationPain.intensity")}
+                          </div>
+                        </div>
 
                       <TermField termKey="nrs">
                         <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4">
