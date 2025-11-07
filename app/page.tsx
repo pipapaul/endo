@@ -268,6 +268,11 @@ const DAILY_CATEGORY_KEYS: Exclude<DailyCategoryId, "overview">[] = [
   "optional",
 ];
 
+const isTrackedDailyCategory = (
+  categoryId: DailyCategoryId
+): categoryId is TrackableDailyCategoryId =>
+  TRACKED_DAILY_CATEGORY_IDS.includes(categoryId as TrackableDailyCategoryId);
+
 const BODY_REGION_GROUPS: { id: string; label: string; regions: BodyRegion[] }[] = [
   {
     id: "head-neck",
@@ -536,6 +541,436 @@ const PBAC_DEFAULT_COUNTS = PBAC_ITEMS.reduce<PbacCounts>((acc, item) => {
   acc[item.id] = 0;
   return acc;
 }, {} as PbacCounts);
+
+type TrackableDailyCategoryId = "pain" | "symptoms" | "bleeding" | "medication" | "sleep" | "bowelBladder";
+
+const TRACKED_DAILY_CATEGORY_IDS: TrackableDailyCategoryId[] = [
+  "pain",
+  "symptoms",
+  "bleeding",
+  "medication",
+  "sleep",
+  "bowelBladder",
+];
+
+const createEmptyCategoryCompletion = (): Record<TrackableDailyCategoryId, boolean> =>
+  TRACKED_DAILY_CATEGORY_IDS.reduce((acc, categoryId) => {
+    acc[categoryId] = false;
+    return acc;
+  }, {} as Record<TrackableDailyCategoryId, boolean>);
+
+type SymptomSnapshot = { present: boolean; score: number | null };
+
+type CategorySnapshot = {
+  entry?: Record<string, unknown>;
+  featureFlags?: Partial<Record<keyof FeatureFlags, boolean>>;
+  pbacCounts?: PbacCounts;
+};
+
+const deepClone = <T,>(value: T): T => {
+  if (value === null || value === undefined) {
+    return value;
+  }
+  if (typeof structuredClone === "function") {
+    return structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value)) as T;
+};
+
+const normalizeSymptom = (value?: { present?: boolean; score?: number }): SymptomSnapshot => ({
+  present: Boolean(value?.present),
+  score: typeof value?.score === "number" ? value.score : null,
+});
+
+const applySymptomSnapshot = (snapshot?: SymptomSnapshot) => {
+  if (!snapshot) {
+    return undefined;
+  }
+  if (!snapshot.present && snapshot.score === null) {
+    return { present: false };
+  }
+  const result: { present: boolean; score?: number } = { present: snapshot.present };
+  if (snapshot.score !== null) {
+    result.score = snapshot.score;
+  }
+  return result;
+};
+
+const pickFeatureFlags = (
+  featureFlags: FeatureFlags,
+  keys: (keyof FeatureFlags)[]
+): Partial<Record<keyof FeatureFlags, boolean>> => {
+  const sortedKeys = [...keys].sort();
+  return sortedKeys.reduce((acc, key) => {
+    acc[key] = Boolean(featureFlags[key]);
+    return acc;
+  }, {} as Partial<Record<keyof FeatureFlags, boolean>>);
+};
+
+const sortPbacCounts = (counts: PbacCounts): PbacCounts => {
+  const sortedKeys = Object.keys(counts).sort();
+  return sortedKeys.reduce((acc, key) => {
+    acc[key as keyof PbacCounts] = counts[key as keyof PbacCounts];
+    return acc;
+  }, {} as PbacCounts);
+};
+
+const extractDailyCategorySnapshot = (
+  entry: DailyEntry,
+  categoryId: TrackableDailyCategoryId,
+  featureFlags: FeatureFlags,
+  pbacCounts: PbacCounts
+): CategorySnapshot | null => {
+  switch (categoryId) {
+    case "pain": {
+      const painRegions = (entry.painRegions ?? []).map((region) => ({
+        regionId: region.regionId,
+        nrs: typeof region.nrs === "number" ? region.nrs : null,
+        qualities: [...(region.qualities ?? [])],
+      }));
+      return {
+        entry: {
+          painRegions,
+          painMapRegionIds: [...(entry.painMapRegionIds ?? [])],
+          painQuality: [...(entry.painQuality ?? [])],
+          painNRS: typeof entry.painNRS === "number" ? entry.painNRS : null,
+          impactNRS: typeof entry.impactNRS === "number" ? entry.impactNRS : null,
+          headacheOpt: entry.headacheOpt ? deepClone(entry.headacheOpt) : null,
+          ovulationPain: entry.ovulationPain ? deepClone(entry.ovulationPain) : null,
+          symptoms: {
+            deepDyspareunia: normalizeSymptom(entry.symptoms?.deepDyspareunia),
+          },
+        },
+      };
+    }
+    case "symptoms": {
+      const symptomSnapshot: Record<string, SymptomSnapshot> = {};
+      SYMPTOM_ITEMS.forEach((item) => {
+        symptomSnapshot[item.key] = normalizeSymptom(entry.symptoms?.[item.key]);
+      });
+      return {
+        entry: { symptoms: symptomSnapshot },
+        featureFlags: pickFeatureFlags(
+          featureFlags,
+          SYMPTOM_MODULE_TOGGLES.map((toggle) => toggle.key)
+        ),
+      };
+    }
+    case "bleeding": {
+      return {
+        entry: {
+          bleeding: {
+            isBleeding: Boolean(entry.bleeding?.isBleeding),
+            pbacScore: typeof entry.bleeding?.pbacScore === "number" ? entry.bleeding.pbacScore : null,
+            clots: Boolean(entry.bleeding?.clots),
+            flooding: Boolean(entry.bleeding?.flooding),
+          },
+        },
+        pbacCounts: sortPbacCounts(pbacCounts),
+      };
+    }
+    case "medication": {
+      return {
+        entry: {
+          meds: (entry.meds ?? []).map((med) => ({
+            name: med.name,
+            doseMg: typeof med.doseMg === "number" ? med.doseMg : null,
+            times: [...(med.times ?? [])],
+          })),
+          rescueDosesCount:
+            typeof entry.rescueDosesCount === "number" ? entry.rescueDosesCount : null,
+        },
+      };
+    }
+    case "sleep": {
+      const sleep = entry.sleep
+        ? {
+            hours: typeof entry.sleep.hours === "number" ? entry.sleep.hours : null,
+            quality: typeof entry.sleep.quality === "number" ? entry.sleep.quality : null,
+            awakenings:
+              typeof entry.sleep.awakenings === "number" ? entry.sleep.awakenings : null,
+          }
+        : null;
+      return {
+        entry: { sleep },
+      };
+    }
+    case "bowelBladder": {
+      return {
+        entry: {
+          symptoms: {
+            dyschezia: normalizeSymptom(entry.symptoms?.dyschezia),
+            dysuria: normalizeSymptom(entry.symptoms?.dysuria),
+          },
+          gi: entry.gi ? { bristolType: entry.gi.bristolType ?? null } : null,
+          urinary: entry.urinary
+            ? {
+                freqPerDay: typeof entry.urinary.freqPerDay === "number" ? entry.urinary.freqPerDay : null,
+                urgency: typeof entry.urinary.urgency === "number" ? entry.urinary.urgency : null,
+              }
+            : null,
+          urinaryOpt: entry.urinaryOpt
+            ? {
+                present: Boolean(entry.urinaryOpt.present),
+                urgency: typeof entry.urinaryOpt.urgency === "number" ? entry.urinaryOpt.urgency : null,
+                leaksCount:
+                  typeof entry.urinaryOpt.leaksCount === "number" ? entry.urinaryOpt.leaksCount : null,
+                nocturia:
+                  typeof entry.urinaryOpt.nocturia === "number" ? entry.urinaryOpt.nocturia : null,
+                padsCount:
+                  typeof entry.urinaryOpt.padsCount === "number" ? entry.urinaryOpt.padsCount : null,
+              }
+            : null,
+          dizzinessOpt: entry.dizzinessOpt
+            ? {
+                present: Boolean(entry.dizzinessOpt.present),
+                nrs: typeof entry.dizzinessOpt.nrs === "number" ? entry.dizzinessOpt.nrs : null,
+                orthostatic: Boolean(entry.dizzinessOpt.orthostatic),
+              }
+            : null,
+        },
+        featureFlags: pickFeatureFlags(featureFlags, ["moduleUrinary"]),
+      };
+    }
+    default:
+      return null;
+  }
+};
+
+const restoreDailyCategorySnapshot = (
+  entry: DailyEntry,
+  featureFlags: FeatureFlags,
+  pbacCounts: PbacCounts,
+  categoryId: TrackableDailyCategoryId,
+  snapshot: CategorySnapshot
+): { entry: DailyEntry; featureFlags: FeatureFlags; pbacCounts: PbacCounts } => {
+  let nextEntry: DailyEntry = { ...entry };
+  let nextFeatureFlags: FeatureFlags = { ...featureFlags };
+  let nextPbacCounts: PbacCounts = pbacCounts;
+
+  switch (categoryId) {
+    case "pain": {
+      const data = snapshot.entry as
+        | {
+            painRegions?: Array<{ regionId: string; nrs: number | null; qualities: string[] }>;
+            painMapRegionIds?: string[];
+            painQuality?: string[];
+            painNRS?: number | null;
+            impactNRS?: number | null;
+            headacheOpt?: DailyEntry["headacheOpt"] | null;
+            ovulationPain?: DailyEntry["ovulationPain"] | null;
+            symptoms?: { deepDyspareunia?: SymptomSnapshot };
+          }
+        | undefined;
+      if (data) {
+        if (data.painRegions) {
+          const normalizedRegions = data.painRegions.map((region) => ({
+            regionId: region.regionId,
+            nrs: typeof region.nrs === "number" ? region.nrs : 0,
+            qualities: [...(region.qualities ?? [])],
+          })) as NonNullable<DailyEntry["painRegions"]>;
+          nextEntry = buildDailyDraftWithPainRegions(nextEntry, normalizedRegions);
+        }
+        if (data.painNRS !== undefined) {
+          nextEntry.painNRS = data.painNRS ?? 0;
+        }
+        if (data.impactNRS !== undefined) {
+          nextEntry.impactNRS = data.impactNRS ?? undefined;
+        }
+        nextEntry.headacheOpt = data.headacheOpt ? deepClone(data.headacheOpt) : undefined;
+        nextEntry.ovulationPain = data.ovulationPain ? deepClone(data.ovulationPain) : undefined;
+        const nextSymptoms = { ...(nextEntry.symptoms ?? {}) };
+        const deepDyspareuniaSnapshot = data.symptoms?.deepDyspareunia;
+        if (deepDyspareuniaSnapshot) {
+          nextSymptoms.deepDyspareunia = applySymptomSnapshot(deepDyspareuniaSnapshot);
+        } else {
+          delete nextSymptoms.deepDyspareunia;
+        }
+        nextEntry.symptoms = nextSymptoms;
+      }
+      break;
+    }
+    case "symptoms": {
+      const data = snapshot.entry as { symptoms?: Record<string, SymptomSnapshot> } | undefined;
+      if (data?.symptoms) {
+        const nextSymptoms = { ...(nextEntry.symptoms ?? {}) };
+        SYMPTOM_ITEMS.forEach((item) => {
+          const itemSnapshot = data.symptoms?.[item.key];
+          if (itemSnapshot) {
+            nextSymptoms[item.key] = applySymptomSnapshot(itemSnapshot);
+          }
+        });
+        nextEntry.symptoms = nextSymptoms;
+      }
+      if (snapshot.featureFlags) {
+        Object.entries(snapshot.featureFlags).forEach(([key, value]) => {
+          nextFeatureFlags[key as keyof FeatureFlags] = Boolean(value);
+        });
+      }
+      break;
+    }
+    case "bleeding": {
+      const data = snapshot.entry as
+        | {
+            bleeding?: {
+              isBleeding: boolean;
+              pbacScore: number | null;
+              clots: boolean;
+              flooding: boolean;
+            };
+          }
+        | undefined;
+      if (data?.bleeding) {
+        nextEntry.bleeding = {
+          isBleeding: Boolean(data.bleeding.isBleeding),
+          pbacScore:
+            typeof data.bleeding.pbacScore === "number" ? data.bleeding.pbacScore : undefined,
+          clots: Boolean(data.bleeding.clots),
+          flooding: Boolean(data.bleeding.flooding),
+        };
+      }
+      if (snapshot.pbacCounts) {
+        nextPbacCounts = sortPbacCounts(snapshot.pbacCounts);
+      }
+      break;
+    }
+    case "medication": {
+      const data = snapshot.entry as
+        | {
+            meds?: DailyEntry["meds"];
+            rescueDosesCount?: number | null;
+          }
+        | undefined;
+      if (data?.meds) {
+        nextEntry.meds = data.meds.map((med) => ({
+          name: med.name,
+          doseMg: typeof med.doseMg === "number" ? med.doseMg : undefined,
+          times: [...(med.times ?? [])],
+        }));
+      }
+      if (data) {
+        nextEntry.rescueDosesCount =
+          typeof data.rescueDosesCount === "number" ? data.rescueDosesCount : undefined;
+      }
+      break;
+    }
+    case "sleep": {
+      const data = snapshot.entry as { sleep?: { hours: number | null; quality: number | null; awakenings: number | null } | null } | undefined;
+      if (data) {
+        nextEntry.sleep = data.sleep
+          ? {
+              hours: typeof data.sleep.hours === "number" ? data.sleep.hours : undefined,
+              quality: typeof data.sleep.quality === "number" ? data.sleep.quality : undefined,
+              awakenings:
+                typeof data.sleep.awakenings === "number" ? data.sleep.awakenings : undefined,
+            }
+          : undefined;
+      }
+      break;
+    }
+    case "bowelBladder": {
+      const data = snapshot.entry as
+        | {
+            symptoms?: { dyschezia?: SymptomSnapshot; dysuria?: SymptomSnapshot };
+            gi?: { bristolType: number | null } | null;
+            urinary?: { freqPerDay: number | null; urgency: number | null } | null;
+            urinaryOpt?: {
+              present: boolean;
+              urgency: number | null;
+              leaksCount: number | null;
+              nocturia: number | null;
+              padsCount: number | null;
+            } | null;
+            dizzinessOpt?: {
+              present: boolean;
+              nrs: number | null;
+              orthostatic: boolean;
+            } | null;
+          }
+        | undefined;
+      if (data) {
+        const nextSymptoms = { ...(nextEntry.symptoms ?? {}) };
+        if (data.symptoms?.dyschezia) {
+          nextSymptoms.dyschezia = applySymptomSnapshot(data.symptoms.dyschezia);
+        }
+        if (data.symptoms?.dysuria) {
+          nextSymptoms.dysuria = applySymptomSnapshot(data.symptoms.dysuria);
+        }
+        nextEntry.symptoms = nextSymptoms;
+        if (data.gi) {
+          const bristolType = data.gi?.bristolType;
+          nextEntry.gi =
+            typeof bristolType === "number"
+              ? {
+                  bristolType:
+                    bristolType as NonNullable<DailyEntry["gi"]>["bristolType"],
+                }
+              : undefined;
+        } else {
+          nextEntry.gi = undefined;
+        }
+        if (data.urinary) {
+          const freqPerDay =
+            typeof data.urinary.freqPerDay === "number" ? data.urinary.freqPerDay : undefined;
+          const urgency =
+            typeof data.urinary.urgency === "number" ? data.urinary.urgency : undefined;
+          nextEntry.urinary = freqPerDay !== undefined || urgency !== undefined ? { freqPerDay, urgency } : undefined;
+        } else {
+          nextEntry.urinary = undefined;
+        }
+        if (data.urinaryOpt) {
+          const urgency =
+            typeof data.urinaryOpt.urgency === "number" ? data.urinaryOpt.urgency : undefined;
+          const leaksCount =
+            typeof data.urinaryOpt.leaksCount === "number" ? data.urinaryOpt.leaksCount : undefined;
+          const nocturia =
+            typeof data.urinaryOpt.nocturia === "number" ? data.urinaryOpt.nocturia : undefined;
+          const padsCount =
+            typeof data.urinaryOpt.padsCount === "number" ? data.urinaryOpt.padsCount : undefined;
+          const present = Boolean(data.urinaryOpt.present);
+          const hasDetails =
+            present ||
+            urgency !== undefined ||
+            leaksCount !== undefined ||
+            nocturia !== undefined ||
+            padsCount !== undefined;
+          nextEntry.urinaryOpt = hasDetails
+            ? { present, urgency, leaksCount, nocturia, padsCount }
+            : undefined;
+        } else {
+          nextEntry.urinaryOpt = undefined;
+        }
+        if (data.dizzinessOpt) {
+          const nrs = typeof data.dizzinessOpt.nrs === "number" ? data.dizzinessOpt.nrs : undefined;
+          const present = Boolean(data.dizzinessOpt.present);
+          const orthostatic = Boolean(data.dizzinessOpt.orthostatic);
+          const hasDizzinessDetails = present || nrs !== undefined || orthostatic;
+          nextEntry.dizzinessOpt = hasDizzinessDetails ? { present, nrs, orthostatic } : undefined;
+        } else {
+          nextEntry.dizzinessOpt = undefined;
+        }
+      }
+      if (snapshot.featureFlags) {
+        Object.entries(snapshot.featureFlags).forEach(([key, value]) => {
+          nextFeatureFlags[key as keyof FeatureFlags] = Boolean(value);
+        });
+      }
+      break;
+    }
+  }
+
+  if (snapshot.featureFlags && categoryId !== "symptoms" && categoryId !== "bowelBladder") {
+    Object.entries(snapshot.featureFlags).forEach(([key, value]) => {
+      nextFeatureFlags[key as keyof FeatureFlags] = Boolean(value);
+    });
+  }
+
+  return {
+    entry: nextEntry,
+    featureFlags: nextFeatureFlags,
+    pbacCounts: nextPbacCounts,
+  };
+};
 
 type CycleOverviewPoint = {
   date: string;
@@ -1835,6 +2270,12 @@ export default function HomePage() {
     usePersistentState<DailyEntry>("endo.draft.daily.v1", defaultDailyDraft);
   const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
   const [pbacCounts, setPbacCounts] = useState<PbacCounts>({ ...PBAC_DEFAULT_COUNTS });
+  const [dailyCategorySnapshots, setDailyCategorySnapshots] = useState<
+    Partial<Record<TrackableDailyCategoryId, string>>
+  >({});
+  const [dailyCategoryDirtyState, setDailyCategoryDirtyState] = useState<
+    Partial<Record<TrackableDailyCategoryId, boolean>>
+  >({});
   const [sensorsVisible, setSensorsVisible] = useState(false);
   const [exploratoryVisible, setExploratoryVisible] = useState(false);
   const [notesTagDraft, setNotesTagDraft] = useState("");
@@ -1858,12 +2299,18 @@ export default function HomePage() {
   const detailToolbarRef = useRef<HTMLElement | null>(null);
   const dailyDateInputRef = useRef<HTMLInputElement | null>(null);
   const previousDailyDateRef = useRef(dailyDraft.date);
+  const previousDailyScopeRef = useRef<string | null>(null);
+  const previousDailyCategoryCompletionRef = useRef<Record<TrackableDailyCategoryId, boolean>>(
+    createEmptyCategoryCompletion()
+  );
 
   const isBirthdayGreetingDay = () => {
     const now = new Date();
     return now.getFullYear() === 2025 && now.getMonth() === 10 && now.getDate() === 10;
   };
   const [showBirthdayGreeting, setShowBirthdayGreeting] = useState(isBirthdayGreetingDay);
+  const [pendingCategoryConfirm, setPendingCategoryConfirm] =
+    useState<TrackableDailyCategoryId | null>(null);
   const heartGradientReactId = useId();
   const heartGradientId = useMemo(
     () => `heart-gradient-${heartGradientReactId.replace(/:/g, "")}`,
@@ -3910,41 +4357,279 @@ export default function HomePage() {
     toggleCategoryCompletion("medication");
   }, [setDailyDraft, toggleCategoryCompletion]);
 
-  const dailyCategoryButtons: Array<{
-    id: Exclude<DailyCategoryId, "overview">;
-    title: string;
-    description: string;
-    quickActions?: Array<{ label: string; onClick: () => void }>;
-  }> = [
-    {
-      id: "pain",
-      title: "Schmerzen",
-      description: "Körperkarte, Intensität & Auswirkungen",
-      quickActions: [{ label: "Keine Schmerzen", onClick: handleQuickNoPain }],
-    },
-    {
-      id: "symptoms",
-      title: "Symptome",
-      description: "Typische Endometriose-Symptome dokumentieren",
-      quickActions: [{ label: "Keine Symptome", onClick: handleQuickNoSymptoms }],
-    },
-    {
-      id: "bleeding",
-      title: "Periode und Blutung",
-      description: "Blutung, PBAC-Score & Begleitsymptome",
-      quickActions: [{ label: "Keine Periode", onClick: handleQuickNoBleeding }],
-    },
-    {
-      id: "medication",
-      title: TERMS.meds.label,
-      description: "Eingenommene Medikamente & Hilfen",
-      quickActions: [{ label: "Keine Medikamente", onClick: handleQuickNoMedication }],
-    },
-    { id: "sleep", title: "Schlaf", description: "Dauer, Qualität & Aufwachphasen" },
-    { id: "bowelBladder", title: "Darm & Blase", description: "Verdauung & Blase im Blick behalten" },
-    { id: "notes", title: "Notizen & Tags", description: "Freitextnotizen und Tags ergänzen" },
-    { id: "optional", title: "Optionale Werte", description: "Hilfsmittel- & Wearable-Daten erfassen" },
-  ];
+  const dailyCategoryButtons = useMemo(
+    () =>
+      [
+        {
+          id: "pain" as const,
+          title: "Schmerzen",
+          description: "Körperkarte, Intensität & Auswirkungen",
+          quickActions: [{ label: "Keine Schmerzen", onClick: handleQuickNoPain }],
+        },
+        {
+          id: "symptoms" as const,
+          title: "Symptome",
+          description: "Typische Endometriose-Symptome dokumentieren",
+          quickActions: [{ label: "Keine Symptome", onClick: handleQuickNoSymptoms }],
+        },
+        {
+          id: "bleeding" as const,
+          title: "Periode und Blutung",
+          description: "Blutung, PBAC-Score & Begleitsymptome",
+          quickActions: [{ label: "Keine Periode", onClick: handleQuickNoBleeding }],
+        },
+        {
+          id: "medication" as const,
+          title: TERMS.meds.label,
+          description: "Eingenommene Medikamente & Hilfen",
+          quickActions: [{ label: "Keine Medikamente", onClick: handleQuickNoMedication }],
+        },
+        { id: "sleep" as const, title: "Schlaf", description: "Dauer, Qualität & Aufwachphasen" },
+        {
+          id: "bowelBladder" as const,
+          title: "Darm & Blase",
+          description: "Verdauung & Blase im Blick behalten",
+        },
+        { id: "notes" as const, title: "Notizen & Tags", description: "Freitextnotizen und Tags ergänzen" },
+        {
+          id: "optional" as const,
+          title: "Optionale Werte",
+          description: "Hilfsmittel- & Wearable-Daten erfassen",
+        },
+      ] satisfies Array<{
+        id: Exclude<DailyCategoryId, "overview">;
+        title: string;
+        description: string;
+        quickActions?: Array<{ label: string; onClick: () => void }>;
+      }>,
+    [handleQuickNoBleeding, handleQuickNoMedication, handleQuickNoPain, handleQuickNoSymptoms]
+  );
+
+  useEffect(() => {
+    if (previousDailyScopeRef.current === dailyScopeKey) {
+      return;
+    }
+    previousDailyScopeRef.current = dailyScopeKey;
+    setDailyCategorySnapshots({});
+    setDailyCategoryDirtyState({});
+    previousDailyCategoryCompletionRef.current = createEmptyCategoryCompletion();
+  }, [dailyScopeKey]);
+
+  useEffect(() => {
+    if (!dailyScopeKey) {
+      previousDailyCategoryCompletionRef.current = createEmptyCategoryCompletion();
+      return;
+    }
+    const prevCompletion = previousDailyCategoryCompletionRef.current;
+    const nextCompletion: Record<TrackableDailyCategoryId, boolean> = { ...prevCompletion };
+    const snapshotUpdates: Array<[TrackableDailyCategoryId, string]> = [];
+    const dirtyResets: TrackableDailyCategoryId[] = [];
+    TRACKED_DAILY_CATEGORY_IDS.forEach((categoryId) => {
+      const completed = dailyCategoryCompletion[categoryId] ?? false;
+      if (completed && !prevCompletion[categoryId]) {
+        const snapshot = extractDailyCategorySnapshot(
+          dailyDraft,
+          categoryId,
+          featureFlags,
+          pbacCounts
+        );
+        if (snapshot) {
+          snapshotUpdates.push([categoryId, JSON.stringify(snapshot)]);
+        }
+        dirtyResets.push(categoryId);
+      }
+      nextCompletion[categoryId] = completed;
+    });
+    previousDailyCategoryCompletionRef.current = nextCompletion;
+    if (snapshotUpdates.length) {
+      setDailyCategorySnapshots((prev) => {
+        const next = { ...prev };
+        snapshotUpdates.forEach(([categoryId, value]) => {
+          next[categoryId] = value;
+        });
+        return next;
+      });
+    }
+    if (dirtyResets.length) {
+      setDailyCategoryDirtyState((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        dirtyResets.forEach((categoryId) => {
+          if (next[categoryId]) {
+            delete next[categoryId];
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    }
+  }, [dailyCategoryCompletion, dailyDraft, dailyScopeKey, featureFlags, pbacCounts]);
+
+  useEffect(() => {
+    if (!dailyScopeKey) {
+      return;
+    }
+    const dirtyUpdates: Array<[TrackableDailyCategoryId, boolean]> = [];
+    TRACKED_DAILY_CATEGORY_IDS.forEach((categoryId) => {
+      const snapshotString = dailyCategorySnapshots[categoryId];
+      if (!snapshotString) {
+        return;
+      }
+      const currentSnapshot = extractDailyCategorySnapshot(
+        dailyDraft,
+        categoryId,
+        featureFlags,
+        pbacCounts
+      );
+      if (!currentSnapshot) {
+        return;
+      }
+      const currentString = JSON.stringify(currentSnapshot);
+      const completed = dailyCategoryCompletion[categoryId] ?? false;
+      const wasDirty = Boolean(dailyCategoryDirtyState[categoryId]);
+      if (completed) {
+        if (currentString !== snapshotString && !wasDirty) {
+          const sectionTitle = dailyCategoryCompletionTitles[categoryId];
+          if (sectionTitle) {
+            sectionCompletionContextValue.setCompletion(dailyScopeKey, sectionTitle, false);
+          }
+          dirtyUpdates.push([categoryId, true]);
+        } else if (currentString === snapshotString && wasDirty) {
+          dirtyUpdates.push([categoryId, false]);
+        }
+      } else {
+        const isDirty = currentString !== snapshotString;
+        if (isDirty !== wasDirty) {
+          dirtyUpdates.push([categoryId, isDirty]);
+        }
+      }
+    });
+    if (dirtyUpdates.length) {
+      setDailyCategoryDirtyState((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        dirtyUpdates.forEach(([categoryId, dirty]) => {
+          if (dirty) {
+            if (!next[categoryId]) {
+              next[categoryId] = true;
+              changed = true;
+            }
+          } else if (next[categoryId]) {
+            delete next[categoryId];
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    }
+  }, [
+    dailyCategoryCompletion,
+    dailyCategoryCompletionTitles,
+    dailyCategoryDirtyState,
+    dailyCategorySnapshots,
+    dailyDraft,
+    dailyScopeKey,
+    featureFlags,
+    pbacCounts,
+    sectionCompletionContextValue,
+  ]);
+
+  const pendingCategoryTitle = useMemo(() => {
+    if (!pendingCategoryConfirm) {
+      return null;
+    }
+    const match = dailyCategoryButtons.find((category) => category.id === pendingCategoryConfirm);
+    return match?.title ?? null;
+  }, [dailyCategoryButtons, pendingCategoryConfirm]);
+
+  const handleCategoryConfirmCancel = useCallback(() => {
+    setPendingCategoryConfirm(null);
+  }, []);
+
+  const handleCategoryConfirmSave = useCallback(() => {
+    if (!pendingCategoryConfirm) {
+      return;
+    }
+    const categoryId = pendingCategoryConfirm;
+    const snapshot = extractDailyCategorySnapshot(dailyDraft, categoryId, featureFlags, pbacCounts);
+    if (snapshot) {
+      const snapshotString = JSON.stringify(snapshot);
+      setDailyCategorySnapshots((prev) => ({ ...prev, [categoryId]: snapshotString }));
+    }
+    setDailyCategoryDirtyState((prev) => {
+      if (!prev[categoryId]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[categoryId];
+      return next;
+    });
+    if (dailyScopeKey) {
+      const sectionTitle = dailyCategoryCompletionTitles[categoryId];
+      if (sectionTitle) {
+        sectionCompletionContextValue.setCompletion(dailyScopeKey, sectionTitle, true);
+      }
+    }
+    setPendingCategoryConfirm(null);
+    setDailyActiveCategory("overview");
+  }, [
+    dailyCategoryCompletionTitles,
+    dailyDraft,
+    dailyScopeKey,
+    featureFlags,
+    pbacCounts,
+    pendingCategoryConfirm,
+    sectionCompletionContextValue,
+  ]);
+
+  const handleCategoryConfirmDiscard = useCallback(() => {
+    if (!pendingCategoryConfirm) {
+      return;
+    }
+    const categoryId = pendingCategoryConfirm;
+    const snapshotString = dailyCategorySnapshots[categoryId];
+    if (snapshotString) {
+      const snapshot = JSON.parse(snapshotString) as CategorySnapshot;
+      const restored = restoreDailyCategorySnapshot(
+        dailyDraft,
+        featureFlags,
+        pbacCounts,
+        categoryId,
+        snapshot
+      );
+      setDailyDraft(restored.entry);
+      setFeatureFlags(restored.featureFlags);
+      setPbacCounts(restored.pbacCounts);
+    }
+    if (dailyScopeKey) {
+      const sectionTitle = dailyCategoryCompletionTitles[categoryId];
+      if (sectionTitle) {
+        sectionCompletionContextValue.setCompletion(dailyScopeKey, sectionTitle, true);
+      }
+    }
+    setDailyCategoryDirtyState((prev) => {
+      if (!prev[categoryId]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[categoryId];
+      return next;
+    });
+    setPendingCategoryConfirm(null);
+    setDailyActiveCategory("overview");
+  }, [
+    dailyCategoryCompletionTitles,
+    dailyCategorySnapshots,
+    dailyDraft,
+    dailyScopeKey,
+    featureFlags,
+    pbacCounts,
+    pendingCategoryConfirm,
+    setDailyDraft,
+    setFeatureFlags,
+    setPbacCounts,
+    sectionCompletionContextValue,
+  ]);
 
   const dailyCategorySummaries = useMemo(
     () => {
@@ -3970,6 +4655,20 @@ export default function HomePage() {
         if (qualities.length) {
           painLines.push(`Qualitäten: ${formatList(qualities, 3)}`);
         }
+      }
+      const deepDyspareuniaSymptom = entry.symptoms?.deepDyspareunia;
+      if (deepDyspareuniaSymptom?.present) {
+        const score =
+          typeof deepDyspareuniaSymptom.score === "number" ? deepDyspareuniaSymptom.score : 0;
+        painLines.push(`${TERMS.deepDyspareunia.label}: ${score}/10`);
+      }
+      if (entry.ovulationPain?.side) {
+        const ovulationParts = [OVULATION_PAIN_SIDE_LABELS[entry.ovulationPain.side]];
+        if (typeof entry.ovulationPain.intensity === "number") {
+          const rounded = Math.max(0, Math.min(10, Math.round(entry.ovulationPain.intensity)));
+          ovulationParts.push(`Intensität ${rounded}/10`);
+        }
+        painLines.push(`${TERMS.ovulationPain.label}: ${ovulationParts.join(" · ")}`);
       }
       if (typeof entry.impactNRS === "number" && (painRegions.length || entry.impactNRS > 0)) {
         painLines.push(`Belastung: ${entry.impactNRS}/10`);
@@ -4210,6 +4909,13 @@ export default function HomePage() {
               variant="ghost"
               onClick={() => {
                 if (activeView === "daily" && dailyActiveCategory !== "overview") {
+                  if (
+                    isTrackedDailyCategory(dailyActiveCategory) &&
+                    dailyCategoryDirtyState[dailyActiveCategory]
+                  ) {
+                    setPendingCategoryConfirm(dailyActiveCategory);
+                    return;
+                  }
                   setDailyActiveCategory("overview");
                   return;
                 }
@@ -4650,80 +5356,6 @@ export default function HomePage() {
                     </div>
 
                     <div className="space-y-4">
-                      <div className="space-y-4 rounded-lg border border-rose-100 bg-white p-4">
-                        <div className="space-y-3">
-                          <p className="font-medium text-rose-800">Ausgewählte Bereiche</p>
-                          <div className="flex flex-wrap gap-2">
-                            {(dailyDraft.painRegions ?? []).map((region) => (
-                              <Badge
-                                key={region.regionId}
-                                className="flex items-center gap-2 bg-rose-100 px-3 py-1 text-xs font-medium text-rose-700"
-                              >
-                                <span>{getRegionLabel(region.regionId)}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => removePainRegion(region.regionId)}
-                                  className="text-[10px] uppercase tracking-wide text-rose-500 hover:text-rose-700"
-                                >
-                                  entfernen
-                                </button>
-                              </Badge>
-                            ))}
-                            {(dailyDraft.painRegions ?? []).length === 0 && (
-                              <span className="text-sm text-rose-500">Bitte mindestens einen Bereich wählen.</span>
-                            )}
-                          </div>
-                        </div>
-                        {dailyDraft.painRegions?.map((region) => (
-                          <div key={region.regionId} className="space-y-4 rounded-lg border border-rose-100 bg-rose-50 p-4">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex items-center gap-2">
-                                <p className="font-medium text-rose-800">{getRegionLabel(region.regionId)}</p>
-                                <InfoTip tech={TERMS.bodyMap.label} help={TERMS.bodyMap.help} />
-                              </div>
-                              <div className="flex items-center gap-2 text-xs text-rose-500">
-                                <button
-                                  type="button"
-                                  onClick={() => focusPainRegion(region.regionId)}
-                                  className="uppercase tracking-wide hover:text-rose-700"
-                                >
-                                  Fokus
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => removePainRegion(region.regionId)}
-                                  className="uppercase tracking-wide hover:text-rose-700"
-                                >
-                                  Entfernen
-                                </button>
-                              </div>
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-xs uppercase tracking-wide text-rose-500">Intensität</p>
-                              <p className="text-sm font-semibold text-rose-800">{region.nrs ?? 0} / 10</p>
-                              <p className="text-xs text-rose-500">Bearbeitung direkt in der Körperkarte.</p>
-                            </div>
-                            <div className="space-y-2">
-                              <p className="text-xs uppercase tracking-wide text-rose-500">Schmerzqualitäten</p>
-                              {region.qualities && region.qualities.length > 0 ? (
-                                <div className="flex flex-wrap gap-2">
-                                  {region.qualities.map((quality) => (
-                                    <Badge
-                                      key={`${region.regionId}-${quality}`}
-                                      className="bg-white px-2 py-1 text-xs font-medium text-rose-700"
-                                    >
-                                      {quality}
-                                    </Badge>
-                                  ))}
-                                </div>
-                              ) : (
-                                <p className="text-sm text-rose-500">Qualitäten über die Körperkarte wählen.</p>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
                       <details
                         className="group rounded-lg border border-rose-100 bg-rose-50 text-rose-700 [&[open]>summary]:border-b [&[open]>summary]:bg-rose-100"
                         open={deepDyspareuniaCardOpen}
@@ -6573,6 +7205,41 @@ export default function HomePage() {
           )}
         </main>
       </SectionCompletionContext.Provider>
+      {pendingCategoryConfirm ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-rose-950/40 px-4 py-6">
+          <div
+            className="w-full max-w-sm space-y-4 rounded-2xl bg-white p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Änderungen speichern oder verwerfen"
+          >
+            <div className="space-y-2">
+              <h2 className="text-lg font-semibold text-rose-900">Änderungen übernehmen?</h2>
+              <p className="text-sm text-rose-700">
+                {pendingCategoryTitle
+                  ? `In „${pendingCategoryTitle}“ wurden Änderungen vorgenommen.`
+                  : "Es liegen Änderungen vor."}
+                {" "}Möchtest du sie speichern oder verwerfen?
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <Button variant="ghost" onClick={handleCategoryConfirmCancel} className="sm:w-auto">
+                Abbrechen
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleCategoryConfirmDiscard}
+                className="sm:w-auto"
+              >
+                Verwerfen
+              </Button>
+              <Button onClick={handleCategoryConfirmSave} className="sm:w-auto">
+                Speichern
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
