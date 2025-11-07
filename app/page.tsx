@@ -82,6 +82,16 @@ const DETAIL_TOOLBAR_FALLBACK_HEIGHT = 96;
 
 type SymptomKey = keyof DailyEntry["symptoms"];
 
+const SYMPTOM_TERMS: Record<SymptomKey, TermDescriptor> = {
+  dysmenorrhea: TERMS.dysmenorrhea,
+  deepDyspareunia: TERMS.deepDyspareunia,
+  pelvicPainNonMenses: TERMS.pelvicPainNonMenses,
+  dyschezia: TERMS.dyschezia,
+  dysuria: TERMS.dysuria,
+  fatigue: TERMS.fatigue,
+  bloating: TERMS.bloating,
+};
+
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
@@ -3973,7 +3983,7 @@ export default function HomePage() {
       const symptomLines: string[] = [];
       if (presentSymptoms.length) {
         const labels = presentSymptoms.map(([key, value]) => {
-          const descriptor = TERMS[key as keyof typeof TERMS];
+          const descriptor = SYMPTOM_TERMS[key];
           const label = descriptor?.label ?? key;
           return typeof value?.score === "number" ? `${label} (${value.score}/10)` : label;
         });
