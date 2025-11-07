@@ -1,0 +1,38 @@
+name: Deploy to All-Inkl (FTP)
+on:
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install deps
+        run: npm ci || npm install
+
+      - name: Build
+        run: npm run build
+
+      - name: SPA fallback
+        run: cp dist/index.html dist/404.html || true
+
+      - name: Deploy via FTP (plain, port 21)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
+        with:
+          server:     ${{ secrets.FTP_HOST }}      # z.B. w00xyz.kasserver.com
+          username:   ${{ secrets.FTP_USERNAME }}  # z.B. w00xyz_1
+          password:   ${{ secrets.FTP_PASSWORD }}
+          protocol:   ftp
+          port:       21
+          local-dir:  dist/
+          server-dir: /
+          log-level:  verbose
+          state-name: .ftp-deploy-sync-state.json
+          dangerous-clean-slate: true  # nach dem ersten erfolgreichen Lauf auf false setzen
