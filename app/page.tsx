@@ -82,6 +82,16 @@ const DETAIL_TOOLBAR_FALLBACK_HEIGHT = 96;
 
 type SymptomKey = keyof DailyEntry["symptoms"];
 
+const SYMPTOM_TERMS: Record<SymptomKey, TermDescriptor> = {
+  dysmenorrhea: TERMS.dysmenorrhea,
+  deepDyspareunia: TERMS.deepDyspareunia,
+  pelvicPainNonMenses: TERMS.pelvicPainNonMenses,
+  dyschezia: TERMS.dyschezia,
+  dysuria: TERMS.dysuria,
+  fatigue: TERMS.fatigue,
+  bloating: TERMS.bloating,
+};
+
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
@@ -415,6 +425,33 @@ const getRegionLabel = (regionId: string): string => {
     }
   }
   return regionId;
+};
+
+const formatList = (items: string[], limit = 3) => {
+  const filtered = items.filter(Boolean);
+  if (filtered.length <= limit) {
+    return filtered.join(", ");
+  }
+  const remaining = filtered.length - limit;
+  return `${filtered.slice(0, limit).join(", ")} +${remaining} weitere`;
+};
+
+const truncateText = (text: string, maxLength = 80) => {
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength - 1)}…`;
+};
+
+const formatNumber = (
+  value: number,
+  options?: { maximumFractionDigits?: number; minimumFractionDigits?: number }
+) => {
+  const hasFraction = !Number.isInteger(value);
+  const maximumFractionDigits = options?.maximumFractionDigits ?? (hasFraction ? 1 : 0);
+  const minimumFractionDigits =
+    options?.minimumFractionDigits ?? (hasFraction ? Math.min(1, maximumFractionDigits) : 0);
+  return value.toLocaleString("de-DE", { maximumFractionDigits, minimumFractionDigits });
 };
 
 const SYMPTOM_ITEMS: { key: SymptomKey; termKey: TermKey }[] = [
@@ -3905,6 +3942,209 @@ export default function HomePage() {
     { id: "optional", title: "Optionale Werte", description: "Hilfsmittel- & Wearable-Daten erfassen" },
   ];
 
+  const dailyCategorySummaries = useMemo(
+    () => {
+      const entry = dailyDraft;
+      const summaries: Partial<Record<Exclude<DailyCategoryId, "overview">, string[]>> = {};
+
+      const painRegions = entry.painRegions ?? [];
+      const painLines: string[] = [];
+      if (painRegions.length) {
+        const regionLabels = painRegions.map((region) => getRegionLabel(region.regionId));
+        painLines.push(`Bereiche: ${formatList(regionLabels, 3)}`);
+        const intensities = painRegions
+          .map((region) => (typeof region.nrs === "number" ? region.nrs : null))
+          .filter((value): value is number => value !== null);
+        if (intensities.length) {
+          painLines.push(`Max. Intensität: ${Math.max(...intensities)}/10`);
+        }
+        const qualities = Array.from(
+          new Set(
+            painRegions.flatMap((region) => region.qualities ?? [])
+          )
+        );
+        if (qualities.length) {
+          painLines.push(`Qualitäten: ${formatList(qualities, 3)}`);
+        }
+      }
+      if (typeof entry.impactNRS === "number" && (painRegions.length || entry.impactNRS > 0)) {
+        painLines.push(`Belastung: ${entry.impactNRS}/10`);
+      }
+      if (!painLines.length) {
+        painLines.push("Keine Schmerzen dokumentiert.");
+      }
+      summaries.pain = painLines;
+
+      const symptomEntries = Object.entries(entry.symptoms ?? {}) as Array<[
+        SymptomKey,
+        { present?: boolean; score?: number }
+      ]>;
+      const presentSymptoms = symptomEntries.filter(([, value]) => value?.present);
+      const symptomLines: string[] = [];
+      if (presentSymptoms.length) {
+        const labels = presentSymptoms.map(([key, value]) => {
+          const descriptor = SYMPTOM_TERMS[key];
+          const label = descriptor?.label ?? key;
+          return typeof value?.score === "number" ? `${label} (${value.score}/10)` : label;
+        });
+        symptomLines.push(`Vorhanden: ${formatList(labels, 3)}`);
+      } else {
+        symptomLines.push("Keine Symptome markiert.");
+      }
+      summaries.symptoms = symptomLines;
+
+      const bleedLines: string[] = [];
+      if (entry.bleeding?.isBleeding) {
+        const pbac = entry.bleeding.pbacScore ?? 0;
+        bleedLines.push(`Blutung aktiv – PBAC ${pbac}`);
+        const extras: string[] = [];
+        if (entry.bleeding.clots) {
+          extras.push("Koagel");
+        }
+        if (entry.bleeding.flooding) {
+          extras.push("Flooding");
+        }
+        if (extras.length) {
+          bleedLines.push(`Begleitsymptome: ${extras.join(", ")}`);
+        }
+      } else {
+        bleedLines.push("Keine Blutung heute.");
+      }
+      summaries.bleeding = bleedLines;
+
+      const medicationLines: string[] = [];
+      const meds = entry.meds ?? [];
+      const medNames = meds.map((med) => med.name).filter((name): name is string => Boolean(name));
+      if (medNames.length) {
+        medicationLines.push(`Regelmäßig: ${formatList(medNames, 3)}`);
+      }
+      if (typeof entry.rescueDosesCount === "number") {
+        medicationLines.push(`Rescue-Dosen: ${entry.rescueDosesCount}`);
+      }
+      if (!medicationLines.length) {
+        medicationLines.push("Keine Medikamente eingetragen.");
+      }
+      summaries.medication = medicationLines;
+
+      const sleepLines: string[] = [];
+      if (entry.sleep?.hours !== undefined) {
+        sleepLines.push(`Dauer: ${formatNumber(entry.sleep.hours, { maximumFractionDigits: 1 })} h`);
+      }
+      if (entry.sleep?.quality !== undefined) {
+        sleepLines.push(`Qualität: ${entry.sleep.quality}/10`);
+      }
+      if (entry.sleep?.awakenings !== undefined) {
+        sleepLines.push(`Aufwachphasen: ${entry.sleep.awakenings}`);
+      }
+      if (!sleepLines.length) {
+        sleepLines.push("Keine Schlafdaten erfasst.");
+      }
+      summaries.sleep = sleepLines;
+
+      const bowelLines: string[] = [];
+      const dyschezia = entry.symptoms?.dyschezia;
+      if (dyschezia?.present) {
+        bowelLines.push(`${TERMS.dyschezia.label}: ${dyschezia.score ?? 0}/10`);
+      }
+      if (entry.gi?.bristolType) {
+        bowelLines.push(`Bristol: Typ ${entry.gi.bristolType}`);
+      }
+      const dysuria = entry.symptoms?.dysuria;
+      if (dysuria?.present) {
+        bowelLines.push(`${TERMS.dysuria.label}: ${dysuria.score ?? 0}/10`);
+      }
+      if (entry.urinary?.freqPerDay !== undefined) {
+        bowelLines.push(`Toilettengänge: ${entry.urinary.freqPerDay}/Tag`);
+      }
+      if (entry.urinary?.urgency !== undefined) {
+        bowelLines.push(`${TERMS.urinary_urgency.label}: ${entry.urinary.urgency}/10`);
+      }
+      const urinaryOpt = entry.urinaryOpt ?? {};
+      const urinaryDetails: string[] = [];
+      if (urinaryOpt.leaksCount !== undefined) {
+        urinaryDetails.push(`${urinaryOpt.leaksCount} Leckagen`);
+      }
+      if (urinaryOpt.padsCount !== undefined) {
+        urinaryDetails.push(`${urinaryOpt.padsCount} Schutzwechsel`);
+      }
+      if (urinaryOpt.nocturia !== undefined) {
+        urinaryDetails.push(`${urinaryOpt.nocturia}× nachts`);
+      }
+      if (urinaryDetails.length) {
+        bowelLines.push(`Dranginkontinenz: ${urinaryDetails.join(", ")}`);
+      }
+      if (!bowelLines.length) {
+        bowelLines.push("Keine Angaben hinterlegt.");
+      }
+      summaries.bowelBladder = bowelLines;
+
+      const notesLines: string[] = [];
+      const tags = entry.notesTags ?? [];
+      if (tags.length) {
+        notesLines.push(`Tags: ${formatList(tags, 3)}`);
+      }
+      if (entry.notesFree?.trim()) {
+        notesLines.push(`Notiz: ${truncateText(entry.notesFree.trim(), 80)}`);
+      }
+      if (!notesLines.length) {
+        notesLines.push("Keine Notizen hinterlegt.");
+      }
+      summaries.notes = notesLines;
+
+      const optionalLines: string[] = [];
+      if (entry.ovulation?.lhTestDone) {
+        optionalLines.push(`LH-Test: ${entry.ovulation.lhPositive ? "positiv" : "negativ"}`);
+        if (entry.ovulation.lhTime) {
+          const [isoDate, isoTime] = entry.ovulation.lhTime.split("T");
+          const parsed = isoDate ? parseIsoDate(isoDate) : null;
+          const timeLabel = isoTime ? isoTime.slice(0, 5) : null;
+          if (parsed && timeLabel) {
+            optionalLines.push(
+              `Zeitpunkt: ${parsed.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })} ${timeLabel}`
+            );
+          } else {
+            optionalLines.push(`Zeitpunkt: ${entry.ovulation.lhTime}`);
+          }
+        }
+      }
+      if (entry.ovulation?.bbtCelsius !== undefined) {
+        optionalLines.push(
+          `BBT: ${formatNumber(entry.ovulation.bbtCelsius, { maximumFractionDigits: 2, minimumFractionDigits: 2 })} °C`
+        );
+      }
+      if (entry.activity?.steps !== undefined) {
+        optionalLines.push(`Schritte: ${formatNumber(entry.activity.steps, { maximumFractionDigits: 0 })}`);
+      }
+      if (entry.activity?.activeMinutes !== undefined) {
+        optionalLines.push(`Aktive Minuten: ${entry.activity.activeMinutes}`);
+      }
+      if (entry.exploratory?.hrvRmssdMs !== undefined) {
+        optionalLines.push(`HRV: ${entry.exploratory.hrvRmssdMs} ms`);
+      }
+      if (entry.headacheOpt?.present) {
+        optionalLines.push(
+          `Kopfschmerz: ${formatNumber(entry.headacheOpt.nrs ?? 0, { maximumFractionDigits: 1 })}/10${
+            entry.headacheOpt.aura ? ", Aura" : ""
+          }`
+        );
+      }
+      if (entry.dizzinessOpt?.present) {
+        optionalLines.push(
+          `Schwindel: ${formatNumber(entry.dizzinessOpt.nrs ?? 0, { maximumFractionDigits: 1 })}/10${
+            entry.dizzinessOpt.orthostatic ? ", orthostatisch" : ""
+          }`
+        );
+      }
+      if (!optionalLines.length) {
+        optionalLines.push("Keine optionalen Daten hinterlegt.");
+      }
+      summaries.optional = optionalLines;
+
+      return summaries;
+    },
+    [dailyDraft]
+  );
+
   useLayoutEffect(() => {
     if (isHomeView) {
       return;
@@ -4292,6 +4532,7 @@ export default function HomePage() {
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     {dailyCategoryButtons.map((category) => {
                       const isCompleted = dailyCategoryCompletion[category.id] ?? false;
+                      const summaryLines = dailyCategorySummaries[category.id] ?? [];
                       return (
                         <div
                           key={category.id}
@@ -4338,6 +4579,16 @@ export default function HomePage() {
                                   {action.label}
                                 </Button>
                               ))}
+                            </div>
+                          ) : null}
+                          {isCompleted && summaryLines.length ? (
+                            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/80 p-3 text-xs text-amber-900">
+                              <p className="font-semibold uppercase tracking-wide text-amber-700">Kurzüberblick</p>
+                              <ul className="mt-2 space-y-1 text-amber-800">
+                                {summaryLines.map((line, index) => (
+                                  <li key={index}>{line}</li>
+                                ))}
+                              </ul>
                             </div>
                           ) : null}
                         </div>
