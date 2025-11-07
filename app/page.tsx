@@ -692,17 +692,28 @@ const BRISTOL_TYPES = [
 
 const MS_PER_DAY = 86_400_000;
 
-const formatDate = (date: Date) => {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
+const ISO_DATE_FORMATTER = new Intl.DateTimeFormat("sv-SE");
+const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+const formatDate = (date: Date) => ISO_DATE_FORMATTER.format(date);
 
 const parseIsoDate = (iso: string) => {
-  const [year, month, day] = iso.split("-").map(Number);
-  if (!year || !month || !day) return null;
-  return new Date(year, month - 1, day);
+  const match = ISO_DATE_PATTERN.exec(iso);
+  if (!match) {
+    return null;
+  }
+
+  const [, yearString, monthString, dayString] = match;
+  const year = Number.parseInt(yearString, 10);
+  const month = Number.parseInt(monthString, 10);
+  const day = Number.parseInt(dayString, 10);
+
+  if ([year, month, day].some((value) => Number.isNaN(value))) {
+    return null;
+  }
+
+  const parsed = new Date(year, month - 1, day);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
 const createEmptyDailyEntry = (date: string): DailyEntry => ({
