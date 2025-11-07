@@ -128,13 +128,15 @@ const HEAD_REGION_ID = "head";
 const MIGRAINE_LABEL = "Migräne";
 const MIGRAINE_WITH_AURA_LABEL = "Migräne mit Aura";
 const MIGRAINE_QUALITY_SET = new Set<string>(MIGRAINE_PAIN_QUALITIES);
-const OVULATION_PAIN_SIDES: NonNullable<DailyEntry["ovulationPain"]>["side"][] = [
+type OvulationPainSide = Exclude<NonNullable<DailyEntry["ovulationPain"]>["side"], undefined>;
+
+const OVULATION_PAIN_SIDES: OvulationPainSide[] = [
   "links",
   "rechts",
   "beidseitig",
   "unsicher",
 ];
-const OVULATION_PAIN_SIDE_LABELS: Record<NonNullable<DailyEntry["ovulationPain"]>["side"], string> = {
+const OVULATION_PAIN_SIDE_LABELS: Record<OvulationPainSide, string> = {
   links: "Links",
   rechts: "Rechts",
   beidseitig: "Beidseitig",
