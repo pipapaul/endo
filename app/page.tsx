@@ -553,6 +553,12 @@ const TRACKED_DAILY_CATEGORY_IDS: TrackableDailyCategoryId[] = [
   "bowelBladder",
 ];
 
+const createEmptyCategoryCompletion = (): Record<TrackableDailyCategoryId, boolean> =>
+  TRACKED_DAILY_CATEGORY_IDS.reduce((acc, categoryId) => {
+    acc[categoryId] = false;
+    return acc;
+  }, {} as Record<TrackableDailyCategoryId, boolean>);
+
 type SymptomSnapshot = { present: boolean; score: number | null };
 
 type CategorySnapshot = {
@@ -2294,7 +2300,9 @@ export default function HomePage() {
   const dailyDateInputRef = useRef<HTMLInputElement | null>(null);
   const previousDailyDateRef = useRef(dailyDraft.date);
   const previousDailyScopeRef = useRef<string | null>(null);
-  const previousDailyCategoryCompletionRef = useRef<Record<TrackableDailyCategoryId, boolean>>({});
+  const previousDailyCategoryCompletionRef = useRef<Record<TrackableDailyCategoryId, boolean>>(
+    createEmptyCategoryCompletion()
+  );
 
   const isBirthdayGreetingDay = () => {
     const now = new Date();
@@ -4404,12 +4412,12 @@ export default function HomePage() {
     previousDailyScopeRef.current = dailyScopeKey;
     setDailyCategorySnapshots({});
     setDailyCategoryDirtyState({});
-    previousDailyCategoryCompletionRef.current = {} as Record<TrackableDailyCategoryId, boolean>;
+    previousDailyCategoryCompletionRef.current = createEmptyCategoryCompletion();
   }, [dailyScopeKey]);
 
   useEffect(() => {
     if (!dailyScopeKey) {
-      previousDailyCategoryCompletionRef.current = {} as Record<TrackableDailyCategoryId, boolean>;
+      previousDailyCategoryCompletionRef.current = createEmptyCategoryCompletion();
       return;
     }
     const prevCompletion = previousDailyCategoryCompletionRef.current;
