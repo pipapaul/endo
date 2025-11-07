@@ -4341,20 +4341,75 @@ export default function HomePage() {
     [dailyCategoryCompletionTitles, dailySectionCompletion]
   );
 
-  const toggleCategoryCompletion = useCallback(
-    (categoryId: Exclude<DailyCategoryId, "overview">) => {
+  const setCategoryCompletion = useCallback(
+    (categoryId: TrackableDailyCategoryId, completed: boolean) => {
       if (!dailyScopeKey) return;
       const sectionTitle = dailyCategoryCompletionTitles[categoryId];
       if (!sectionTitle) return;
-      const isCompleted = dailyCategoryCompletion[categoryId] ?? false;
-      sectionCompletionContextValue.setCompletion(dailyScopeKey, sectionTitle, !isCompleted);
+      sectionCompletionContextValue.setCompletion(dailyScopeKey, sectionTitle, completed);
     },
-    [
-      dailyCategoryCompletion,
-      dailyCategoryCompletionTitles,
-      dailyScopeKey,
-      sectionCompletionContextValue,
-    ]
+    [dailyCategoryCompletionTitles, dailyScopeKey, sectionCompletionContextValue]
+  );
+
+  const categoryZeroStates = useMemo<
+    Partial<Record<TrackableDailyCategoryId, boolean>>
+  >(
+    () => {
+      const entry = dailyDraft;
+      const isPainZero = (() => {
+        const painRegions = entry.painRegions ?? [];
+        const painMapRegionIds = entry.painMapRegionIds ?? [];
+        const painQuality = entry.painQuality ?? [];
+        const painNRS = typeof entry.painNRS === "number" ? entry.painNRS : 0;
+        const impactNRS = typeof entry.impactNRS === "number" ? entry.impactNRS : 0;
+        return (
+          painRegions.length === 0 &&
+          painMapRegionIds.length === 0 &&
+          painQuality.length === 0 &&
+          painNRS <= 0 &&
+          impactNRS <= 0
+        );
+      })();
+
+      const isSymptomsZero = (() => {
+        const symptomEntries = Object.entries(entry.symptoms ?? {}) as Array<[
+          SymptomKey,
+          { present?: boolean }
+        ]>;
+        if (!symptomEntries.length) {
+          return true;
+        }
+        return symptomEntries.every(([, value]) => !value?.present);
+      })();
+
+      const isBleedingZero = (() => {
+        const bleeding = entry.bleeding;
+        const pbacZero = Object.values(pbacCounts).every((count) => count === 0);
+        if (!bleeding) {
+          return pbacZero;
+        }
+        const hasBleeding = Boolean(bleeding.isBleeding);
+        const hasExtras = Boolean(bleeding.clots || bleeding.flooding);
+        const pbacScore =
+          typeof bleeding.pbacScore === "number" ? bleeding.pbacScore : 0;
+        return !hasBleeding && !hasExtras && pbacScore <= 0 && pbacZero;
+      })();
+
+      const isMedicationZero = (() => {
+        const meds = entry.meds ?? [];
+        const rescue = entry.rescueDosesCount;
+        const rescueZero = rescue === undefined || rescue === null || rescue === 0;
+        return meds.length === 0 && rescueZero;
+      })();
+
+      return {
+        pain: isPainZero,
+        symptoms: isSymptomsZero,
+        bleeding: isBleedingZero,
+        medication: isMedicationZero,
+      };
+    },
+    [dailyDraft, pbacCounts]
   );
 
   const confirmQuickActionReset = useCallback(
@@ -4379,8 +4434,8 @@ export default function HomePage() {
       painNRS: 0,
       impactNRS: 0,
     }));
-    toggleCategoryCompletion("pain");
-  }, [confirmQuickActionReset, setDailyDraft, toggleCategoryCompletion]);
+    setCategoryCompletion("pain", true);
+  }, [confirmQuickActionReset, setCategoryCompletion, setDailyDraft]);
 
   const handleQuickNoSymptoms = useCallback(() => {
     if (!confirmQuickActionReset("symptoms")) {
@@ -4394,8 +4449,8 @@ export default function HomePage() {
       });
       return { ...prev, symptoms: cleared };
     });
-    toggleCategoryCompletion("symptoms");
-  }, [confirmQuickActionReset, setDailyDraft, toggleCategoryCompletion]);
+    setCategoryCompletion("symptoms", true);
+  }, [confirmQuickActionReset, setCategoryCompletion, setDailyDraft]);
 
   const handleQuickNoBleeding = useCallback(() => {
     if (!confirmQuickActionReset("bleeding")) {
@@ -4406,8 +4461,13 @@ export default function HomePage() {
       bleeding: { isBleeding: false },
     }));
     setPbacCounts({ ...PBAC_DEFAULT_COUNTS });
-    toggleCategoryCompletion("bleeding");
-  }, [confirmQuickActionReset, setDailyDraft, setPbacCounts, toggleCategoryCompletion]);
+    setCategoryCompletion("bleeding", true);
+  }, [
+    confirmQuickActionReset,
+    setCategoryCompletion,
+    setDailyDraft,
+    setPbacCounts,
+  ]);
 
   const handleQuickNoMedication = useCallback(() => {
     if (!confirmQuickActionReset("medication")) {
@@ -4418,8 +4478,8 @@ export default function HomePage() {
       meds: [],
       rescueDosesCount: undefined,
     }));
-    toggleCategoryCompletion("medication");
-  }, [confirmQuickActionReset, setDailyDraft, toggleCategoryCompletion]);
+    setCategoryCompletion("medication", true);
+  }, [confirmQuickActionReset, setCategoryCompletion, setDailyDraft]);
 
   const dailyCategoryButtons = useMemo(
     () =>
@@ -4720,7 +4780,7 @@ export default function HomePage() {
           .map((region) => (typeof region.nrs === "number" ? region.nrs : null))
           .filter((value): value is number => value !== null);
         if (intensities.length) {
-          painLines.push(`Max. Intensität: ${Math.max(...intensities)}/10`);
+          painLines.push(`Max.: ${Math.max(...intensities)}/10`);
         }
         const qualities = Array.from(
           new Set(
@@ -4741,7 +4801,7 @@ export default function HomePage() {
         const ovulationParts = [OVULATION_PAIN_SIDE_LABELS[entry.ovulationPain.side]];
         if (typeof entry.ovulationPain.intensity === "number") {
           const rounded = Math.max(0, Math.min(10, Math.round(entry.ovulationPain.intensity)));
-          ovulationParts.push(`Intensität ${rounded}/10`);
+          ovulationParts.push(`${rounded}/10`);
         }
         painLines.push(`${TERMS.ovulationPain.label}: ${ovulationParts.join(" · ")}`);
       }
@@ -5319,6 +5379,11 @@ export default function HomePage() {
                       const isCompleted = dailyCategoryCompletion[category.id] ?? false;
                       const summaryLines = dailyCategorySummaries[category.id] ?? [];
                       const Icon = category.icon;
+                      const isTrackableCategory = isTrackedDailyCategory(category.id);
+                      const quickActionDisabled =
+                        isCompleted &&
+                        isTrackableCategory &&
+                        (categoryZeroStates[category.id as TrackableDailyCategoryId] ?? false);
                       const iconWrapperClasses = cn(
                         "flex h-12 w-12 flex-none items-center justify-center rounded-full border transition",
                         isCompleted
@@ -5370,8 +5435,12 @@ export default function HomePage() {
                                   variant="ghost"
                                   size="sm"
                                   className="rounded-full border border-rose-100 bg-rose-50/80 text-xs font-medium text-rose-700 shadow-none transition hover:border-rose-200 hover:bg-rose-100"
+                                  disabled={quickActionDisabled}
                                   onClick={(event) => {
                                     event.stopPropagation();
+                                    if (quickActionDisabled) {
+                                      return;
+                                    }
                                     action.onClick();
                                   }}
                                 >
@@ -5382,8 +5451,7 @@ export default function HomePage() {
                           ) : null}
                           {isCompleted && summaryLines.length ? (
                             <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/80 p-3 text-xs text-amber-900">
-                              <p className="font-semibold uppercase tracking-wide text-amber-700">Kurzüberblick</p>
-                              <ul className="mt-2 space-y-1 text-amber-800">
+                              <ul className="space-y-1 text-amber-800">
                                 {summaryLines.map((line, index) => (
                                   <li key={index}>{line}</li>
                                 ))}
