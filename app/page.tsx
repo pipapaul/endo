@@ -45,10 +45,7 @@ import {
   Smartphone,
   TrendingUp,
   Upload,
-  Gauge,
-  NotebookPen,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 
 import { DailyEntry, FeatureFlags, MonthlyEntry } from "@/lib/types";
 import { TERMS } from "@/lib/terms";
@@ -75,6 +72,8 @@ import WeeklyTabShell from "@/components/weekly/WeeklyTabShell";
 import {
   BauchIcon,
   MedicationIcon,
+  NotesTagsIcon,
+  OptionalValuesIcon,
   PainIcon,
   PeriodIcon,
   SleepIcon,
@@ -140,14 +139,6 @@ const MIGRAINE_LABEL = "Migräne";
 const MIGRAINE_WITH_AURA_LABEL = "Migräne mit Aura";
 const MIGRAINE_QUALITY_SET = new Set<string>(MIGRAINE_PAIN_QUALITIES);
 type OvulationPainSide = Exclude<NonNullable<DailyEntry["ovulationPain"]>["side"], undefined>;
-
-const createLucideCategoryIcon = (Icon: LucideIcon) =>
-  function LucideCategoryIcon(props: SVGProps<SVGSVGElement>) {
-    return <Icon {...props} />;
-  };
-
-const NotebookPenCategoryIcon = createLucideCategoryIcon(NotebookPen);
-const GaugeCategoryIcon = createLucideCategoryIcon(Gauge);
 
 const OVULATION_PAIN_SIDES: OvulationPainSide[] = [
   "links",
@@ -540,6 +531,7 @@ const PbacPadIcon = ({ saturation, ...props }: PbacIconProps) => {
       focusable="false"
       {...props}
     >
+      <circle cx="48.97" cy="47.94" r="48.45" fill="#fff" />
       <circle cx="48.97" cy="47.94" r="48.45" fill="currentColor" fillOpacity={PBAC_ICON_BASE_OPACITY} />
       <path d={PBAC_PAD_BASE_PATH} fill="currentColor" fillOpacity={PBAC_ICON_BASE_OPACITY} />
       <path d={PBAC_PAD_DETAIL_PATHS[saturation]} fill="currentColor" fillOpacity={PBAC_ICON_DETAIL_OPACITY} />
@@ -557,6 +549,7 @@ const PbacTamponIcon = ({ saturation, ...props }: PbacIconProps) => {
       focusable="false"
       {...props}
     >
+      <circle cx="48.97" cy="47.94" r="48.45" fill="#fff" />
       <circle cx="48.97" cy="47.94" r="48.45" fill="currentColor" fillOpacity={PBAC_ICON_BASE_OPACITY} />
       <path d={PBAC_TAMPON_BODY_PATH} fill="currentColor" fillOpacity={PBAC_ICON_DETAIL_OPACITY} />
       {detailPath ? <path d={detailPath} fill="currentColor" fillOpacity={PBAC_ICON_DETAIL_OPACITY} /> : null}
@@ -2777,7 +2770,22 @@ export default function HomePage() {
         manualDailySelectionRef.current = true;
       }
       const existingEntry = derivedDailyEntries.find((entry) => entry.date === targetDate);
-      const baseEntry = existingEntry ?? createEmptyDailyEntry(targetDate);
+      let baseEntry = existingEntry ?? createEmptyDailyEntry(targetDate);
+      if (!existingEntry) {
+        const parsedTarget = parseIsoDate(targetDate);
+        if (parsedTarget) {
+          const previousDate = new Date(parsedTarget);
+          previousDate.setDate(previousDate.getDate() - 1);
+          const previousIso = formatDate(previousDate);
+          const previousEntry = derivedDailyEntries.find((entry) => entry.date === previousIso);
+          if (previousEntry) {
+            baseEntry = {
+              ...baseEntry,
+              bleeding: { isBleeding: Boolean(previousEntry.bleeding?.isBleeding) },
+            };
+          }
+        }
+      }
       const clonedEntry =
         typeof structuredClone === "function"
           ? structuredClone(baseEntry)
@@ -4779,13 +4787,13 @@ export default function HomePage() {
           id: "notes" as const,
           title: "Notizen & Tags",
           description: "Freitextnotizen und Tags ergänzen",
-          icon: NotebookPenCategoryIcon,
+          icon: NotesTagsIcon,
         },
         {
           id: "optional" as const,
           title: "Optionale Werte",
           description: "Hilfsmittel- & Wearable-Daten erfassen",
-          icon: GaugeCategoryIcon,
+          icon: OptionalValuesIcon,
         },
       ] satisfies Array<{
         id: Exclude<DailyCategoryId, "overview">;
