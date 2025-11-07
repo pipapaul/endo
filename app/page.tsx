@@ -1857,6 +1857,7 @@ export default function HomePage() {
   const manualDailySelectionRef = useRef(false);
   const detailToolbarRef = useRef<HTMLElement | null>(null);
   const dailyDateInputRef = useRef<HTMLInputElement | null>(null);
+  const previousDailyDateRef = useRef(dailyDraft.date);
 
   const isBirthdayGreetingDay = () => {
     const now = new Date();
@@ -2554,6 +2555,12 @@ export default function HomePage() {
   const dysuriaSymptom = dailyDraft.symptoms.dysuria;
   const deepDyspareuniaSymptom = dailyDraft.symptoms.deepDyspareunia ?? { present: false };
   const ovulationPainDraft = dailyDraft.ovulationPain ?? {};
+  const [deepDyspareuniaCardOpen, setDeepDyspareuniaCardOpen] = useState(
+    () => deepDyspareuniaSymptom.present
+  );
+  const [ovulationPainCardOpen, setOvulationPainCardOpen] = useState(
+    () => Boolean(dailyDraft.ovulationPain)
+  );
   const deepDyspareuniaSummary = deepDyspareuniaSymptom.present
     ? `Stärke ${Math.max(0, Math.min(10, Math.round(deepDyspareuniaSymptom.score ?? 0)))}/10`
     : "Auswählen";
@@ -2564,6 +2571,26 @@ export default function HomePage() {
           : ""
       }`
     : "Auswählen";
+
+  useEffect(() => {
+    if (previousDailyDateRef.current !== dailyDraft.date) {
+      previousDailyDateRef.current = dailyDraft.date;
+      setDeepDyspareuniaCardOpen(deepDyspareuniaSymptom.present);
+      setOvulationPainCardOpen(Boolean(dailyDraft.ovulationPain));
+    }
+  }, [dailyDraft.date, deepDyspareuniaSymptom.present, dailyDraft.ovulationPain]);
+
+  useEffect(() => {
+    if (deepDyspareuniaSymptom.present) {
+      setDeepDyspareuniaCardOpen(true);
+    }
+  }, [deepDyspareuniaSymptom.present]);
+
+  useEffect(() => {
+    if (dailyDraft.ovulationPain) {
+      setOvulationPainCardOpen(true);
+    }
+  }, [dailyDraft.ovulationPain]);
 
   const pbacFlooding = dailyDraft.bleeding.flooding ?? false;
   const pbacScore = useMemo(() => computePbacScore(pbacCounts, pbacFlooding), [pbacCounts, pbacFlooding]);
@@ -4699,7 +4726,8 @@ export default function HomePage() {
 
                       <details
                         className="group rounded-lg border border-rose-100 bg-rose-50 text-rose-700 [&[open]>summary]:border-b [&[open]>summary]:bg-rose-100"
-                        defaultOpen={deepDyspareuniaSymptom.present}
+                        open={deepDyspareuniaCardOpen}
+                        onToggle={(event) => setDeepDyspareuniaCardOpen(event.currentTarget.open)}
                       >
                         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-rose-800 [&::-webkit-details-marker]:hidden">
                           <span>{TERMS.deepDyspareunia.label}</span>
@@ -4757,7 +4785,8 @@ export default function HomePage() {
 
                       <details
                         className="group rounded-lg border border-rose-100 bg-rose-50 text-rose-700 [&[open]>summary]:border-b [&[open]>summary]:bg-rose-100"
-                        defaultOpen={Boolean(dailyDraft.ovulationPain)}
+                        open={ovulationPainCardOpen}
+                        onToggle={(event) => setOvulationPainCardOpen(event.currentTarget.open)}
                       >
                         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-rose-800 [&::-webkit-details-marker]:hidden">
                           <span>{TERMS.ovulationPain.label}</span>
