@@ -4351,7 +4351,9 @@ export default function HomePage() {
     [dailyCategoryCompletionTitles, dailyScopeKey, sectionCompletionContextValue]
   );
 
-  const categoryZeroStates = useMemo(
+  const categoryZeroStates = useMemo<
+    Partial<Record<TrackableDailyCategoryId, boolean>>
+  >(
     () => {
       const entry = dailyDraft;
       const isPainZero = (() => {
@@ -4405,7 +4407,7 @@ export default function HomePage() {
         symptoms: isSymptomsZero,
         bleeding: isBleedingZero,
         medication: isMedicationZero,
-      } satisfies Partial<Record<TrackableDailyCategoryId, boolean>>;
+      };
     },
     [dailyDraft, pbacCounts]
   );
