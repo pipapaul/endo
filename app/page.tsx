@@ -11,7 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ChangeEvent, ReactNode, SVGProps } from "react";
+import type { ChangeEvent, ComponentType, ReactNode, SVGProps } from "react";
 import {
   LineChart,
   Line,
@@ -45,7 +45,10 @@ import {
   Smartphone,
   TrendingUp,
   Upload,
+  Gauge,
+  NotebookPen,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 import { DailyEntry, FeatureFlags, MonthlyEntry } from "@/lib/types";
 import { TERMS } from "@/lib/terms";
@@ -137,6 +140,14 @@ const MIGRAINE_LABEL = "Migräne";
 const MIGRAINE_WITH_AURA_LABEL = "Migräne mit Aura";
 const MIGRAINE_QUALITY_SET = new Set<string>(MIGRAINE_PAIN_QUALITIES);
 type OvulationPainSide = Exclude<NonNullable<DailyEntry["ovulationPain"]>["side"], undefined>;
+
+const createLucideCategoryIcon = (Icon: LucideIcon) =>
+  function LucideCategoryIcon(props: SVGProps<SVGSVGElement>) {
+    return <Icon {...props} />;
+  };
+
+const NotebookPenCategoryIcon = createLucideCategoryIcon(NotebookPen);
+const GaugeCategoryIcon = createLucideCategoryIcon(Gauge);
 
 const OVULATION_PAIN_SIDES: OvulationPainSide[] = [
   "links",
@@ -660,7 +671,15 @@ const PBAC_DEFAULT_COUNTS = PBAC_ITEMS.reduce<PbacCounts>((acc, item) => {
   return acc;
 }, {} as PbacCounts);
 
-type TrackableDailyCategoryId = "pain" | "symptoms" | "bleeding" | "medication" | "sleep" | "bowelBladder";
+type TrackableDailyCategoryId =
+  | "pain"
+  | "symptoms"
+  | "bleeding"
+  | "medication"
+  | "sleep"
+  | "bowelBladder"
+  | "notes"
+  | "optional";
 
 const TRACKED_DAILY_CATEGORY_IDS: TrackableDailyCategoryId[] = [
   "pain",
@@ -669,6 +688,8 @@ const TRACKED_DAILY_CATEGORY_IDS: TrackableDailyCategoryId[] = [
   "medication",
   "sleep",
   "bowelBladder",
+  "notes",
+  "optional",
 ];
 
 const PAIN_FREE_MESSAGES = [
@@ -710,6 +731,74 @@ const createEmptyCategoryCompletion = (): Record<TrackableDailyCategoryId, boole
     acc[categoryId] = false;
     return acc;
   }, {} as Record<TrackableDailyCategoryId, boolean>);
+
+const pruneDailyEntryByCompletion = (
+  entry: DailyEntry,
+  completion: Record<Exclude<DailyCategoryId, "overview">, boolean>
+): DailyEntry => {
+  const next: DailyEntry = {
+    ...entry,
+    symptoms: { ...(entry.symptoms ?? {}) },
+  };
+
+  if (!completion.pain) {
+    next.painRegions = [];
+    next.painMapRegionIds = [];
+    next.painQuality = [] as DailyEntry["painQuality"];
+    next.painNRS = 0;
+    next.impactNRS = 0;
+    delete (next as { ovulationPain?: DailyEntry["ovulationPain"] }).ovulationPain;
+    delete (next.symptoms as Partial<DailyEntry["symptoms"]>).deepDyspareunia;
+  }
+
+  if (!completion.symptoms) {
+    SYMPTOM_ITEMS.forEach((item) => {
+      delete (next.symptoms as Partial<DailyEntry["symptoms"]>)[item.key];
+    });
+  }
+
+  if (!completion.bleeding) {
+    next.bleeding = { isBleeding: false };
+  }
+
+  if (!completion.medication) {
+    next.meds = [];
+    delete (next as { rescueDosesCount?: DailyEntry["rescueDosesCount"] }).rescueDosesCount;
+  }
+
+  if (!completion.sleep) {
+    delete (next as { sleep?: DailyEntry["sleep"] }).sleep;
+  }
+
+  if (!completion.bowelBladder) {
+    delete (next.symptoms as Partial<DailyEntry["symptoms"]>).dyschezia;
+    delete (next.symptoms as Partial<DailyEntry["symptoms"]>).dysuria;
+    delete (next as { gi?: DailyEntry["gi"] }).gi;
+    delete (next as { urinary?: DailyEntry["urinary"] }).urinary;
+    delete (next as { urinaryOpt?: DailyEntry["urinaryOpt"] }).urinaryOpt;
+    delete (next as { dizzinessOpt?: DailyEntry["dizzinessOpt"] }).dizzinessOpt;
+  }
+
+  if (!completion.notes) {
+    delete (next as { notesTags?: DailyEntry["notesTags"] }).notesTags;
+    delete (next as { notesFree?: DailyEntry["notesFree"] }).notesFree;
+  }
+
+  if (!completion.optional) {
+    delete (next as { ovulation?: DailyEntry["ovulation"] }).ovulation;
+    delete (next as { activity?: DailyEntry["activity"] }).activity;
+    delete (next as { exploratory?: DailyEntry["exploratory"] }).exploratory;
+    delete (next as { headacheOpt?: DailyEntry["headacheOpt"] }).headacheOpt;
+  }
+
+  const cleanedSymptomsEntries = Object.entries(next.symptoms ?? {}).filter(([, value]) => value !== undefined);
+  next.symptoms = cleanedSymptomsEntries.reduce<DailyEntry["symptoms"]>((acc, [key, value]) => {
+    acc[key as keyof DailyEntry["symptoms"]] = value as DailyEntry["symptoms"][keyof DailyEntry["symptoms"]];
+    return acc;
+  }, {} as DailyEntry["symptoms"]);
+
+  return next;
+};
 
 type SymptomSnapshot = { present: boolean; score: number | null };
 
@@ -882,6 +971,25 @@ const extractDailyCategorySnapshot = (
             : null,
         },
         featureFlags: pickFeatureFlags(featureFlags, ["moduleUrinary"]),
+      };
+    }
+    case "notes": {
+      return {
+        entry: {
+          notesTags: [...(entry.notesTags ?? [])],
+          notesFree: entry.notesFree ?? null,
+        },
+      };
+    }
+    case "optional": {
+      return {
+        entry: {
+          ovulation: entry.ovulation ? deepClone(entry.ovulation) : null,
+          activity: entry.activity ? deepClone(entry.activity) : null,
+          exploratory: entry.exploratory ? deepClone(entry.exploratory) : null,
+          headacheOpt: entry.headacheOpt ? deepClone(entry.headacheOpt) : null,
+        },
+        featureFlags: pickFeatureFlags(featureFlags, ["moduleHeadache", "moduleDizziness"]),
       };
     }
     default:
@@ -1106,6 +1214,35 @@ const restoreDailyCategorySnapshot = (
         Object.entries(snapshot.featureFlags).forEach(([key, value]) => {
           nextFeatureFlags[key as keyof FeatureFlags] = Boolean(value);
         });
+      }
+      break;
+    }
+    case "notes": {
+      const data = snapshot.entry as { notesTags?: string[]; notesFree?: string | null } | undefined;
+      if (data) {
+        nextEntry.notesTags = Array.isArray(data.notesTags) ? [...data.notesTags] : undefined;
+        if (typeof data.notesFree === "string") {
+          nextEntry.notesFree = data.notesFree;
+        } else {
+          delete (nextEntry as { notesFree?: DailyEntry["notesFree"] }).notesFree;
+        }
+      }
+      break;
+    }
+    case "optional": {
+      const data = snapshot.entry as
+        | {
+            ovulation?: DailyEntry["ovulation"] | null;
+            activity?: DailyEntry["activity"] | null;
+            exploratory?: DailyEntry["exploratory"] | null;
+            headacheOpt?: DailyEntry["headacheOpt"] | null;
+          }
+        | undefined;
+      if (data) {
+        nextEntry.ovulation = data.ovulation ? deepClone(data.ovulation) : undefined;
+        nextEntry.activity = data.activity ? deepClone(data.activity) : undefined;
+        nextEntry.exploratory = data.exploratory ? deepClone(data.exploratory) : undefined;
+        nextEntry.headacheOpt = data.headacheOpt ? deepClone(data.headacheOpt) : undefined;
       }
       break;
     }
@@ -3586,7 +3723,9 @@ export default function HomePage() {
       payload.dizzinessOpt = normalized;
     }
 
-    const syncedDraft: DailyEntry = { ...payload };
+    const prunedPayload = pruneDailyEntryByCompletion(payload, dailyCategoryCompletion);
+
+    const syncedDraft: DailyEntry = { ...prunedPayload };
 
     if (Array.isArray(syncedDraft.painRegions)) {
       syncedDraft.painMapRegionIds = syncedDraft.painRegions.map((region) => region.regionId);
@@ -4429,6 +4568,8 @@ export default function HomePage() {
       medication: TERMS.meds.label,
       sleep: "Schlaf",
       bowelBladder: "Darm & Blase",
+      notes: "Notizen & Tags",
+      optional: "Optionale Werte (Hilfsmittel nötig)",
     }),
     []
   );
@@ -4634,17 +4775,23 @@ export default function HomePage() {
           description: "Verdauung & Blase im Blick behalten",
           icon: BauchIcon,
         },
-        { id: "notes" as const, title: "Notizen & Tags", description: "Freitextnotizen und Tags ergänzen" },
+        {
+          id: "notes" as const,
+          title: "Notizen & Tags",
+          description: "Freitextnotizen und Tags ergänzen",
+          icon: NotebookPenCategoryIcon,
+        },
         {
           id: "optional" as const,
           title: "Optionale Werte",
           description: "Hilfsmittel- & Wearable-Daten erfassen",
+          icon: GaugeCategoryIcon,
         },
       ] satisfies Array<{
         id: Exclude<DailyCategoryId, "overview">;
         title: string;
         description: string;
-        icon?: (props: SVGProps<SVGSVGElement>) => JSX.Element;
+        icon?: ComponentType<SVGProps<SVGSVGElement>>;
         quickActions?: Array<{ label: string; onClick: () => void }>;
       }>,
     [handleQuickNoBleeding, handleQuickNoMedication, handleQuickNoPain, handleQuickNoSymptoms]
@@ -5584,6 +5731,9 @@ export default function HomePage() {
                     })}
                   </div>
                 </div>
+                <p className="text-xs text-rose-600">
+                  Es werden nur Daten von den Bereichen gespeichert, die einen grünen Haken haben.
+                </p>
                 <div className="flex flex-wrap items-center gap-3">
                   <Button type="button" onClick={handleDailySubmit} disabled={!isDailyDirty}>
                     Tagesdaten speichern
@@ -6624,7 +6774,7 @@ export default function HomePage() {
                 <Section
                   title="Notizen & Tags"
                   description="Freitext oder wiederkehrende Muster markieren"
-                  completionEnabled={false}
+                  onComplete={() => setDailyActiveCategory("overview")}
                 >
                   <div className="grid gap-3">
                     <TermField termKey="notesTags" htmlFor="notes-tag-input">
@@ -6673,7 +6823,7 @@ export default function HomePage() {
                       aria-label="Hilfsmittel-Optionen"
                     />
                   }
-                  completionEnabled={false}
+                  onComplete={() => setDailyActiveCategory("overview")}
                 >
                   <Button type="button" variant="secondary" onClick={() => setSensorsVisible((prev) => !prev)}>
                     {optionalSensorsLabel}
