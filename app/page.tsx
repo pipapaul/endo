@@ -11,7 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ChangeEvent, ReactNode } from "react";
+import type { ChangeEvent, ReactNode, SVGProps } from "react";
 import {
   LineChart,
   Line,
@@ -69,6 +69,14 @@ import { cn } from "@/lib/utils";
 import { touchLastActive } from "@/lib/persistence";
 import { usePersistentState } from "@/lib/usePersistentState";
 import WeeklyTabShell from "@/components/weekly/WeeklyTabShell";
+import {
+  BauchIcon,
+  MedicationIcon,
+  PainIcon,
+  PeriodIcon,
+  SleepIcon,
+  SymptomsIcon,
+} from "@/components/icons";
 import {
   listWeeklyReports,
   replaceWeeklyReports,
@@ -4364,31 +4372,41 @@ export default function HomePage() {
           id: "pain" as const,
           title: "Schmerzen",
           description: "Körperkarte, Intensität & Auswirkungen",
+          icon: PainIcon,
           quickActions: [{ label: "Keine Schmerzen", onClick: handleQuickNoPain }],
         },
         {
           id: "symptoms" as const,
           title: "Symptome",
           description: "Typische Endometriose-Symptome dokumentieren",
+          icon: SymptomsIcon,
           quickActions: [{ label: "Keine Symptome", onClick: handleQuickNoSymptoms }],
         },
         {
           id: "bleeding" as const,
           title: "Periode und Blutung",
           description: "Blutung, PBAC-Score & Begleitsymptome",
+          icon: PeriodIcon,
           quickActions: [{ label: "Keine Periode", onClick: handleQuickNoBleeding }],
         },
         {
           id: "medication" as const,
           title: TERMS.meds.label,
           description: "Eingenommene Medikamente & Hilfen",
+          icon: MedicationIcon,
           quickActions: [{ label: "Keine Medikamente", onClick: handleQuickNoMedication }],
         },
-        { id: "sleep" as const, title: "Schlaf", description: "Dauer, Qualität & Aufwachphasen" },
+        {
+          id: "sleep" as const,
+          title: "Schlaf",
+          description: "Dauer, Qualität & Aufwachphasen",
+          icon: SleepIcon,
+        },
         {
           id: "bowelBladder" as const,
           title: "Darm & Blase",
           description: "Verdauung & Blase im Blick behalten",
+          icon: BauchIcon,
         },
         { id: "notes" as const, title: "Notizen & Tags", description: "Freitextnotizen und Tags ergänzen" },
         {
@@ -4400,6 +4418,7 @@ export default function HomePage() {
         id: Exclude<DailyCategoryId, "overview">;
         title: string;
         description: string;
+        icon?: (props: SVGProps<SVGSVGElement>) => JSX.Element;
         quickActions?: Array<{ label: string; onClick: () => void }>;
       }>,
     [handleQuickNoBleeding, handleQuickNoMedication, handleQuickNoPain, handleQuickNoSymptoms]
@@ -5243,6 +5262,13 @@ export default function HomePage() {
                     {dailyCategoryButtons.map((category) => {
                       const isCompleted = dailyCategoryCompletion[category.id] ?? false;
                       const summaryLines = dailyCategorySummaries[category.id] ?? [];
+                      const Icon = category.icon;
+                      const iconWrapperClasses = cn(
+                        "flex h-12 w-12 flex-none items-center justify-center rounded-full border transition",
+                        isCompleted
+                          ? "border-amber-200 bg-amber-100 text-amber-600"
+                          : "border-rose-100 bg-rose-50 text-rose-400 group-hover:border-rose-200 group-hover:bg-rose-100 group-hover:text-rose-500"
+                      );
                       return (
                         <div
                           key={category.id}
@@ -5256,20 +5282,27 @@ export default function HomePage() {
                           <button
                             type="button"
                             onClick={() => setDailyActiveCategory(category.id)}
-                            className="flex w-full items-start justify-between gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:ring-offset-2"
+                            className="flex w-full items-start gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:ring-offset-2"
                           >
-                            <div className="flex-1">
-                              <p className="text-sm font-semibold text-rose-900">{category.title}</p>
-                              <p className="mt-1 text-xs text-rose-600">{category.description}</p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {isCompleted ? (
-                                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-                                  <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                                  <span className="sr-only">Bereits abgeschlossen</span>
-                                </span>
-                              ) : null}
-                              <ChevronRight className="h-4 w-4 text-rose-400 transition group-hover:text-rose-500" aria-hidden="true" />
+                            {Icon ? (
+                              <span className={iconWrapperClasses} aria-hidden="true">
+                                <Icon className="h-6 w-6" />
+                              </span>
+                            ) : null}
+                            <div className="flex flex-1 items-start justify-between gap-3">
+                              <div className="flex-1">
+                                <p className="text-sm font-semibold text-rose-900">{category.title}</p>
+                                <p className="mt-1 text-xs text-rose-600">{category.description}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {isCompleted ? (
+                                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                                    <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                                    <span className="sr-only">Bereits abgeschlossen</span>
+                                  </span>
+                                ) : null}
+                                <ChevronRight className="h-4 w-4 text-rose-400 transition group-hover:text-rose-500" aria-hidden="true" />
+                              </div>
                             </div>
                           </button>
                           {category.quickActions?.length ? (
