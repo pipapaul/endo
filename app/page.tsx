@@ -4212,66 +4212,72 @@ export default function HomePage() {
           >
             <div className="space-y-6">
               <div className={cn("space-y-6", dailyActiveCategory === "overview" ? "" : "hidden")}>
-                <div className="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50 via-white to-white p-5 shadow-sm">
+                <div className="rounded-2xl border border-rose-100 bg-white/80 p-5 shadow-sm backdrop-blur">
                   <div className="flex flex-col gap-5">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                       <div className="flex items-start gap-3 lg:flex-1">
-                        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-rose-100 text-rose-600">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-100 via-rose-50 to-white text-rose-600 shadow-inner">
                           <CalendarDays className="h-5 w-5" aria-hidden="true" />
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-xs uppercase tracking-wide text-rose-400">Ausgewählter Tag</p>
-                          <div className="mt-2 flex items-center gap-2">
+                        <div className="min-w-0 space-y-3">
+                          <div className="flex flex-col gap-1">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-400">Ausgewählter Tag</p>
+                            <button
+                              type="button"
+                              onClick={openDailyDatePicker}
+                              className="group flex w-full items-center gap-3 rounded-2xl border border-rose-100 bg-white/80 px-3 py-2 text-left transition hover:border-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
+                              aria-label="Datum auswählen"
+                            >
+                              <Calendar className="h-4 w-4 flex-shrink-0 text-rose-400 transition group-hover:text-rose-500" aria-hidden="true" />
+                              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                                <span className="truncate text-base font-semibold text-rose-900">
+                                  {selectedDateLabel ?? "Bitte Datum wählen"}
+                                </span>
+                                <span className="truncate text-xs text-rose-500">
+                                  Tippe zum Auswählen eines anderen Datums
+                                </span>
+                              </div>
+                              {selectedCycleDay !== null && (
+                                <Badge className="pointer-events-none flex-shrink-0 bg-rose-200 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
+                                  ZT {selectedCycleDay}
+                                </Badge>
+                              )}
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/70 p-1 shadow-inner">
                             <Button
                               type="button"
                               variant="ghost"
                               size="icon"
                               onClick={goToPreviousDay}
                               aria-label="Vorheriger Tag"
-                              className="flex-shrink-0 text-rose-500 hover:text-rose-700"
+                              className="h-9 w-9 rounded-full text-rose-500 transition hover:text-rose-700"
                             >
                               <ChevronLeft className="h-5 w-5" />
                             </Button>
-                            <button
-                              type="button"
-                              onClick={openDailyDatePicker}
-                              className="flex flex-1 items-center gap-3 overflow-hidden rounded-xl border border-rose-100 bg-white px-3 py-2 text-left text-sm font-medium text-rose-700 shadow-inner transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
-                              aria-label="Datum auswählen"
-                            >
-                              <Calendar className="h-4 w-4 flex-shrink-0 text-rose-400" aria-hidden="true" />
-                              <div className="flex min-w-0 items-center gap-2">
-                                <span className="truncate text-sm font-semibold text-rose-900 sm:text-base">
-                                  {selectedDateLabel ?? "Bitte Datum wählen"}
-                                </span>
-                                {selectedCycleDay !== null && (
-                                  <Badge className="pointer-events-none flex-shrink-0 bg-rose-200 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
-                                    ZT {selectedCycleDay}
-                                  </Badge>
-                                )}
-                              </div>
-                            </button>
+                            <div className="h-6 w-px bg-rose-100" aria-hidden="true" />
                             <Button
                               type="button"
                               variant="ghost"
                               size="icon"
                               onClick={goToNextDay}
                               aria-label="Nächster Tag"
-                              className="flex-shrink-0 text-rose-500 hover:text-rose-700"
+                              className="h-9 w-9 rounded-full text-rose-500 transition hover:text-rose-700 disabled:text-rose-200"
                               disabled={!canGoToNextDay}
                             >
                               <ChevronRight className="h-5 w-5" />
                             </Button>
-                            <Input
-                              ref={dailyDateInputRef}
-                              type="date"
-                              value={dailyDraft.date}
-                              onChange={(event) => selectDailyDate(event.target.value, { manual: true })}
-                              className="sr-only"
-                              max={today}
-                              aria-hidden="true"
-                              tabIndex={-1}
-                            />
                           </div>
+                          <Input
+                            ref={dailyDateInputRef}
+                            type="date"
+                            value={dailyDraft.date}
+                            onChange={(event) => selectDailyDate(event.target.value, { manual: true })}
+                            className="sr-only"
+                            max={today}
+                            aria-hidden="true"
+                            tabIndex={-1}
+                          />
                         </div>
                       </div>
                     </div>
