@@ -46,6 +46,7 @@ import {
   TrendingUp,
   Upload,
 } from "lucide-react";
+import Image from "next/image";
 
 import { DailyEntry, FeatureFlags, MonthlyEntry } from "@/lib/types";
 import { TERMS } from "@/lib/terms";
@@ -487,12 +488,54 @@ const SYMPTOM_ITEMS: { key: SymptomKey; termKey: TermKey }[] = [
 ];
 
 const PBAC_PRODUCT_ITEMS = [
-  { id: "pad_light", label: "Binde – leicht", score: 1, product: "pad", saturation: "light" },
-  { id: "pad_medium", label: "Binde – mittel", score: 5, product: "pad", saturation: "medium" },
-  { id: "pad_heavy", label: "Binde – stark", score: 20, product: "pad", saturation: "heavy" },
-  { id: "tampon_light", label: "Tampon – leicht", score: 1, product: "tampon", saturation: "light" },
-  { id: "tampon_medium", label: "Tampon – mittel", score: 5, product: "tampon", saturation: "medium" },
-  { id: "tampon_heavy", label: "Tampon – stark", score: 10, product: "tampon", saturation: "heavy" },
+  {
+    id: "pad_light",
+    label: "Binde – leicht",
+    score: 1,
+    product: "pad",
+    saturation: "light",
+    icon: "/icons/binde-low.svg",
+  },
+  {
+    id: "pad_medium",
+    label: "Binde – mittel",
+    score: 5,
+    product: "pad",
+    saturation: "medium",
+    icon: "/icons/binde-mid.svg",
+  },
+  {
+    id: "pad_heavy",
+    label: "Binde – stark",
+    score: 20,
+    product: "pad",
+    saturation: "heavy",
+    icon: "/icons/binde-max.svg",
+  },
+  {
+    id: "tampon_light",
+    label: "Tampon – leicht",
+    score: 1,
+    product: "tampon",
+    saturation: "light",
+    icon: "/icons/tampon-low.svg",
+  },
+  {
+    id: "tampon_medium",
+    label: "Tampon – mittel",
+    score: 5,
+    product: "tampon",
+    saturation: "medium",
+    icon: "/icons/tampon-mid.svg",
+  },
+  {
+    id: "tampon_heavy",
+    label: "Tampon – stark",
+    score: 10,
+    product: "tampon",
+    saturation: "heavy",
+    icon: "/icons/tampon-max.svg",
+  },
 ] as const;
 
 const PBAC_CLOT_ITEMS = [
@@ -4819,12 +4862,23 @@ export default function HomePage() {
       ]>;
       const presentSymptoms = symptomEntries.filter(([, value]) => value?.present);
       const symptomLines: string[] = [];
-      if (presentSymptoms.length) {
+      if (presentSymptoms.length || entry.dizzinessOpt?.present) {
         const labels = presentSymptoms.map(([key, value]) => {
           const descriptor = SYMPTOM_TERMS[key];
           const label = descriptor?.label ?? key;
           return typeof value?.score === "number" ? `${label} (${value.score}/10)` : label;
         });
+        if (entry.dizzinessOpt?.present) {
+          const dizzinessLabel = MODULE_TERMS.dizzinessOpt.present.label;
+          const details: string[] = [];
+          if (typeof entry.dizzinessOpt.nrs === "number") {
+            details.push(`${formatNumber(entry.dizzinessOpt.nrs, { maximumFractionDigits: 1 })}/10`);
+          }
+          if (entry.dizzinessOpt.orthostatic) {
+            details.push("orthostatisch");
+          }
+          labels.push(details.length ? `${dizzinessLabel} (${details.join(", ")})` : dizzinessLabel);
+        }
         symptomLines.push(`Vorhanden: ${formatList(labels, 3)}`);
       } else {
         symptomLines.push(`${pickRandom(SYMPTOM_FREE_MESSAGES)} ${pickRandom(SYMPTOM_FREE_EMOJIS)}`);
@@ -5407,7 +5461,7 @@ export default function HomePage() {
                           >
                             {Icon ? (
                               <span className={iconWrapperClasses} aria-hidden="true">
-                                <Icon className="h-8 w-8" />
+                                <Icon className="h-full w-full" />
                               </span>
                             ) : null}
                             <div className="flex flex-1 items-start justify-between gap-3">
@@ -5906,6 +5960,17 @@ export default function HomePage() {
                                 tech={TERMS.pbac.tech}
                                 help={TERMS.pbac.help}
                                 htmlFor={sliderId}
+                                meta={
+                                  <span className="ml-1 flex h-12 w-12 flex-none items-center justify-center rounded-full border border-rose-100 bg-rose-50">
+                                    <Image
+                                      src={item.icon}
+                                      alt=""
+                                      width={48}
+                                      height={48}
+                                      className="h-full w-full"
+                                    />
+                                  </span>
+                                }
                               >
                                 <div className="space-y-2">
                                   <Slider
