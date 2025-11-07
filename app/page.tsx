@@ -2554,6 +2554,16 @@ export default function HomePage() {
   const dysuriaSymptom = dailyDraft.symptoms.dysuria;
   const deepDyspareuniaSymptom = dailyDraft.symptoms.deepDyspareunia ?? { present: false };
   const ovulationPainDraft = dailyDraft.ovulationPain ?? {};
+  const deepDyspareuniaSummary = deepDyspareuniaSymptom.present
+    ? `Stärke ${Math.max(0, Math.min(10, Math.round(deepDyspareuniaSymptom.score ?? 0)))}/10`
+    : "Auswählen";
+  const ovulationPainSummary = ovulationPainDraft.side
+    ? `${OVULATION_PAIN_SIDE_LABELS[ovulationPainDraft.side]}${
+        typeof ovulationPainDraft.intensity === "number"
+          ? ` · Intensität ${Math.max(0, Math.min(10, Math.round(ovulationPainDraft.intensity)))}/10`
+          : ""
+      }`
+    : "Auswählen";
 
   const pbacFlooding = dailyDraft.bleeding.flooding ?? false;
   const pbacScore = useMemo(() => computePbacScore(pbacCounts, pbacFlooding), [pbacCounts, pbacFlooding]);
@@ -4687,15 +4697,17 @@ export default function HomePage() {
                         ))}
                       </div>
 
-                        <div className="space-y-4 rounded-lg border border-rose-100 bg-white p-4">
+                      <details
+                        className="group rounded-lg border border-rose-100 bg-rose-50 text-rose-700 [&[open]>summary]:border-b [&[open]>summary]:bg-rose-100"
+                        defaultOpen={deepDyspareuniaSymptom.present}
+                      >
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-rose-800 [&::-webkit-details-marker]:hidden">
+                          <span>{TERMS.deepDyspareunia.label}</span>
+                          <span className="text-xs font-normal text-rose-500">{deepDyspareuniaSummary}</span>
+                        </summary>
+                        <div className="space-y-3 border-t border-rose-100 bg-white px-3 py-3 text-rose-700">
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <p className="font-medium text-rose-800">{TERMS.deepDyspareunia.label}</p>
-                              <InfoTip
-                                tech={TERMS.deepDyspareunia.tech ?? TERMS.deepDyspareunia.label}
-                                help={TERMS.deepDyspareunia.help}
-                              />
-                            </div>
+                            <TermHeadline termKey="deepDyspareunia" />
                             <div className="flex items-center gap-2">
                               <Label className="text-xs text-rose-600">vorhanden</Label>
                               <Switch
@@ -4741,12 +4753,19 @@ export default function HomePage() {
                             </div>
                           ) : null}
                         </div>
+                      </details>
 
-                        <div className="space-y-4 rounded-lg border border-rose-100 bg-white p-4">
+                      <details
+                        className="group rounded-lg border border-rose-100 bg-rose-50 text-rose-700 [&[open]>summary]:border-b [&[open]>summary]:bg-rose-100"
+                        defaultOpen={Boolean(dailyDraft.ovulationPain)}
+                      >
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-rose-800 [&::-webkit-details-marker]:hidden">
+                          <span>{TERMS.ovulationPain.label}</span>
+                          <span className="text-xs font-normal text-rose-500">{ovulationPainSummary}</span>
+                        </summary>
+                        <div className="space-y-3 border-t border-rose-100 bg-white px-3 py-3 text-rose-700">
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <TermHeadline termKey="ovulationPain" />
-                            </div>
+                            <TermHeadline termKey="ovulationPain" />
                             {dailyDraft.ovulationPain ? (
                               <Button
                                 type="button"
@@ -4832,6 +4851,7 @@ export default function HomePage() {
                             {renderIssuesForPath("ovulationPain.intensity")}
                           </div>
                         </div>
+                      </details>
 
                       <TermField termKey="nrs">
                         <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4">
