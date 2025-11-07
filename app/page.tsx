@@ -5407,7 +5407,7 @@ export default function HomePage() {
                           >
                             {Icon ? (
                               <span className={iconWrapperClasses} aria-hidden="true">
-                                <Icon className="h-6 w-6" />
+                                <Icon className="h-8 w-8" />
                               </span>
                             ) : null}
                             <div className="flex flex-1 items-start justify-between gap-3">
@@ -5773,6 +5773,87 @@ export default function HomePage() {
                         </div>
                       );
                     })}
+                    {activeDizziness ? (
+                      <div className="rounded-lg border border-rose-100 bg-white p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <label className="flex items-center gap-2 text-sm text-rose-800">
+                            <Checkbox
+                              checked={dailyDraft.dizzinessOpt?.present ?? false}
+                              onChange={(event) =>
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  dizzinessOpt: {
+                                    ...(prev.dizzinessOpt ?? {}),
+                                    present: event.target.checked,
+                                  },
+                                }))
+                              }
+                            />
+                            <span>{MODULE_TERMS.dizzinessOpt.present.label}</span>
+                            <InfoTip
+                              tech={
+                                MODULE_TERMS.dizzinessOpt.present.tech ?? MODULE_TERMS.dizzinessOpt.present.label
+                              }
+                              help={MODULE_TERMS.dizzinessOpt.present.help}
+                            />
+                          </label>
+                        </div>
+                        {renderIssuesForPath("dizzinessOpt.present")}
+                        {dailyDraft.dizzinessOpt?.present && (
+                          <div className="mt-3 space-y-3">
+                            {showDizzinessNotice && (
+                              <InlineNotice
+                                title="Schwindel an starken Blutungstagen"
+                                text="Mehrfacher Schwindel bei starker Blutung – ärztliche Abklärung (Eisenstatus) erwägen."
+                              />
+                            )}
+                            <div className="space-y-1">
+                              <Labeled
+                                label={MODULE_TERMS.dizzinessOpt.nrs.label}
+                                tech={MODULE_TERMS.dizzinessOpt.nrs.tech}
+                                help={MODULE_TERMS.dizzinessOpt.nrs.help}
+                                htmlFor="dizziness-opt-nrs"
+                              >
+                                <NrsInput
+                                  id="dizziness-opt-nrs"
+                                  value={dailyDraft.dizzinessOpt?.nrs ?? 0}
+                                  onChange={(value) =>
+                                    setDailyDraft((prev) => ({
+                                      ...prev,
+                                      dizzinessOpt: { ...(prev.dizzinessOpt ?? {}), nrs: value },
+                                    }))
+                                  }
+                                />
+                              </Labeled>
+                              {renderIssuesForPath("dizzinessOpt.nrs")}
+                            </div>
+                            <label className="flex items-center gap-2 text-sm text-rose-800">
+                              <Checkbox
+                                checked={dailyDraft.dizzinessOpt?.orthostatic ?? false}
+                                onChange={(event) =>
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    dizzinessOpt: {
+                                      ...(prev.dizzinessOpt ?? {}),
+                                      orthostatic: event.target.checked,
+                                    },
+                                  }))
+                                }
+                              />
+                              <span>{MODULE_TERMS.dizzinessOpt.orthostatic.label}</span>
+                              <InfoTip
+                                tech={
+                                  MODULE_TERMS.dizzinessOpt.orthostatic.tech ??
+                                  MODULE_TERMS.dizzinessOpt.orthostatic.label
+                                }
+                                help={MODULE_TERMS.dizzinessOpt.orthostatic.help}
+                              />
+                            </label>
+                            {renderIssuesForPath("dizzinessOpt.orthostatic")}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                 </Section>
               </div>
@@ -6410,80 +6491,6 @@ export default function HomePage() {
                     className="hidden"
                   />
                   {renderIssuesForPath("urinaryOpt.present")}
-                  <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <label className="flex items-center gap-2 text-sm text-rose-800">
-                        <Checkbox
-                          checked={dailyDraft.dizzinessOpt?.present ?? false}
-                          onChange={(event) =>
-                            setDailyDraft((prev) => ({
-                              ...prev,
-                              dizzinessOpt: {
-                                ...(prev.dizzinessOpt ?? {}),
-                                present: event.target.checked,
-                              },
-                            }))
-                          }
-                        />
-                        <span>{MODULE_TERMS.dizzinessOpt.present.label}</span>
-                        <InfoTip
-                          tech={MODULE_TERMS.dizzinessOpt.present.tech ?? MODULE_TERMS.dizzinessOpt.present.label}
-                          help={MODULE_TERMS.dizzinessOpt.present.help}
-                        />
-                      </label>
-                    </div>
-                    {renderIssuesForPath("dizzinessOpt.present")}
-                    {dailyDraft.dizzinessOpt?.present && (
-                      <div className="space-y-3">
-                        {showDizzinessNotice && (
-                          <InlineNotice
-                            title="Schwindel an starken Blutungstagen"
-                            text="Mehrfacher Schwindel bei starker Blutung – ärztliche Abklärung (Eisenstatus) erwägen."
-                          />
-                        )}
-                        <div className="space-y-1">
-                          <Labeled
-                            label={MODULE_TERMS.dizzinessOpt.nrs.label}
-                            tech={MODULE_TERMS.dizzinessOpt.nrs.tech}
-                            help={MODULE_TERMS.dizzinessOpt.nrs.help}
-                            htmlFor="dizziness-opt-nrs"
-                          >
-                            <NrsInput
-                              id="dizziness-opt-nrs"
-                              value={dailyDraft.dizzinessOpt?.nrs ?? 0}
-                              onChange={(value) =>
-                                setDailyDraft((prev) => ({
-                                  ...prev,
-                                  dizzinessOpt: { ...(prev.dizzinessOpt ?? {}), nrs: value },
-                                }))
-                              }
-                            />
-                          </Labeled>
-                          {renderIssuesForPath("dizzinessOpt.nrs")}
-                        </div>
-                        <label className="flex items-center gap-2 text-sm text-rose-800">
-                          <Checkbox
-                            checked={dailyDraft.dizzinessOpt?.orthostatic ?? false}
-                            onChange={(event) =>
-                              setDailyDraft((prev) => ({
-                                ...prev,
-                                dizzinessOpt: {
-                                  ...(prev.dizzinessOpt ?? {}),
-                                  orthostatic: event.target.checked,
-                                },
-                              }))
-                            }
-                          />
-                          <span>{MODULE_TERMS.dizzinessOpt.orthostatic.label}</span>
-                          <InfoTip
-                            tech={MODULE_TERMS.dizzinessOpt.orthostatic.tech ?? MODULE_TERMS.dizzinessOpt.orthostatic.label}
-                            help={MODULE_TERMS.dizzinessOpt.orthostatic.help}
-                          />
-                        </label>
-                        {renderIssuesForPath("dizzinessOpt.orthostatic")}
-                      </div>
-                    )}
-                  </div>
                 </Section>
               </div>
 
