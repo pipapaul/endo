@@ -895,7 +895,10 @@ const restoreDailyCategorySnapshot = (
           const bristolType = data.gi?.bristolType;
           nextEntry.gi =
             typeof bristolType === "number"
-              ? { bristolType: bristolType as DailyEntry["gi"]["bristolType"] }
+              ? {
+                  bristolType:
+                    bristolType as NonNullable<DailyEntry["gi"]>["bristolType"],
+                }
               : undefined;
         } else {
           nextEntry.gi = undefined;
