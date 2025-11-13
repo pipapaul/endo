@@ -48,6 +48,7 @@ import {
 } from "lucide-react";
 
 import { DailyEntry, FeatureFlags, MonthlyEntry } from "@/lib/types";
+import { normalizeDailyEntry } from "@/lib/dailyEntries";
 import { TERMS } from "@/lib/terms";
 import type { ModuleTerms, TermDescriptor, TermKey } from "@/lib/terms";
 import { validateDailyEntry, validateMonthlyEntry, type ValidationIssue } from "@/lib/validation";
@@ -2114,7 +2115,7 @@ function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>
     }
   }
 
-  return applyAutomatedPainSymptoms(clone);
+  return applyAutomatedPainSymptoms(normalizeDailyEntry(clone));
 }
 
 type RawWeeklyReport = Record<string, unknown> & { stats?: Record<string, unknown> };
@@ -2541,7 +2542,7 @@ export default function HomePage() {
   const [monthlyEntries, setMonthlyEntries, monthlyStorage] = usePersistentState<MonthlyEntry[]>("endo.monthly.v2", []);
   const [featureFlags, setFeatureFlags, featureStorage] = usePersistentState<FeatureFlags>("endo.flags.v1", {});
   const derivedDailyEntries = useMemo(
-    () => dailyEntries.map((entry) => applyAutomatedPainSymptoms(entry)),
+    () => dailyEntries.map((entry) => applyAutomatedPainSymptoms(normalizeDailyEntry(entry))),
     [dailyEntries]
   );
   const [sectionCompletionState, setSectionCompletionState, sectionCompletionStorage] =
@@ -2613,6 +2614,29 @@ export default function HomePage() {
   const usesIndexedDb = storageMetas.every((meta) => meta.driver === "indexeddb");
   const hasMemoryFallback = storageMetas.some((meta) => meta.driver === "memory");
   const storageUnavailable = storageMetas.some((meta) => meta.driver === "unavailable");
+
+  useEffect(() => {
+    if (!dailyStorage.ready) return;
+    setDailyEntries((entries) => {
+      let changed = false;
+      const normalized = entries.map((entry) => {
+        const next = normalizeDailyEntry(entry);
+        if (next !== entry) {
+          changed = true;
+        }
+        return next;
+      });
+      return changed ? normalized : entries;
+    });
+  }, [dailyStorage.ready, setDailyEntries]);
+
+  useEffect(() => {
+    if (!dailyDraftStorage.ready) return;
+    setDailyDraft((draft) => {
+      const normalized = normalizeDailyEntry(draft);
+      return normalized === draft ? draft : normalized;
+    });
+  }, [dailyDraftStorage.ready, setDailyDraft]);
 
   useEffect(() => {
     if (!dailyDraftStorage.ready) return;
