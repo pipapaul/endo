@@ -3123,6 +3123,8 @@ export default function HomePage() {
       : null;
   }, [dailyDraft.date]);
 
+  const isSelectedDateToday = useMemo(() => dailyDraft.date === today, [dailyDraft.date, today]);
+
   const dailyToolbarLabel = useMemo(() => {
     const categoryLabels: Record<DailyCategoryId, string> = {
       overview: "Check-in Übersicht",
@@ -4142,27 +4144,60 @@ export default function HomePage() {
     return formatDate(threshold);
   }, [todayDate]);
 
+  type PainTrendDatum = {
+    date: string;
+    cycleDay: number | null;
+    cycleLabel: string;
+    weekday: string;
+    pain: number | null;
+    pbac: number | null;
+    symptomAverage: number | null;
+    sleepQuality: number | null;
+  };
+
   const { painTrendData, painTrendCycleStarts } = useMemo(() => {
     const thresholdIso = trendWindowStartIso;
     const filteredEntries = thresholdIso
       ? annotatedDailyEntries.filter(({ entry }) => entry.date >= thresholdIso)
       : annotatedDailyEntries;
     const effectiveEntries = filteredEntries.length > 0 ? filteredEntries : annotatedDailyEntries;
-    const mapped = effectiveEntries.map(({ entry, cycleDay, weekday, symptomAverage }) => ({
+    const mapped: PainTrendDatum[] = effectiveEntries.map(({ entry, cycleDay, weekday, symptomAverage }) => ({
       date: entry.date,
       cycleDay,
       cycleLabel: cycleDay ? `ZT ${cycleDay}` : "–",
       weekday,
-      pain: entry.painNRS,
+      pain: entry.painNRS ?? null,
       pbac: entry.bleeding.pbacScore ?? null,
       symptomAverage,
       sleepQuality: entry.sleep?.quality ?? null,
     }));
+
+    let extended = mapped;
+    if (todayDate) {
+      const hasToday = mapped.some((item) => item.date === today);
+      if (!hasToday) {
+        const todayWeekday = todayDate.toLocaleDateString("de-DE", { weekday: "short" });
+        extended = [
+          ...mapped,
+          {
+            date: today,
+            cycleDay: null,
+            cycleLabel: "–",
+            weekday: todayWeekday,
+            pain: null,
+            pbac: null,
+            symptomAverage: null,
+            sleepQuality: null,
+          },
+        ].sort((a, b) => a.date.localeCompare(b.date));
+      }
+    }
+
     return {
-      painTrendData: mapped,
-      painTrendCycleStarts: mapped.filter((item) => item.cycleDay === 1),
+      painTrendData: extended,
+      painTrendCycleStarts: extended.filter((item) => item.cycleDay === 1),
     };
-  }, [annotatedDailyEntries, trendWindowStartIso]);
+  }, [annotatedDailyEntries, today, todayDate, trendWindowStartIso]);
 
   const renderIssuesForPath = (path: string) =>
     issues.filter((issue) => issue.path === path).map((issue) => (
@@ -5672,7 +5707,12 @@ export default function HomePage() {
                     Täglicher Check-in
                   </h2>
                   {dailyOverviewDateLabel ? (
-                    <p className="text-sm text-rose-600 sm:text-base">{dailyOverviewDateLabel}</p>
+                    <div className="flex flex-wrap items-center gap-2 text-sm text-rose-600 sm:text-base">
+                      <span>{dailyOverviewDateLabel}</span>
+                      {isSelectedDateToday ? (
+                        <Badge className="bg-emerald-100 text-emerald-700">Heute</Badge>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
                 <div className="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50 via-white to-white p-5 shadow-sm">
@@ -5705,6 +5745,9 @@ export default function HomePage() {
                                   <span className="text-sm font-semibold text-rose-900 sm:text-base">
                                     {selectedDateLabel ?? "Bitte Datum wählen"}
                                   </span>
+                                  {isSelectedDateToday ? (
+                                    <Badge className="mt-1 w-fit bg-emerald-100 text-emerald-700">Heute</Badge>
+                                  ) : null}
                                 </div>
                               </div>
                               <Input
