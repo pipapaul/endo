@@ -3137,6 +3137,20 @@ export default function HomePage() {
     return null;
   }, [activeView, dailyToolbarLabel, monthlyToolbarLabel, weeklyToolbarLabel]);
 
+  const isDailyOverview = activeView === "daily" && dailyActiveCategory === "overview";
+  const dailyOverviewSubtitle = isDailyOverview
+    ? selectedDateLabel ??
+      (dailyToolbarLabel
+        ? dailyToolbarLabel
+            .split("·")
+            .map((part) => part.trim())
+            .filter(Boolean)
+            .pop() ?? null
+        : null)
+    : null;
+  const cycleDayBadgeLabel =
+    selectedCycleDay !== null ? `Zyklustag ${selectedCycleDay}` : "Zyklustag –";
+
   const activeScopeKey = useMemo(() => {
     if (activeView === "daily") {
       return dailyDraft.date ? `daily:${dailyDraft.date}` : null;
@@ -5315,33 +5329,54 @@ export default function HomePage() {
       >
         <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                if (activeView === "daily" && dailyActiveCategory !== "overview") {
-                  if (
-                    isTrackedDailyCategory(dailyActiveCategory) &&
-                    dailyCategoryDirtyState[dailyActiveCategory]
-                  ) {
-                    setPendingCategoryConfirm(dailyActiveCategory);
+            <div className="flex flex-1 items-center gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  if (activeView === "daily" && dailyActiveCategory !== "overview") {
+                    if (
+                      isTrackedDailyCategory(dailyActiveCategory) &&
+                      dailyCategoryDirtyState[dailyActiveCategory]
+                    ) {
+                      setPendingCategoryConfirm(dailyActiveCategory);
+                      return;
+                    }
+                    setDailyActiveCategory("overview");
                     return;
                   }
-                  setDailyActiveCategory("overview");
-                  return;
-                }
-                setActiveView("home");
-              }}
-              className="flex items-center gap-2 text-rose-700 hover:text-rose-800"
-            >
-              <ChevronLeft className="h-4 w-4" /> Zurück
-            </Button>
-            <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
-              {toolbarLabel ? (
-                <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-700">{toolbarLabel}</span>
+                  setActiveView("home");
+                }}
+                className="flex items-center gap-2 text-rose-700 hover:text-rose-800"
+              >
+                <ChevronLeft className="h-4 w-4" /> Zurück
+              </Button>
+              {isDailyOverview ? (
+                <div className="flex min-w-0 flex-col">
+                  <span className="text-base font-semibold text-rose-900 sm:text-lg">
+                    Täglicher Check-in
+                  </span>
+                  {dailyOverviewSubtitle ? (
+                    <span className="text-xs text-rose-600 sm:text-sm">{dailyOverviewSubtitle}</span>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {isDailyOverview ? (
+                <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 shadow-inner">
+                  {cycleDayBadgeLabel}
+                </span>
+              ) : null}
+              {toolbarLabel && !isDailyOverview ? (
+                <span className="rounded-full bg-rose-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
+                  {toolbarLabel}
+                </span>
               ) : null}
               {showScopeProgressCounter ? (
-                <span className="rounded-full bg-rose-200 px-3 py-1 text-rose-800">{`${activeScopeProgress.completed}/${activeScopeProgress.total}`}</span>
+                <span className="rounded-full bg-rose-200 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-800">
+                  {`${activeScopeProgress.completed}/${activeScopeProgress.total}`}
+                </span>
               ) : null}
             </div>
           </div>
@@ -5432,6 +5467,8 @@ export default function HomePage() {
                 <Button
                   type="button"
                   onClick={() => {
+                    manualDailySelectionRef.current = false;
+                    selectDailyDate(today);
                     setDailyActiveCategory("overview");
                     setActiveView("daily");
                   }}
@@ -5596,19 +5633,14 @@ export default function HomePage() {
                             <button
                               type="button"
                               onClick={openDailyDatePicker}
-                              className="flex flex-1 items-center gap-3 overflow-hidden rounded-xl border border-rose-100 bg-white px-3 py-2 text-left text-sm font-medium text-rose-700 shadow-inner transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
+                              className="flex flex-1 items-start gap-3 overflow-hidden rounded-xl border border-rose-100 bg-white px-3 py-2 text-left text-sm font-medium text-rose-700 shadow-inner transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
                               aria-label="Datum auswählen"
                             >
                               <Calendar className="h-4 w-4 flex-shrink-0 text-rose-400" aria-hidden="true" />
-                              <div className="flex min-w-0 items-center gap-2">
-                                <span className="truncate text-sm font-semibold text-rose-900 sm:text-base">
+                              <div className="flex min-w-0 flex-col text-left">
+                                <span className="text-sm font-semibold text-rose-900 sm:text-base">
                                   {selectedDateLabel ?? "Bitte Datum wählen"}
                                 </span>
-                                {selectedCycleDay !== null && (
-                                  <Badge className="pointer-events-none flex-shrink-0 bg-rose-200 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
-                                    ZT {selectedCycleDay}
-                                  </Badge>
-                                )}
                               </div>
                             </button>
                             <Button
