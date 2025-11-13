@@ -3088,15 +3088,18 @@ export default function HomePage() {
     return monthDate.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
   }, [monthlyDraft.month]);
 
-  const dailyToolbarLabel = useMemo(() => {
+  const dailyToolbarDateLabel = useMemo(() => {
     const parsed = parseIsoDate(dailyDraft.date);
-    const dateLabel = parsed
+    return parsed
       ? parsed.toLocaleDateString("de-DE", {
           weekday: "short",
           day: "2-digit",
           month: "2-digit",
         })
       : null;
+  }, [dailyDraft.date]);
+
+  const dailyToolbarLabel = useMemo(() => {
     const categoryLabels: Record<DailyCategoryId, string> = {
       overview: "Check-in Übersicht",
       pain: "Schmerzen",
@@ -3109,11 +3112,11 @@ export default function HomePage() {
       optional: "Optionale Werte",
     };
     const baseLabel = categoryLabels[dailyActiveCategory] ?? null;
-    if (baseLabel && dateLabel) {
-      return `${baseLabel} · ${dateLabel}`;
+    if (baseLabel && dailyToolbarDateLabel) {
+      return `${baseLabel} · ${dailyToolbarDateLabel}`;
     }
-    return baseLabel ?? dateLabel;
-  }, [dailyActiveCategory, dailyDraft.date]);
+    return baseLabel ?? dailyToolbarDateLabel;
+  }, [dailyActiveCategory, dailyToolbarDateLabel]);
 
   const weeklyScopeIsoWeek = weeklyIsoWeek ?? currentIsoWeek;
 
@@ -3137,16 +3140,10 @@ export default function HomePage() {
   }, [activeView, dailyToolbarLabel, monthlyToolbarLabel, weeklyToolbarLabel]);
 
   const isDailyOverview = activeView === "daily" && dailyActiveCategory === "overview";
-  const dailyOverviewSubtitle = isDailyOverview
-    ? selectedDateLabel ??
-      (dailyToolbarLabel
-        ? dailyToolbarLabel
-            .split("·")
-            .map((part) => part.trim())
-            .filter(Boolean)
-            .pop() ?? null
-        : null)
-    : null;
+  const dailyOverviewDateLabel = useMemo(
+    () => (isDailyOverview ? dailyToolbarDateLabel : null),
+    [dailyToolbarDateLabel, isDailyOverview]
+  );
   const cycleDayBadgeLabel =
     selectedCycleDay !== null ? `Zyklustag ${selectedCycleDay}` : "Zyklustag –";
 
@@ -5408,15 +5405,10 @@ export default function HomePage() {
               >
                 <ChevronLeft className="h-4 w-4" /> Zurück
               </Button>
-              {isDailyOverview ? (
-                <div className="flex min-w-0 flex-col">
-                  <span className="text-base font-semibold text-rose-900 sm:text-lg">
-                    Täglicher Check-in
-                  </span>
-                  {dailyOverviewSubtitle ? (
-                    <span className="text-xs text-rose-600 sm:text-sm">{dailyOverviewSubtitle}</span>
-                  ) : null}
-                </div>
+              {isDailyOverview && dailyOverviewDateLabel ? (
+                <span className="text-sm font-semibold text-rose-900 sm:text-base">
+                  {dailyOverviewDateLabel}
+                </span>
               ) : null}
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">{toolbarBadgeItems}</div>
@@ -5651,6 +5643,14 @@ export default function HomePage() {
           >
             <div className="space-y-6">
               <div className={cn("space-y-6", dailyActiveCategory === "overview" ? "" : "hidden")}>
+                <div className="space-y-1">
+                  <h2 className="text-xl font-semibold text-rose-900 sm:text-2xl">
+                    Täglicher Check-in
+                  </h2>
+                  {dailyOverviewDateLabel ? (
+                    <p className="text-sm text-rose-600 sm:text-base">{dailyOverviewDateLabel}</p>
+                  ) : null}
+                </div>
                 <div className="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50 via-white to-white p-5 shadow-sm">
                   <div className="flex flex-col gap-5">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
