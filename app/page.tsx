@@ -48,6 +48,7 @@ import {
 } from "lucide-react";
 
 import { DailyEntry, FeatureFlags, MonthlyEntry } from "@/lib/types";
+import { normalizeDailyEntry } from "@/lib/dailyEntries";
 import { TERMS } from "@/lib/terms";
 import type { ModuleTerms, TermDescriptor, TermKey } from "@/lib/terms";
 import { validateDailyEntry, validateMonthlyEntry, type ValidationIssue } from "@/lib/validation";
@@ -2114,7 +2115,7 @@ function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>
     }
   }
 
-  return applyAutomatedPainSymptoms(clone);
+  return applyAutomatedPainSymptoms(normalizeDailyEntry(clone));
 }
 
 type RawWeeklyReport = Record<string, unknown> & { stats?: Record<string, unknown> };
@@ -2541,7 +2542,7 @@ export default function HomePage() {
   const [monthlyEntries, setMonthlyEntries, monthlyStorage] = usePersistentState<MonthlyEntry[]>("endo.monthly.v2", []);
   const [featureFlags, setFeatureFlags, featureStorage] = usePersistentState<FeatureFlags>("endo.flags.v1", {});
   const derivedDailyEntries = useMemo(
-    () => dailyEntries.map((entry) => applyAutomatedPainSymptoms(entry)),
+    () => dailyEntries.map((entry) => applyAutomatedPainSymptoms(normalizeDailyEntry(entry))),
     [dailyEntries]
   );
   const [sectionCompletionState, setSectionCompletionState, sectionCompletionStorage] =
@@ -2613,6 +2614,29 @@ export default function HomePage() {
   const usesIndexedDb = storageMetas.every((meta) => meta.driver === "indexeddb");
   const hasMemoryFallback = storageMetas.some((meta) => meta.driver === "memory");
   const storageUnavailable = storageMetas.some((meta) => meta.driver === "unavailable");
+
+  useEffect(() => {
+    if (!dailyStorage.ready) return;
+    setDailyEntries((entries) => {
+      let changed = false;
+      const normalized = entries.map((entry) => {
+        const next = normalizeDailyEntry(entry);
+        if (next !== entry) {
+          changed = true;
+        }
+        return next;
+      });
+      return changed ? normalized : entries;
+    });
+  }, [dailyStorage.ready, setDailyEntries]);
+
+  useEffect(() => {
+    if (!dailyDraftStorage.ready) return;
+    setDailyDraft((draft) => {
+      const normalized = normalizeDailyEntry(draft);
+      return normalized === draft ? draft : normalized;
+    });
+  }, [dailyDraftStorage.ready, setDailyDraft]);
 
   useEffect(() => {
     if (!dailyDraftStorage.ready) return;
@@ -2940,9 +2964,8 @@ export default function HomePage() {
     const parsed = parseIsoDate(dailyDraft.date);
     if (!parsed) return null;
     return parsed.toLocaleDateString("de-DE", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
+      day: "2-digit",
+      month: "2-digit",
       year: "numeric",
     });
   }, [dailyDraft.date]);
@@ -3089,15 +3112,20 @@ export default function HomePage() {
     return monthDate.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
   }, [monthlyDraft.month]);
 
-  const dailyToolbarLabel = useMemo(() => {
+  const dailyToolbarDateLabel = useMemo(() => {
     const parsed = parseIsoDate(dailyDraft.date);
-    const dateLabel = parsed
+    return parsed
       ? parsed.toLocaleDateString("de-DE", {
           weekday: "short",
           day: "2-digit",
           month: "2-digit",
         })
       : null;
+  }, [dailyDraft.date]);
+
+  const isSelectedDateToday = useMemo(() => dailyDraft.date === today, [dailyDraft.date, today]);
+
+  const dailyToolbarLabel = useMemo(() => {
     const categoryLabels: Record<DailyCategoryId, string> = {
       overview: "Check-in Übersicht",
       pain: "Schmerzen",
@@ -3110,11 +3138,11 @@ export default function HomePage() {
       optional: "Optionale Werte",
     };
     const baseLabel = categoryLabels[dailyActiveCategory] ?? null;
-    if (baseLabel && dateLabel) {
-      return `${baseLabel} · ${dateLabel}`;
+    if (baseLabel && dailyToolbarDateLabel) {
+      return `${baseLabel} · ${dailyToolbarDateLabel}`;
     }
-    return baseLabel ?? dateLabel;
-  }, [dailyActiveCategory, dailyDraft.date]);
+    return baseLabel ?? dailyToolbarDateLabel;
+  }, [dailyActiveCategory, dailyToolbarDateLabel]);
 
   const weeklyScopeIsoWeek = weeklyIsoWeek ?? currentIsoWeek;
 
@@ -3136,6 +3164,14 @@ export default function HomePage() {
     if (activeView === "analytics") return "Auswertungen";
     return null;
   }, [activeView, dailyToolbarLabel, monthlyToolbarLabel, weeklyToolbarLabel]);
+
+  const isDailyOverview = activeView === "daily" && dailyActiveCategory === "overview";
+  const dailyOverviewDateLabel = useMemo(
+    () => (isDailyOverview ? dailyToolbarDateLabel : null),
+    [dailyToolbarDateLabel, isDailyOverview]
+  );
+  const cycleDayBadgeLabel =
+    selectedCycleDay !== null ? `Zyklustag ${selectedCycleDay}` : "Zyklustag –";
 
   const activeScopeKey = useMemo(() => {
     if (activeView === "daily") {
@@ -4108,27 +4144,60 @@ export default function HomePage() {
     return formatDate(threshold);
   }, [todayDate]);
 
+  type PainTrendDatum = {
+    date: string;
+    cycleDay: number | null;
+    cycleLabel: string;
+    weekday: string;
+    pain: number | null;
+    pbac: number | null;
+    symptomAverage: number | null;
+    sleepQuality: number | null;
+  };
+
   const { painTrendData, painTrendCycleStarts } = useMemo(() => {
     const thresholdIso = trendWindowStartIso;
     const filteredEntries = thresholdIso
       ? annotatedDailyEntries.filter(({ entry }) => entry.date >= thresholdIso)
       : annotatedDailyEntries;
     const effectiveEntries = filteredEntries.length > 0 ? filteredEntries : annotatedDailyEntries;
-    const mapped = effectiveEntries.map(({ entry, cycleDay, weekday, symptomAverage }) => ({
+    const mapped: PainTrendDatum[] = effectiveEntries.map(({ entry, cycleDay, weekday, symptomAverage }) => ({
       date: entry.date,
       cycleDay,
       cycleLabel: cycleDay ? `ZT ${cycleDay}` : "–",
       weekday,
-      pain: entry.painNRS,
+      pain: entry.painNRS ?? null,
       pbac: entry.bleeding.pbacScore ?? null,
       symptomAverage,
       sleepQuality: entry.sleep?.quality ?? null,
     }));
+
+    let extended = mapped;
+    if (todayDate) {
+      const hasToday = mapped.some((item) => item.date === today);
+      if (!hasToday) {
+        const todayWeekday = todayDate.toLocaleDateString("de-DE", { weekday: "short" });
+        extended = [
+          ...mapped,
+          {
+            date: today,
+            cycleDay: null,
+            cycleLabel: "–",
+            weekday: todayWeekday,
+            pain: null,
+            pbac: null,
+            symptomAverage: null,
+            sleepQuality: null,
+          },
+        ].sort((a, b) => a.date.localeCompare(b.date));
+      }
+    }
+
     return {
-      painTrendData: mapped,
-      painTrendCycleStarts: mapped.filter((item) => item.cycleDay === 1),
+      painTrendData: extended,
+      painTrendCycleStarts: extended.filter((item) => item.cycleDay === 1),
     };
-  }, [annotatedDailyEntries, trendWindowStartIso]);
+  }, [annotatedDailyEntries, today, todayDate, trendWindowStartIso]);
 
   const renderIssuesForPath = (path: string) =>
     issues.filter((issue) => issue.path === path).map((issue) => (
@@ -5306,6 +5375,64 @@ export default function HomePage() {
 
   const showScopeProgressCounter = activeView !== "analytics" && activeScopeProgress.total > 0;
 
+  const toolbarBadgeItems = useMemo(
+    () => {
+      const items: Array<{ order: number; element: ReactNode }> = [];
+
+      if (isDailyOverview) {
+        items.push({
+          order: 10,
+          element: (
+            <span
+              key="cycle-day"
+              className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 shadow-inner"
+            >
+              {cycleDayBadgeLabel}
+            </span>
+          ),
+        });
+      }
+
+      if (toolbarLabel && !isDailyOverview) {
+        items.push({
+          order: 20,
+          element: (
+            <span
+              key="toolbar-label"
+              className="rounded-full bg-rose-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-700"
+            >
+              {toolbarLabel}
+            </span>
+          ),
+        });
+      }
+
+      if (showScopeProgressCounter) {
+        items.push({
+          order: 30,
+          element: (
+            <span
+              key="scope-progress"
+              className="rounded-full bg-rose-200 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-800"
+            >
+              {`${activeScopeProgress.completed}/${activeScopeProgress.total}`}
+            </span>
+          ),
+        });
+      }
+
+      return items.sort((a, b) => a.order - b.order).map((item) => item.element);
+    },
+    [
+      activeScopeProgress.completed,
+      activeScopeProgress.total,
+      cycleDayBadgeLabel,
+      isDailyOverview,
+      showScopeProgressCounter,
+      toolbarLabel,
+    ]
+  );
+
   const detailToolbar = !isHomeView ? (
     <>
       <header
@@ -5315,35 +5442,35 @@ export default function HomePage() {
       >
         <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                if (activeView === "daily" && dailyActiveCategory !== "overview") {
-                  if (
-                    isTrackedDailyCategory(dailyActiveCategory) &&
-                    dailyCategoryDirtyState[dailyActiveCategory]
-                  ) {
-                    setPendingCategoryConfirm(dailyActiveCategory);
+            <div className="flex flex-1 items-center gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  if (activeView === "daily" && dailyActiveCategory !== "overview") {
+                    if (
+                      isTrackedDailyCategory(dailyActiveCategory) &&
+                      dailyCategoryDirtyState[dailyActiveCategory]
+                    ) {
+                      setPendingCategoryConfirm(dailyActiveCategory);
+                      return;
+                    }
+                    setDailyActiveCategory("overview");
                     return;
                   }
-                  setDailyActiveCategory("overview");
-                  return;
-                }
-                setActiveView("home");
-              }}
-              className="flex items-center gap-2 text-rose-700 hover:text-rose-800"
-            >
-              <ChevronLeft className="h-4 w-4" /> Zurück
-            </Button>
-            <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
-              {toolbarLabel ? (
-                <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-700">{toolbarLabel}</span>
-              ) : null}
-              {showScopeProgressCounter ? (
-                <span className="rounded-full bg-rose-200 px-3 py-1 text-rose-800">{`${activeScopeProgress.completed}/${activeScopeProgress.total}`}</span>
+                  setActiveView("home");
+                }}
+                className="flex items-center gap-2 text-rose-700 hover:text-rose-800"
+              >
+                <ChevronLeft className="h-4 w-4" /> Zurück
+              </Button>
+              {isDailyOverview && dailyOverviewDateLabel ? (
+                <span className="text-sm font-semibold text-rose-900 sm:text-base">
+                  {dailyOverviewDateLabel}
+                </span>
               ) : null}
             </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">{toolbarBadgeItems}</div>
           </div>
           {infoMessage ? <p className="text-xs text-rose-600 sm:text-sm">{infoMessage}</p> : null}
         </div>
@@ -5432,6 +5559,8 @@ export default function HomePage() {
                 <Button
                   type="button"
                   onClick={() => {
+                    manualDailySelectionRef.current = false;
+                    selectDailyDate(today);
                     setDailyActiveCategory("overview");
                     setActiveView("daily");
                   }}
@@ -5573,6 +5702,19 @@ export default function HomePage() {
           >
             <div className="space-y-6">
               <div className={cn("space-y-6", dailyActiveCategory === "overview" ? "" : "hidden")}>
+                <div className="space-y-1">
+                  <h2 className="text-xl font-semibold text-rose-900 sm:text-2xl">
+                    Täglicher Check-in
+                  </h2>
+                  {dailyOverviewDateLabel ? (
+                    <div className="flex flex-wrap items-center gap-2 text-sm text-rose-600 sm:text-base">
+                      <span>{dailyOverviewDateLabel}</span>
+                      {isSelectedDateToday ? (
+                        <Badge className="bg-emerald-100 text-emerald-700">Heute</Badge>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
                 <div className="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50 via-white to-white p-5 shadow-sm">
                   <div className="flex flex-col gap-5">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -5593,24 +5735,31 @@ export default function HomePage() {
                             >
                               <ChevronLeft className="h-5 w-5" />
                             </Button>
-                            <button
-                              type="button"
+                            <div
                               onClick={openDailyDatePicker}
-                              className="flex flex-1 items-center gap-3 overflow-hidden rounded-xl border border-rose-100 bg-white px-3 py-2 text-left text-sm font-medium text-rose-700 shadow-inner transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
-                              aria-label="Datum auswählen"
+                              className="relative flex flex-1 cursor-pointer overflow-hidden rounded-xl border border-rose-100 bg-white text-left text-sm font-medium text-rose-700 shadow-inner transition hover:border-rose-200 focus-within:border-rose-200 focus-within:ring-2 focus-within:ring-rose-300"
                             >
-                              <Calendar className="h-4 w-4 flex-shrink-0 text-rose-400" aria-hidden="true" />
-                              <div className="flex min-w-0 items-center gap-2">
-                                <span className="truncate text-sm font-semibold text-rose-900 sm:text-base">
-                                  {selectedDateLabel ?? "Bitte Datum wählen"}
-                                </span>
-                                {selectedCycleDay !== null && (
-                                  <Badge className="pointer-events-none flex-shrink-0 bg-rose-200 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
-                                    ZT {selectedCycleDay}
-                                  </Badge>
-                                )}
+                              <div className="pointer-events-none flex w-full items-start gap-3 px-3 py-2">
+                                <Calendar className="h-4 w-4 flex-shrink-0 text-rose-400" aria-hidden="true" />
+                                <div className="flex min-w-0 flex-col text-left">
+                                  <span className="text-sm font-semibold text-rose-900 sm:text-base">
+                                    {selectedDateLabel ?? "Bitte Datum wählen"}
+                                  </span>
+                                  {isSelectedDateToday ? (
+                                    <Badge className="mt-1 w-fit bg-emerald-100 text-emerald-700">Heute</Badge>
+                                  ) : null}
+                                </div>
                               </div>
-                            </button>
+                              <Input
+                                ref={dailyDateInputRef}
+                                type="date"
+                                value={dailyDraft.date}
+                                onChange={(event) => selectDailyDate(event.target.value, { manual: true })}
+                                className="absolute inset-0 block h-full w-full cursor-pointer rounded-xl border-0 bg-transparent p-0 opacity-0 focus-visible:outline-none"
+                                max={today}
+                                aria-label="Datum auswählen"
+                              />
+                            </div>
                             <Button
                               type="button"
                               variant="ghost"
@@ -5622,16 +5771,6 @@ export default function HomePage() {
                             >
                               <ChevronRight className="h-5 w-5" />
                             </Button>
-                            <Input
-                              ref={dailyDateInputRef}
-                              type="date"
-                              value={dailyDraft.date}
-                              onChange={(event) => selectDailyDate(event.target.value, { manual: true })}
-                              className="sr-only"
-                              max={today}
-                              aria-hidden="true"
-                              tabIndex={-1}
-                            />
                           </div>
                         </div>
                       </div>
