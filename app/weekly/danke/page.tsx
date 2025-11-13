@@ -175,7 +175,7 @@ function WeeklyThankYouContent(): JSX.Element {
   }, [downloadReminderIcs]);
 
   const handleBack = useCallback(() => {
-    router.push("/weekly");
+    router.push("/");
   }, [router]);
 
   return (
@@ -224,7 +224,7 @@ function WeeklyThankYouContent(): JSX.Element {
 
         <div className="flex justify-center">
           <Button type="button" variant="ghost" onClick={handleBack}>
-            Zurück zur Wochenübersicht
+            Zurück zur Startseite
           </Button>
         </div>
       </section>
