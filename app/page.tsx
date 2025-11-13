@@ -2940,9 +2940,8 @@ export default function HomePage() {
     const parsed = parseIsoDate(dailyDraft.date);
     if (!parsed) return null;
     return parsed.toLocaleDateString("de-DE", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
+      day: "2-digit",
+      month: "2-digit",
       year: "numeric",
     });
   }, [dailyDraft.date]);
@@ -5320,6 +5319,64 @@ export default function HomePage() {
 
   const showScopeProgressCounter = activeView !== "analytics" && activeScopeProgress.total > 0;
 
+  const toolbarBadgeItems = useMemo(
+    () => {
+      const items: Array<{ order: number; element: ReactNode }> = [];
+
+      if (isDailyOverview) {
+        items.push({
+          order: 10,
+          element: (
+            <span
+              key="cycle-day"
+              className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 shadow-inner"
+            >
+              {cycleDayBadgeLabel}
+            </span>
+          ),
+        });
+      }
+
+      if (toolbarLabel && !isDailyOverview) {
+        items.push({
+          order: 20,
+          element: (
+            <span
+              key="toolbar-label"
+              className="rounded-full bg-rose-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-700"
+            >
+              {toolbarLabel}
+            </span>
+          ),
+        });
+      }
+
+      if (showScopeProgressCounter) {
+        items.push({
+          order: 30,
+          element: (
+            <span
+              key="scope-progress"
+              className="rounded-full bg-rose-200 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-800"
+            >
+              {`${activeScopeProgress.completed}/${activeScopeProgress.total}`}
+            </span>
+          ),
+        });
+      }
+
+      return items.sort((a, b) => a.order - b.order).map((item) => item.element);
+    },
+    [
+      activeScopeProgress.completed,
+      activeScopeProgress.total,
+      cycleDayBadgeLabel,
+      isDailyOverview,
+      showScopeProgressCounter,
+      toolbarLabel,
+    ]
+  );
+
   const detailToolbar = !isHomeView ? (
     <>
       <header
@@ -5362,23 +5419,7 @@ export default function HomePage() {
                 </div>
               ) : null}
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              {isDailyOverview ? (
-                <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 shadow-inner">
-                  {cycleDayBadgeLabel}
-                </span>
-              ) : null}
-              {toolbarLabel && !isDailyOverview ? (
-                <span className="rounded-full bg-rose-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
-                  {toolbarLabel}
-                </span>
-              ) : null}
-              {showScopeProgressCounter ? (
-                <span className="rounded-full bg-rose-200 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-800">
-                  {`${activeScopeProgress.completed}/${activeScopeProgress.total}`}
-                </span>
-              ) : null}
-            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">{toolbarBadgeItems}</div>
           </div>
           {infoMessage ? <p className="text-xs text-rose-600 sm:text-sm">{infoMessage}</p> : null}
         </div>
@@ -5630,19 +5671,28 @@ export default function HomePage() {
                             >
                               <ChevronLeft className="h-5 w-5" />
                             </Button>
-                            <button
-                              type="button"
+                            <div
                               onClick={openDailyDatePicker}
-                              className="flex flex-1 items-start gap-3 overflow-hidden rounded-xl border border-rose-100 bg-white px-3 py-2 text-left text-sm font-medium text-rose-700 shadow-inner transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
-                              aria-label="Datum auswählen"
+                              className="relative flex flex-1 cursor-pointer overflow-hidden rounded-xl border border-rose-100 bg-white text-left text-sm font-medium text-rose-700 shadow-inner transition hover:border-rose-200 focus-within:border-rose-200 focus-within:ring-2 focus-within:ring-rose-300"
                             >
-                              <Calendar className="h-4 w-4 flex-shrink-0 text-rose-400" aria-hidden="true" />
-                              <div className="flex min-w-0 flex-col text-left">
-                                <span className="text-sm font-semibold text-rose-900 sm:text-base">
-                                  {selectedDateLabel ?? "Bitte Datum wählen"}
-                                </span>
+                              <div className="pointer-events-none flex w-full items-start gap-3 px-3 py-2">
+                                <Calendar className="h-4 w-4 flex-shrink-0 text-rose-400" aria-hidden="true" />
+                                <div className="flex min-w-0 flex-col text-left">
+                                  <span className="text-sm font-semibold text-rose-900 sm:text-base">
+                                    {selectedDateLabel ?? "Bitte Datum wählen"}
+                                  </span>
+                                </div>
                               </div>
-                            </button>
+                              <Input
+                                ref={dailyDateInputRef}
+                                type="date"
+                                value={dailyDraft.date}
+                                onChange={(event) => selectDailyDate(event.target.value, { manual: true })}
+                                className="absolute inset-0 block h-full w-full cursor-pointer rounded-xl border-0 bg-transparent p-0 opacity-0 focus-visible:outline-none"
+                                max={today}
+                                aria-label="Datum auswählen"
+                              />
+                            </div>
                             <Button
                               type="button"
                               variant="ghost"
@@ -5654,16 +5704,6 @@ export default function HomePage() {
                             >
                               <ChevronRight className="h-5 w-5" />
                             </Button>
-                            <Input
-                              ref={dailyDateInputRef}
-                              type="date"
-                              value={dailyDraft.date}
-                              onChange={(event) => selectDailyDate(event.target.value, { manual: true })}
-                              className="sr-only"
-                              max={today}
-                              aria-hidden="true"
-                              tabIndex={-1}
-                            />
                           </div>
                         </div>
                       </div>
