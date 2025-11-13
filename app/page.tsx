@@ -4144,18 +4144,29 @@ export default function HomePage() {
     return formatDate(threshold);
   }, [todayDate]);
 
+  type PainTrendDatum = {
+    date: string;
+    cycleDay: number | null;
+    cycleLabel: string;
+    weekday: string;
+    pain: number | null;
+    pbac: number | null;
+    symptomAverage: number | null;
+    sleepQuality: number | null;
+  };
+
   const { painTrendData, painTrendCycleStarts } = useMemo(() => {
     const thresholdIso = trendWindowStartIso;
     const filteredEntries = thresholdIso
       ? annotatedDailyEntries.filter(({ entry }) => entry.date >= thresholdIso)
       : annotatedDailyEntries;
     const effectiveEntries = filteredEntries.length > 0 ? filteredEntries : annotatedDailyEntries;
-    const mapped = effectiveEntries.map(({ entry, cycleDay, weekday, symptomAverage }) => ({
+    const mapped: PainTrendDatum[] = effectiveEntries.map(({ entry, cycleDay, weekday, symptomAverage }) => ({
       date: entry.date,
       cycleDay,
       cycleLabel: cycleDay ? `ZT ${cycleDay}` : "–",
       weekday,
-      pain: entry.painNRS,
+      pain: entry.painNRS ?? null,
       pbac: entry.bleeding.pbacScore ?? null,
       symptomAverage,
       sleepQuality: entry.sleep?.quality ?? null,
