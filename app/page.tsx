@@ -55,6 +55,7 @@ import { validateDailyEntry, validateMonthlyEntry, type ValidationIssue } from "
 import InfoTip from "@/components/InfoTip";
 import { Labeled } from "@/components/Labeled";
 import { Button } from "@/components/ui/button";
+import BackButton from "@/components/ui/back-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -5443,9 +5444,8 @@ export default function HomePage() {
         <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-1 items-center gap-3">
-              <Button
+              <BackButton
                 type="button"
-                variant="ghost"
                 onClick={() => {
                   if (activeView === "daily" && dailyActiveCategory !== "overview") {
                     if (
@@ -5460,10 +5460,9 @@ export default function HomePage() {
                   }
                   setActiveView("home");
                 }}
-                className="flex items-center gap-2 text-rose-700 hover:text-rose-800"
               >
-                <ChevronLeft className="h-4 w-4" /> Zurück
-              </Button>
+                Zurück
+              </BackButton>
               {isDailyOverview && dailyOverviewDateLabel ? (
                 <span className="text-sm font-semibold text-rose-900 sm:text-base">
                   {dailyOverviewDateLabel}

@@ -23,6 +23,7 @@ import type { WeeklyDraft } from "@/lib/weekly/drafts";
 import { deleteWeeklyDraft, loadWeeklyDraft, saveWeeklyDraft } from "@/lib/weekly/drafts";
 import { Stepper } from "./components/Stepper";
 import { Button } from "@/components/ui/button";
+import BackButton from "@/components/ui/back-button";
 import { useRouter } from "next/navigation";
 import { storeWeeklyReport } from "@/lib/weekly/reports";
 import InfoTip from "@/components/InfoTip";
@@ -463,9 +464,9 @@ export default function WeeklyForm(props: { year: number; week: number }): JSX.E
             Abbrechen
           </Button>
           <div className="flex gap-3">
-            <Button type="button" variant="secondary" onClick={() => handleStepChange(1)}>
+            <BackButton type="button" onClick={() => handleStepChange(1)}>
               Zurück zur Zusammenfassung
-            </Button>
+            </BackButton>
             <Button type="button" onClick={() => handleStepChange(3)}>
               Weiter zum Prüfen
             </Button>
@@ -577,14 +578,9 @@ export default function WeeklyForm(props: { year: number; week: number }): JSX.E
             Abbrechen
           </Button>
           <div className="flex gap-3">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => handleStepChange(2)}
-              disabled={isSubmitting}
-            >
+            <BackButton type="button" onClick={() => handleStepChange(2)} disabled={isSubmitting}>
               Zurück zu den Leitfragen
-            </Button>
+            </BackButton>
             <Button type="button" onClick={handleSubmit} disabled={!canSubmit || isSubmitting}>
               {isSubmitting ? "Wird gesendet …" : "Absenden"}
             </Button>
