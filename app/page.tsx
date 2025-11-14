@@ -421,7 +421,9 @@ const applyAutomatedPainSymptoms = (entry: DailyEntry): DailyEntry => {
   const symptoms: DailyEntry["symptoms"] = { ...(entry.symptoms ?? {}) };
   const result: DailyEntry = { ...entry, symptoms };
 
-  if (entry.bleeding.isBleeding) {
+  const hasBleeding = Boolean(entry.bleeding?.isBleeding);
+
+  if (hasBleeding) {
     const maxPain = computeMaxPainIntensity(entry);
     if (maxPain !== null && maxPain > 0) {
       symptoms.dysmenorrhea = { present: true, score: maxPain };
@@ -896,7 +898,7 @@ const extractDailyCategorySnapshot = (
         entry: {
           bleeding: {
             isBleeding: Boolean(entry.bleeding?.isBleeding),
-            pbacScore: typeof entry.bleeding?.pbacScore === "number" ? entry.bleeding.pbacScore : null,
+            pbacScore: typeof entry.bleeding?.pbacScore === "number" ? entry.bleeding?.pbacScore : null,
             clots: Boolean(entry.bleeding?.clots),
             flooding: Boolean(entry.bleeding?.flooding),
           },
@@ -2991,7 +2993,7 @@ export default function HomePage() {
       if (cycleDay !== null && diffDays > 0) {
         cycleDay += diffDays;
       }
-      const isBleeding = entry.bleeding.isBleeding;
+      const isBleeding = Boolean(entry.bleeding?.isBleeding);
       const bleedingStartsToday = isBleeding && (!previousBleeding || diffDays > 1 || cycleDay === null);
       if (bleedingStartsToday) {
         cycleDay = 1;
@@ -3037,7 +3039,7 @@ export default function HomePage() {
       if (cycleDay !== null && diffDays > 0) {
         cycleDay += diffDays;
       }
-      const isBleeding = entry.bleeding.isBleeding;
+      const isBleeding = Boolean(entry.bleeding?.isBleeding);
       const bleedingStartsToday = isBleeding && (!previousBleeding || diffDays > 1 || cycleDay === null);
       if (bleedingStartsToday) {
         cycleDay = 1;
@@ -3971,7 +3973,10 @@ export default function HomePage() {
     lines.push(`Tagesdatensätze: ${dailyFiltered.length}`);
     if (dailyFiltered.length) {
       const avgPain = dailyFiltered.reduce((sum, entry) => sum + entry.painNRS, 0) / dailyFiltered.length;
-      const maxPbac = dailyFiltered.reduce((max, entry) => Math.max(max, entry.bleeding.pbacScore ?? 0), 0);
+      const maxPbac = dailyFiltered.reduce(
+        (max, entry) => Math.max(max, entry.bleeding?.pbacScore ?? 0),
+        0
+      );
       const sleepValues = dailyFiltered
         .map((entry) => entry.sleep?.quality)
         .filter((value): value is number => typeof value === "number");
@@ -4184,7 +4189,7 @@ export default function HomePage() {
       cycleLabel: cycleDay ? `ZT ${cycleDay}` : "–",
       weekday,
       pain: entry.painNRS ?? null,
-      pbac: entry.bleeding.pbacScore ?? null,
+      pbac: entry.bleeding?.pbacScore ?? null,
       symptomAverage,
       sleepQuality: entry.sleep?.quality ?? null,
       ovulationSuspected: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
@@ -4343,8 +4348,9 @@ export default function HomePage() {
       if (typeof entry.sleep?.quality === "number") {
         current.sleepSum += entry.sleep.quality;
       }
-      if (typeof entry.bleeding.pbacScore === "number") {
-        current.pbacSum += entry.bleeding.pbacScore;
+      const pbacScore = entry.bleeding?.pbacScore;
+      if (typeof pbacScore === "number") {
+        current.pbacSum += pbacScore;
         current.pbacCount += 1;
       }
       if (typeof entry.urinaryOpt?.urgency === "number") {
@@ -4567,7 +4573,7 @@ export default function HomePage() {
       .filter((entry) => entry.dizzinessOpt?.present && typeof entry.dizzinessOpt.nrs === "number")
       .map((entry) => ({
         date: entry.date,
-        pbac: entry.bleeding.pbacScore ?? 0,
+        pbac: entry.bleeding?.pbacScore ?? 0,
         nrs: entry.dizzinessOpt!.nrs!,
       }));
   }, [dailyEntries, activeDizziness]);
@@ -5198,13 +5204,13 @@ export default function HomePage() {
 
       const bleedLines: string[] = [];
       if (entry.bleeding?.isBleeding) {
-        const pbac = entry.bleeding.pbacScore ?? 0;
+        const pbac = entry.bleeding?.pbacScore ?? 0;
         bleedLines.push(`Blutung aktiv – PBAC ${pbac}`);
         const extras: string[] = [];
-        if (entry.bleeding.clots) {
+        if (entry.bleeding?.clots) {
           extras.push("Koagel");
         }
-        if (entry.bleeding.flooding) {
+        if (entry.bleeding?.flooding) {
           extras.push("Flooding");
         }
         if (extras.length) {
@@ -7383,7 +7389,7 @@ export default function HomePage() {
                           <span className="text-rose-600">NRS {entry.painNRS}</span>
                         </div>
                         <div className="mt-1 flex flex-wrap gap-2 text-xs text-rose-700">
-                          <span>PBAC: {entry.bleeding.pbacScore ?? "–"}</span>
+                          <span>PBAC: {entry.bleeding?.pbacScore ?? "–"}</span>
                           <span>Schlafqualität: {entry.sleep?.quality ?? "–"}</span>
                           <span>
                             Blasenschmerz:
