@@ -1301,6 +1301,7 @@ type CycleOverviewChartPoint = CycleOverviewPoint & {
   dateLabel: string;
   painValue: number;
   isCurrentDay: boolean;
+  timestamp: number;
 };
 
 type PainDotProps = DotProps & { payload?: CycleOverviewChartPoint };
@@ -1349,20 +1350,26 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
   const bleedingGradientId = useId();
   const todayIso = useMemo(() => formatDate(new Date()), []);
   const chartPoints = useMemo<CycleOverviewChartPoint[]>(() => {
-    return data.points.map((point) => {
+    return data.points.flatMap((point) => {
       const bleeding = describeBleedingLevel(point);
       const painValue = Number.isFinite(point.painNRS)
         ? Math.max(0, Math.min(10, Number(point.painNRS)))
         : 0;
+      const parsedDate = parseIsoDate(point.date);
+      if (!parsedDate) {
+        return [] as CycleOverviewChartPoint[];
+      }
+      const timestamp = parsedDate.getTime();
 
-      return {
+      return [{
         ...point,
         bleedingLabel: bleeding.label,
         bleedingValue: bleeding.value,
         dateLabel: formatShortGermanDate(point.date),
         painValue,
         isCurrentDay: point.date === todayIso,
-      };
+        timestamp,
+      }];
     });
   }, [data.points, todayIso]);
 
@@ -1404,14 +1411,19 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               </linearGradient>
             </defs>
             <XAxis
-              dataKey="date"
+              dataKey="timestamp"
+              type="number"
+              scale="time"
               axisLine={false}
               tickLine={false}
               tick={{ fill: "#fb7185", fontSize: 12, fontWeight: 600 }}
-              tickFormatter={(value: string | number) =>
-                typeof value === "string" ? formatShortGermanDate(value) : ""
+              tickFormatter={(value: number | string) =>
+                typeof value === "number"
+                  ? new Date(value).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })
+                  : ""
               }
-              minTickGap={6}
+              domain={["dataMin", "dataMax"]}
+              minTickGap={12}
             />
             <YAxis domain={[0, 10]} hide />
             <Tooltip
