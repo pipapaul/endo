@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
+import BackButton from "@/components/ui/back-button";
 import { formatIsoWeek } from "@/lib/isoWeek";
 import { exportWeeklyReportPDF } from "@/lib/export/pdfWeekly";
 import { buildWeeklyReminderICS } from "@/lib/reminders/ics";
@@ -223,9 +224,9 @@ function WeeklyThankYouContent(): JSX.Element {
         </div>
 
         <div className="flex justify-center">
-          <Button type="button" variant="ghost" onClick={handleBack}>
+          <BackButton type="button" onClick={handleBack}>
             Zurück zur Startseite
-          </Button>
+          </BackButton>
         </div>
       </section>
     </main>
