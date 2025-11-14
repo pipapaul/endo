@@ -2607,7 +2607,10 @@ export default function HomePage() {
   const [exploratoryVisible, setExploratoryVisible] = useState(false);
   const [notesTagDraft, setNotesTagDraft] = useState("");
   const [painQualityOther, setPainQualityOther] = useState("");
-  const [analyticsRangeDays, setAnalyticsRangeDays] = useState<30 | 60 | 90>(30);
+  const analyticsRangeOptions = [30, 60, 90] as const;
+  type AnalyticsRangeOption = (typeof analyticsRangeOptions)[number];
+
+  const [analyticsRangeDays, setAnalyticsRangeDays] = useState<AnalyticsRangeOption>(30);
   const [visibleTrendMetrics, setVisibleTrendMetrics] = useState<TrendMetricKey[]>([
     "pain",
     "impact",
@@ -7309,7 +7312,7 @@ export default function HomePage() {
                   <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-rose-600">
                     <span>Zeitraum</span>
                     <div className="flex flex-wrap items-center gap-2">
-                      {[30, 60, 90].map((range) => (
+                      {analyticsRangeOptions.map((range) => (
                         <Button
                           key={range}
                           type="button"
