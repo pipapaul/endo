@@ -3066,13 +3066,23 @@ export default function HomePage() {
       (point) => point.date >= cutoffIso && point.date <= today
     );
 
-    if (!recentPoints.length) {
+    if (recentPoints.length) {
+      return {
+        startDate: recentPoints[0].date,
+        points: recentPoints,
+      };
+    }
+
+    if (!enriched.length) {
       return null;
     }
 
+    const fallbackStart = Math.max(0, enriched.length - CYCLE_OVERVIEW_MAX_DAYS);
+    const fallbackPoints = enriched.slice(fallbackStart);
+
     return {
-      startDate: recentPoints[0].date,
-      points: recentPoints,
+      startDate: fallbackPoints[0].date,
+      points: fallbackPoints,
     };
   }, [annotatedDailyEntries, today]);
 
