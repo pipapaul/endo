@@ -14,7 +14,7 @@ export function BackButton({ children, className, ...props }: BackButtonProps): 
       variant="ghost"
       size="sm"
       className={cn(
-        "h-auto gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-100 hover:text-rose-800",
+        "h-auto gap-1 rounded-md pl-1.5 pr-2.5 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-100 hover:text-rose-800",
         className
       )}
       {...props}
