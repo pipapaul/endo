@@ -419,9 +419,10 @@ const computePelvicPainOutsidePeriodIntensity = (entry: DailyEntry): number | nu
 
 const applyAutomatedPainSymptoms = (entry: DailyEntry): DailyEntry => {
   const symptoms: DailyEntry["symptoms"] = { ...(entry.symptoms ?? {}) };
-  const result: DailyEntry = { ...entry, symptoms };
+  const bleeding = entry.bleeding ?? { isBleeding: false };
+  const result: DailyEntry = { ...entry, bleeding, symptoms };
 
-  const hasBleeding = Boolean(entry.bleeding?.isBleeding);
+  const hasBleeding = Boolean(bleeding.isBleeding);
 
   if (hasBleeding) {
     const maxPain = computeMaxPainIntensity(entry);
@@ -3526,7 +3527,7 @@ export default function HomePage() {
 
   const buildDailyExportRow = useCallback(
     (entry: DailyEntry) => {
-      const normalizedEntry = applyAutomatedPainSymptoms(entry);
+      const normalizedEntry = applyAutomatedPainSymptoms(normalizeDailyEntry(entry));
       const symptomScores = Object.entries(normalizedEntry.symptoms ?? {})
         .map(([key, value]) => (value?.present && typeof value.score === "number" ? `${key}:${value.score}` : null))
         .filter(Boolean)
