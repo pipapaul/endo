@@ -23,12 +23,11 @@ import {
   Legend,
   BarChart,
   Bar,
+  Cell,
   ScatterChart,
   Scatter,
   Area,
   ComposedChart,
-  ReferenceDot,
-  ReferenceLine,
 } from "recharts";
 import type { DotProps, TooltipProps } from "recharts";
 import {
@@ -102,6 +101,8 @@ const SYMPTOM_TERMS: Record<SymptomKey, TermDescriptor> = {
   fatigue: TERMS.fatigue,
   bloating: TERMS.bloating,
 };
+
+type TrendMetricKey = "pain" | "impact" | "symptomAverage" | "sleepQuality" | "steps";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -2402,26 +2403,60 @@ function severityLabel(level: SeverityLevel) {
   return level.charAt(0).toUpperCase() + level.slice(1);
 }
 
-function ChartTooltip({ active, payload }: TooltipProps<number, string>) {
+function AnalyticsTrendTooltip({ active, payload }: TooltipProps<number, string>) {
   if (!active || !payload?.length) return null;
   const data = payload[0].payload as {
     date: string;
     cycleDay: number | null;
-    weekday: string;
-    pain: number;
-    pbac: number | null;
+    pain: number | null;
+    impact: number | null;
     symptomAverage: number | null;
+    sleepQuality: number | null;
+    steps: number | null;
+  };
+  return (
+    <div className="rounded-lg border border-rose-200 bg-white p-3 text-xs text-rose-700 shadow-sm">
+      <p className="font-semibold text-rose-800">{formatShortGermanDate(data.date)}</p>
+      <p>Zyklustag: {data.cycleDay ?? "–"}</p>
+      <p>Schmerz (NRS): {typeof data.pain === "number" ? data.pain.toFixed(1) : "–"}</p>
+      <p>Beeinträchtigung: {typeof data.impact === "number" ? data.impact.toFixed(1) : "–"}</p>
+      <p>Symptom-Schnitt: {typeof data.symptomAverage === "number" ? data.symptomAverage.toFixed(1) : "–"}</p>
+      <p>{TERMS.sleep_quality.label}: {typeof data.sleepQuality === "number" ? data.sleepQuality.toFixed(1) : "–"}</p>
+      <p>Schritte: {typeof data.steps === "number" ? data.steps.toLocaleString("de-DE") : "–"}</p>
+    </div>
+  );
+}
+
+function CheckInHistoryTooltip({ active, payload }: TooltipProps<number, string>) {
+  if (!active || !payload?.length) return null;
+  const data = payload[0].payload as {
+    date: string;
+    checkIn: number;
+    pain: number | null;
     sleepQuality: number | null;
   };
   return (
     <div className="rounded-lg border border-rose-200 bg-white p-3 text-xs text-rose-700 shadow-sm">
-      <p className="font-semibold text-rose-800">{data.date}</p>
-      <p>Zyklustag: {data.cycleDay ?? "–"}</p>
-      <p>Wochentag: {data.weekday}</p>
-      <p>{TERMS.nrs.label}: {data.pain}</p>
-      <p>{TERMS.pbac.label}: {data.pbac ?? "–"}</p>
-      <p>Symptom-Schnitt: {data.symptomAverage?.toFixed(1) ?? "–"}</p>
-      <p>{TERMS.sleep_quality.label}: {data.sleepQuality ?? "–"}</p>
+      <p className="font-semibold text-rose-800">{formatShortGermanDate(data.date)}</p>
+      <p>Check-in: {data.checkIn ? "erledigt" : "ausgelassen"}</p>
+      <p>Schmerz (NRS): {typeof data.pain === "number" ? data.pain.toFixed(1) : "–"}</p>
+      <p>{TERMS.sleep_quality.label}: {typeof data.sleepQuality === "number" ? data.sleepQuality.toFixed(1) : "–"}</p>
+    </div>
+  );
+}
+
+function CorrelationTooltip({ active, payload }: TooltipProps<number, string>) {
+  if (!active || !payload?.length) return null;
+  const { payload: point, name } = payload[0] as {
+    payload: { x: number; y: number; date: string };
+    name?: string;
+  };
+  return (
+    <div className="rounded-lg border border-rose-200 bg-white p-3 text-xs text-rose-700 shadow-sm">
+      <p className="font-semibold text-rose-800">{formatShortGermanDate(point.date)}</p>
+      <p>{name}</p>
+      <p>Schmerz (NRS): {point.y.toFixed(1)}</p>
+      <p>Wert: {point.x.toLocaleString("de-DE")}</p>
     </div>
   );
 }
@@ -2572,7 +2607,26 @@ export default function HomePage() {
   const [exploratoryVisible, setExploratoryVisible] = useState(false);
   const [notesTagDraft, setNotesTagDraft] = useState("");
   const [painQualityOther, setPainQualityOther] = useState("");
-  const [trendXAxisMode, setTrendXAxisMode] = useState<"date" | "cycleDay">("date");
+  const [analyticsRangeDays, setAnalyticsRangeDays] = useState<30 | 60 | 90>(30);
+  const [visibleTrendMetrics, setVisibleTrendMetrics] = useState<TrendMetricKey[]>([
+    "pain",
+    "impact",
+    "symptomAverage",
+    "sleepQuality",
+    "steps",
+  ]);
+  const toggleTrendMetric = useCallback((metric: TrendMetricKey) => {
+    setVisibleTrendMetrics((previous) => {
+      const isActive = previous.includes(metric);
+      if (isActive) {
+        if (previous.length === 1) {
+          return previous;
+        }
+        return previous.filter((item) => item !== metric);
+      }
+      return [...previous, metric];
+    });
+  }, []);
   const [dailySaveNotice, setDailySaveNotice] = useState<string | null>(null);
   const [weeklyReports, setWeeklyReports] = useState<WeeklyReport[]>([]);
   const [weeklyReportsReady, setWeeklyReportsReady] = useState(false);
@@ -4162,76 +4216,244 @@ export default function HomePage() {
     ? "Es ist Sonntag. Zeit für deinen wöchentlichen Check In."
     : "Fülle diese Fragen möglichst jeden Sonntag aus.";
 
-  const trendWindowStartIso = useMemo(() => {
+  const analyticsRangeStartIso = useMemo(() => {
     if (!todayDate) {
       return null;
     }
-    const threshold = new Date(todayDate);
-    threshold.setDate(threshold.getDate() - 30);
-    return formatDate(threshold);
-  }, [todayDate]);
+    const start = new Date(todayDate);
+    start.setDate(start.getDate() - (analyticsRangeDays - 1));
+    return formatDate(start);
+  }, [todayDate, analyticsRangeDays]);
 
-  type PainTrendDatum = {
+  type AnalyticsTrendDatum = {
     date: string;
     cycleDay: number | null;
-    cycleLabel: string;
     weekday: string;
     pain: number | null;
-    pbac: number | null;
+    impact: number | null;
     symptomAverage: number | null;
     sleepQuality: number | null;
-    ovulationSuspected: boolean;
+    steps: number | null;
   };
 
-  const { painTrendData, painTrendCycleStarts, painTrendOvulationPoints } = useMemo(() => {
-    const thresholdIso = trendWindowStartIso;
-    const filteredEntries = thresholdIso
+  const analyticsTrendData = useMemo<AnalyticsTrendDatum[]>(() => {
+    const thresholdIso = analyticsRangeStartIso;
+    const filtered = thresholdIso
       ? annotatedDailyEntries.filter(({ entry }) => entry.date >= thresholdIso)
       : annotatedDailyEntries;
-    const effectiveEntries = filteredEntries.length > 0 ? filteredEntries : annotatedDailyEntries;
-    const mapped: PainTrendDatum[] = effectiveEntries.map(({ entry, cycleDay, weekday, symptomAverage }) => {
-      const bleeding = entry.bleeding ?? { isBleeding: false };
+    const effective = filtered.length ? filtered : annotatedDailyEntries;
+    return effective.map(({ entry, cycleDay, weekday, symptomAverage }) => ({
+      date: entry.date,
+      cycleDay: cycleDay ?? null,
+      weekday,
+      pain: typeof entry.painNRS === "number" ? entry.painNRS : null,
+      impact: typeof entry.impactNRS === "number" ? entry.impactNRS : null,
+      symptomAverage,
+      sleepQuality: typeof entry.sleep?.quality === "number" ? entry.sleep.quality : null,
+      steps: typeof entry.activity?.steps === "number" ? entry.activity.steps : null,
+    }));
+  }, [annotatedDailyEntries, analyticsRangeStartIso]);
+
+  const analyticsTrendMaxSteps = useMemo(() => {
+    if (!analyticsTrendData.length) {
+      return 5000;
+    }
+    const max = analyticsTrendData.reduce((currentMax, item) => {
+      if (typeof item.steps === "number" && item.steps > currentMax) {
+        return item.steps;
+      }
+      return currentMax;
+    }, 0);
+    if (max <= 0) {
+      return 5000;
+    }
+    const rounded = Math.ceil(max / 1000) * 1000;
+    return Math.max(rounded, 5000);
+  }, [analyticsTrendData]);
+
+  const trendMetricOptions = useMemo(
+    () =>
+      [
+        {
+          key: "pain" as const,
+          label: TERMS.nrs.label,
+          color: "#f43f5e",
+          type: "line" as const,
+          yAxisId: "left" as const,
+        },
+        {
+          key: "impact" as const,
+          label: "Beeinträchtigung",
+          color: "#f97316",
+          type: "line" as const,
+          yAxisId: "left" as const,
+        },
+        {
+          key: "symptomAverage" as const,
+          label: "Symptom-Schnitt",
+          color: "#8b5cf6",
+          type: "line" as const,
+          yAxisId: "left" as const,
+        },
+        {
+          key: "sleepQuality" as const,
+          label: TERMS.sleep_quality.label,
+          color: "#10b981",
+          type: "line" as const,
+          yAxisId: "left" as const,
+        },
+        {
+          key: "steps" as const,
+          label: "Schritte",
+          color: "#0ea5e9",
+          type: "area" as const,
+          yAxisId: "right" as const,
+        },
+      ],
+    []
+  );
+
+  const {
+    checkInHistory,
+    checkInCount,
+    completionRate,
+    currentStreak,
+    longestStreak,
+    painImprovement,
+    painRecentAvg,
+  } = useMemo(() => {
+    if (!todayDate) {
       return {
-        date: entry.date,
-        cycleDay,
-        cycleLabel: cycleDay ? `ZT ${cycleDay}` : "–",
-        weekday,
-        pain: entry.painNRS ?? null,
-        pbac: typeof bleeding.pbacScore === "number" ? bleeding.pbacScore : null,
-        symptomAverage,
-        sleepQuality: entry.sleep?.quality ?? null,
-        ovulationSuspected: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
+        checkInHistory: [] as Array<{
+          date: string;
+          checkIn: number;
+          pain: number | null;
+          sleepQuality: number | null;
+        }>,
+        checkInCount: 0,
+        completionRate: 0,
+        currentStreak: 0,
+        longestStreak: 0,
+        painImprovement: null as number | null,
+        painRecentAvg: null as number | null,
       };
+    }
+
+    const entryByDate = new Map(derivedDailyEntries.map((entry) => [entry.date, entry]));
+    const allDates = Array.from(entryByDate.keys()).sort((a, b) => a.localeCompare(b));
+
+    let longest = 0;
+    let running = 0;
+    let previous: Date | null = null;
+    allDates.forEach((iso) => {
+      const parsed = parseIsoDate(iso);
+      if (!parsed) return;
+      if (previous) {
+        const diff = Math.round((parsed.getTime() - previous.getTime()) / MS_PER_DAY);
+        running = diff === 1 ? running + 1 : 1;
+      } else {
+        running = 1;
+      }
+      if (running > longest) {
+        longest = running;
+      }
+      previous = parsed;
     });
 
-    let extended = mapped;
-    if (todayDate) {
-      const hasToday = mapped.some((item) => item.date === today);
-      if (!hasToday) {
-        const todayWeekday = todayDate.toLocaleDateString("de-DE", { weekday: "short" });
-        extended = [
-          ...mapped,
-          {
-            date: today,
-            cycleDay: null,
-            cycleLabel: "–",
-            weekday: todayWeekday,
-            pain: null,
-            pbac: null,
-            symptomAverage: null,
-            sleepQuality: null,
-            ovulationSuspected: false,
-          },
-        ].sort((a, b) => a.date.localeCompare(b.date));
+    let current = 0;
+    let lastDate: Date | null = null;
+    const allDatesDesc = allDates.slice().sort((a, b) => b.localeCompare(a));
+    for (const iso of allDatesDesc) {
+      const parsed = parseIsoDate(iso);
+      if (!parsed) continue;
+      if (!lastDate) {
+        current = 1;
+        lastDate = parsed;
+        continue;
+      }
+      const diff = Math.round((lastDate.getTime() - parsed.getTime()) / MS_PER_DAY);
+      if (diff === 1) {
+        current += 1;
+        lastDate = parsed;
+      } else {
+        break;
       }
     }
 
+    const rangeStart = new Date(todayDate);
+    rangeStart.setDate(rangeStart.getDate() - (analyticsRangeDays - 1));
+    const totalDays = Math.max(
+      1,
+      Math.floor((todayDate.getTime() - rangeStart.getTime()) / MS_PER_DAY) + 1
+    );
+    const history: Array<{
+      date: string;
+      checkIn: number;
+      pain: number | null;
+      sleepQuality: number | null;
+    }> = [];
+    let completed = 0;
+    for (let offset = 0; offset < totalDays; offset += 1) {
+      const currentDate = new Date(rangeStart);
+      currentDate.setDate(rangeStart.getDate() + offset);
+      if (currentDate.getTime() > todayDate.getTime()) {
+        break;
+      }
+      const iso = formatDate(currentDate);
+      const entry = entryByDate.get(iso);
+      const checkIn = entry ? 1 : 0;
+      if (checkIn) {
+        completed += 1;
+      }
+      history.push({
+        date: iso,
+        checkIn,
+        pain: typeof entry?.painNRS === "number" ? entry!.painNRS : null,
+        sleepQuality: typeof entry?.sleep?.quality === "number" ? entry!.sleep!.quality : null,
+      });
+    }
+
+    const completion = history.length ? Number(((completed / history.length) * 100).toFixed(1)) : 0;
+    const chunkSize = Math.max(1, Math.floor(history.length / 3));
+    const painValues = history.map((item) => item.pain);
+    const firstChunkValues = painValues.slice(0, chunkSize).filter((value): value is number => typeof value === "number");
+    const lastChunkValues = painValues
+      .slice(Math.max(0, painValues.length - chunkSize))
+      .filter((value): value is number => typeof value === "number");
+    const average = (values: number[]) =>
+      values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+    const startAvg = average(firstChunkValues);
+    const recentAvg = average(lastChunkValues);
+    const improvement =
+      startAvg !== null && recentAvg !== null ? Number((startAvg - recentAvg).toFixed(2)) : null;
+
     return {
-      painTrendData: extended,
-      painTrendCycleStarts: extended.filter((item) => item.cycleDay === 1),
-      painTrendOvulationPoints: extended.filter((item) => item.ovulationSuspected),
+      checkInHistory: history,
+      checkInCount: completed,
+      completionRate: completion,
+      currentStreak: current,
+      longestStreak: longest,
+      painImprovement: improvement,
+      painRecentAvg: recentAvg,
     };
-  }, [annotatedDailyEntries, today, todayDate, trendWindowStartIso]);
+  }, [
+    derivedDailyEntries,
+    todayDate,
+    analyticsRangeDays,
+  ]);
+
+  const painTrendText = useMemo(() => {
+    if (typeof painImprovement === "number") {
+      if (painImprovement > 0.2) {
+        return `Deine Schmerzen sind im Vergleich zum Start dieses Zeitraums um ${painImprovement.toFixed(1)} Punkte gesunken.`;
+      }
+      if (painImprovement < -0.2) {
+        return `Die Schmerzen sind zuletzt um ${Math.abs(painImprovement).toFixed(1)} Punkte gestiegen – nutze deine Einträge, um mögliche Auslöser zu erkennen.`;
+      }
+      return "Deine Schmerzwerte bleiben stabil – großartig, dass du so konsequent dokumentierst!";
+    }
+    return "Sammle noch ein paar Einträge, um Veränderungen bei deinen Schmerzen sichtbar zu machen.";
+  }, [painImprovement]);
 
   const renderIssuesForPath = (path: string) =>
     issues.filter((issue) => issue.path === path).map((issue) => (
@@ -4414,36 +4636,36 @@ export default function HomePage() {
     return { label: "Wie der Durchschnitt", className: "bg-amber-100 text-amber-700" };
   }, [annotatedDailyEntries, cycleOverlay, hasDailyEntryForToday, today]);
 
-  const weekdayOverlay = useMemo(() => {
-    const order = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-    const bucket = new Map<string, { painSum: number; count: number }>();
-    annotatedDailyEntries.forEach(({ entry, weekday }) => {
-      if (!weekday) return;
-      const current = bucket.get(weekday) ?? { painSum: 0, count: 0 };
-      current.painSum += entry.painNRS;
-      current.count += 1;
-      bucket.set(weekday, current);
-    });
-    return order
-      .filter((day) => bucket.has(day))
-      .map((day) => {
-        const stats = bucket.get(day)!;
-        return { weekday: day, painAvg: Number((stats.painSum / stats.count).toFixed(1)) };
-      });
-  }, [annotatedDailyEntries]);
-
   const correlations = useMemo(() => {
-    const sleepPairs = annotatedDailyEntries
-      .map(({ entry }) => ({ x: entry.sleep?.quality, y: entry.painNRS }))
-      .filter((pair): pair is { x: number; y: number } => typeof pair.x === "number");
-    const stepsPairs = derivedDailyEntries
-      .filter((entry) => typeof entry.activity?.steps === "number")
-      .map((entry) => ({ x: entry.activity!.steps as number, y: entry.painNRS }));
+    const sleepDetailed = annotatedDailyEntries
+      .map(({ entry }) => ({
+        x: typeof entry.sleep?.quality === "number" ? entry.sleep.quality : null,
+        y: typeof entry.painNRS === "number" ? entry.painNRS : null,
+        date: entry.date,
+      }))
+      .filter((point): point is { x: number; y: number; date: string } => point.x !== null && point.y !== null);
+    const stepsDetailed = derivedDailyEntries
+      .map((entry) => ({
+        x: typeof entry.activity?.steps === "number" ? entry.activity.steps : null,
+        y: typeof entry.painNRS === "number" ? entry.painNRS : null,
+        date: entry.date,
+      }))
+      .filter((point): point is { x: number; y: number; date: string } => point.x !== null && point.y !== null);
+    const sleepPairs = sleepDetailed.map(({ x, y }) => ({ x, y }));
+    const stepsPairs = stepsDetailed.map(({ x, y }) => ({ x, y }));
     return {
-      sleep: { r: computePearson(sleepPairs), n: sleepPairs.length },
-      steps: { r: computePearson(stepsPairs), n: stepsPairs.length },
+      sleep: { r: computePearson(sleepPairs), n: sleepPairs.length, points: sleepDetailed },
+      steps: { r: computePearson(stepsPairs), n: stepsPairs.length, points: stepsDetailed },
     };
   }, [annotatedDailyEntries, derivedDailyEntries]);
+
+  const correlationStepsMax = useMemo(() => {
+    if (!correlations.steps.points.length) {
+      return 10000;
+    }
+    const max = correlations.steps.points.reduce((highest, point) => (point.x > highest ? point.x : highest), 0);
+    return Math.max(2000, Math.ceil(max / 1000) * 1000);
+  }, [correlations.steps.points]);
 
   const backupPayload = useMemo<BackupPayload>(
     () => ({
@@ -4456,36 +4678,6 @@ export default function HomePage() {
     }),
     [derivedDailyEntries, weeklyReports, monthlyEntries, featureFlags]
   );
-
-  const urinaryTrendData = useMemo(() => {
-    if (!activeUrinary) return [] as Array<{ date: string; cycleDay: number | null; urgency: number | null }>;
-    return annotatedDailyEntries.map(({ entry, cycleDay }) => ({
-      date: entry.date,
-      cycleDay,
-      urgency: typeof entry.urinaryOpt?.urgency === "number" ? entry.urinaryOpt.urgency : null,
-    }));
-  }, [annotatedDailyEntries, activeUrinary]);
-
-  const urinaryMonthlyRates = useMemo(() => {
-    if (!activeUrinary) return [] as Array<{ month: string; leakRate: number }>;
-    const bucket = new Map<string, { days: number; leakDays: number }>();
-    dailyEntries.forEach((entry) => {
-      if (!entry.urinaryOpt) return;
-      const month = entry.date.slice(0, 7);
-      const stats = bucket.get(month) ?? { days: 0, leakDays: 0 };
-      stats.days += 1;
-      if ((entry.urinaryOpt.leaksCount ?? 0) > 0) {
-        stats.leakDays += 1;
-      }
-      bucket.set(month, stats);
-    });
-    return Array.from(bucket.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([month, stats]) => ({
-        month,
-        leakRate: stats.days ? Number(((stats.leakDays / stats.days) * 100).toFixed(1)) : 0,
-      }));
-  }, [dailyEntries, activeUrinary]);
 
   const urinaryStats = useMemo(() => {
     if (!activeUrinary) return null;
@@ -4508,37 +4700,6 @@ export default function HomePage() {
       leakRate: relevant.length ? Number(((leakDays / relevant.length) * 100).toFixed(1)) : null,
     };
   }, [activeUrinary, dailyEntries]);
-
-  const headacheTrendData = useMemo(() => {
-    if (!activeHeadache) return [] as Array<{ date: string; cycleDay: number | null; nrs: number | null }>;
-    return annotatedDailyEntries.map(({ entry, cycleDay }) => ({
-      date: entry.date,
-      cycleDay,
-      nrs:
-        entry.headacheOpt?.present && typeof entry.headacheOpt.nrs === "number" ? entry.headacheOpt.nrs : null,
-    }));
-  }, [annotatedDailyEntries, activeHeadache]);
-
-  const headacheMonthlyRates = useMemo(() => {
-    if (!activeHeadache) return [] as Array<{ month: string; rate: number }>;
-    const bucket = new Map<string, { days: number; headacheDays: number }>();
-    dailyEntries.forEach((entry) => {
-      if (!entry.headacheOpt) return;
-      const month = entry.date.slice(0, 7);
-      const stats = bucket.get(month) ?? { days: 0, headacheDays: 0 };
-      stats.days += 1;
-      if (entry.headacheOpt.present) {
-        stats.headacheDays += 1;
-      }
-      bucket.set(month, stats);
-    });
-    return Array.from(bucket.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([month, stats]) => ({
-        month,
-        rate: stats.days ? Number(((stats.headacheDays / stats.days) * 100).toFixed(1)) : 0,
-      }));
-  }, [dailyEntries, activeHeadache]);
 
   const headacheStats = useMemo(() => {
     if (!activeHeadache) return null;
@@ -4565,30 +4726,6 @@ export default function HomePage() {
       : null;
     return { avgPerMonth, avgNrs };
   }, [activeHeadache, dailyEntries]);
-
-  const dizzinessTrendData = useMemo(() => {
-    if (!activeDizziness) return [] as Array<{ date: string; cycleDay: number | null; nrs: number | null }>;
-    return annotatedDailyEntries.map(({ entry, cycleDay }) => ({
-      date: entry.date,
-      cycleDay,
-      nrs:
-        entry.dizzinessOpt?.present && typeof entry.dizzinessOpt.nrs === "number" ? entry.dizzinessOpt.nrs : null,
-    }));
-  }, [annotatedDailyEntries, activeDizziness]);
-
-  const dizzinessScatterData = useMemo(() => {
-    if (!activeDizziness) return [] as Array<{ date: string; pbac: number; nrs: number }>;
-    return dailyEntries
-      .filter((entry) => entry.dizzinessOpt?.present && typeof entry.dizzinessOpt.nrs === "number")
-      .map((entry) => {
-        const bleeding = entry.bleeding ?? { isBleeding: false };
-        return {
-          date: entry.date,
-          pbac: bleeding.pbacScore ?? 0,
-          nrs: entry.dizzinessOpt!.nrs!,
-        };
-      });
-  }, [dailyEntries, activeDizziness]);
 
   const dizzinessStats = useMemo(() => {
     if (!activeDizziness) return null;
@@ -7162,343 +7299,301 @@ export default function HomePage() {
                 </TabsContent>
         <TabsContent value="analytics" className="space-y-6">
           <SectionScopeContext.Provider value="analytics">
-            <div className="space-y-4">
+            <div className="space-y-6">
               <Section
-                title="Trend"
-                description={`${TERMS.nrs.label}, ${TERMS.pbac.label} sowie Symptom- und Schlafverlauf`}
+                title="Dein Fortschritt"
+                description="Motivierende Trends aus deinem Daily Check-in"
                 completionEnabled={false}
               >
-                <div className="flex justify-end gap-2 text-xs text-rose-600">
-                  <span>Achse:</span>
-                  <Button
-                    type="button"
-                    variant={trendXAxisMode === "date" ? "secondary" : "ghost"}
-                    size="sm"
-                    onClick={() => setTrendXAxisMode("date")}
-                  >
-                    Datum
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={trendXAxisMode === "cycleDay" ? "secondary" : "ghost"}
-                    size="sm"
-                    onClick={() => setTrendXAxisMode("cycleDay")}
-                  >
-                    Zyklustag
-                  </Button>
-                </div>
-                <div className="h-64 w-full">
-                  <ResponsiveContainer>
-                    <LineChart data={painTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                      <XAxis
-                        dataKey={trendXAxisMode === "date" ? "date" : "cycleLabel"}
-                        stroke="#fb7185"
-                        tick={trendXAxisMode === "date" ? { fill: "transparent" } : { fontSize: 12 }}
-                        tickFormatter={
-                          trendXAxisMode === "date"
-                            ? () => ""
-                            : (value: string | number) => String(value)
-                        }
-                      />
-                      <YAxis yAxisId="left" domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                      <YAxis yAxisId="right" orientation="right" domain={[0, 300]} stroke="#6366f1" tick={{ fontSize: 12 }} />
-                      <Tooltip content={<ChartTooltip />} />
-                      <Legend wrapperStyle={{ fontSize: 12 }} />
-                      {painTrendCycleStarts.map((item) => {
-                        const xValue = trendXAxisMode === "date" ? item.date : item.cycleLabel;
-                        return (
-                          <ReferenceLine
-                            key={`cycle-start-line-${item.date}`}
-                            x={xValue}
-                            stroke="#ef4444"
-                            strokeDasharray="4 2"
-                            isFront
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-rose-600">
+                    <span>Zeitraum</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {[30, 60, 90].map((range) => (
+                        <Button
+                          key={range}
+                          type="button"
+                          size="sm"
+                          variant={analyticsRangeDays === range ? "secondary" : "ghost"}
+                          onClick={() => setAnalyticsRangeDays(range)}
+                        >
+                          {range} Tage
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {trendMetricOptions.map((metric) => {
+                      const active = visibleTrendMetrics.includes(metric.key);
+                      return (
+                        <Button
+                          key={metric.key}
+                          type="button"
+                          size="sm"
+                          variant={active ? "secondary" : "outline"}
+                          className="flex items-center gap-2"
+                          onClick={() => toggleTrendMetric(metric.key)}
+                        >
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ backgroundColor: metric.color }}
+                            aria-hidden="true"
                           />
-                        );
-                      })}
-                      {painTrendCycleStarts.map((item) => {
-                        const xValue = trendXAxisMode === "date" ? item.date : item.cycleLabel;
-                        return (
-                          <ReferenceDot
-                            key={`cycle-start-dot-${item.date}`}
-                            x={xValue}
-                            y={9.5}
-                            yAxisId="left"
-                            isFront
-                            shape={<CycleStartDrop />}
+                          {metric.label}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  <div className="h-72 w-full">
+                    {analyticsTrendData.length ? (
+                      <ResponsiveContainer>
+                        <ComposedChart data={analyticsTrendData} margin={{ top: 16, right: 24, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
+                          <XAxis
+                            dataKey="date"
+                            stroke="#fb7185"
+                            tick={{ fontSize: 12 }}
+                            tickFormatter={(value: string | number) =>
+                              typeof value === "string" ? formatShortGermanDate(value) : ""
+                            }
                           />
-                        );
-                      })}
-                      {painTrendOvulationPoints.map((item) => {
-                        const xValue = trendXAxisMode === "date" ? item.date : item.cycleLabel;
-                        return (
-                          <ReferenceDot
-                            key={`ovulation-marker-${item.date}`}
-                            x={xValue}
-                            y={8.5}
-                            yAxisId="left"
-                            isFront
-                            shape={<OvulationMarkerDot />}
+                          <YAxis yAxisId="left" domain={[0, 10]} stroke="#fb7185" tick={{ fontSize: 12 }} />
+                          <YAxis
+                            yAxisId="right"
+                            orientation="right"
+                            domain={[0, analyticsTrendMaxSteps]}
+                            stroke="#6366f1"
+                            tick={{ fontSize: 12 }}
+                            tickFormatter={(value: number) => value.toLocaleString("de-DE")}
+                            allowDecimals={false}
+                            hide={!visibleTrendMetrics.includes("steps")}
                           />
-                        );
-                      })}
-                      <Line
-                        type="monotone"
-                        dataKey="pain"
-                        stroke="#f43f5e"
-                        strokeWidth={2}
-                        name={`${TERMS.nrs.label} (NRS)`}
-                        yAxisId="left"
-                        dot={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="pbac"
-                        stroke="#6366f1"
-                        strokeWidth={2}
-                        name={`${TERMS.pbac.label}`}
-                        yAxisId="right"
-                        connectNulls={false}
-                        dot={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="symptomAverage"
-                        stroke="#f97316"
-                        strokeWidth={1.5}
-                        name="Symptom-Schnitt"
-                        yAxisId="left"
-                        dot={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="sleepQuality"
-                        stroke="#22c55e"
-                        strokeWidth={1.5}
-                        name={TERMS.sleep_quality.label}
-                        yAxisId="left"
-                        dot={false}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </Section>
-
-              {activeUrinary && urinaryTrendData.length > 0 && (
-                <Section title="Blase/Drang Verlauf" description="Harndrang-NRS (0–10) an aktiven Tagen">
-                  <div className="h-56 w-full">
-                    <ResponsiveContainer>
-                      <LineChart data={urinaryTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                        <XAxis dataKey="date" stroke="#fb7185" tick={{ fontSize: 12 }} />
-                        <YAxis domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                        <Tooltip />
-                        <Line type="monotone" dataKey="urgency" stroke="#f43f5e" strokeWidth={2} dot={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Section>
-              )}
-
-              {activeUrinary && urinaryMonthlyRates.length > 0 && (
-                <Section title="Leckage-Rate" description="Anteil Tage mit Leckage pro Monat">
-                  <div className="h-56 w-full">
-                    <ResponsiveContainer>
-                      <BarChart data={urinaryMonthlyRates} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                        <XAxis dataKey="month" stroke="#fb7185" tick={{ fontSize: 12 }} />
-                        <YAxis domain={[0, 100]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                        <Tooltip />
-                        <Bar dataKey="leakRate" fill="#fb7185" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Section>
-              )}
-
-              {activeHeadache && headacheTrendData.length > 0 && (
-                <Section title="Kopfschmerz/Migräne Verlauf" description="NRS nur an Kopfschmerztagen">
-                  <div className="h-56 w-full">
-                    <ResponsiveContainer>
-                      <LineChart data={headacheTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                        <XAxis dataKey="date" stroke="#fb7185" tick={{ fontSize: 12 }} />
-                        <YAxis domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                        <Tooltip />
-                        <Line type="monotone" dataKey="nrs" stroke="#f43f5e" strokeWidth={2} dot={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Section>
-              )}
-
-              {activeHeadache && headacheMonthlyRates.length > 0 && (
-                <Section title="Migränetage je Monat" description="Prozentualer Anteil mit Kopfschmerz/Migräne">
-                  <div className="h-56 w-full">
-                    <ResponsiveContainer>
-                      <BarChart data={headacheMonthlyRates} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                        <XAxis dataKey="month" stroke="#fb7185" tick={{ fontSize: 12 }} />
-                        <YAxis domain={[0, 100]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                        <Tooltip />
-                        <Bar dataKey="rate" fill="#fb7185" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Section>
-              )}
-
-              {activeDizziness && dizzinessTrendData.length > 0 && (
-                <Section title="Schwindel-Verlauf" description="NRS 0–10 an Schwindeltagen">
-                  <div className="h-56 w-full">
-                    <ResponsiveContainer>
-                      <LineChart data={dizzinessTrendData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                        <XAxis dataKey="date" stroke="#fb7185" tick={{ fontSize: 12 }} />
-                        <YAxis domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                        <Tooltip />
-                        <Line type="monotone" dataKey="nrs" stroke="#f43f5e" strokeWidth={2} dot={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Section>
-              )}
-
-              {activeDizziness && dizzinessScatterData.length > 0 && (
-                <Section
-                  title="PBAC vs. Schwindel"
-                  description="Streudiagramm: Blutungsstärke (PBAC) vs. Schwindel-NRS"
-                >
-                  <div className="h-56 w-full">
-                    <ResponsiveContainer>
-                      <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#fda4af" />
-                        <XAxis type="number" dataKey="pbac" name="PBAC" stroke="#fb7185" tick={{ fontSize: 12 }} />
-                        <YAxis type="number" dataKey="nrs" name="Schwindel" domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
-                        <Tooltip cursor={{ strokeDasharray: "3 3" }} />
-                        <Scatter data={dizzinessScatterData} fill="#22c55e" />
-                      </ScatterChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Section>
-              )}
-
-              <Section
-                title="Letzte Einträge"
-                description="Kernmetriken kompakt"
-                completionEnabled={false}
-              >
-                <div className="space-y-3">
-                  {derivedDailyEntries
-                    .slice()
-                    .sort((a, b) => b.date.localeCompare(a.date))
-                    .slice(0, 7)
-                    .map((entry) => (
-                      <div key={entry.date} className="rounded-lg border border-amber-100 bg-amber-50 p-3 text-sm">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="font-semibold text-rose-800">{entry.date}</span>
-                          <span className="text-rose-600">NRS {entry.painNRS}</span>
-                        </div>
-                        <div className="mt-1 flex flex-wrap gap-2 text-xs text-rose-700">
-                          <span>PBAC: {entry.bleeding?.pbacScore ?? "–"}</span>
-                          <span>Schlafqualität: {entry.sleep?.quality ?? "–"}</span>
-                          <span>
-                            Blasenschmerz:
-                            {entry.symptoms?.dysuria?.present && typeof entry.symptoms.dysuria.score === "number"
-                              ? entry.symptoms.dysuria.score
-                              : "–"}
-                          </span>
-                          {activeUrinary && (
-                            <span>Harndrang (Modul): {entry.urinaryOpt?.urgency ?? "–"}</span>
-                          )}
-                          {activeHeadache && (
-                            <span>
-                              Kopfschmerz (Modul):
-                              {entry.headacheOpt?.present && typeof entry.headacheOpt.nrs === "number"
-                                ? entry.headacheOpt.nrs
-                                : "–"}
-                            </span>
-                          )}
-                          {activeDizziness && (
-                            <span>
-                              Schwindel (Modul):
-                              {entry.dizzinessOpt?.present && typeof entry.dizzinessOpt.nrs === "number"
-                                ? entry.dizzinessOpt.nrs
-                                : "–"}
-                            </span>
-                          )}
-                        </div>
+                          <Tooltip content={<AnalyticsTrendTooltip />} />
+                          <Legend wrapperStyle={{ fontSize: 12 }} />
+                          {trendMetricOptions.map((metric) => {
+                            if (!visibleTrendMetrics.includes(metric.key)) return null;
+                            if (metric.type === "area") {
+                              return (
+                                <Area
+                                  key={metric.key}
+                                  type="monotone"
+                                  dataKey={metric.key}
+                                  yAxisId={metric.yAxisId}
+                                  name={metric.label}
+                                  stroke={metric.color}
+                                  fill={metric.color}
+                                  fillOpacity={0.18}
+                                  strokeWidth={2}
+                                  connectNulls
+                                  isAnimationActive={false}
+                                />
+                              );
+                            }
+                            return (
+                              <Line
+                                key={metric.key}
+                                type="monotone"
+                                dataKey={metric.key}
+                                yAxisId={metric.yAxisId}
+                                name={metric.label}
+                                stroke={metric.color}
+                                strokeWidth={2}
+                                dot={{ r: 2 }}
+                                connectNulls
+                                isAnimationActive={false}
+                              />
+                            );
+                          })}
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="flex h-full items-center justify-center rounded-xl border border-rose-100 bg-rose-50/60 text-sm text-rose-600">
+                        Noch keine Daten vorhanden. Starte mit deinem Daily Check-in!
                       </div>
-                    ))}
+                    )}
+                  </div>
                 </div>
               </Section>
+
               <Section
-                title="Zyklus-Overlay"
-                description="Durchschnittswerte je Zyklustag"
+                title="Check-in Momentum"
+                description="Wie konsequent du in den letzten Wochen dokumentiert hast"
                 completionEnabled={false}
               >
-                <div className="max-h-64 space-y-2 overflow-y-auto text-xs text-rose-700">
-                  {cycleOverlay.length === 0 && <p className="text-rose-500">Noch keine Zyklusdaten.</p>}
-                  {cycleOverlay.map((row) => (
-                    <div
-                      key={row.cycleDay}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-100 bg-amber-50 px-2 py-1"
-                    >
-                      <span className="font-semibold text-rose-800">ZT {row.cycleDay}</span>
-                      <span>{TERMS.nrs.label}: {row.painAvg.toFixed(1)}</span>
-                      <span>Symptome: {row.symptomAvg?.toFixed(1) ?? "–"}</span>
-                      <span>{TERMS.sleep_quality.label}: {row.sleepAvg?.toFixed(1) ?? "–"}</span>
-                      <span>{TERMS.pbac.label}: {row.pbacAvg?.toFixed(1) ?? "–"}</span>
-                      {activeUrinary && (
-                        <span>{MODULE_TERMS.urinaryOpt.urgency.label}: {row.urgencyAvg?.toFixed(1) ?? "–"}</span>
-                      )}
-                      {activeHeadache && (
-                        <span>
-                          {MODULE_TERMS.headacheOpt.nrs.label}: {row.headacheAvg?.toFixed(1) ?? "–"}
-                        </span>
-                      )}
-                      {activeDizziness && (
-                        <span>
-                          {MODULE_TERMS.dizzinessOpt.nrs.label}: {row.dizzinessAvg?.toFixed(1) ?? "–"}
-                        </span>
+                <div className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm shadow-sm">
+                      <p className="text-xs font-semibold uppercase text-emerald-600">Aktuelle Serie</p>
+                      <p className="mt-2 text-2xl font-bold text-emerald-800">{currentStreak} Tage</p>
+                      <p className="mt-1 text-xs text-emerald-700">Längste Serie: {longestStreak} Tage</p>
+                    </div>
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm shadow-sm">
+                      <p className="text-xs font-semibold uppercase text-amber-600">Check-ins im Zeitraum</p>
+                      <p className="mt-2 text-2xl font-bold text-amber-800">
+                        {checkInCount} / {checkInHistory.length}
+                      </p>
+                      <p className="mt-1 text-xs text-amber-700">{completionRate}% erledigt</p>
+                    </div>
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm shadow-sm">
+                      <p className="text-xs font-semibold uppercase text-rose-600">Schmerz-Trend</p>
+                      <p className="mt-2 text-2xl font-bold text-rose-800">
+                        {typeof painRecentAvg === "number" ? painRecentAvg.toFixed(1) : "–"} NRS
+                      </p>
+                      <p className="mt-1 text-xs text-rose-600">{painTrendText}</p>
+                    </div>
+                  </div>
+                  <div className="h-64 w-full">
+                    {checkInHistory.length ? (
+                      <ResponsiveContainer>
+                        <ComposedChart data={checkInHistory} margin={{ top: 16, right: 24, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
+                          <XAxis
+                            dataKey="date"
+                            stroke="#fb7185"
+                            tick={{ fontSize: 12 }}
+                            tickFormatter={(value: string | number) =>
+                              typeof value === "string" ? formatShortGermanDate(value) : ""
+                            }
+                          />
+                          <YAxis
+                            yAxisId="checkIn"
+                            domain={[0, 1.2]}
+                            stroke="#fb7185"
+                            tick={{ fontSize: 12 }}
+                            ticks={[0, 1]}
+                            tickFormatter={(value: number) => (value >= 1 ? "Ja" : "Nein")}
+                          />
+                          <YAxis yAxisId="pain" domain={[0, 10]} stroke="#1d4ed8" tick={{ fontSize: 12 }} />
+                          <Tooltip content={<CheckInHistoryTooltip />} />
+                          <Legend wrapperStyle={{ fontSize: 12 }} />
+                          <Bar
+                            yAxisId="checkIn"
+                            dataKey="checkIn"
+                            name="Check-in erledigt"
+                            radius={[6, 6, 0, 0]}
+                          >
+                            {checkInHistory.map((item) => (
+                              <Cell key={item.date} fill={item.checkIn ? "#fb7185" : "#fecdd3"} />
+                            ))}
+                          </Bar>
+                          <Line
+                            yAxisId="pain"
+                            type="monotone"
+                            dataKey="pain"
+                            name="Schmerz (NRS)"
+                            stroke="#1d4ed8"
+                            strokeWidth={2}
+                            dot={{ r: 2 }}
+                            connectNulls
+                            isAnimationActive={false}
+                          />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="flex h-full items-center justify-center rounded-xl border border-rose-100 bg-rose-50/60 text-sm text-rose-600">
+                        Noch keine Check-ins im ausgewählten Zeitraum.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </Section>
+
+              <Section
+                title="Zusammenhänge entdecken"
+                description="Lokal berechnete Korrelationen – deine Daten verlassen den Browser nicht"
+                completionEnabled={false}
+              >
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-rose-800">Schlafqualität &amp; Schmerz</h4>
+                      <span className="text-xs text-rose-500">
+                        r = {correlations.sleep.r !== null ? correlations.sleep.r.toFixed(2) : "–"} (n={
+                          correlations.sleep.n
+                        })
+                      </span>
+                    </div>
+                    <div className="h-56 w-full">
+                      {correlations.sleep.points.length >= 2 ? (
+                        <ResponsiveContainer>
+                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
+                            <XAxis
+                              type="number"
+                              dataKey="x"
+                              name={TERMS.sleep_quality.label}
+                              domain={[0, 10]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <YAxis
+                              type="number"
+                              dataKey="y"
+                              name="Schmerz (NRS)"
+                              domain={[0, 10]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                            <Scatter data={correlations.sleep.points} fill="#10b981" name="Schlafqualität" />
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
+                          Für die Korrelation werden mindestens zwei Schlafwerte benötigt.
+                        </div>
                       )}
                     </div>
-                  ))}
-                </div>
-              </Section>
-              <Section
-                title="Wochentag-Overlay"
-                description="Durchschnittlicher NRS nach Wochentag"
-                completionEnabled={false}
-              >
-                <div className="grid grid-cols-1 gap-2 text-xs text-rose-700 sm:grid-cols-2 lg:grid-cols-4">
-                  {weekdayOverlay.map((row) => (
-                    <div key={row.weekday} className="rounded border border-amber-100 bg-amber-50 px-2 py-1">
-                      <p className="font-semibold text-rose-800">{row.weekday}</p>
-                      <p>{TERMS.nrs.label}: {row.painAvg.toFixed(1)}</p>
+                  </div>
+                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-rose-800">Schritte &amp; Schmerz</h4>
+                      <span className="text-xs text-rose-500">
+                        r = {correlations.steps.r !== null ? correlations.steps.r.toFixed(2) : "–"} (n={
+                          correlations.steps.n
+                        })
+                      </span>
                     </div>
-                  ))}
+                    <div className="h-56 w-full">
+                      {correlations.steps.points.length >= 2 ? (
+                        <ResponsiveContainer>
+                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
+                            <XAxis
+                              type="number"
+                              dataKey="x"
+                              name="Schritte"
+                              stroke="#fb7185"
+                              domain={[0, correlationStepsMax]}
+                              tick={{ fontSize: 12 }}
+                              tickFormatter={(value: number) => value.toLocaleString("de-DE")}
+                            />
+                            <YAxis
+                              type="number"
+                              dataKey="y"
+                              name="Schmerz (NRS)"
+                              domain={[0, 10]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                            <Scatter data={correlations.steps.points} fill="#6366f1" name="Schritte" />
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
+                          Erfasse Schritte, um mögliche Zusammenhänge zu sehen.
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </Section>
-              <Section
-                title="Explorative Korrelationen"
-                description="Lokal berechnete Pearson-r Werte – keine medizinische Bewertung"
-                completionEnabled={false}
-              >
-                <div className="space-y-2 text-xs text-rose-700">
-                  <p>
-                    Schlafqualität ↔ Schmerz: {correlations.sleep.r !== null ? correlations.sleep.r.toFixed(2) : "–"} (n={
-                    correlations.sleep.n})
-                  </p>
-                  <p>
-                    Schritte ↔ Schmerz: {correlations.steps.r !== null ? correlations.steps.r.toFixed(2) : "–"} (n={
-                    correlations.steps.n})
-                  </p>
-                  <p className="text-[10px] text-rose-500">
-                    Hinweis: nur zur Orientierung, Daten verlassen den Browser nicht.
-                  </p>
-                </div>
+                <p className="mt-2 text-[11px] text-rose-500">
+                  Hinweis: Die Kennzahlen werden ausschließlich lokal berechnet und dienen der Orientierung – sie ersetzen keine
+                  medizinische Beratung.
+                </p>
               </Section>
             </div>
           </SectionScopeContext.Provider>
