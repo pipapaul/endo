@@ -2400,7 +2400,7 @@ function ChartTooltip({ active, payload }: TooltipProps<number, string>) {
     date: string;
     cycleDay: number | null;
     weekday: string;
-    pain: number;
+    pain: number | null;
     pbac: number | null;
     symptomAverage: number | null;
     sleepQuality: number | null;
@@ -2410,7 +2410,7 @@ function ChartTooltip({ active, payload }: TooltipProps<number, string>) {
       <p className="font-semibold text-rose-800">{data.date}</p>
       <p>Zyklustag: {data.cycleDay ?? "–"}</p>
       <p>Wochentag: {data.weekday}</p>
-      <p>{TERMS.nrs.label}: {data.pain}</p>
+      <p>{TERMS.nrs.label}: {typeof data.pain === "number" ? data.pain : "–"}</p>
       <p>{TERMS.pbac.label}: {data.pbac ?? "–"}</p>
       <p>Symptom-Schnitt: {data.symptomAverage?.toFixed(1) ?? "–"}</p>
       <p>{TERMS.sleep_quality.label}: {data.sleepQuality ?? "–"}</p>
@@ -4136,15 +4136,6 @@ export default function HomePage() {
     ? "Es ist Sonntag. Zeit für deinen wöchentlichen Check In."
     : "Fülle diese Fragen möglichst jeden Sonntag aus.";
 
-  const trendWindowStartIso = useMemo(() => {
-    if (!todayDate) {
-      return null;
-    }
-    const threshold = new Date(todayDate);
-    threshold.setDate(threshold.getDate() - 30);
-    return formatDate(threshold);
-  }, [todayDate]);
-
   type PainTrendDatum = {
     date: string;
     cycleDay: number | null;
@@ -4157,48 +4148,43 @@ export default function HomePage() {
   };
 
   const { painTrendData, painTrendCycleStarts } = useMemo(() => {
-    const thresholdIso = trendWindowStartIso;
-    const filteredEntries = thresholdIso
-      ? annotatedDailyEntries.filter(({ entry }) => entry.date >= thresholdIso)
-      : annotatedDailyEntries;
-    const effectiveEntries = filteredEntries.length > 0 ? filteredEntries : annotatedDailyEntries;
-    const mapped: PainTrendDatum[] = effectiveEntries.map(({ entry, cycleDay, weekday, symptomAverage }) => ({
-      date: entry.date,
-      cycleDay,
-      cycleLabel: cycleDay ? `ZT ${cycleDay}` : "–",
-      weekday,
-      pain: entry.painNRS ?? null,
-      pbac: entry.bleeding.pbacScore ?? null,
-      symptomAverage,
-      sleepQuality: entry.sleep?.quality ?? null,
-    }));
+    if (!todayDate) {
+      return { painTrendData: [] as PainTrendDatum[], painTrendCycleStarts: [] as PainTrendDatum[] };
+    }
 
-    let extended = mapped;
-    if (todayDate) {
-      const hasToday = mapped.some((item) => item.date === today);
-      if (!hasToday) {
-        const todayWeekday = todayDate.toLocaleDateString("de-DE", { weekday: "short" });
-        extended = [
-          ...mapped,
-          {
-            date: today,
-            cycleDay: null,
-            cycleLabel: "–",
-            weekday: todayWeekday,
-            pain: null,
-            pbac: null,
-            symptomAverage: null,
-            sleepQuality: null,
-          },
-        ].sort((a, b) => a.date.localeCompare(b.date));
-      }
+    const annotatedByDate = new Map(
+      annotatedDailyEntries.map((item) => [item.entry.date, item])
+    );
+
+    const data: PainTrendDatum[] = [];
+    for (let offset = 29; offset >= 0; offset -= 1) {
+      const current = new Date(todayDate);
+      current.setDate(todayDate.getDate() - offset);
+      const iso = formatDate(current);
+      const annotated = annotatedByDate.get(iso);
+      const cycleDay = annotated?.cycleDay ?? null;
+      const weekday = current.toLocaleDateString("de-DE", { weekday: "short" });
+      const painNrs = annotated?.entry.painNRS;
+      const pbacScore = annotated?.entry.bleeding.pbacScore;
+      const symptomAverage = annotated?.symptomAverage;
+      const sleepQuality = annotated?.entry.sleep?.quality;
+      data.push({
+        date: iso,
+        cycleDay,
+        cycleLabel: cycleDay ? `ZT ${cycleDay}` : "–",
+        weekday,
+        pain: typeof painNrs === "number" ? painNrs : null,
+        pbac: typeof pbacScore === "number" ? pbacScore : null,
+        symptomAverage: typeof symptomAverage === "number" ? symptomAverage : null,
+        sleepQuality: typeof sleepQuality === "number" ? sleepQuality : null,
+      });
     }
 
     return {
-      painTrendData: extended,
-      painTrendCycleStarts: extended.filter((item) => item.cycleDay === 1),
+      painTrendData: data,
+      painTrendCycleStarts: data.filter((item) => item.cycleDay === 1),
     };
-  }, [annotatedDailyEntries, today, todayDate, trendWindowStartIso]);
+  }, [annotatedDailyEntries, todayDate]);
 
   const renderIssuesForPath = (path: string) =>
     issues.filter((issue) => issue.path === path).map((issue) => (
