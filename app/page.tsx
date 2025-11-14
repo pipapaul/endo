@@ -7176,9 +7176,11 @@ export default function HomePage() {
                       <XAxis
                         dataKey={trendXAxisMode === "date" ? "date" : "cycleLabel"}
                         stroke="#fb7185"
-                        tick={{ fontSize: 12 }}
-                        tickFormatter={(value: string | number) =>
-                          trendXAxisMode === "date" ? "" : String(value)
+                        tick={trendXAxisMode === "date" ? false : { fontSize: 12 }}
+                        tickFormatter={
+                          trendXAxisMode === "date"
+                            ? undefined
+                            : (value: string | number) => String(value)
                         }
                       />
                       <YAxis yAxisId="left" domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
