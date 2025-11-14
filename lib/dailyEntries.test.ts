@@ -38,4 +38,20 @@ describe("normalizeDailyEntry", () => {
 
     expect(normalized).toBe(entry);
   });
+
+  it("defaults pbacScore to 0 when bleeding is active without score", () => {
+    const entry = {
+      date: "2024-03-15",
+      painNRS: 0,
+      painQuality: undefined,
+      painMapRegionIds: undefined,
+      symptoms: undefined,
+      meds: undefined,
+      bleeding: { isBleeding: true },
+    } as unknown as DailyEntry;
+
+    const normalized = normalizeDailyEntry(entry);
+
+    expect(normalized.bleeding.pbacScore).toBe(0);
+  });
 });

@@ -25,7 +25,9 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
   };
 
   if (typeof bleedingSource?.pbacScore === "number" && Number.isFinite(bleedingSource.pbacScore)) {
-    normalizedBleeding.pbacScore = bleedingSource.pbacScore;
+    normalizedBleeding.pbacScore = Math.max(0, bleedingSource.pbacScore);
+  } else if (normalizedBleeding.isBleeding) {
+    normalizedBleeding.pbacScore = 0;
   }
   if (typeof bleedingSource?.clots === "boolean") {
     normalizedBleeding.clots = bleedingSource.clots;
