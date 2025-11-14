@@ -4620,6 +4620,91 @@ export default function HomePage() {
     return todayEntry?.cycleDay ?? null;
   }, [annotatedDailyEntries, today]);
 
+  const cycleStartDates = useMemo(() => {
+    return annotatedDailyEntries
+      .filter(({ cycleDay, entry }) => cycleDay === 1 && entry.date <= today)
+      .map(({ entry }) => entry.date);
+  }, [annotatedDailyEntries, today]);
+
+  const completedCycleLengths = useMemo(() => {
+    const lengths: number[] = [];
+    for (let index = 0; index < cycleStartDates.length - 1; index += 1) {
+      const current = parseIsoDate(cycleStartDates[index]);
+      const next = parseIsoDate(cycleStartDates[index + 1]);
+      if (!current || !next) {
+        continue;
+      }
+      const diffDays = Math.round((next.getTime() - current.getTime()) / MS_PER_DAY);
+      if (diffDays > 0) {
+        lengths.push(diffDays);
+      }
+    }
+    return lengths;
+  }, [cycleStartDates]);
+
+  const hasActivePeriod = useMemo(() => {
+    const todayEntry = annotatedDailyEntries.find(({ entry }) => entry.date === today);
+    if (todayEntry) {
+      return Boolean(todayEntry.entry.bleeding?.isBleeding);
+    }
+    let latest: (typeof annotatedDailyEntries)[number] | null = null;
+    for (const item of annotatedDailyEntries) {
+      if (item.entry.date > today) {
+        continue;
+      }
+      if (!latest || item.entry.date > latest.entry.date) {
+        latest = item;
+      }
+    }
+    return latest ? Boolean(latest.entry.bleeding?.isBleeding) : false;
+  }, [annotatedDailyEntries, today]);
+
+  const expectedPeriodBadgeLabel = useMemo(() => {
+    if (!todayDate) {
+      return null;
+    }
+    if (hasActivePeriod) {
+      return null;
+    }
+    if (completedCycleLengths.length === 0) {
+      return null;
+    }
+    if (!cycleStartDates.length) {
+      return null;
+    }
+    const lastStartIso = cycleStartDates[cycleStartDates.length - 1];
+    const lastStartDate = parseIsoDate(lastStartIso);
+    if (!lastStartDate) {
+      return null;
+    }
+    const diffMs = todayDate.getTime() - lastStartDate.getTime();
+    if (diffMs < 0) {
+      return null;
+    }
+    const daysSinceLastStart = Math.floor(diffMs / MS_PER_DAY);
+    const recentLengths = completedCycleLengths.slice(-3);
+    const averageCycleLength = Math.round(
+      recentLengths.reduce((sum, value) => sum + value, 0) / recentLengths.length
+    );
+    if (!Number.isFinite(averageCycleLength) || averageCycleLength <= 0) {
+      return null;
+    }
+    const remainingDays = averageCycleLength - daysSinceLastStart;
+    const clampedRemaining = remainingDays > 0 ? remainingDays : 0;
+    if (!Number.isFinite(clampedRemaining)) {
+      return null;
+    }
+    if (clampedRemaining === 1) {
+      return "Periode erwartet in 1 Tag";
+    }
+    return `Periode erwartet in ${clampedRemaining} Tagen`;
+  }, [
+    completedCycleLengths,
+    cycleStartDates,
+    hasActivePeriod,
+    todayDate,
+  ]);
+
   const todayCycleComparisonBadge = useMemo((): { label: string; className: string } | null => {
     if (!hasDailyEntryForToday) return null;
     const todayEntry = annotatedDailyEntries.find(({ entry }) => entry.date === today);
@@ -5728,6 +5813,9 @@ export default function HomePage() {
                     <Badge className={todayCycleComparisonBadge.className}>
                       {todayCycleComparisonBadge.label}
                     </Badge>
+                  ) : null}
+                  {expectedPeriodBadgeLabel ? (
+                    <Badge className="bg-amber-100 text-rose-800">{expectedPeriodBadgeLabel}</Badge>
                   ) : null}
                 </div>
                 {infoMessage && <p className="text-sm font-medium text-rose-600">{infoMessage}</p>}
