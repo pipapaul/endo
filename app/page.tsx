@@ -4173,30 +4173,60 @@ export default function HomePage() {
   };
 
   const { painTrendData, painTrendCycleStarts, painTrendOvulationPoints } = useMemo(() => {
-    const thresholdIso = trendWindowStartIso;
-    const filteredEntries = thresholdIso
-      ? annotatedDailyEntries.filter(({ entry }) => entry.date >= thresholdIso)
-      : annotatedDailyEntries;
-    const effectiveEntries = filteredEntries.length > 0 ? filteredEntries : annotatedDailyEntries;
-    const mapped: PainTrendDatum[] = effectiveEntries.map(({ entry, cycleDay, weekday, symptomAverage }) => ({
-      date: entry.date,
-      cycleDay,
-      cycleLabel: cycleDay ? `ZT ${cycleDay}` : "–",
-      weekday,
-      pain: entry.painNRS ?? null,
-      pbac: entry.bleeding.pbacScore ?? null,
-      symptomAverage,
-      sleepQuality: entry.sleep?.quality ?? null,
-      ovulationSuspected: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
-    }));
+    const combined = new Map<string, PainTrendDatum>();
 
-    let extended = mapped;
+    weeklyReports.forEach((report) => {
+      report.stats.sparkline.forEach((point) => {
+        const rawIso = typeof point?.dateISO === "string" ? point.dateISO : "";
+        if (!rawIso) return;
+        const dateIso = rawIso.slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateIso)) return;
+        const parsed = parseIsoDate(dateIso);
+        const weekday = parsed
+          ? parsed.toLocaleDateString("de-DE", { weekday: "short" })
+          : "–";
+        const pain = typeof point.pain === "number" && Number.isFinite(point.pain) ? point.pain : null;
+        combined.set(dateIso, {
+          date: dateIso,
+          cycleDay: null,
+          cycleLabel: "–",
+          weekday,
+          pain,
+          pbac: null,
+          symptomAverage: null,
+          sleepQuality: null,
+          ovulationSuspected: false,
+        });
+      });
+    });
+
+    annotatedDailyEntries.forEach(({ entry, cycleDay, weekday, symptomAverage }) => {
+      combined.set(entry.date, {
+        date: entry.date,
+        cycleDay,
+        cycleLabel: cycleDay ? `ZT ${cycleDay}` : "–",
+        weekday,
+        pain: entry.painNRS ?? null,
+        pbac: entry.bleeding.pbacScore ?? null,
+        symptomAverage,
+        sleepQuality: entry.sleep?.quality ?? null,
+        ovulationSuspected: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
+      });
+    });
+
+    const sortedCombined = Array.from(combined.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+    const thresholdIso = trendWindowStartIso;
+    const filtered = thresholdIso ? sortedCombined.filter((item) => item.date >= thresholdIso) : sortedCombined;
+    const effective = filtered.length > 0 ? filtered : sortedCombined;
+
+    let extended = effective;
     if (todayDate) {
-      const hasToday = mapped.some((item) => item.date === today);
+      const hasToday = effective.some((item) => item.date === today);
       if (!hasToday) {
         const todayWeekday = todayDate.toLocaleDateString("de-DE", { weekday: "short" });
         extended = [
-          ...mapped,
+          ...effective,
           {
             date: today,
             cycleDay: null,
@@ -4217,7 +4247,7 @@ export default function HomePage() {
       painTrendCycleStarts: extended.filter((item) => item.cycleDay === 1),
       painTrendOvulationPoints: extended.filter((item) => item.ovulationSuspected),
     };
-  }, [annotatedDailyEntries, today, todayDate, trendWindowStartIso]);
+  }, [annotatedDailyEntries, today, todayDate, trendWindowStartIso, weeklyReports]);
 
   const renderIssuesForPath = (path: string) =>
     issues.filter((issue) => issue.path === path).map((issue) => (
