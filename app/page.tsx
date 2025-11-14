@@ -3039,50 +3039,49 @@ export default function HomePage() {
   }, [derivedDailyEntries, dailyDraft, isDailyDirty]);
 
   const cycleOverview = useMemo((): CycleOverviewData | null => {
-    if (!annotatedDailyEntries.length) {
-      return null;
-    }
-
-    const enriched: CycleOverviewPoint[] = annotatedDailyEntries.map(({ entry, cycleDay }) => ({
-      date: entry.date,
-      cycleDay: cycleDay ?? null,
-      painNRS: entry.painNRS ?? 0,
-      pbacScore: entry.bleeding?.pbacScore ?? null,
-      isBleeding: entry.bleeding?.isBleeding ?? false,
-      ovulationPositive: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
-      ovulationPainIntensity: entry.ovulationPain?.intensity ?? null,
-    }));
-
     const todayDate = parseIsoDate(today);
     if (!todayDate) {
       return null;
     }
 
-    const cutoff = new Date(todayDate);
-    cutoff.setDate(cutoff.getDate() - (CYCLE_OVERVIEW_MAX_DAYS - 1));
-    const cutoffIso = formatDate(cutoff);
+    const startDate = new Date(todayDate);
+    startDate.setDate(startDate.getDate() - (CYCLE_OVERVIEW_MAX_DAYS - 1));
 
-    const recentPoints = enriched.filter(
-      (point) => point.date >= cutoffIso && point.date <= today
-    );
+    const pointsByDate = new Map<string, CycleOverviewPoint>();
+    annotatedDailyEntries.forEach(({ entry, cycleDay }) => {
+      pointsByDate.set(entry.date, {
+        date: entry.date,
+        cycleDay: cycleDay ?? null,
+        painNRS: entry.painNRS ?? 0,
+        pbacScore: entry.bleeding?.pbacScore ?? null,
+        isBleeding: entry.bleeding?.isBleeding ?? false,
+        ovulationPositive: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
+        ovulationPainIntensity: entry.ovulationPain?.intensity ?? null,
+      });
+    });
 
-    if (recentPoints.length) {
-      return {
-        startDate: recentPoints[0].date,
-        points: recentPoints,
-      };
+    const points: CycleOverviewPoint[] = [];
+    for (let dayOffset = 0; dayOffset < CYCLE_OVERVIEW_MAX_DAYS; dayOffset += 1) {
+      const currentDate = new Date(startDate);
+      currentDate.setDate(startDate.getDate() + dayOffset);
+      const iso = formatDate(currentDate);
+      const existing = pointsByDate.get(iso);
+      points.push(
+        existing ?? {
+          date: iso,
+          cycleDay: null,
+          painNRS: 0,
+          pbacScore: null,
+          isBleeding: false,
+          ovulationPositive: false,
+          ovulationPainIntensity: null,
+        }
+      );
     }
-
-    if (!enriched.length) {
-      return null;
-    }
-
-    const fallbackStart = Math.max(0, enriched.length - CYCLE_OVERVIEW_MAX_DAYS);
-    const fallbackPoints = enriched.slice(fallbackStart);
 
     return {
-      startDate: fallbackPoints[0].date,
-      points: fallbackPoints,
+      startDate: formatDate(startDate),
+      points,
     };
   }, [annotatedDailyEntries, today]);
 
