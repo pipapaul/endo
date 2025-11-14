@@ -68,6 +68,7 @@ import { Badge } from "@/components/ui/badge";
 import Checkbox from "@/components/ui/checkbox";
 
 import { cn } from "@/lib/utils";
+import { formatDate, parseIsoDate } from "@/lib/date";
 import { touchLastActive } from "@/lib/persistence";
 import { usePersistentState } from "@/lib/usePersistentState";
 import WeeklyTabShell from "@/components/weekly/WeeklyTabShell";
@@ -89,6 +90,11 @@ import {
 } from "@/lib/weekly/reports";
 import { normalizeWpai, type WeeklyWpai } from "@/lib/weekly/wpai";
 import { isoWeekToDate } from "@/lib/isoWeek";
+import {
+  buildPainTrendSeries,
+  type AnnotatedDailyEntryForTrend,
+  type PainTrendDatum,
+} from "@/lib/trends/painTrend";
 
 const DETAIL_TOOLBAR_FALLBACK_HEIGHT = 96;
 
@@ -1461,19 +1467,6 @@ const BRISTOL_TYPES = [
 ] as const;
 
 const MS_PER_DAY = 86_400_000;
-
-const formatDate = (date: Date) => {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const parseIsoDate = (iso: string) => {
-  const [year, month, day] = iso.split("-").map(Number);
-  if (!year || !month || !day) return null;
-  return new Date(year, month - 1, day);
-};
 
 const createEmptyDailyEntry = (date: string): DailyEntry => ({
   date,
@@ -2971,7 +2964,7 @@ export default function HomePage() {
     });
   }, [dailyDraft.date]);
 
-  const annotatedDailyEntries = useMemo(() => {
+  const annotatedDailyEntries = useMemo<AnnotatedDailyEntryForTrend[]>(() => {
     const sorted = derivedDailyEntries.slice().sort((a, b) => a.date.localeCompare(b.date));
     let cycleDay: number | null = null;
     let previousDate: Date | null = null;
@@ -4136,53 +4129,14 @@ export default function HomePage() {
     ? "Es ist Sonntag. Zeit für deinen wöchentlichen Check In."
     : "Fülle diese Fragen möglichst jeden Sonntag aus.";
 
-  type PainTrendDatum = {
-    date: string;
-    cycleDay: number | null;
-    cycleLabel: string;
-    weekday: string;
-    pain: number | null;
-    pbac: number | null;
-    symptomAverage: number | null;
-    sleepQuality: number | null;
-  };
-
   const { painTrendData, painTrendCycleStarts } = useMemo(() => {
     if (!todayDate) {
       return { painTrendData: [] as PainTrendDatum[], painTrendCycleStarts: [] as PainTrendDatum[] };
     }
-
-    const annotatedByDate = new Map(
-      annotatedDailyEntries.map((item) => [item.entry.date, item])
-    );
-
-    const data: PainTrendDatum[] = [];
-    for (let offset = 29; offset >= 0; offset -= 1) {
-      const current = new Date(todayDate);
-      current.setDate(todayDate.getDate() - offset);
-      const iso = formatDate(current);
-      const annotated = annotatedByDate.get(iso);
-      const cycleDay = annotated?.cycleDay ?? null;
-      const weekday = current.toLocaleDateString("de-DE", { weekday: "short" });
-      const painNrs = annotated?.entry.painNRS;
-      const pbacScore = annotated?.entry.bleeding.pbacScore;
-      const symptomAverage = annotated?.symptomAverage;
-      const sleepQuality = annotated?.entry.sleep?.quality;
-      data.push({
-        date: iso,
-        cycleDay,
-        cycleLabel: cycleDay ? `ZT ${cycleDay}` : "–",
-        weekday,
-        pain: typeof painNrs === "number" ? painNrs : null,
-        pbac: typeof pbacScore === "number" ? pbacScore : null,
-        symptomAverage: typeof symptomAverage === "number" ? symptomAverage : null,
-        sleepQuality: typeof sleepQuality === "number" ? sleepQuality : null,
-      });
-    }
-
+    const { data, cycleStarts } = buildPainTrendSeries(annotatedDailyEntries, todayDate);
     return {
       painTrendData: data,
-      painTrendCycleStarts: data.filter((item) => item.cycleDay === 1),
+      painTrendCycleStarts: cycleStarts,
     };
   }, [annotatedDailyEntries, todayDate]);
 
