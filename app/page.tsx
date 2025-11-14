@@ -1298,8 +1298,6 @@ const describeBleedingLevel = (point: CycleOverviewPoint) => {
 type CycleOverviewChartPoint = CycleOverviewPoint & {
   bleedingLabel: string;
   bleedingValue: number;
-  cycleDayLabel: string;
-  cycleDayValue: number | null;
   dateLabel: string;
   painValue: number;
   isCurrentDay: boolean;
@@ -1351,7 +1349,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
   const bleedingGradientId = useId();
   const todayIso = useMemo(() => formatDate(new Date()), []);
   const chartPoints = useMemo<CycleOverviewChartPoint[]>(() => {
-    return data.points.slice(0, CYCLE_OVERVIEW_MAX_DAYS).map((point) => {
+    return data.points.map((point) => {
       const bleeding = describeBleedingLevel(point);
       const painValue = Number.isFinite(point.painNRS)
         ? Math.max(0, Math.min(10, Number(point.painNRS)))
@@ -1361,8 +1359,6 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
         ...point,
         bleedingLabel: bleeding.label,
         bleedingValue: bleeding.value,
-        cycleDayLabel: point.cycleDay ? `ZT ${point.cycleDay}` : "ZT –",
-        cycleDayValue: point.cycleDay ?? null,
         dateLabel: formatShortGermanDate(point.date),
         painValue,
         isCurrentDay: point.date === todayIso,
@@ -1381,7 +1377,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
       return (
         <div className="rounded-lg border border-rose-100 bg-white p-3 text-xs text-rose-700 shadow-sm">
           <p className="font-semibold text-rose-900">{payload.dateLabel}</p>
-          <p className="mt-1">ZT {payload.cycleDay ?? "–"}</p>
+          {payload.cycleDay !== null ? <p className="mt-1">ZT {payload.cycleDay}</p> : null}
           <p>Schmerz: {payload.painNRS}/10</p>
           <p>Blutung: {payload.bleedingLabel}</p>
           {payload.pbacScore !== null ? <p>PBAC: {payload.pbacScore}</p> : null}
@@ -1397,7 +1393,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
   }
 
   return (
-    <section aria-label="Aktueller Zyklus">
+    <section aria-label="Letzte 30 Tage">
       <div className="mx-auto h-36 w-[80vw] max-w-full sm:h-44">
         <ResponsiveContainer>
           <ComposedChart data={chartPoints} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
@@ -1408,12 +1404,12 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               </linearGradient>
             </defs>
             <XAxis
-              dataKey="cycleDayValue"
+              dataKey="date"
               axisLine={false}
               tickLine={false}
               tick={{ fill: "#fb7185", fontSize: 12, fontWeight: 600 }}
-              tickFormatter={(value: number | null) =>
-                typeof value === "number" && Number.isFinite(value) ? `ZT ${value}` : ""
+              tickFormatter={(value: string | number) =>
+                typeof value === "string" ? formatShortGermanDate(value) : ""
               }
               minTickGap={6}
             />
@@ -3048,37 +3044,55 @@ export default function HomePage() {
       return null;
     }
 
-    const enriched: CycleOverviewPoint[] = annotatedDailyEntries.map(({ entry, cycleDay }) => ({
-      date: entry.date,
-      cycleDay: cycleDay ?? null,
-      painNRS: entry.painNRS ?? 0,
-      pbacScore: entry.bleeding?.pbacScore ?? null,
-      isBleeding: entry.bleeding?.isBleeding ?? false,
-      ovulationPositive: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
-      ovulationPainIntensity: entry.ovulationPain?.intensity ?? null,
-    }));
-
-    const latestStartIndex = enriched.reduce((acc, point, index) => {
-      if (point.cycleDay === 1 && point.date <= today) {
-        return index;
-      }
-      return acc;
-    }, -1);
-
-    if (latestStartIndex === -1) {
+    const todayDate = parseIsoDate(today);
+    if (!todayDate) {
       return null;
     }
 
-    let slice = enriched
-      .slice(latestStartIndex, latestStartIndex + CYCLE_OVERVIEW_MAX_DAYS)
-      .filter((point) => point.date <= today);
-    if (!slice.length) {
-      slice = [enriched[latestStartIndex]];
+    const lookbackStart = new Date(todayDate.getTime() - (CYCLE_OVERVIEW_MAX_DAYS - 1) * MS_PER_DAY);
+
+    type EnrichedPoint = CycleOverviewPoint & { parsedDate: Date };
+
+    const enriched: EnrichedPoint[] = annotatedDailyEntries
+      .map(({ entry, cycleDay }) => {
+        const parsedDate = parseIsoDate(entry.date);
+        if (!parsedDate) {
+          return null;
+        }
+        return {
+          date: entry.date,
+          cycleDay: cycleDay ?? null,
+          painNRS: entry.painNRS ?? 0,
+          pbacScore: entry.bleeding?.pbacScore ?? null,
+          isBleeding: entry.bleeding?.isBleeding ?? false,
+          ovulationPositive: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
+          ovulationPainIntensity: entry.ovulationPain?.intensity ?? null,
+          parsedDate,
+        };
+      })
+      .filter((point): point is EnrichedPoint => Boolean(point));
+
+    if (!enriched.length) {
+      return null;
+    }
+
+    enriched.sort((a, b) => a.date.localeCompare(b.date));
+
+    const windowPoints = enriched.filter(
+      (point) => point.parsedDate >= lookbackStart && point.parsedDate <= todayDate
+    );
+
+    const selected = (windowPoints.length ? windowPoints : enriched.slice(-CYCLE_OVERVIEW_MAX_DAYS)).slice(
+      -CYCLE_OVERVIEW_MAX_DAYS
+    );
+
+    if (!selected.length) {
+      return null;
     }
 
     return {
-      startDate: enriched[latestStartIndex].date,
-      points: slice,
+      startDate: selected[0].date,
+      points: selected.map(({ parsedDate: _parsedDate, ...point }) => point),
     };
   }, [annotatedDailyEntries, today]);
 
