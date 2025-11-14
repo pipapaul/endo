@@ -1345,6 +1345,19 @@ const CycleStartDrop = ({ cx, cy }: DotProps) => {
   );
 };
 
+const OvulationMarkerDot = ({ cx, cy }: DotProps) => {
+  if (typeof cx !== "number" || typeof cy !== "number") {
+    return null;
+  }
+
+  return (
+    <g>
+      <circle cx={cx} cy={cy} r={6} fill="#fef08a" stroke="#ca8a04" strokeWidth={1.5} />
+      <circle cx={cx} cy={cy} r={2} fill="#fde047" />
+    </g>
+  );
+};
+
 const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
   const bleedingGradientId = useId();
   const todayIso = useMemo(() => formatDate(new Date()), []);
@@ -4156,9 +4169,10 @@ export default function HomePage() {
     pbac: number | null;
     symptomAverage: number | null;
     sleepQuality: number | null;
+    ovulationSuspected: boolean;
   };
 
-  const { painTrendData, painTrendCycleStarts } = useMemo(() => {
+  const { painTrendData, painTrendCycleStarts, painTrendOvulationPoints } = useMemo(() => {
     const thresholdIso = trendWindowStartIso;
     const filteredEntries = thresholdIso
       ? annotatedDailyEntries.filter(({ entry }) => entry.date >= thresholdIso)
@@ -4173,6 +4187,7 @@ export default function HomePage() {
       pbac: entry.bleeding.pbacScore ?? null,
       symptomAverage,
       sleepQuality: entry.sleep?.quality ?? null,
+      ovulationSuspected: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
     }));
 
     let extended = mapped;
@@ -4191,6 +4206,7 @@ export default function HomePage() {
             pbac: null,
             symptomAverage: null,
             sleepQuality: null,
+            ovulationSuspected: false,
           },
         ].sort((a, b) => a.date.localeCompare(b.date));
       }
@@ -4199,6 +4215,7 @@ export default function HomePage() {
     return {
       painTrendData: extended,
       painTrendCycleStarts: extended.filter((item) => item.cycleDay === 1),
+      painTrendOvulationPoints: extended.filter((item) => item.ovulationSuspected),
     };
   }, [annotatedDailyEntries, today, todayDate, trendWindowStartIso]);
 
@@ -7159,7 +7176,12 @@ export default function HomePage() {
                       <XAxis
                         dataKey={trendXAxisMode === "date" ? "date" : "cycleLabel"}
                         stroke="#fb7185"
-                        tick={{ fontSize: 12 }}
+                        tick={trendXAxisMode === "date" ? { fill: "transparent" } : { fontSize: 12 }}
+                        tickFormatter={
+                          trendXAxisMode === "date"
+                            ? () => ""
+                            : (value: string | number) => String(value)
+                        }
                       />
                       <YAxis yAxisId="left" domain={[0, 10]} stroke="#f43f5e" tick={{ fontSize: 12 }} />
                       <YAxis yAxisId="right" orientation="right" domain={[0, 300]} stroke="#6366f1" tick={{ fontSize: 12 }} />
@@ -7187,6 +7209,19 @@ export default function HomePage() {
                             yAxisId="left"
                             isFront
                             shape={<CycleStartDrop />}
+                          />
+                        );
+                      })}
+                      {painTrendOvulationPoints.map((item) => {
+                        const xValue = trendXAxisMode === "date" ? item.date : item.cycleLabel;
+                        return (
+                          <ReferenceDot
+                            key={`ovulation-marker-${item.date}`}
+                            x={xValue}
+                            y={8.5}
+                            yAxisId="left"
+                            isFront
+                            shape={<OvulationMarkerDot />}
                           />
                         );
                       })}
