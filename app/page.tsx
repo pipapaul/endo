@@ -726,8 +726,21 @@ const SYMPTOM_FREE_MESSAGES = [
 
 const SYMPTOM_FREE_EMOJIS = ["✨", "🎉", "😊", "🥳", "🌟", "😄", "🙌", "🍀", "🤗", "💫"] as const;
 
-const pickRandom = <T,>(values: readonly T[]): T => {
-  return values[Math.floor(Math.random() * values.length)];
+const hashString = (value: string): number => {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash << 5) - hash + value.charCodeAt(index);
+    hash |= 0; // Force into 32-bit integer range
+  }
+  return hash;
+};
+
+const pickStable = <T,>(values: readonly T[], seed: string): T => {
+  if (values.length === 0) {
+    throw new Error("Cannot pick from empty list");
+  }
+  const hash = Math.abs(hashString(seed));
+  return values[hash % values.length];
 };
 
 const createEmptyCategoryCompletion = (): Record<TrackableDailyCategoryId, boolean> =>
@@ -5153,6 +5166,7 @@ export default function HomePage() {
     () => {
       const entry = dailyDraft;
       const summaries: Partial<Record<Exclude<DailyCategoryId, "overview">, string[]>> = {};
+      const seedBase = entry.date || "unknown";
 
       const painRegions = entry.painRegions ?? [];
       const painLines: string[] = [];
@@ -5192,7 +5206,10 @@ export default function HomePage() {
         painLines.push(`Belastung: ${entry.impactNRS}/10`);
       }
       if (!painLines.length) {
-        painLines.push(`${pickRandom(PAIN_FREE_MESSAGES)} ${pickRandom(PAIN_FREE_EMOJIS)}`);
+        const messageSeed = `${seedBase}:pain`;
+        painLines.push(
+          `${pickStable(PAIN_FREE_MESSAGES, messageSeed)} ${pickStable(PAIN_FREE_EMOJIS, `${messageSeed}:emoji`)}`
+        );
       }
       summaries.pain = painLines;
 
@@ -5221,7 +5238,13 @@ export default function HomePage() {
         }
         symptomLines.push(`Vorhanden: ${formatList(labels, 3)}`);
       } else {
-        symptomLines.push(`${pickRandom(SYMPTOM_FREE_MESSAGES)} ${pickRandom(SYMPTOM_FREE_EMOJIS)}`);
+        const messageSeed = `${seedBase}:symptoms`;
+        symptomLines.push(
+          `${pickStable(SYMPTOM_FREE_MESSAGES, messageSeed)} ${pickStable(
+            SYMPTOM_FREE_EMOJIS,
+            `${messageSeed}:emoji`
+          )}`
+        );
       }
       summaries.symptoms = symptomLines;
 
