@@ -1470,6 +1470,9 @@ const BRISTOL_TYPES = [
 ] as const;
 
 const MS_PER_DAY = 86_400_000;
+const LUTEAL_PHASE_LENGTH = 14;
+
+const formatInDaysText = (days: number) => (days === 1 ? "1 Tag" : `${days} Tagen`);
 
 const formatDate = (date: Date) => {
   const year = date.getFullYear();
@@ -3162,6 +3165,103 @@ export default function HomePage() {
       points,
     };
   }, [annotatedDailyEntries, today]);
+
+  const isBleedingToday = useMemo(() => {
+    const todayEntry = derivedDailyEntries.find((entry) => entry.date === today);
+    return Boolean(todayEntry?.bleeding?.isBleeding);
+  }, [derivedDailyEntries, today]);
+
+  const wasBleedingYesterday = useMemo(() => {
+    const base = parseIsoDate(today);
+    if (!base) return false;
+    const previous = new Date(base);
+    previous.setDate(previous.getDate() - 1);
+    const previousIso = formatDate(previous);
+    const previousEntry = derivedDailyEntries.find((entry) => entry.date === previousIso);
+    return Boolean(previousEntry?.bleeding?.isBleeding);
+  }, [derivedDailyEntries, today]);
+
+  const cyclePrediction = useMemo(() => {
+    const cycleStarts = annotatedDailyEntries
+      .filter(({ cycleDay }) => cycleDay === 1)
+      .map(({ entry }) => parseIsoDate(entry.date))
+      .filter((date): date is Date => Boolean(date && !Number.isNaN(date.getTime())));
+    if (cycleStarts.length < 2) {
+      return null;
+    }
+    const intervals: number[] = [];
+    for (let index = 1; index < cycleStarts.length; index += 1) {
+      const current = cycleStarts[index];
+      const previous = cycleStarts[index - 1];
+      const diff = Math.round((current.getTime() - previous.getTime()) / MS_PER_DAY);
+      if (diff > 0) {
+        intervals.push(diff);
+      }
+    }
+    if (!intervals.length) {
+      return null;
+    }
+    const averageCycleLength = intervals.reduce((sum, value) => sum + value, 0) / intervals.length;
+    const lastStart = cycleStarts[cycleStarts.length - 1];
+    const expectedPeriodDate = new Date(lastStart);
+    expectedPeriodDate.setDate(expectedPeriodDate.getDate() + Math.round(averageCycleLength));
+    if (expectedPeriodDate.getTime() <= lastStart.getTime()) {
+      return null;
+    }
+    return {
+      averageCycleLength,
+      expectedPeriodDateIso: formatDate(expectedPeriodDate),
+    };
+  }, [annotatedDailyEntries]);
+
+  const expectedPeriodBadge = useMemo(() => {
+    if (!cyclePrediction || !todayDate || wasBleedingYesterday || isBleedingToday) {
+      return null;
+    }
+    const expectedDate = parseIsoDate(cyclePrediction.expectedPeriodDateIso);
+    if (!expectedDate) {
+      return null;
+    }
+    const diffDays = Math.round((expectedDate.getTime() - todayDate.getTime()) / MS_PER_DAY);
+    if (diffDays < 0) {
+      return null;
+    }
+    return {
+      daysUntil: diffDays,
+      dateLabel: expectedDate.toLocaleDateString("de-DE", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      }),
+    };
+  }, [cyclePrediction, todayDate, wasBleedingYesterday, isBleedingToday]);
+
+  const expectedOvulationBadge = useMemo(() => {
+    if (!cyclePrediction || !todayDate) {
+      return null;
+    }
+    if (cyclePrediction.averageCycleLength <= LUTEAL_PHASE_LENGTH) {
+      return null;
+    }
+    const expectedPeriodDate = parseIsoDate(cyclePrediction.expectedPeriodDateIso);
+    if (!expectedPeriodDate) {
+      return null;
+    }
+    const ovulationDate = new Date(expectedPeriodDate);
+    ovulationDate.setDate(ovulationDate.getDate() - LUTEAL_PHASE_LENGTH);
+    const diffDays = Math.round((ovulationDate.getTime() - todayDate.getTime()) / MS_PER_DAY);
+    if (diffDays < 0 || diffDays > 5) {
+      return null;
+    }
+    return {
+      daysUntil: diffDays,
+      dateLabel: ovulationDate.toLocaleDateString("de-DE", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      }),
+    };
+  }, [cyclePrediction, todayDate]);
 
   const canGoToNextDay = useMemo(() => dailyDraft.date < today, [dailyDraft.date, today]);
 
@@ -5705,13 +5805,13 @@ export default function HomePage() {
         <main
           className={cn(
             "mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-4 pb-8",
-            isHomeView ? "pt-8" : "pt-6"
+            isHomeView ? "pt-4" : "pt-6"
           )}
         >
           {isHomeView ? (
             <div className="flex flex-col gap-6">
               <header className="space-y-1">
-                <h1 className="text-3xl font-semibold text-rose-900">Endometriose Symptomtracker</h1>
+                <h1 className="text-3xl font-semibold text-rose-900">endometriose tracker</h1>
                 <div className="flex flex-wrap items-center gap-2 text-sm text-rose-700">
                   <Badge
                     className="bg-rose-200 text-rose-700"
@@ -5724,6 +5824,24 @@ export default function HomePage() {
                   >
                     {todayCycleDay !== null ? `Zyklustag ${todayCycleDay}` : "Zyklustag –"}
                   </Badge>
+                  {expectedPeriodBadge ? (
+                    <Badge
+                      className="bg-rose-50 text-rose-700"
+                      title={expectedPeriodBadge.dateLabel}
+                      aria-label={`Periode erwartet am ${expectedPeriodBadge.dateLabel}`}
+                    >
+                      {`Periode erwartet in ${formatInDaysText(expectedPeriodBadge.daysUntil)}`}
+                    </Badge>
+                  ) : null}
+                  {expectedOvulationBadge ? (
+                    <Badge
+                      className="bg-rose-50 text-rose-700"
+                      title={expectedOvulationBadge.dateLabel}
+                      aria-label={`Eisprung erwartet am ${expectedOvulationBadge.dateLabel}`}
+                    >
+                      {`Eisprung erwartet in ${formatInDaysText(expectedOvulationBadge.daysUntil)}`}
+                    </Badge>
+                  ) : null}
                   {todayCycleComparisonBadge ? (
                     <Badge className={todayCycleComparisonBadge.className}>
                       {todayCycleComparisonBadge.label}
