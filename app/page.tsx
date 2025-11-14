@@ -3214,6 +3214,8 @@ export default function HomePage() {
     };
   }, [annotatedDailyEntries]);
 
+  const todayDate = useMemo(() => parseIsoDate(today), [today]);
+
   const expectedPeriodBadge = useMemo(() => {
     if (!cyclePrediction || !todayDate || wasBleedingYesterday || isBleedingToday) {
       return null;
@@ -3271,7 +3273,6 @@ export default function HomePage() {
   }, [today]);
 
   const currentMonth = useMemo(() => today.slice(0, 7), [today]);
-  const todayDate = useMemo(() => parseIsoDate(today), [today]);
   const todayLabel = useMemo(() => {
     if (!todayDate) return null;
     return todayDate.toLocaleDateString("de-DE", {
