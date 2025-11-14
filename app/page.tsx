@@ -11,7 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ChangeEvent, ComponentType, ReactNode, SVGProps } from "react";
+import type { ChangeEvent, ComponentType, Dispatch, ReactNode, SetStateAction, SVGProps } from "react";
 import {
   LineChart,
   Line,
@@ -419,7 +419,14 @@ const computePelvicPainOutsidePeriodIntensity = (entry: DailyEntry): number | nu
 
 const applyAutomatedPainSymptoms = (entry: DailyEntry): DailyEntry => {
   const symptoms: DailyEntry["symptoms"] = { ...(entry.symptoms ?? {}) };
-  const bleeding = entry.bleeding ?? { isBleeding: false };
+  const bleedingSource = entry.bleeding;
+  const bleeding =
+    bleedingSource && typeof bleedingSource === "object"
+      ? ({
+          ...bleedingSource,
+          isBleeding: Boolean(bleedingSource.isBleeding),
+        } satisfies DailyEntry["bleeding"])
+      : ({ isBleeding: Boolean(bleedingSource) } satisfies DailyEntry["bleeding"]);
   const result: DailyEntry = { ...entry, bleeding, symptoms };
 
   const hasBleeding = Boolean(bleeding.isBleeding);
@@ -2560,8 +2567,23 @@ export default function HomePage() {
     usePersistentState<SectionCompletionState>("endo.sectionCompletion.v1", {});
   const [sectionRegistry, setSectionRegistry] = useState<SectionRegistryState>({});
 
-  const [dailyDraft, setDailyDraft, dailyDraftStorage] =
+  const [rawDailyDraft, rawSetDailyDraft, dailyDraftStorage] =
     usePersistentState<DailyEntry>("endo.draft.daily.v1", defaultDailyDraft);
+  const dailyDraft = useMemo(() => normalizeDailyEntry(rawDailyDraft), [rawDailyDraft]);
+  const setDailyDraft = useCallback<Dispatch<SetStateAction<DailyEntry>>>(
+    (next) => {
+      if (typeof next === "function") {
+        rawSetDailyDraft((prev) => {
+          const normalizedPrev = normalizeDailyEntry(prev);
+          const updated = (next as (value: DailyEntry) => DailyEntry)(normalizedPrev);
+          return normalizeDailyEntry(updated);
+        });
+        return;
+      }
+      rawSetDailyDraft(normalizeDailyEntry(next));
+    },
+    [rawSetDailyDraft]
+  );
   const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
   const [pbacCounts, setPbacCounts] = useState<PbacCounts>({ ...PBAC_DEFAULT_COUNTS });
   const [dailyCategorySnapshots, setDailyCategorySnapshots] = useState<

@@ -2,7 +2,10 @@ import type { DailyEntry } from "./types";
 
 export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
   const bleedingSource = (entry as Partial<DailyEntry>).bleeding;
-  const hasValidBleeding = typeof bleedingSource?.isBleeding === "boolean";
+  const bleedingIsObject = typeof bleedingSource === "object" && bleedingSource !== null;
+  const bleedingIsBoolean = typeof bleedingSource === "boolean";
+  const bleedingObject = bleedingIsObject ? (bleedingSource as NonNullable<DailyEntry["bleeding"]>) : null;
+  const hasValidBleeding = Boolean(bleedingObject && typeof bleedingObject.isBleeding === "boolean");
   const needsPainRegionsNormalization = !Array.isArray(entry.painRegions);
   const needsPainQualityNormalization = !Array.isArray(entry.painQuality);
   const needsPainMapIdsNormalization = !Array.isArray(entry.painMapRegionIds);
@@ -21,17 +24,21 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
   }
 
   const normalizedBleeding: DailyEntry["bleeding"] = {
-    isBleeding: Boolean(bleedingSource?.isBleeding),
+    isBleeding: bleedingIsBoolean
+      ? (bleedingSource as boolean)
+      : Boolean(bleedingObject?.isBleeding),
   };
 
-  if (typeof bleedingSource?.pbacScore === "number" && Number.isFinite(bleedingSource.pbacScore)) {
-    normalizedBleeding.pbacScore = bleedingSource.pbacScore;
-  }
-  if (typeof bleedingSource?.clots === "boolean") {
-    normalizedBleeding.clots = bleedingSource.clots;
-  }
-  if (typeof bleedingSource?.flooding === "boolean") {
-    normalizedBleeding.flooding = bleedingSource.flooding;
+  if (bleedingObject) {
+    if (typeof bleedingObject.pbacScore === "number" && Number.isFinite(bleedingObject.pbacScore)) {
+      normalizedBleeding.pbacScore = bleedingObject.pbacScore;
+    }
+    if (typeof bleedingObject.clots === "boolean") {
+      normalizedBleeding.clots = bleedingObject.clots;
+    }
+    if (typeof bleedingObject.flooding === "boolean") {
+      normalizedBleeding.flooding = bleedingObject.flooding;
+    }
   }
 
   const painRegions = Array.isArray(entry.painRegions) ? entry.painRegions : [];
