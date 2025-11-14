@@ -7176,10 +7176,10 @@ export default function HomePage() {
                       <XAxis
                         dataKey={trendXAxisMode === "date" ? "date" : "cycleLabel"}
                         stroke="#fb7185"
-                        tick={trendXAxisMode === "date" ? false : { fontSize: 12 }}
+                        tick={trendXAxisMode === "date" ? { fill: "transparent" } : { fontSize: 12 }}
                         tickFormatter={
                           trendXAxisMode === "date"
-                            ? undefined
+                            ? () => ""
                             : (value: string | number) => String(value)
                         }
                       />
