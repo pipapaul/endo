@@ -4141,7 +4141,8 @@ export default function HomePage() {
       return null;
     }
     const threshold = new Date(todayDate);
-    threshold.setDate(threshold.getDate() - 30);
+    threshold.setHours(0, 0, 0, 0);
+    threshold.setDate(threshold.getDate() - 29);
     return formatDate(threshold);
   }, [todayDate]);
 
@@ -4161,8 +4162,40 @@ export default function HomePage() {
     const filteredEntries = thresholdIso
       ? annotatedDailyEntries.filter(({ entry }) => entry.date >= thresholdIso)
       : annotatedDailyEntries;
-    const effectiveEntries = filteredEntries.length > 0 ? filteredEntries : annotatedDailyEntries;
-    const mapped: PainTrendDatum[] = effectiveEntries.map(({ entry, cycleDay, weekday, symptomAverage }) => ({
+
+    const entriesByDate = new Map(filteredEntries.map((item) => [item.entry.date, item] as const));
+
+    if (todayDate) {
+      const startDate = new Date(todayDate);
+      startDate.setHours(0, 0, 0, 0);
+      startDate.setDate(startDate.getDate() - 29);
+
+      const range: PainTrendDatum[] = Array.from({ length: 30 }, (_, index) => {
+        const currentDate = new Date(startDate);
+        currentDate.setDate(startDate.getDate() + index);
+        const iso = formatDate(currentDate);
+        const annotated = entriesByDate.get(iso);
+        const weekday = annotated?.weekday ?? currentDate.toLocaleDateString("de-DE", { weekday: "short" });
+
+        return {
+          date: iso,
+          cycleDay: annotated?.cycleDay ?? null,
+          cycleLabel: annotated?.cycleDay ? `ZT ${annotated.cycleDay}` : "–",
+          weekday,
+          pain: annotated?.entry.painNRS ?? null,
+          pbac: annotated?.entry.bleeding.pbacScore ?? null,
+          symptomAverage: annotated?.symptomAverage ?? null,
+          sleepQuality: annotated?.entry.sleep?.quality ?? null,
+        };
+      });
+
+      return {
+        painTrendData: range,
+        painTrendCycleStarts: range.filter((item) => item.cycleDay === 1),
+      };
+    }
+
+    const fallback: PainTrendDatum[] = filteredEntries.map(({ entry, cycleDay, weekday, symptomAverage }) => ({
       date: entry.date,
       cycleDay,
       cycleLabel: cycleDay ? `ZT ${cycleDay}` : "–",
@@ -4173,32 +4206,11 @@ export default function HomePage() {
       sleepQuality: entry.sleep?.quality ?? null,
     }));
 
-    let extended = mapped;
-    if (todayDate) {
-      const hasToday = mapped.some((item) => item.date === today);
-      if (!hasToday) {
-        const todayWeekday = todayDate.toLocaleDateString("de-DE", { weekday: "short" });
-        extended = [
-          ...mapped,
-          {
-            date: today,
-            cycleDay: null,
-            cycleLabel: "–",
-            weekday: todayWeekday,
-            pain: null,
-            pbac: null,
-            symptomAverage: null,
-            sleepQuality: null,
-          },
-        ].sort((a, b) => a.date.localeCompare(b.date));
-      }
-    }
-
     return {
-      painTrendData: extended,
-      painTrendCycleStarts: extended.filter((item) => item.cycleDay === 1),
+      painTrendData: fallback,
+      painTrendCycleStarts: fallback.filter((item) => item.cycleDay === 1),
     };
-  }, [annotatedDailyEntries, today, todayDate, trendWindowStartIso]);
+  }, [annotatedDailyEntries, todayDate, trendWindowStartIso]);
 
   const renderIssuesForPath = (path: string) =>
     issues.filter((issue) => issue.path === path).map((issue) => (
@@ -7167,8 +7179,10 @@ export default function HomePage() {
                           <ReferenceLine
                             key={`cycle-start-line-${item.date}`}
                             x={xValue}
-                            stroke="#ef4444"
+                            stroke="#fb7185"
+                            strokeWidth={1}
                             strokeDasharray="4 2"
+                            strokeOpacity={0.7}
                             isFront
                           />
                         );
