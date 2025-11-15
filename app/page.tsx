@@ -4647,8 +4647,32 @@ export default function HomePage() {
   }, [annotatedDailyEntries]);
 
   const todayCycleDay = useMemo(() => {
-    const todayEntry = annotatedDailyEntries.find(({ entry }) => entry.date === today);
-    return todayEntry?.cycleDay ?? null;
+    const todayDateValue = parseIsoDate(today);
+    if (!todayDateValue) {
+      return null;
+    }
+
+    for (let index = annotatedDailyEntries.length - 1; index >= 0; index -= 1) {
+      const item = annotatedDailyEntries[index];
+      if (item.entry.date > today || typeof item.cycleDay !== "number") {
+        continue;
+      }
+
+      const latestDate = parseIsoDate(item.entry.date);
+      if (!latestDate) {
+        return item.cycleDay;
+      }
+
+      const diffMs = todayDateValue.getTime() - latestDate.getTime();
+      if (diffMs <= 0) {
+        return item.cycleDay;
+      }
+
+      const diffDays = Math.round(diffMs / MS_PER_DAY);
+      return item.cycleDay + diffDays;
+    }
+
+    return null;
   }, [annotatedDailyEntries, today]);
 
   const cycleStartDates = useMemo(() => {
