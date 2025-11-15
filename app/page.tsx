@@ -3041,6 +3041,7 @@ export default function HomePage() {
     let cycleDay: number | null = null;
     let previousDate: Date | null = null;
     let previousBleeding = false;
+    let lastBleedingDate: Date | null = null;
     return sorted.map((entry) => {
       const bleeding = entry.bleeding ?? { isBleeding: false };
       const currentDate = new Date(entry.date);
@@ -3051,9 +3052,22 @@ export default function HomePage() {
         cycleDay += diffDays;
       }
       const isBleeding = Boolean(bleeding.isBleeding);
-      const bleedingStartsToday = isBleeding && (!previousBleeding || diffDays > 1 || cycleDay === null);
+      const daysWithoutBleedingBeforeCurrent =
+        lastBleedingDate === null
+          ? null
+          : Math.max(
+              0,
+              Math.round((currentDate.getTime() - lastBleedingDate.getTime()) / 86_400_000) - 1
+            );
+      const hasRequiredBleedingBreak =
+        daysWithoutBleedingBeforeCurrent === null || daysWithoutBleedingBeforeCurrent >= 7;
+      const bleedingStartsToday =
+        isBleeding && (!previousBleeding || diffDays > 1 || cycleDay === null) && hasRequiredBleedingBreak;
       if (bleedingStartsToday) {
         cycleDay = 1;
+      }
+      if (isBleeding && !Number.isNaN(currentDate.getTime())) {
+        lastBleedingDate = currentDate;
       }
       const assignedCycleDay = cycleDay;
       const weekday = currentDate.toLocaleDateString("de-DE", { weekday: "short" });
@@ -3090,6 +3104,7 @@ export default function HomePage() {
     let cycleDay: number | null = null;
     let previousDate: Date | null = null;
     let previousBleeding = false;
+    let lastBleedingDate: Date | null = null;
     for (const entry of sorted) {
       const bleeding = entry.bleeding ?? { isBleeding: false };
       const currentDate = new Date(entry.date);
@@ -3103,12 +3118,25 @@ export default function HomePage() {
         cycleDay += diffDays;
       }
       const isBleeding = Boolean(bleeding.isBleeding);
-      const bleedingStartsToday = isBleeding && (!previousBleeding || diffDays > 1 || cycleDay === null);
+      const daysWithoutBleedingBeforeCurrent =
+        lastBleedingDate === null
+          ? null
+          : Math.max(
+              0,
+              Math.round((currentDate.getTime() - lastBleedingDate.getTime()) / 86_400_000) - 1
+            );
+      const hasRequiredBleedingBreak =
+        daysWithoutBleedingBeforeCurrent === null || daysWithoutBleedingBeforeCurrent >= 7;
+      const bleedingStartsToday =
+        isBleeding && (!previousBleeding || diffDays > 1 || cycleDay === null) && hasRequiredBleedingBreak;
       if (bleedingStartsToday) {
         cycleDay = 1;
       }
       if (entry.date === dailyDraft.date) {
         return cycleDay;
+      }
+      if (isBleeding) {
+        lastBleedingDate = currentDate;
       }
       previousDate = currentDate;
       previousBleeding = isBleeding;
