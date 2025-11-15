@@ -6284,7 +6284,7 @@ export default function HomePage() {
                   Es werden nur Daten von den Bereichen gespeichert, die einen grünen Haken haben.
                 </p>
                 <div className="flex flex-wrap items-center gap-3">
-                  <Button type="button" onClick={handleDailySubmit} disabled={!isDailyDirty}>
+                  <Button type="button" onClick={() => handleDailySubmit()} disabled={!isDailyDirty}>
                     Tagesdaten speichern
                   </Button>
                   {(draftStatus || dailySaveNotice) && (
