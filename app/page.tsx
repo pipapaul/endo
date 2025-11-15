@@ -690,7 +690,7 @@ const TRACKED_DAILY_CATEGORY_IDS: TrackableDailyCategoryId[] = [
 
 const PAIN_FREE_MESSAGES = [
   "Juhu, schmerzfrei",
-  "Hurra, heute ohne Schmerzen",
+  "Hurra, heute keine Schmerzen",
   "Wie schön, kein Schmerz weit und breit",
   "Yes, alles schmerzfrei",
   "Heute nur Wohlfühlmomente",
@@ -698,7 +698,7 @@ const PAIN_FREE_MESSAGES = [
   "Frei von jedem Zwicken",
   "Ein Tag ganz ohne Schmerzen",
   "Schmerzlevel? Glatte Null",
-  "Pure Leichtigkeit ohne Schmerzen",
+  "Fantastisch. Keine Schmerzen",
 ] as const;
 
 const PAIN_FREE_EMOJIS = ["😄", "🥳", "😊", "🤩", "🙌", "🎉", "🌈", "💖", "😌", "💃"] as const;
@@ -710,7 +710,7 @@ const SYMPTOM_FREE_MESSAGES = [
   "Was für ein Glückstag ohne Symptome",
   "Frei von Symptomen – juhu",
   "Heute kein Symptom in Sicht",
-  "Symptomfreie Zone aktiviert",
+  "Symptomfreie Zone",
   "Wunderbar symptomlos",
   "Null Symptome, nur Freude",
   "Alles entspannt, keine Symptome",
@@ -5080,28 +5080,28 @@ export default function HomePage() {
           title: "Schmerzen",
           description: "Körperkarte, Intensität & Auswirkungen",
           icon: PainIcon,
-          quickActions: [{ label: "Keine Schmerzen", onClick: handleQuickNoPain }],
+          quickActions: [{ label: "Heute keine Schmerzen", onClick: handleQuickNoPain }],
         },
         {
           id: "symptoms" as const,
           title: "Symptome",
           description: "Typische Endometriose-Symptome dokumentieren",
           icon: SymptomsIcon,
-          quickActions: [{ label: "Keine Symptome", onClick: handleQuickNoSymptoms }],
+          quickActions: [{ label: "Heute keine Symptome", onClick: handleQuickNoSymptoms }],
         },
         {
           id: "bleeding" as const,
           title: "Periode und Blutung",
           description: "Blutung, PBAC-Score & Begleitsymptome",
           icon: PeriodIcon,
-          quickActions: [{ label: "Keine Periode", onClick: handleQuickNoBleeding }],
+          quickActions: [{ label: "Heute keine Periode", onClick: handleQuickNoBleeding }],
         },
         {
           id: "medication" as const,
           title: TERMS.meds.label,
           description: "Eingenommene Medikamente & Hilfen",
           icon: MedicationIcon,
-          quickActions: [{ label: "Keine Medikamente", onClick: handleQuickNoMedication }],
+          quickActions: [{ label: Heute keine Medikamente", onClick: handleQuickNoMedication }],
         },
         {
           id: "sleep" as const,
@@ -7393,7 +7393,7 @@ export default function HomePage() {
             <div className="space-y-6">
               <Section
                 title="Dein Fortschritt"
-                description="Motivierende Trends aus deinem Daily Check-in"
+                description="Trends aus deinem täglichen Check-in"
                 completionEnabled={false}
               >
                 <div className="space-y-4">
