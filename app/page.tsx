@@ -155,6 +155,66 @@ const OVULATION_PAIN_SIDE_LABELS: Record<OvulationPainSide, string> = {
   unsicher: "Unsicher",
 };
 
+const createInitialCycleComputationState = () => ({
+  cycleDay: null as number | null,
+  previousDate: null as Date | null,
+  previousBleeding: false,
+  lastBleedingDate: null as Date | null,
+});
+
+type CycleComputationState = ReturnType<typeof createInitialCycleComputationState>;
+
+const computeCycleDayForEntry = (
+  state: CycleComputationState,
+  entry: DailyEntry
+): { cycleDay: number | null; state: CycleComputationState } => {
+  const bleeding = entry.bleeding ?? { isBleeding: false };
+  const currentDate = new Date(entry.date);
+  const isValidDate = !Number.isNaN(currentDate.getTime());
+  const diffDays =
+    state.previousDate && isValidDate
+      ? Math.round((currentDate.getTime() - state.previousDate.getTime()) / 86_400_000)
+      : 0;
+  let nextCycleDay = state.cycleDay;
+  if (nextCycleDay !== null && diffDays > 0) {
+    nextCycleDay += diffDays;
+  }
+  const isBleeding = Boolean(bleeding.isBleeding);
+  let nextLastBleedingDate = state.lastBleedingDate;
+
+  if (isValidDate) {
+    const daysWithoutBleedingBeforeCurrent =
+      state.lastBleedingDate === null
+        ? null
+        : Math.max(
+            0,
+            Math.round((currentDate.getTime() - state.lastBleedingDate.getTime()) / 86_400_000) - 1
+          );
+    const hasRequiredBleedingBreak =
+      daysWithoutBleedingBeforeCurrent === null || daysWithoutBleedingBeforeCurrent >= 7;
+    const bleedingStartsToday =
+      isBleeding &&
+      (!state.previousBleeding || diffDays > 1 || nextCycleDay === null) &&
+      hasRequiredBleedingBreak;
+    if (bleedingStartsToday) {
+      nextCycleDay = 1;
+    }
+    if (isBleeding) {
+      nextLastBleedingDate = currentDate;
+    }
+  }
+
+  return {
+    cycleDay: nextCycleDay,
+    state: {
+      cycleDay: nextCycleDay,
+      previousDate: isValidDate ? currentDate : state.previousDate,
+      previousBleeding: isBleeding,
+      lastBleedingDate: nextLastBleedingDate,
+    },
+  };
+};
+
 const sanitizeHeadRegionQualities = (
   qualities: DailyEntry["painQuality"]
 ): DailyEntry["painQuality"] => {
@@ -3038,24 +3098,13 @@ export default function HomePage() {
 
   const annotatedDailyEntries = useMemo(() => {
     const sorted = derivedDailyEntries.slice().sort((a, b) => a.date.localeCompare(b.date));
-    let cycleDay: number | null = null;
-    let previousDate: Date | null = null;
-    let previousBleeding = false;
+    let cycleState = createInitialCycleComputationState();
     return sorted.map((entry) => {
       const bleeding = entry.bleeding ?? { isBleeding: false };
       const currentDate = new Date(entry.date);
-      const diffDays = previousDate
-        ? Math.round((currentDate.getTime() - previousDate.getTime()) / 86_400_000)
-        : 0;
-      if (cycleDay !== null && diffDays > 0) {
-        cycleDay += diffDays;
-      }
-      const isBleeding = Boolean(bleeding.isBleeding);
-      const bleedingStartsToday = isBleeding && (!previousBleeding || diffDays > 1 || cycleDay === null);
-      if (bleedingStartsToday) {
-        cycleDay = 1;
-      }
-      const assignedCycleDay = cycleDay;
+      const computation = computeCycleDayForEntry(cycleState, entry);
+      cycleState = computation.state;
+      const assignedCycleDay = computation.cycleDay;
       const weekday = currentDate.toLocaleDateString("de-DE", { weekday: "short" });
       const symptomScores = Object.values(entry.symptoms ?? {}).flatMap((symptom) => {
         if (!symptom || !symptom.present) return [] as number[];
@@ -3064,8 +3113,6 @@ export default function HomePage() {
       const symptomAverage = symptomScores.length
         ? symptomScores.reduce((sum, value) => sum + value, 0) / symptomScores.length
         : null;
-      previousDate = currentDate;
-      previousBleeding = isBleeding;
       return {
         entry: bleeding === entry.bleeding ? entry : { ...entry, bleeding },
         cycleDay: assignedCycleDay,
@@ -3087,33 +3134,17 @@ export default function HomePage() {
       entries.push(dailyDraft);
     }
     const sorted = entries.slice().sort((a, b) => a.date.localeCompare(b.date));
-    let cycleDay: number | null = null;
-    let previousDate: Date | null = null;
-    let previousBleeding = false;
+    let cycleState = createInitialCycleComputationState();
+    let lastCycleDay: number | null = null;
     for (const entry of sorted) {
-      const bleeding = entry.bleeding ?? { isBleeding: false };
-      const currentDate = new Date(entry.date);
-      if (Number.isNaN(currentDate.getTime())) {
-        continue;
-      }
-      const diffDays = previousDate
-        ? Math.round((currentDate.getTime() - previousDate.getTime()) / 86_400_000)
-        : 0;
-      if (cycleDay !== null && diffDays > 0) {
-        cycleDay += diffDays;
-      }
-      const isBleeding = Boolean(bleeding.isBleeding);
-      const bleedingStartsToday = isBleeding && (!previousBleeding || diffDays > 1 || cycleDay === null);
-      if (bleedingStartsToday) {
-        cycleDay = 1;
-      }
+      const computation = computeCycleDayForEntry(cycleState, entry);
+      cycleState = computation.state;
+      lastCycleDay = computation.cycleDay;
       if (entry.date === dailyDraft.date) {
-        return cycleDay;
+        return computation.cycleDay;
       }
-      previousDate = currentDate;
-      previousBleeding = isBleeding;
     }
-    return cycleDay;
+    return lastCycleDay;
   }, [derivedDailyEntries, dailyDraft, isDailyDirty]);
 
   const cycleOverview = useMemo((): CycleOverviewData | null => {
@@ -5101,7 +5132,7 @@ export default function HomePage() {
           title: TERMS.meds.label,
           description: "Eingenommene Medikamente & Hilfen",
           icon: MedicationIcon,
-          quickActions: [{ label: Heute keine Medikamente", onClick: handleQuickNoMedication }],
+          quickActions: [{ label: "Heute keine Medikamente", onClick: handleQuickNoMedication }],
         },
         {
           id: "sleep" as const,
