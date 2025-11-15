@@ -5129,7 +5129,7 @@ export default function HomePage() {
           title: TERMS.meds.label,
           description: "Eingenommene Medikamente & Hilfen",
           icon: MedicationIcon,
-          quickActions: [{ label: Heute keine Medikamente", onClick: handleQuickNoMedication }],
+          quickActions: [{ label: "Heute keine Medikamente", onClick: handleQuickNoMedication }],
         },
         {
           id: "sleep" as const,
