@@ -215,6 +215,21 @@ const computeCycleDayForEntry = (
   };
 };
 
+const computeCycleDayForDate = (entries: DailyEntry[], targetDate: string): number | null => {
+  const sorted = entries.slice().sort((a, b) => a.date.localeCompare(b.date));
+  let cycleState = createInitialCycleComputationState();
+  let lastCycleDay: number | null = null;
+  for (const entry of sorted) {
+    const computation = computeCycleDayForEntry(cycleState, entry);
+    cycleState = computation.state;
+    lastCycleDay = computation.cycleDay;
+    if (entry.date === targetDate) {
+      return computation.cycleDay;
+    }
+  }
+  return lastCycleDay;
+};
+
 const sanitizeHeadRegionQualities = (
   qualities: DailyEntry["painQuality"]
 ): DailyEntry["painQuality"] => {
@@ -3133,18 +3148,7 @@ export default function HomePage() {
     } else {
       entries.push(dailyDraft);
     }
-    const sorted = entries.slice().sort((a, b) => a.date.localeCompare(b.date));
-    let cycleState = createInitialCycleComputationState();
-    let lastCycleDay: number | null = null;
-    for (const entry of sorted) {
-      const computation = computeCycleDayForEntry(cycleState, entry);
-      cycleState = computation.state;
-      lastCycleDay = computation.cycleDay;
-      if (entry.date === dailyDraft.date) {
-        return computation.cycleDay;
-      }
-    }
-    return lastCycleDay;
+    return computeCycleDayForDate(entries, dailyDraft.date);
   }, [derivedDailyEntries, dailyDraft, isDailyDirty]);
 
   const cycleOverview = useMemo((): CycleOverviewData | null => {
@@ -4647,9 +4651,22 @@ export default function HomePage() {
   }, [annotatedDailyEntries]);
 
   const todayCycleDay = useMemo(() => {
-    const todayEntry = annotatedDailyEntries.find(({ entry }) => entry.date === today);
-    return todayEntry?.cycleDay ?? null;
-  }, [annotatedDailyEntries, today]);
+    const entries = derivedDailyEntries.slice();
+    const todayIndex = entries.findIndex((entry) => entry.date === today);
+    if (todayIndex === -1) {
+      if (dailyDraft.date === today && isDailyDirty) {
+        entries.push(dailyDraft);
+      } else {
+        return null;
+      }
+    } else if (dailyDraft.date === today && isDailyDirty) {
+      entries[todayIndex] = dailyDraft;
+    }
+    if (!entries.some((entry) => entry.date === today)) {
+      return null;
+    }
+    return computeCycleDayForDate(entries, today);
+  }, [dailyDraft, derivedDailyEntries, isDailyDirty, today]);
 
   const cycleStartDates = useMemo(() => {
     return annotatedDailyEntries
