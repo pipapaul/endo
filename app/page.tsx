@@ -3575,6 +3575,62 @@ export default function HomePage() {
     pbacProductSummary.some((item) => item.count > 0) ||
     pbacClotSummary.some((item) => item.count > 0) ||
     pbacFlooding;
+  const showPbacSummaryInToolbar = activeView === "daily" && dailyDraft.bleeding.isBleeding;
+  const renderPbacSummaryPanel = () => (
+    <div className="space-y-4 rounded-xl border border-rose-100 bg-rose-50/90 p-4 text-sm text-rose-700 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">PBAC-Assistent</p>
+          <TermHeadline termKey="pbac" />
+        </div>
+        <div className="text-right">
+          <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Score</p>
+          <p className="text-3xl font-bold text-rose-900">{pbacScore}</p>
+        </div>
+      </div>
+      {hasPbacSummaryData ? (
+        <div className="flex flex-wrap gap-2">
+          {pbacProductSummary
+            .filter((item) => item.count > 0)
+            .map((item) => (
+              <span
+                key={item.id}
+                className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-medium text-rose-900"
+              >
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-rose-100 text-rose-500">
+                  <item.Icon className="h-3.5 w-3.5" aria-hidden />
+                </span>
+                <span>
+                  {item.count}× {item.label}
+                </span>
+                <span className="font-semibold text-rose-600">+{item.count * item.score}</span>
+              </span>
+            ))}
+          {pbacClotSummary
+            .filter((item) => item.count > 0)
+            .map((item) => (
+              <span
+                key={item.id}
+                className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-medium text-rose-900"
+              >
+                <span>
+                  {item.count}× {item.label}
+                </span>
+                <span className="font-semibold text-rose-600">+{item.count * item.score}</span>
+              </span>
+            ))}
+          {pbacFlooding ? (
+            <span className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-semibold text-rose-900">
+              <span>Flooding</span>
+              <span className="text-rose-600">+{PBAC_FLOODING_SCORE}</span>
+            </span>
+          ) : null}
+        </div>
+      ) : (
+        <p className="text-xs text-rose-600">Füge unten Produkte hinzu, um deinen Score zu berechnen.</p>
+      )}
+    </div>
+  );
   const currentPbacForNotice = dailyDraft.bleeding.isBleeding ? pbacScore : dailyDraft.bleeding.pbacScore ?? 0;
   const showDizzinessNotice =
     activeDizziness && dailyDraft.dizzinessOpt?.present && currentPbacForNotice >= HEAVY_BLEED_PBAC;
@@ -5930,6 +5986,7 @@ export default function HomePage() {
             <div className="flex flex-wrap items-center justify-end gap-2">{toolbarBadgeItems}</div>
           </div>
           {infoMessage ? <p className="text-xs text-rose-600 sm:text-sm">{infoMessage}</p> : null}
+          {showPbacSummaryInToolbar ? renderPbacSummaryPanel() : null}
         </div>
       </header>
       <div
@@ -6759,59 +6816,7 @@ export default function HomePage() {
                   </div>
                   {dailyDraft.bleeding.isBleeding && (
                     <div className="space-y-6">
-                      <div className="sticky top-2 z-10 space-y-4 rounded-xl border border-rose-100 bg-rose-50/90 p-4 text-sm text-rose-700 shadow-sm backdrop-blur-sm">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="space-y-1">
-                            <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">PBAC-Assistent</p>
-                            <TermHeadline termKey="pbac" />
-                          </div>
-                          <div className="text-right">
-                            <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Score</p>
-                            <p className="text-3xl font-bold text-rose-900">{pbacScore}</p>
-                          </div>
-                        </div>
-                        {hasPbacSummaryData ? (
-                          <div className="flex flex-wrap gap-2">
-                            {pbacProductSummary
-                              .filter((item) => item.count > 0)
-                              .map((item) => (
-                                <span
-                                  key={item.id}
-                                  className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-medium text-rose-900"
-                                >
-                                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-rose-100 text-rose-500">
-                                    <item.Icon className="h-3.5 w-3.5" aria-hidden />
-                                  </span>
-                                  <span>
-                                    {item.count}× {item.label}
-                                  </span>
-                                  <span className="font-semibold text-rose-600">+{item.count * item.score}</span>
-                                </span>
-                              ))}
-                            {pbacClotSummary
-                              .filter((item) => item.count > 0)
-                              .map((item) => (
-                                <span
-                                  key={item.id}
-                                  className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-medium text-rose-900"
-                                >
-                                  <span>
-                                    {item.count}× {item.label}
-                                  </span>
-                                  <span className="font-semibold text-rose-600">+{item.count * item.score}</span>
-                                </span>
-                              ))}
-                            {pbacFlooding ? (
-                              <span className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-semibold text-rose-900">
-                                <span>Flooding</span>
-                                <span className="text-rose-600">+{PBAC_FLOODING_SCORE}</span>
-                              </span>
-                            ) : null}
-                          </div>
-                        ) : (
-                          <p className="text-xs text-rose-600">Füge unten Produkte hinzu, um deinen Score zu berechnen.</p>
-                        )}
-                      </div>
+                      {!showPbacSummaryInToolbar ? renderPbacSummaryPanel() : null}
                       <div className="space-y-4">
                         <div className="space-y-2">
                           <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Auswahl</p>
