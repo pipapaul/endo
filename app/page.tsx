@@ -3549,10 +3549,30 @@ export default function HomePage() {
       })),
     [pbacCounts]
   );
-  const hasPbacSummaryData =
-    pbacProductSummary.some((item) => item.count > 0) ||
-    pbacClotSummary.some((item) => item.count > 0) ||
-    pbacFlooding;
+  const pbacProductOverview = useMemo(
+    () =>
+      pbacProductSummary
+        .filter((item) => item.count > 0)
+        .sort((a, b) => {
+          const diff = b.count * b.score - a.count * a.score;
+          if (diff !== 0) return diff;
+          return a.label.localeCompare(b.label);
+        }),
+    [pbacProductSummary]
+  );
+  const pbacClotOverview = useMemo(
+    () =>
+      pbacClotSummary
+        .filter((item) => item.count > 0)
+        .sort((a, b) => {
+          if (b.count !== a.count) {
+            return b.count - a.count;
+          }
+          return a.label.localeCompare(b.label);
+        }),
+    [pbacClotSummary]
+  );
+  const hasPbacSummaryData = pbacProductOverview.length > 0 || pbacClotOverview.length > 0 || pbacFlooding;
   const currentPbacForNotice = dailyDraft.bleeding.isBleeding ? pbacScore : dailyDraft.bleeding.pbacScore ?? 0;
   const showDizzinessNotice =
     activeDizziness && dailyDraft.dizzinessOpt?.present && currentPbacForNotice >= HEAVY_BLEED_PBAC;
@@ -6737,7 +6757,7 @@ export default function HomePage() {
                   </div>
                   {dailyDraft.bleeding.isBleeding && (
                     <div className="space-y-6">
-                      <div className="sticky top-2 z-10 space-y-4 rounded-xl border border-rose-100 bg-rose-50/90 p-4 text-sm text-rose-700 shadow-sm backdrop-blur-sm">
+                      <div className="sticky top-4 z-10 space-y-5 rounded-2xl border border-rose-100 bg-rose-50/95 p-5 text-sm text-rose-700 shadow-lg shadow-rose-100/70 backdrop-blur-md">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="space-y-1">
                             <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">PBAC-Assistent</p>
@@ -6749,41 +6769,56 @@ export default function HomePage() {
                           </div>
                         </div>
                         {hasPbacSummaryData ? (
-                          <div className="flex flex-wrap gap-2">
-                            {pbacProductSummary
-                              .filter((item) => item.count > 0)
-                              .map((item) => (
-                                <span
-                                  key={item.id}
-                                  className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-medium text-rose-900"
-                                >
-                                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-rose-100 text-rose-500">
-                                    <item.Icon className="h-3.5 w-3.5" aria-hidden />
-                                  </span>
-                                  <span>
-                                    {item.count}× {item.label}
-                                  </span>
-                                  <span className="font-semibold text-rose-600">+{item.count * item.score}</span>
-                                </span>
-                              ))}
-                            {pbacClotSummary
-                              .filter((item) => item.count > 0)
-                              .map((item) => (
-                                <span
-                                  key={item.id}
-                                  className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-medium text-rose-900"
-                                >
-                                  <span>
-                                    {item.count}× {item.label}
-                                  </span>
-                                  <span className="font-semibold text-rose-600">+{item.count * item.score}</span>
-                                </span>
-                              ))}
+                          <div className="space-y-3">
+                            {pbacProductOverview.length ? (
+                              <div className="space-y-1">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Produkte</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {pbacProductOverview.map((item) => (
+                                    <span
+                                      key={item.id}
+                                      className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-medium text-rose-900"
+                                    >
+                                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-rose-100 text-rose-500">
+                                        <item.Icon className="h-3.5 w-3.5" aria-hidden />
+                                      </span>
+                                      <span>
+                                        {item.count}× {item.label}
+                                      </span>
+                                      <span className="font-semibold text-rose-600">+{item.count * item.score}</span>
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
+                            {pbacClotOverview.length ? (
+                              <div className="space-y-1">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">
+                                  {TERMS.clots.label}
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                  {pbacClotOverview.map((item) => (
+                                    <span
+                                      key={item.id}
+                                      className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-medium text-rose-900"
+                                    >
+                                      <span>
+                                        {item.count}× {item.label}
+                                      </span>
+                                      <span className="font-semibold text-rose-600">+{item.count * item.score}</span>
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
                             {pbacFlooding ? (
-                              <span className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-semibold text-rose-900">
-                                <span>Flooding</span>
-                                <span className="text-rose-600">+{PBAC_FLOODING_SCORE}</span>
-                              </span>
+                              <div className="space-y-1">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Flooding</p>
+                                <span className="inline-flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-semibold text-rose-900">
+                                  <span>Zusatz</span>
+                                  <span className="text-rose-600">+{PBAC_FLOODING_SCORE}</span>
+                                </span>
+                              </div>
                             ) : null}
                           </div>
                         ) : (
