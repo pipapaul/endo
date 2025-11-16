@@ -715,8 +715,10 @@ const PBAC_SATURATION_LABELS: Record<PbacSaturation, string> = {
 const PBAC_SATURATION_ORDER: PbacSaturation[] = ["light", "medium", "heavy"];
 
 type BleedingQuickAddNotice = {
+  id: number;
   label: string;
   saturation: PbacSaturation;
+  score: number;
   Icon: ComponentType<SVGProps<SVGSVGElement>>;
 };
 
@@ -3716,8 +3718,10 @@ export default function HomePage() {
     });
     if (didAddProduct) {
       setBleedingQuickAddNotice({
+        id: Date.now(),
         label: selectedItem.label,
         saturation: selectedItem.saturation,
+        score: selectedItem.score,
         Icon: selectedItem.Icon,
       });
       if (bleedingQuickAddNoticeTimeoutRef.current) {
@@ -8530,7 +8534,8 @@ export default function HomePage() {
       {bleedingQuickAddNotice && BleedingQuickAddNoticeIcon ? (
         <div className="pointer-events-none fixed inset-x-0 top-6 z-[55] flex justify-center px-4">
           <div
-            className="flex w-full max-w-sm items-center gap-3 rounded-3xl border border-rose-100 bg-white/95 px-4 py-3 text-sm text-rose-900 shadow-2xl shadow-rose-100/70 ring-1 ring-rose-100"
+            key={bleedingQuickAddNotice.id}
+            className="flex w-full max-w-sm items-center gap-3 rounded-3xl border border-rose-100/80 bg-white/90 px-4 py-3 text-sm text-rose-900 shadow-2xl shadow-rose-100/70 backdrop-blur transition"
             role="status"
             aria-live="polite"
           >
@@ -8543,10 +8548,18 @@ export default function HomePage() {
             >
               <BleedingQuickAddNoticeIcon className="h-6 w-6" aria-hidden />
             </span>
-            <div className="flex flex-col">
-              <span className="text-xs font-semibold uppercase tracking-wide text-rose-400">Periode</span>
-              <span className="font-semibold">Produkt hinzugefügt</span>
-              <span className="text-xs text-rose-500">{bleedingQuickAddNotice.label}</span>
+            <div className="flex flex-1 flex-col gap-0.5">
+              <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+                Hinzugefügt
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-rose-900">{bleedingQuickAddNotice.label}</span>
+                <span className="text-xs font-semibold text-rose-500">
+                  +{bleedingQuickAddNotice.score} PBAC
+                </span>
+              </div>
+              <span className="text-[11px] uppercase tracking-wide text-rose-400">Periode</span>
             </div>
           </div>
         </div>
