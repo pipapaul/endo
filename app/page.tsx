@@ -2714,6 +2714,8 @@ export default function HomePage() {
   const [pendingBleedingQuickAdd, setPendingBleedingQuickAdd] = useState<PbacProductItemId | null>(null);
   const [bleedingQuickAddNotice, setBleedingQuickAddNotice] = useState<BleedingQuickAddNotice | null>(null);
   const bleedingQuickAddNoticeTimeoutRef = useRef<number | null>(null);
+  const dailyShortcutButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [shortcutButtonsHeight, setShortcutButtonsHeight] = useState<number | null>(null);
   const updatePbacCount = useCallback(
     (itemId: (typeof PBAC_ITEMS)[number]["id"], nextValue: number, max = PBAC_MAX_PRODUCT_COUNT) => {
       setPbacCounts((prev) => {
@@ -2737,6 +2739,26 @@ export default function HomePage() {
         window.clearTimeout(bleedingQuickAddNoticeTimeoutRef.current);
       }
     };
+  }, []);
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const element = dailyShortcutButtonRef.current;
+    if (!element) {
+      return;
+    }
+    const updateHeight = () => {
+      setShortcutButtonsHeight(element.getBoundingClientRect().height);
+    };
+    updateHeight();
+    if (typeof ResizeObserver === "undefined") {
+      const interval = window.setInterval(updateHeight, 250);
+      return () => window.clearInterval(interval);
+    }
+    const observer = new ResizeObserver(() => updateHeight());
+    observer.observe(element);
+    return () => observer.disconnect();
   }, []);
   const [dailyCategorySnapshots, setDailyCategorySnapshots] = useState<
     Partial<Record<TrackableDailyCategoryId, string>>
@@ -6241,6 +6263,7 @@ export default function HomePage() {
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="flex gap-3 sm:col-span-3 lg:col-span-2">
                   <Button
+                    ref={dailyShortcutButtonRef}
                     type="button"
                     onClick={() => {
                       manualDailySelectionRef.current = false;
@@ -6259,7 +6282,10 @@ export default function HomePage() {
                       </span>
                     )}
                   </Button>
-                  <div className="flex w-[8.75rem] min-w-[8rem] flex-col gap-3">
+                  <div
+                    className="flex w-[8.75rem] min-w-[8rem] flex-col gap-3 sm:min-h-[180px]"
+                    style={shortcutButtonsHeight ? { height: shortcutButtonsHeight } : undefined}
+                  >
                     <Button
                       type="button"
                       variant="outline"
@@ -8532,12 +8558,14 @@ export default function HomePage() {
         </main>
       </SectionCompletionContext.Provider>
       {bleedingQuickAddNotice && BleedingQuickAddNoticeIcon ? (
-        <div className="pointer-events-none fixed inset-x-0 top-6 z-[55] flex justify-center px-4">
+        <div
+          className="pointer-events-none fixed inset-x-0 top-4 z-[55] flex justify-center px-4 sm:inset-auto sm:right-6 sm:top-6 sm:justify-end sm:px-0"
+          aria-live="polite"
+        >
           <div
             key={bleedingQuickAddNotice.id}
-            className="flex w-full max-w-sm items-center gap-3 rounded-3xl border border-rose-100/80 bg-white/90 px-4 py-3 text-sm text-rose-900 shadow-2xl shadow-rose-100/70 backdrop-blur transition"
+            className="flex w-full max-w-sm items-center gap-3 rounded-2xl border border-rose-100/80 bg-white/90 px-4 py-3 text-sm text-rose-900 shadow-[0_12px_45px_rgba(190,24,93,0.25)] backdrop-blur-lg transition sm:w-80"
             role="status"
-            aria-live="polite"
           >
             <span
               className={cn(
