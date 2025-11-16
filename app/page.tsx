@@ -3676,6 +3676,34 @@ export default function HomePage() {
     activeDizziness && dailyDraft.dizzinessOpt?.present && currentPbacForNotice >= HEAVY_BLEED_PBAC;
   const phqSeverity = monthlyDraft.mental?.phq9Severity ?? mapPhqSeverity(monthlyDraft.mental?.phq9);
   const gadSeverity = monthlyDraft.mental?.gad7Severity ?? mapGadSeverity(monthlyDraft.mental?.gad7);
+  const showBleedingQuickAddNotification = useCallback((item: (typeof PBAC_PRODUCT_ITEMS)[number]) => {
+    if (typeof window === "undefined" || typeof Notification === "undefined") {
+      return;
+    }
+    const createNotification = () => {
+      try {
+        new Notification("Produkt hinzugefügt", {
+          body: `${item.label} (+${item.score} PBAC)`,
+          icon: "/icon-192.png",
+          badge: "/icon-192.png",
+        });
+      } catch {
+        // Ignore notification errors (e.g., blocked by the browser)
+      }
+    };
+    if (Notification.permission === "granted") {
+      createNotification();
+      return;
+    }
+    if (Notification.permission === "denied") {
+      return;
+    }
+    Notification.requestPermission().then((permission) => {
+      if (permission === "granted") {
+        createNotification();
+      }
+    });
+  }, []);
 
   useEffect(() => {
     if (!pendingBleedingQuickAdd) {
@@ -3724,6 +3752,7 @@ export default function HomePage() {
         score: selectedItem.score,
         Icon: selectedItem.Icon,
       });
+      showBleedingQuickAddNotification(selectedItem);
       if (bleedingQuickAddNoticeTimeoutRef.current) {
         window.clearTimeout(bleedingQuickAddNoticeTimeoutRef.current);
       }
@@ -3736,6 +3765,7 @@ export default function HomePage() {
     dailyDraft.date,
     bleedingQuickAddNoticeTimeoutRef,
     pendingBleedingQuickAdd,
+    showBleedingQuickAddNotification,
     selectDailyDate,
     setDailyDraft,
     setPbacCounts,
@@ -6239,7 +6269,7 @@ export default function HomePage() {
               </header>
               {cycleOverview ? <CycleOverviewMiniChart data={cycleOverview} /> : null}
               <div className="grid gap-3 sm:grid-cols-3">
-                <div className="flex gap-3 sm:col-span-3 lg:col-span-2">
+                <div className="flex gap-3 sm:col-span-3 lg:col-span-2 items-stretch">
                   <Button
                     type="button"
                     onClick={() => {
@@ -6259,13 +6289,13 @@ export default function HomePage() {
                       </span>
                     )}
                   </Button>
-                  <div className="flex w-[8.75rem] min-w-[8rem] flex-col gap-3">
+                  <div className="grid h-full min-h-[180px] w-[8.75rem] min-w-[8rem] grid-rows-2 gap-3">
                     <Button
                       type="button"
                       variant="outline"
                       onClick={handlePainShortcut}
                       aria-label="Schmerzen öffnen"
-                      className="flex w-full flex-1 flex-col items-center justify-center gap-3 rounded-2xl border-rose-200 bg-white/80 px-3 py-4 text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
+                      className="flex h-full w-full flex-col items-center justify-center gap-3 rounded-2xl border-rose-200 bg-white/80 px-3 py-4 text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
                     >
                       <span className="sr-only">Schmerzen öffnen</span>
                       <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-500">
@@ -6277,7 +6307,7 @@ export default function HomePage() {
                       variant="outline"
                       onClick={() => setBleedingQuickAddOpen(true)}
                       aria-label={periodShortcutAriaLabel}
-                      className="flex w-full flex-1 flex-col items-center justify-center gap-3 rounded-2xl border-rose-200 bg-white/80 px-3 py-4 text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
+                      className="flex h-full w-full flex-col items-center justify-center gap-3 rounded-2xl border-rose-200 bg-white/80 px-3 py-4 text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
                     >
                       <span className="sr-only">{periodShortcutAriaLabel}</span>
                       <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-500">
