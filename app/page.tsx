@@ -40,10 +40,13 @@ import {
   Download,
   HardDrive,
   Home,
+  Minus,
+  Plus,
   ShieldCheck,
   Smartphone,
   TrendingUp,
   Upload,
+  X,
 } from "lucide-react";
 
 import { DailyEntry, FeatureFlags, MonthlyEntry } from "@/lib/types";
@@ -683,6 +686,51 @@ const PBAC_CLOT_ITEMS = [
 ] as const;
 
 const PBAC_ITEMS = [...PBAC_PRODUCT_ITEMS, ...PBAC_CLOT_ITEMS] as const;
+const PBAC_MAX_PRODUCT_COUNT = 12;
+const PBAC_MAX_CLOT_COUNT = 6;
+
+type PbacProduct = (typeof PBAC_PRODUCT_ITEMS)[number]["product"];
+type PbacProductItemId = (typeof PBAC_PRODUCT_ITEMS)[number]["id"];
+const PBAC_PRODUCT_GROUPS: Record<PbacProduct, (typeof PBAC_PRODUCT_ITEMS)[number][]> = {
+  pad: PBAC_PRODUCT_ITEMS.filter((item) => item.product === "pad"),
+  tampon: PBAC_PRODUCT_ITEMS.filter((item) => item.product === "tampon"),
+} as const;
+
+const PBAC_SATURATION_DOT_CLASSES: Record<PbacSaturation, string> = {
+  light: "bg-rose-200",
+  medium: "bg-rose-500",
+  heavy: "bg-rose-700",
+};
+
+const PBAC_SATURATION_ICON_CLASSES: Record<PbacSaturation, string> = {
+  light: "bg-rose-100 text-rose-500",
+  medium: "bg-rose-200 text-rose-600",
+  heavy: "bg-rose-500 text-rose-50",
+};
+
+const PBAC_SATURATION_LABELS: Record<PbacSaturation, string> = {
+  light: "leicht",
+  medium: "mittel",
+  heavy: "stark",
+};
+const PBAC_SATURATION_ORDER: PbacSaturation[] = ["light", "medium", "heavy"];
+
+type BleedingQuickAddNotice = {
+  id: number;
+  label: string;
+  saturation: PbacSaturation;
+  score: number;
+  Icon: ComponentType<SVGProps<SVGSVGElement>>;
+};
+
+const PBAC_ENTRY_CATEGORY_OPTIONS = [
+  { id: "pad", label: "Binde", description: "Anzahl & Stärke" },
+  { id: "tampon", label: "Tampon", description: "Anzahl & Stärke" },
+  { id: "clot", label: "Koagel", description: "Größe & Häufigkeit" },
+  { id: "flooding", label: "Flooding", description: "+5 PBAC bei Aktivierung" },
+] as const;
+
+type PbacEntryCategory = (typeof PBAC_ENTRY_CATEGORY_OPTIONS)[number]["id"];
 
 type PbacCounts = Record<(typeof PBAC_ITEMS)[number]["id"], number>;
 
@@ -2662,6 +2710,57 @@ export default function HomePage() {
     usePersistentState<DailyEntry>("endo.draft.daily.v1", defaultDailyDraft);
   const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
   const [pbacCounts, setPbacCounts] = useState<PbacCounts>({ ...PBAC_DEFAULT_COUNTS });
+  const [activePbacCategory, setActivePbacCategory] = useState<PbacEntryCategory>("pad");
+  const [bleedingQuickAddOpen, setBleedingQuickAddOpen] = useState(false);
+  const [pendingBleedingQuickAdd, setPendingBleedingQuickAdd] = useState<PbacProductItemId | null>(null);
+  const [bleedingQuickAddNotice, setBleedingQuickAddNotice] = useState<BleedingQuickAddNotice | null>(null);
+  const bleedingQuickAddNoticeTimeoutRef = useRef<number | null>(null);
+  const dailyShortcutButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [shortcutButtonsHeight, setShortcutButtonsHeight] = useState<number | null>(null);
+  const updatePbacCount = useCallback(
+    (itemId: (typeof PBAC_ITEMS)[number]["id"], nextValue: number, max = PBAC_MAX_PRODUCT_COUNT) => {
+      setPbacCounts((prev) => {
+        const clampedValue = Math.min(max, Math.max(0, nextValue));
+        if (prev[itemId] === clampedValue) {
+          return prev;
+        }
+        return { ...prev, [itemId]: clampedValue };
+      });
+    },
+    []
+  );
+  useEffect(() => {
+    if (!dailyDraft.bleeding.isBleeding) {
+      setActivePbacCategory("pad");
+    }
+  }, [dailyDraft.bleeding.isBleeding]);
+  useEffect(() => {
+    return () => {
+      if (bleedingQuickAddNoticeTimeoutRef.current) {
+        window.clearTimeout(bleedingQuickAddNoticeTimeoutRef.current);
+      }
+    };
+  }, []);
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const element = dailyShortcutButtonRef.current;
+    if (!element) {
+      return;
+    }
+    const updateHeight = () => {
+      setShortcutButtonsHeight(element.getBoundingClientRect().height);
+    };
+    updateHeight();
+    if (typeof ResizeObserver === "undefined") {
+      const interval = window.setInterval(updateHeight, 250);
+      return () => window.clearInterval(interval);
+    }
+    const observer = new ResizeObserver(() => updateHeight());
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const [dailyCategorySnapshots, setDailyCategorySnapshots] = useState<
     Partial<Record<TrackableDailyCategoryId, string>>
   >({});
@@ -3516,13 +3615,158 @@ export default function HomePage() {
     }
   }, [dailyDraft.ovulationPain]);
 
+  const pbacFloodingToggleId = useId();
   const pbacFlooding = dailyDraft.bleeding.flooding ?? false;
   const pbacScore = useMemo(() => computePbacScore(pbacCounts, pbacFlooding), [pbacCounts, pbacFlooding]);
+  const pbacProductSummary = useMemo(
+    () =>
+      PBAC_PRODUCT_ITEMS.map((item) => ({
+        ...item,
+        count: pbacCounts[item.id] ?? 0,
+      })),
+    [pbacCounts]
+  );
+  const pbacClotSummary = useMemo(
+    () =>
+      PBAC_CLOT_ITEMS.map((item) => ({
+        ...item,
+        count: pbacCounts[item.id] ?? 0,
+      })),
+    [pbacCounts]
+  );
+  const hasPbacSummaryData =
+    pbacProductSummary.some((item) => item.count > 0) ||
+    pbacClotSummary.some((item) => item.count > 0) ||
+    pbacFlooding;
+  const showPbacSummaryInToolbar = activeView === "daily" && dailyDraft.bleeding.isBleeding;
+  const renderPbacSummaryPanel = () => (
+    <div className="space-y-4 rounded-xl border border-rose-100 bg-rose-50/90 p-4 text-sm text-rose-700 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">PBAC-Assistent</p>
+          <TermHeadline termKey="pbac" />
+        </div>
+        <div className="text-right">
+          <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Score</p>
+          <p className="text-3xl font-bold text-rose-900">{pbacScore}</p>
+        </div>
+      </div>
+      {hasPbacSummaryData ? (
+        <div className="flex flex-wrap gap-2">
+          {pbacProductSummary
+            .filter((item) => item.count > 0)
+            .map((item) => (
+              <span
+                key={item.id}
+                className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-medium text-rose-900"
+              >
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-rose-100 text-rose-500">
+                  <item.Icon className="h-3.5 w-3.5" aria-hidden />
+                </span>
+                <span>
+                  {item.count}× {item.label}
+                </span>
+                <span className="font-semibold text-rose-600">+{item.count * item.score}</span>
+              </span>
+            ))}
+          {pbacClotSummary
+            .filter((item) => item.count > 0)
+            .map((item) => (
+              <span
+                key={item.id}
+                className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-medium text-rose-900"
+              >
+                <span>
+                  {item.count}× {item.label}
+                </span>
+                <span className="font-semibold text-rose-600">+{item.count * item.score}</span>
+              </span>
+            ))}
+          {pbacFlooding ? (
+            <span className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-semibold text-rose-900">
+              <span>Flooding</span>
+              <span className="text-rose-600">+{PBAC_FLOODING_SCORE}</span>
+            </span>
+          ) : null}
+        </div>
+      ) : (
+        <p className="text-xs text-rose-600">Füge unten Produkte hinzu, um deinen Score zu berechnen.</p>
+      )}
+    </div>
+  );
   const currentPbacForNotice = dailyDraft.bleeding.isBleeding ? pbacScore : dailyDraft.bleeding.pbacScore ?? 0;
   const showDizzinessNotice =
     activeDizziness && dailyDraft.dizzinessOpt?.present && currentPbacForNotice >= HEAVY_BLEED_PBAC;
   const phqSeverity = monthlyDraft.mental?.phq9Severity ?? mapPhqSeverity(monthlyDraft.mental?.phq9);
   const gadSeverity = monthlyDraft.mental?.gad7Severity ?? mapGadSeverity(monthlyDraft.mental?.gad7);
+
+  useEffect(() => {
+    if (!pendingBleedingQuickAdd) {
+      return;
+    }
+    if (dailyDraft.date !== today) {
+      selectDailyDate(today);
+      return;
+    }
+    const selectedItem = PBAC_PRODUCT_ITEMS.find((item) => item.id === pendingBleedingQuickAdd);
+    if (!selectedItem) {
+      setPendingBleedingQuickAdd(null);
+      return;
+    }
+    setBleedingQuickAddOpen(false);
+    setDailyDraft((prev) => {
+      if (prev.date !== today) {
+        return prev;
+      }
+      const previousBleeding = prev.bleeding ?? { isBleeding: false };
+      return {
+        ...prev,
+        bleeding: {
+          isBleeding: true,
+          clots: previousBleeding.clots ?? false,
+          flooding: previousBleeding.flooding ?? false,
+          pbacScore: previousBleeding.pbacScore,
+        },
+      };
+    });
+    let didAddProduct = false;
+    setPbacCounts((prev) => {
+      const current = prev[pendingBleedingQuickAdd] ?? 0;
+      const nextValue = Math.min(PBAC_MAX_PRODUCT_COUNT, current + 1);
+      if (current === nextValue) {
+        return prev;
+      }
+      didAddProduct = true;
+      return { ...prev, [pendingBleedingQuickAdd]: nextValue };
+    });
+    if (didAddProduct) {
+      setBleedingQuickAddNotice({
+        id: Date.now(),
+        label: selectedItem.label,
+        saturation: selectedItem.saturation,
+        score: selectedItem.score,
+        Icon: selectedItem.Icon,
+      });
+      if (bleedingQuickAddNoticeTimeoutRef.current) {
+        window.clearTimeout(bleedingQuickAddNoticeTimeoutRef.current);
+      }
+      bleedingQuickAddNoticeTimeoutRef.current = window.setTimeout(() => {
+        setBleedingQuickAddNotice(null);
+      }, 2400);
+    }
+    setPendingBleedingQuickAdd(null);
+  }, [
+    dailyDraft.date,
+    bleedingQuickAddNoticeTimeoutRef,
+    pendingBleedingQuickAdd,
+    selectDailyDate,
+    setDailyDraft,
+    setPbacCounts,
+    setBleedingQuickAddOpen,
+    setPendingBleedingQuickAdd,
+    setBleedingQuickAddNotice,
+    today,
+  ]);
 
   useEffect(() => {
     if (!dailySaveNotice) return;
@@ -3545,6 +3789,19 @@ export default function HomePage() {
       },
     }));
   }, [dailyDraft.bleeding.isBleeding, pbacScore, setDailyDraft]);
+
+  useEffect(() => {
+    if (!bleedingQuickAddOpen) {
+      return;
+    }
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setBleedingQuickAddOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [bleedingQuickAddOpen]);
 
   useEffect(() => {
     const existingEntry = derivedDailyEntries.find((entry) => entry.date === dailyDraft.date);
@@ -5162,6 +5419,51 @@ export default function HomePage() {
     setCategoryCompletion("medication", true);
   }, [confirmQuickActionReset, setCategoryCompletion, setDailyDraft]);
 
+  const handlePainShortcut = useCallback(() => {
+    manualDailySelectionRef.current = false;
+    selectDailyDate(today);
+    setDailyActiveCategory("pain");
+    setActiveView("daily");
+  }, [selectDailyDate, setActiveView, setDailyActiveCategory, today]);
+
+  const handleBleedingQuickAddSelect = useCallback((itemId: PbacProductItemId) => {
+    setPendingBleedingQuickAdd(itemId);
+    setBleedingQuickAddOpen(false);
+  }, []);
+  const bleedingShortcutProducts = useMemo(() => {
+    if (dailyDraft.date !== today) {
+      return {
+        dots: [] as PbacSaturation[],
+        summary: { light: 0, medium: 0, heavy: 0 } as Record<PbacSaturation, number>,
+        total: 0,
+      };
+    }
+    const summary: Record<PbacSaturation, number> = { light: 0, medium: 0, heavy: 0 };
+    const dots: PbacSaturation[] = [];
+    PBAC_PRODUCT_ITEMS.forEach((item) => {
+      const count = pbacCounts[item.id] ?? 0;
+      if (!count) {
+        return;
+      }
+      summary[item.saturation] += count;
+      for (let index = 0; index < count; index += 1) {
+        dots.push(item.saturation);
+      }
+    });
+    return { dots, summary, total: dots.length };
+  }, [dailyDraft.date, pbacCounts, today]);
+  const periodShortcutAriaLabel = useMemo(() => {
+    if (!bleedingShortcutProducts.total) {
+      return "Periode: Produkt hinzufügen";
+    }
+    const detailParts = PBAC_SATURATION_ORDER.filter(
+      (key) => bleedingShortcutProducts.summary[key] > 0
+    ).map((key) => `${bleedingShortcutProducts.summary[key]}× ${PBAC_SATURATION_LABELS[key]}`);
+    const details = detailParts.length ? ` – ${detailParts.join(", ")}` : "";
+    return `Periode: ${bleedingShortcutProducts.total} Produkte${details}`;
+  }, [bleedingShortcutProducts]);
+  const BleedingQuickAddNoticeIcon = bleedingQuickAddNotice?.Icon;
+
   const dailyCategoryButtons = useMemo(
     () =>
       [
@@ -5871,6 +6173,7 @@ export default function HomePage() {
             <div className="flex flex-wrap items-center justify-end gap-2">{toolbarBadgeItems}</div>
           </div>
           {infoMessage ? <p className="text-xs text-rose-600 sm:text-sm">{infoMessage}</p> : null}
+          {showPbacSummaryInToolbar ? renderPbacSummaryPanel() : null}
         </div>
       </header>
       <div
@@ -5957,25 +6260,72 @@ export default function HomePage() {
               </header>
               {cycleOverview ? <CycleOverviewMiniChart data={cycleOverview} /> : null}
               <div className="grid gap-3 sm:grid-cols-3">
-                <Button
-                  type="button"
-                  onClick={() => {
-                    manualDailySelectionRef.current = false;
-                    selectDailyDate(today);
-                    setDailyActiveCategory("overview");
-                    setActiveView("daily");
-                  }}
-                  className="h-auto w-full flex-col items-start justify-start gap-2 rounded-2xl bg-rose-600 px-6 py-5 text-left text-white shadow-lg transition hover:bg-rose-500 sm:col-span-3 lg:col-span-2"
-                >
-                  <span className="text-lg font-semibold">Täglicher Check-in</span>
-                  <span className="text-sm text-rose-50/80">In unter einer Minute erledigt</span>
-                  {hasDailyEntryForToday && (
-                    <span className="flex items-center gap-1 text-sm font-medium text-rose-50">
-                      <CheckCircle2 className="h-4 w-4 text-emerald-200" />
-                      Heute erledigt
-                    </span>
-                  )}
-                </Button>
+                <div className="flex gap-3 sm:col-span-3 lg:col-span-2">
+                  <Button
+                    ref={dailyShortcutButtonRef}
+                    type="button"
+                    onClick={() => {
+                      manualDailySelectionRef.current = false;
+                      selectDailyDate(today);
+                      setDailyActiveCategory("overview");
+                      setActiveView("daily");
+                    }}
+                    className="flex min-h-[180px] flex-1 flex-col items-start justify-start gap-2 rounded-2xl bg-rose-600 px-6 py-5 text-left text-white shadow-lg transition hover:bg-rose-500"
+                  >
+                    <span className="text-lg font-semibold">Täglicher Check-in</span>
+                    <span className="text-sm text-rose-50/80">In unter einer Minute erledigt</span>
+                    {hasDailyEntryForToday && (
+                      <span className="flex items-center gap-1 text-sm font-medium text-rose-50">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-200" />
+                        Heute erledigt
+                      </span>
+                    )}
+                  </Button>
+                  <div
+                    className="flex w-[8.75rem] min-w-[8rem] flex-col gap-3 sm:min-h-[180px]"
+                    style={shortcutButtonsHeight ? { height: shortcutButtonsHeight } : undefined}
+                  >
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handlePainShortcut}
+                      aria-label="Schmerzen öffnen"
+                      className="flex w-full flex-1 flex-col items-center justify-center gap-3 rounded-2xl border-rose-200 bg-white/80 px-3 py-4 text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
+                    >
+                      <span className="sr-only">Schmerzen öffnen</span>
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-500">
+                        <PainIcon className="h-5 w-5" aria-hidden />
+                      </span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setBleedingQuickAddOpen(true)}
+                      aria-label={periodShortcutAriaLabel}
+                      className="flex w-full flex-1 flex-col items-center justify-center gap-3 rounded-2xl border-rose-200 bg-white/80 px-3 py-4 text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
+                    >
+                      <span className="sr-only">{periodShortcutAriaLabel}</span>
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-500">
+                        <PeriodIcon className="h-5 w-5" aria-hidden />
+                      </span>
+                      <div className="flex min-h-[0.75rem] flex-wrap items-center justify-center gap-1" aria-hidden>
+                        {bleedingShortcutProducts.dots.length === 0 ? (
+                          <span className="h-1 w-6 rounded-full bg-rose-100" />
+                        ) : (
+                          bleedingShortcutProducts.dots.map((saturation, index) => (
+                            <span
+                              key={`${saturation}-${index}`}
+                              className={cn(
+                                "h-2 w-2 rounded-full shadow-sm shadow-rose-200/60",
+                                PBAC_SATURATION_DOT_CLASSES[saturation]
+                              )}
+                            />
+                          ))
+                        )}
+                      </div>
+                    </Button>
+                  </div>
+                </div>
                 <Button
                   type="button"
                   variant="outline"
@@ -6700,172 +7050,209 @@ export default function HomePage() {
                   </div>
                   {dailyDraft.bleeding.isBleeding && (
                     <div className="space-y-6">
-                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                        <span>PBAC-Assistent</span>
-                        <span>Aktueller Score: {pbacScore}</span>
-                      </div>
+                      {!showPbacSummaryInToolbar ? renderPbacSummaryPanel() : null}
                       <div className="space-y-4">
-                        <TermHeadline termKey="pbac" />
-                        <p className="text-sm text-rose-600">
-                          Dokumentiere, wie viele Produkte du heute verwendet hast. Alle Angaben lassen sich jederzeit anpassen.
-                        </p>
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          {PBAC_PRODUCT_ITEMS.map((item) => {
-                            const value = pbacCounts[item.id] ?? 0;
-                            const max = 12;
-                            const sliderId = `${item.id}-slider`;
-                            const sliderHintId = `${item.id}-slider-hint`;
-                            const sliderWarningId = `${item.id}-slider-warning`;
-                            const describedBy = value === max ? `${sliderHintId} ${sliderWarningId}` : sliderHintId;
-
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Auswahl</p>
+                          <p className="text-sm text-rose-700">Wähle, was du dokumentieren möchtest.</p>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {PBAC_ENTRY_CATEGORY_OPTIONS.map((option) => {
+                            const isActive = activePbacCategory === option.id;
+                            const panelId = `pbac-${option.id}-panel`;
+                            const categoryProducts =
+                              option.id === "pad" || option.id === "tampon"
+                                ? PBAC_PRODUCT_GROUPS[option.id]
+                                : null;
                             return (
-                              <Labeled
-                                key={item.id}
-                                label={item.label}
-                                tech={TERMS.pbac.tech}
-                                help={TERMS.pbac.help}
-                                htmlFor={sliderId}
-                                meta={
-                                  <span className="ml-1 flex h-12 w-12 flex-none items-center justify-center rounded-full border border-rose-100 bg-rose-50 text-rose-500">
-                                    <item.Icon className="h-full w-full" />
-                                  </span>
-                                }
+                              <div
+                                key={option.id}
+                                className={cn(
+                                  "rounded-2xl border bg-white/70 p-3 text-sm shadow-sm transition",
+                                  isActive
+                                    ? "border-rose-300 text-rose-900 sm:col-span-2"
+                                    : "border-transparent text-rose-700 hover:border-rose-200"
+                                )}
                               >
-                                <div className="space-y-2">
-                                  <Slider
-                                    id={sliderId}
-                                    min={0}
-                                    max={max}
-                                    step={1}
-                                    value={[value]}
-                                    onValueChange={([nextValue]) => {
-                                      const clampedValue = Math.min(max, Math.max(0, nextValue ?? 0));
-                                      setPbacCounts((prev) => {
-                                        if (prev[item.id] === clampedValue) {
-                                          return prev;
-                                        }
-                                        return { ...prev, [item.id]: clampedValue };
-                                      });
-                                    }}
-                                    aria-describedby={describedBy}
-                                  />
-                                  <div id={sliderHintId} className="flex justify-between text-xs text-rose-600">
-                                    <span>0</span>
-                                    <span>{max}</span>
-                                  </div>
-                                  <SliderValueDisplay
-                                    value={value}
-                                    label="Aktuelle Anzahl"
-                                    className="w-full sm:w-auto"
-                                  />
-                                  {value === max ? (
-                                    <p id={sliderWarningId} className="text-sm font-medium text-rose-800">
-                                      Bei mehr als zwölf bitte ärztlich abklären.
-                                    </p>
+                                <button
+                                  type="button"
+                                  className="flex w-full items-start gap-3 text-left"
+                                  onClick={() => setActivePbacCategory(option.id)}
+                                  aria-pressed={isActive}
+                                  aria-expanded={isActive}
+                                  aria-controls={panelId}
+                                >
+                                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-100 text-xs font-semibold uppercase tracking-wide text-rose-600">
+                                    {option.label.slice(0, 2)}
+                                  </span>
+                                  <span>
+                                    <span className="block font-semibold">{option.label}</span>
+                                    <span className="text-xs text-rose-600">{option.description}</span>
+                                  </span>
+                                </button>
+                                <div
+                                  id={panelId}
+                                  className={cn("mt-3 space-y-3", isActive ? "block" : "hidden")}
+                                >
+                                  {categoryProducts ? (
+                                    <div className="grid gap-3 sm:grid-cols-2">
+                                      {categoryProducts.map((item) => {
+                                        const value = pbacCounts[item.id] ?? 0;
+                                        const max = PBAC_MAX_PRODUCT_COUNT;
+                                        const warningId = `${item.id}-counter-warning`;
+                                        const decrementDisabled = value === 0;
+                                        const incrementDisabled = value === max;
+
+                                        return (
+                                          <Labeled
+                                            key={item.id}
+                                            label={item.label}
+                                            tech={TERMS.pbac.tech}
+                                            help={TERMS.pbac.help}
+                                            meta={
+                                              <span className="rounded-full bg-rose-100/80 px-2 py-0.5 text-xs font-semibold text-rose-700">
+                                                +{item.score} PBAC
+                                              </span>
+                                            }
+                                          >
+                                            <div className="rounded-xl border border-rose-100 bg-white/70 p-3 shadow-sm">
+                                              <div className="flex items-center justify-between gap-3">
+                                                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-100 text-rose-500">
+                                                  <item.Icon className="h-5 w-5" aria-hidden />
+                                                </span>
+                                                <div className="flex items-center gap-1 text-rose-900">
+                                                  <button
+                                                    type="button"
+                                                    className="flex h-9 w-9 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                                    onClick={() => updatePbacCount(item.id, value - 1, max)}
+                                                    aria-label={`Ein ${item.label} entfernen`}
+                                                    disabled={decrementDisabled}
+                                                  >
+                                                    <Minus className="h-4 w-4" aria-hidden />
+                                                  </button>
+                                                  <output className="w-10 text-center text-2xl font-semibold" aria-live="polite">
+                                                    {value}
+                                                  </output>
+                                                  <button
+                                                    type="button"
+                                                    className="flex h-9 w-9 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                                    onClick={() => updatePbacCount(item.id, value + 1, max)}
+                                                    aria-label={`Ein ${item.label} hinzufügen`}
+                                                    disabled={incrementDisabled}
+                                                  >
+                                                    <Plus className="h-4 w-4" aria-hidden />
+                                                  </button>
+                                                </div>
+                                              </div>
+                                              {value === max ? (
+                                                <p id={warningId} className="mt-2 text-xs font-medium text-rose-800">
+                                                  Bei mehr als zwölf bitte ärztlich abklären.
+                                                </p>
+                                              ) : null}
+                                            </div>
+                                          </Labeled>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : null}
+                                  {option.id === "clot" ? (
+                                    <div className="grid gap-3 sm:grid-cols-2">
+                                      {PBAC_CLOT_ITEMS.map((item) => {
+                                        const value = pbacCounts[item.id] ?? 0;
+                                        const decrementDisabled = value === 0;
+                                        const incrementDisabled = value === PBAC_MAX_CLOT_COUNT;
+                                        return (
+                                          <Labeled
+                                            key={item.id}
+                                            label={item.label}
+                                            tech={TERMS.pbac.tech}
+                                            help={TERMS.pbac.help}
+                                            meta={
+                                              <span className="rounded-full bg-rose-100/80 px-2 py-0.5 text-xs font-semibold text-rose-700">
+                                                +{item.score} PBAC
+                                              </span>
+                                            }
+                                          >
+                                            <div className="rounded-xl border border-rose-100 bg-white/70 p-3 shadow-sm">
+                                              <div className="flex items-center justify-between gap-3">
+                                                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-100 text-xs font-semibold uppercase tracking-wide text-rose-600">
+                                                  Ko
+                                                </span>
+                                                <div className="flex items-center gap-1 text-rose-900">
+                                                  <button
+                                                    type="button"
+                                                    className="flex h-9 w-9 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                                    onClick={() => updatePbacCount(item.id, value - 1, PBAC_MAX_CLOT_COUNT)}
+                                                    aria-label={`Ein ${item.label} entfernen`}
+                                                    disabled={decrementDisabled}
+                                                  >
+                                                    <Minus className="h-4 w-4" aria-hidden />
+                                                  </button>
+                                                  <output className="w-10 text-center text-2xl font-semibold" aria-live="polite">
+                                                    {value}
+                                                  </output>
+                                                  <button
+                                                    type="button"
+                                                    className="flex h-9 w-9 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                                    onClick={() => updatePbacCount(item.id, value + 1, PBAC_MAX_CLOT_COUNT)}
+                                                    aria-label={`Ein ${item.label} hinzufügen`}
+                                                    disabled={incrementDisabled}
+                                                  >
+                                                    <Plus className="h-4 w-4" aria-hidden />
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          </Labeled>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : null}
+                                  {option.id === "flooding" ? (
+                                    <div className="rounded-xl border border-rose-100 bg-white/70 p-4 shadow-sm">
+                                      <div className="flex flex-wrap items-center justify-between gap-3 text-sm font-semibold text-rose-900">
+                                        <div className="flex items-center gap-2">
+                                          <span>{TERMS.flooding.label}</span>
+                                          {TERMS.flooding.help ? (
+                                            <InfoTip
+                                              tech={TERMS.flooding.tech ?? TERMS.flooding.label}
+                                              help={TERMS.flooding.help}
+                                            />
+                                          ) : null}
+                                        </div>
+                                        <div className="flex items-center gap-2 text-xs font-medium text-rose-600">
+                                          <Switch
+                                            id={pbacFloodingToggleId}
+                                            checked={pbacFlooding}
+                                            onCheckedChange={(checked) =>
+                                              setDailyDraft((prev) => ({
+                                                ...prev,
+                                                bleeding: { ...prev.bleeding, flooding: checked },
+                                              }))
+                                            }
+                                            aria-describedby={`${pbacFloodingToggleId}-hint`}
+                                          />
+                                          <span id={`${pbacFloodingToggleId}-hint`} className="text-rose-700">
+                                            {pbacFlooding ? `+${PBAC_FLOODING_SCORE} PBAC` : "Kein Flooding"}
+                                          </span>
+                                        </div>
+                                      </div>
+                                      <p className="mt-2 text-xs text-rose-700">
+                                        Aktiviere Flooding nur bei starker Durchbruchblutung.
+                                      </p>
+                                      <div className="mt-2 text-xs text-rose-600">{renderIssuesForPath("bleeding.flooding")}</div>
+                                    </div>
                                   ) : null}
                                 </div>
-                              </Labeled>
+                              </div>
                             );
                           })}
-                        </div>
-                      </div>
-                      <div className="space-y-4">
-                        <TermHeadline termKey="clots" />
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          {PBAC_CLOT_ITEMS.map((item) => {
-                            const value = pbacCounts[item.id] ?? 0;
-                            const sliderId = `${item.id}-slider`;
-                            const sliderHintId = `${item.id}-slider-hint`;
-                            return (
-                              <Labeled
-                                key={item.id}
-                                label={item.label}
-                                tech={TERMS.pbac.tech}
-                                help={TERMS.pbac.help}
-                                htmlFor={sliderId}
-                              >
-                                <div className="space-y-2">
-                                  <Slider
-                                    id={sliderId}
-                                    min={0}
-                                    max={6}
-                                    step={1}
-                                    value={[value]}
-                                    onValueChange={([nextValue]) => {
-                                      const clampedValue = Math.min(6, Math.max(0, nextValue ?? 0));
-                                      setPbacCounts((prev) => {
-                                        if (prev[item.id] === clampedValue) {
-                                          return prev;
-                                        }
-                                        return { ...prev, [item.id]: clampedValue };
-                                      });
-                                    }}
-                                    aria-describedby={sliderHintId}
-                                  />
-                                  <div id={sliderHintId} className="flex justify-between text-xs text-rose-600">
-                                    <span>0</span>
-                                    <span>6</span>
-                                  </div>
-                                  <SliderValueDisplay value={value} label="Aktuelle Anzahl" className="w-full sm:w-auto" />
-                                </div>
-                              </Labeled>
-                            );
-                          })}
-                        </div>
-                      </div>
-                      <div className="space-y-4">
-                        <TermField termKey="flooding">
-                          <div className="flex items-center gap-3">
-                            <Switch
-                              checked={pbacFlooding}
-                              onCheckedChange={(checked) =>
-                                setDailyDraft((prev) => ({
-                                  ...prev,
-                                  bleeding: { ...prev.bleeding, flooding: checked },
-                                }))
-                              }
-                            />
-                            <span className="text-sm text-rose-700">Flooding heute beobachtet?</span>
-                          </div>
-                          {renderIssuesForPath("bleeding.flooding")}
-                        </TermField>
-                        <div className="space-y-2 rounded border border-rose-100 bg-rose-50 p-3 text-xs text-rose-700">
-                          <p className="font-semibold text-rose-800">PBAC-Zusammenfassung</p>
-                          <p className="text-sm">Score heute: {pbacScore}</p>
-                          <div className="space-y-1">
-                            {PBAC_PRODUCT_ITEMS.filter((item) => pbacCounts[item.id] > 0).map((item) => (
-                              <div key={item.id} className="flex flex-wrap items-center justify-between gap-2">
-                                <span>
-                                  {pbacCounts[item.id]} × {item.label}
-                                </span>
-                                <span className="font-semibold text-rose-800">+{pbacCounts[item.id] * item.score}</span>
-                              </div>
-                            ))}
-                            {PBAC_CLOT_ITEMS.filter((item) => pbacCounts[item.id] > 0).map((item) => (
-                              <div key={item.id} className="flex flex-wrap items-center justify-between gap-2">
-                                <span>
-                                  {pbacCounts[item.id]} × {item.label}
-                                </span>
-                                <span className="font-semibold text-rose-800">+{pbacCounts[item.id] * item.score}</span>
-                              </div>
-                            ))}
-                            {pbacFlooding ? (
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <span>Flooding</span>
-                                <span className="font-semibold text-rose-800">+{PBAC_FLOODING_SCORE}</span>
-                              </div>
-                            ) : null}
-                            {PBAC_PRODUCT_ITEMS.every((item) => pbacCounts[item.id] === 0) &&
-                            PBAC_CLOT_ITEMS.every((item) => pbacCounts[item.id] === 0) &&
-                            !pbacFlooding ? (
-                              <p className="text-rose-500">Noch keine PBAC-Daten erfasst.</p>
-                            ) : null}
-                          </div>
                         </div>
                       </div>
                       <div className="space-y-1 text-xs text-rose-600">
                         {renderIssuesForPath("bleeding.pbacScore")}
                         {renderIssuesForPath("bleeding.clots")}
+                        {renderIssuesForPath("bleeding.flooding")}
                       </div>
                     </div>
                   )}
@@ -8169,6 +8556,91 @@ export default function HomePage() {
           )}
         </main>
       </SectionCompletionContext.Provider>
+      {bleedingQuickAddNotice && BleedingQuickAddNoticeIcon ? (
+        <div
+          className="pointer-events-none fixed inset-x-0 top-4 z-[55] flex justify-center px-4 sm:inset-auto sm:right-6 sm:top-6 sm:justify-end sm:px-0"
+          aria-live="polite"
+        >
+          <div
+            key={bleedingQuickAddNotice.id}
+            className="flex w-full max-w-sm items-center gap-3 rounded-2xl border border-rose-100/80 bg-white/90 px-4 py-3 text-sm text-rose-900 shadow-[0_12px_45px_rgba(190,24,93,0.25)] backdrop-blur-lg transition sm:w-80"
+            role="status"
+          >
+            <span
+              className={cn(
+                "flex h-12 w-12 items-center justify-center rounded-2xl",
+                PBAC_SATURATION_ICON_CLASSES[bleedingQuickAddNotice.saturation]
+              )}
+              aria-hidden
+            >
+              <BleedingQuickAddNoticeIcon className="h-6 w-6" aria-hidden />
+            </span>
+            <div className="flex flex-1 flex-col gap-0.5">
+              <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+                Hinzugefügt
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-rose-900">{bleedingQuickAddNotice.label}</span>
+                <span className="text-xs font-semibold text-rose-500">
+                  +{bleedingQuickAddNotice.score} PBAC
+                </span>
+              </div>
+              <span className="text-[11px] uppercase tracking-wide text-rose-400">Periode</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {bleedingQuickAddOpen ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-rose-950/40 px-4 py-6 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Produkt zur Periode hinzufügen"
+          onClick={() => setBleedingQuickAddOpen(false)}
+        >
+          <div
+            className="w-full max-w-md space-y-5 rounded-3xl bg-white p-5 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">
+                  Periode & Blutung
+                </p>
+                <p className="text-lg font-semibold text-rose-900">Produkt hinzufügen</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBleedingQuickAddOpen(false)}
+                className="rounded-full border border-rose-100 p-2 text-rose-500 transition hover:border-rose-200 hover:text-rose-700"
+                aria-label="Schließen"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {PBAC_PRODUCT_ITEMS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleBleedingQuickAddSelect(item.id)}
+                  className="flex items-center gap-3 rounded-2xl border border-rose-100 bg-white/90 p-3 text-left text-rose-900 shadow-sm transition hover:border-rose-300"
+                >
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-500">
+                    <item.Icon className="h-7 w-7" aria-hidden />
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold">{item.label}</p>
+                    <p className="text-xs text-rose-500">+{item.score} PBAC</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-rose-500">Die Auswahl wird direkt für heute gezählt.</p>
+          </div>
+        </div>
+      ) : null}
       {pendingOverviewConfirm ? (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-rose-950/40 px-4 py-6">
           <div
