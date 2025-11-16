@@ -2733,6 +2733,31 @@ export default function HomePage() {
       setActivePbacCategory("pad");
     }
   }, [dailyDraft.bleeding.isBleeding]);
+
+  useEffect(() => {
+    if (dailyDraft.bleeding.isBleeding) {
+      return;
+    }
+    const hasShortcutProduct = PBAC_PRODUCT_ITEMS.some((item) => (pbacCounts[item.id] ?? 0) > 0);
+    if (!hasShortcutProduct) {
+      return;
+    }
+    setDailyDraft((prev) => {
+      if (prev.bleeding?.isBleeding) {
+        return prev;
+      }
+      const previousBleeding = prev.bleeding ?? { isBleeding: false };
+      return {
+        ...prev,
+        bleeding: {
+          ...previousBleeding,
+          isBleeding: true,
+          clots: previousBleeding.clots ?? false,
+          flooding: previousBleeding.flooding ?? false,
+        },
+      };
+    });
+  }, [dailyDraft.bleeding.isBleeding, pbacCounts, setDailyDraft]);
   useEffect(() => {
     return () => {
       if (bleedingQuickAddNoticeTimeoutRef.current) {
