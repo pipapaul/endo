@@ -3538,7 +3538,16 @@ export default function HomePage() {
       PBAC_PRODUCT_ITEMS.map((item) => ({
         ...item,
         count: pbacCounts[item.id] ?? 0,
-      })),
+      })).sort((a, b) => {
+        const scoreDiff = b.count * b.score - a.count * a.score;
+        if (scoreDiff !== 0) {
+          return scoreDiff;
+        }
+        if (b.count !== a.count) {
+          return b.count - a.count;
+        }
+        return a.label.localeCompare(b.label);
+      }),
     [pbacCounts]
   );
   const pbacClotSummary = useMemo(
@@ -3546,13 +3555,21 @@ export default function HomePage() {
       PBAC_CLOT_ITEMS.map((item) => ({
         ...item,
         count: pbacCounts[item.id] ?? 0,
-      })),
+      })).sort((a, b) => {
+        const scoreDiff = b.count * b.score - a.count * a.score;
+        if (scoreDiff !== 0) {
+          return scoreDiff;
+        }
+        if (b.count !== a.count) {
+          return b.count - a.count;
+        }
+        return a.label.localeCompare(b.label);
+      }),
     [pbacCounts]
   );
-  const hasPbacSummaryData =
-    pbacProductSummary.some((item) => item.count > 0) ||
-    pbacClotSummary.some((item) => item.count > 0) ||
-    pbacFlooding;
+  const hasProductSummary = pbacProductSummary.some((item) => item.count > 0);
+  const hasClotSummary = pbacClotSummary.some((item) => item.count > 0);
+  const hasPbacSummaryData = hasProductSummary || hasClotSummary || pbacFlooding;
   const currentPbacForNotice = dailyDraft.bleeding.isBleeding ? pbacScore : dailyDraft.bleeding.pbacScore ?? 0;
   const showDizzinessNotice =
     activeDizziness && dailyDraft.dizzinessOpt?.present && currentPbacForNotice >= HEAVY_BLEED_PBAC;
@@ -6737,8 +6754,8 @@ export default function HomePage() {
                   </div>
                   {dailyDraft.bleeding.isBleeding && (
                     <div className="space-y-6">
-                      <div className="sticky top-2 z-10 space-y-4 rounded-xl border border-rose-100 bg-rose-50/90 p-4 text-sm text-rose-700 shadow-sm backdrop-blur-sm">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="sticky top-2 z-10 space-y-5 rounded-2xl border border-rose-100 bg-rose-50/90 p-5 text-sm text-rose-700 shadow-sm backdrop-blur">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
                           <div className="space-y-1">
                             <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">PBAC-Assistent</p>
                             <TermHeadline termKey="pbac" />
@@ -6749,41 +6766,69 @@ export default function HomePage() {
                           </div>
                         </div>
                         {hasPbacSummaryData ? (
-                          <div className="flex flex-wrap gap-2">
-                            {pbacProductSummary
-                              .filter((item) => item.count > 0)
-                              .map((item) => (
-                                <span
-                                  key={item.id}
-                                  className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-medium text-rose-900"
-                                >
-                                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-rose-100 text-rose-500">
-                                    <item.Icon className="h-3.5 w-3.5" aria-hidden />
-                                  </span>
-                                  <span>
-                                    {item.count}× {item.label}
-                                  </span>
-                                  <span className="font-semibold text-rose-600">+{item.count * item.score}</span>
-                                </span>
-                              ))}
-                            {pbacClotSummary
-                              .filter((item) => item.count > 0)
-                              .map((item) => (
-                                <span
-                                  key={item.id}
-                                  className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-medium text-rose-900"
-                                >
-                                  <span>
-                                    {item.count}× {item.label}
-                                  </span>
-                                  <span className="font-semibold text-rose-600">+{item.count * item.score}</span>
-                                </span>
-                              ))}
+                          <div className="space-y-4">
+                            <div className="grid gap-4 sm:grid-cols-2">
+                              <div className="space-y-2">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">
+                                  Produkte
+                                </p>
+                                {hasProductSummary ? (
+                                  <div className="space-y-2">
+                                    {pbacProductSummary
+                                      .filter((item) => item.count > 0)
+                                      .map((item) => (
+                                        <div
+                                          key={item.id}
+                                          className="flex items-center justify-between gap-3 rounded-xl border border-rose-100 bg-white/90 px-3 py-2 text-xs font-semibold text-rose-900"
+                                        >
+                                          <div className="flex items-center gap-2">
+                                            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-rose-100 text-rose-500">
+                                              <item.Icon className="h-4 w-4" aria-hidden />
+                                            </span>
+                                            <span>
+                                              {item.count}× {item.label}
+                                            </span>
+                                          </div>
+                                          <span className="text-rose-600">+{item.count * item.score}</span>
+                                        </div>
+                                      ))}
+                                  </div>
+                                ) : (
+                                  <p className="rounded-xl border border-dashed border-rose-200 bg-white/70 px-3 py-2 text-xs text-rose-600">
+                                    Noch keine Produkte notiert.
+                                  </p>
+                                )}
+                              </div>
+                              <div className="space-y-2">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Koagel</p>
+                                {hasClotSummary ? (
+                                  <div className="space-y-2">
+                                    {pbacClotSummary
+                                      .filter((item) => item.count > 0)
+                                      .map((item) => (
+                                        <div
+                                          key={item.id}
+                                          className="flex items-center justify-between gap-3 rounded-xl border border-rose-100 bg-white/90 px-3 py-2 text-xs font-semibold text-rose-900"
+                                        >
+                                          <span>
+                                            {item.count}× {item.label}
+                                          </span>
+                                          <span className="text-rose-600">+{item.count * item.score}</span>
+                                        </div>
+                                      ))}
+                                  </div>
+                                ) : (
+                                  <p className="rounded-xl border border-dashed border-rose-200 bg-white/70 px-3 py-2 text-xs text-rose-600">
+                                    Keine Koagel dokumentiert.
+                                  </p>
+                                )}
+                              </div>
+                            </div>
                             {pbacFlooding ? (
-                              <span className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-semibold text-rose-900">
-                                <span>Flooding</span>
-                                <span className="text-rose-600">+{PBAC_FLOODING_SCORE}</span>
-                              </span>
+                              <div className="flex items-center justify-between rounded-xl border border-rose-100 bg-white/90 px-3 py-2 text-xs font-semibold text-rose-900">
+                                <span>Flooding aktiv</span>
+                                <span className="text-rose-600">+{PBAC_FLOODING_SCORE} PBAC</span>
+                              </div>
                             ) : null}
                           </div>
                         ) : (
