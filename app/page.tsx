@@ -46,6 +46,7 @@ import {
   Smartphone,
   TrendingUp,
   Upload,
+  X,
 } from "lucide-react";
 
 import { DailyEntry, FeatureFlags, MonthlyEntry } from "@/lib/types";
@@ -688,6 +689,7 @@ const PBAC_MAX_PRODUCT_COUNT = 12;
 const PBAC_MAX_CLOT_COUNT = 6;
 
 type PbacProduct = (typeof PBAC_PRODUCT_ITEMS)[number]["product"];
+type PbacProductItemId = (typeof PBAC_PRODUCT_ITEMS)[number]["id"];
 const PBAC_PRODUCT_GROUPS: Record<PbacProduct, (typeof PBAC_PRODUCT_ITEMS)[number][]> = {
   pad: PBAC_PRODUCT_ITEMS.filter((item) => item.product === "pad"),
   tampon: PBAC_PRODUCT_ITEMS.filter((item) => item.product === "tampon"),
@@ -2681,6 +2683,8 @@ export default function HomePage() {
   const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
   const [pbacCounts, setPbacCounts] = useState<PbacCounts>({ ...PBAC_DEFAULT_COUNTS });
   const [activePbacCategory, setActivePbacCategory] = useState<PbacEntryCategory>("pad");
+  const [bleedingQuickAddOpen, setBleedingQuickAddOpen] = useState(false);
+  const [pendingBleedingQuickAdd, setPendingBleedingQuickAdd] = useState<PbacProductItemId | null>(null);
   const updatePbacCount = useCallback(
     (itemId: (typeof PBAC_ITEMS)[number]["id"], nextValue: number, max = PBAC_MAX_PRODUCT_COUNT) => {
       setPbacCounts((prev) => {
@@ -3638,6 +3642,50 @@ export default function HomePage() {
   const gadSeverity = monthlyDraft.mental?.gad7Severity ?? mapGadSeverity(monthlyDraft.mental?.gad7);
 
   useEffect(() => {
+    if (!pendingBleedingQuickAdd) {
+      return;
+    }
+    if (dailyDraft.date !== today) {
+      selectDailyDate(today);
+      return;
+    }
+    setBleedingQuickAddOpen(false);
+    setDailyDraft((prev) => {
+      if (prev.date !== today) {
+        return prev;
+      }
+      const previousBleeding = prev.bleeding ?? { isBleeding: false };
+      return {
+        ...prev,
+        bleeding: {
+          isBleeding: true,
+          clots: previousBleeding.clots ?? false,
+          flooding: previousBleeding.flooding ?? false,
+          pbacScore: previousBleeding.pbacScore,
+        },
+      };
+    });
+    setPbacCounts((prev) => {
+      const current = prev[pendingBleedingQuickAdd] ?? 0;
+      const nextValue = Math.min(PBAC_MAX_PRODUCT_COUNT, current + 1);
+      if (current === nextValue) {
+        return prev;
+      }
+      return { ...prev, [pendingBleedingQuickAdd]: nextValue };
+    });
+    setPendingBleedingQuickAdd(null);
+  }, [
+    dailyDraft.date,
+    pendingBleedingQuickAdd,
+    selectDailyDate,
+    setDailyDraft,
+    setPbacCounts,
+    setBleedingQuickAddOpen,
+    setPendingBleedingQuickAdd,
+    today,
+  ]);
+
+  useEffect(() => {
     if (!dailySaveNotice) return;
     const timeout = window.setTimeout(() => setDailySaveNotice(null), 3000);
     return () => window.clearTimeout(timeout);
@@ -3658,6 +3706,19 @@ export default function HomePage() {
       },
     }));
   }, [dailyDraft.bleeding.isBleeding, pbacScore, setDailyDraft]);
+
+  useEffect(() => {
+    if (!bleedingQuickAddOpen) {
+      return;
+    }
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setBleedingQuickAddOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [bleedingQuickAddOpen]);
 
   useEffect(() => {
     const existingEntry = derivedDailyEntries.find((entry) => entry.date === dailyDraft.date);
@@ -5275,6 +5336,18 @@ export default function HomePage() {
     setCategoryCompletion("medication", true);
   }, [confirmQuickActionReset, setCategoryCompletion, setDailyDraft]);
 
+  const handlePainShortcut = useCallback(() => {
+    manualDailySelectionRef.current = false;
+    selectDailyDate(today);
+    setDailyActiveCategory("pain");
+    setActiveView("daily");
+  }, [selectDailyDate, setActiveView, setDailyActiveCategory, today]);
+
+  const handleBleedingQuickAddSelect = useCallback((itemId: PbacProductItemId) => {
+    setPendingBleedingQuickAdd(itemId);
+    setBleedingQuickAddOpen(false);
+  }, []);
+
   const dailyCategoryButtons = useMemo(
     () =>
       [
@@ -6073,25 +6146,57 @@ export default function HomePage() {
               </header>
               {cycleOverview ? <CycleOverviewMiniChart data={cycleOverview} /> : null}
               <div className="grid gap-3 sm:grid-cols-3">
-                <Button
-                  type="button"
-                  onClick={() => {
-                    manualDailySelectionRef.current = false;
-                    selectDailyDate(today);
-                    setDailyActiveCategory("overview");
-                    setActiveView("daily");
-                  }}
-                  className="h-auto w-full flex-col items-start justify-start gap-2 rounded-2xl bg-rose-600 px-6 py-5 text-left text-white shadow-lg transition hover:bg-rose-500 sm:col-span-3 lg:col-span-2"
-                >
-                  <span className="text-lg font-semibold">Täglicher Check-in</span>
-                  <span className="text-sm text-rose-50/80">In unter einer Minute erledigt</span>
-                  {hasDailyEntryForToday && (
-                    <span className="flex items-center gap-1 text-sm font-medium text-rose-50">
-                      <CheckCircle2 className="h-4 w-4 text-emerald-200" />
-                      Heute erledigt
-                    </span>
-                  )}
-                </Button>
+                <div className="flex gap-3 sm:col-span-3 lg:col-span-2">
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      manualDailySelectionRef.current = false;
+                      selectDailyDate(today);
+                      setDailyActiveCategory("overview");
+                      setActiveView("daily");
+                    }}
+                    className="flex min-h-[180px] flex-1 flex-col items-start justify-start gap-2 rounded-2xl bg-rose-600 px-6 py-5 text-left text-white shadow-lg transition hover:bg-rose-500"
+                  >
+                    <span className="text-lg font-semibold">Täglicher Check-in</span>
+                    <span className="text-sm text-rose-50/80">In unter einer Minute erledigt</span>
+                    {hasDailyEntryForToday && (
+                      <span className="flex items-center gap-1 text-sm font-medium text-rose-50">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-200" />
+                        Heute erledigt
+                      </span>
+                    )}
+                  </Button>
+                  <div className="flex w-[8.75rem] min-w-[8rem] flex-col gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handlePainShortcut}
+                      className="flex w-full flex-1 flex-col items-start justify-center gap-1 rounded-2xl border-rose-200 bg-white/80 px-4 py-3 text-left text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
+                    >
+                      <span className="flex items-center gap-2 text-sm font-semibold">
+                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-rose-100 text-rose-500">
+                          <PainIcon className="h-4 w-4" aria-hidden />
+                        </span>
+                        Schmerzen
+                      </span>
+                      <span className="text-xs text-rose-500">Direkt öffnen</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setBleedingQuickAddOpen(true)}
+                      className="flex w-full flex-1 flex-col items-start justify-center gap-1 rounded-2xl border-rose-200 bg-white/80 px-4 py-3 text-left text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
+                    >
+                      <span className="flex items-center gap-2 text-sm font-semibold">
+                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-rose-100 text-rose-500">
+                          <PeriodIcon className="h-4 w-4" aria-hidden />
+                        </span>
+                        Periode
+                      </span>
+                      <span className="text-xs text-rose-500">Produkt +1</span>
+                    </Button>
+                  </div>
+                </div>
                 <Button
                   type="button"
                   variant="outline"
@@ -8322,6 +8427,56 @@ export default function HomePage() {
           )}
         </main>
       </SectionCompletionContext.Provider>
+      {bleedingQuickAddOpen ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-rose-950/40 px-4 py-6 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Produkt zur Periode hinzufügen"
+          onClick={() => setBleedingQuickAddOpen(false)}
+        >
+          <div
+            className="w-full max-w-md space-y-5 rounded-3xl bg-white p-5 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">
+                  Periode & Blutung
+                </p>
+                <p className="text-lg font-semibold text-rose-900">Produkt hinzufügen</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBleedingQuickAddOpen(false)}
+                className="rounded-full border border-rose-100 p-2 text-rose-500 transition hover:border-rose-200 hover:text-rose-700"
+                aria-label="Schließen"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {PBAC_PRODUCT_ITEMS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleBleedingQuickAddSelect(item.id)}
+                  className="flex items-center gap-3 rounded-2xl border border-rose-100 bg-white/90 p-3 text-left text-rose-900 shadow-sm transition hover:border-rose-300"
+                >
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-500">
+                    <item.Icon className="h-7 w-7" aria-hidden />
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold">{item.label}</p>
+                    <p className="text-xs text-rose-500">+{item.score} PBAC</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-rose-500">Die Auswahl wird direkt für heute gezählt.</p>
+          </div>
+        </div>
+      ) : null}
       {pendingOverviewConfirm ? (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-rose-950/40 px-4 py-6">
           <div
