@@ -40,6 +40,8 @@ import {
   Download,
   HardDrive,
   Home,
+  Minus,
+  Plus,
   ShieldCheck,
   Smartphone,
   TrendingUp,
@@ -682,6 +684,7 @@ const PBAC_CLOT_ITEMS = [
 ] as const;
 
 const PBAC_ITEMS = [...PBAC_PRODUCT_ITEMS, ...PBAC_CLOT_ITEMS] as const;
+const PBAC_MAX_PRODUCT_COUNT = 12;
 
 type PbacCounts = Record<(typeof PBAC_ITEMS)[number]["id"], number>;
 
@@ -2661,6 +2664,18 @@ export default function HomePage() {
     usePersistentState<DailyEntry>("endo.draft.daily.v1", defaultDailyDraft);
   const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
   const [pbacCounts, setPbacCounts] = useState<PbacCounts>({ ...PBAC_DEFAULT_COUNTS });
+  const updatePbacCount = useCallback(
+    (itemId: (typeof PBAC_ITEMS)[number]["id"], nextValue: number, max = PBAC_MAX_PRODUCT_COUNT) => {
+      setPbacCounts((prev) => {
+        const clampedValue = Math.min(max, Math.max(0, nextValue));
+        if (prev[itemId] === clampedValue) {
+          return prev;
+        }
+        return { ...prev, [itemId]: clampedValue };
+      });
+    },
+    []
+  );
   const [dailyCategorySnapshots, setDailyCategorySnapshots] = useState<
     Partial<Record<TrackableDailyCategoryId, string>>
   >({});
@@ -3517,6 +3532,26 @@ export default function HomePage() {
 
   const pbacFlooding = dailyDraft.bleeding.flooding ?? false;
   const pbacScore = useMemo(() => computePbacScore(pbacCounts, pbacFlooding), [pbacCounts, pbacFlooding]);
+  const pbacProductSummary = useMemo(
+    () =>
+      PBAC_PRODUCT_ITEMS.map((item) => ({
+        ...item,
+        count: pbacCounts[item.id] ?? 0,
+      })),
+    [pbacCounts]
+  );
+  const pbacClotSummary = useMemo(
+    () =>
+      PBAC_CLOT_ITEMS.map((item) => ({
+        ...item,
+        count: pbacCounts[item.id] ?? 0,
+      })),
+    [pbacCounts]
+  );
+  const hasPbacSummaryData =
+    pbacProductSummary.some((item) => item.count > 0) ||
+    pbacClotSummary.some((item) => item.count > 0) ||
+    pbacFlooding;
   const currentPbacForNotice = dailyDraft.bleeding.isBleeding ? pbacScore : dailyDraft.bleeding.pbacScore ?? 0;
   const showDizzinessNotice =
     activeDizziness && dailyDraft.dizzinessOpt?.present && currentPbacForNotice >= HEAVY_BLEED_PBAC;
@@ -6701,9 +6736,56 @@ export default function HomePage() {
                   </div>
                   {dailyDraft.bleeding.isBleeding && (
                     <div className="space-y-6">
-                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                        <span>PBAC-Assistent</span>
-                        <span>Aktueller Score: {pbacScore}</span>
+                      <div className="sticky top-2 z-10 space-y-4 rounded-xl border border-rose-100 bg-rose-50/90 p-4 text-sm text-rose-700 shadow-sm backdrop-blur-sm">
+                        <div className="flex flex-wrap items-baseline justify-between gap-3">
+                          <div>
+                            <p className="text-base font-semibold text-rose-900">PBAC-Assistent</p>
+                            <p className="text-xs text-rose-600">Schneller Überblick über deine Produkte</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">PBAC</p>
+                            <p className="text-3xl font-bold text-rose-900">{pbacScore}</p>
+                          </div>
+                        </div>
+                        {hasPbacSummaryData ? (
+                          <div className="flex flex-wrap gap-2">
+                            {pbacProductSummary
+                              .filter((item) => item.count > 0)
+                              .map((item) => (
+                                <span
+                                  key={item.id}
+                                  className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/80 px-3 py-1 text-xs font-medium text-rose-900"
+                                >
+                                  <span className="text-sm font-bold text-rose-700">{item.count}×</span>
+                                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-100 text-rose-500">
+                                    <item.Icon className="h-4 w-4" aria-hidden />
+                                  </span>
+                                  <span>{item.label}</span>
+                                </span>
+                              ))}
+                            {pbacClotSummary
+                              .filter((item) => item.count > 0)
+                              .map((item) => (
+                                <span
+                                  key={item.id}
+                                  className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/80 px-3 py-1 text-xs font-medium text-rose-900"
+                                >
+                                  <span className="text-sm font-bold text-rose-700">{item.count}×</span>
+                                  <span>{item.label}</span>
+                                </span>
+                              ))}
+                            {pbacFlooding ? (
+                              <span className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/80 px-3 py-1 text-xs font-semibold text-rose-900">
+                                <span>Flooding</span>
+                                <span className="text-rose-500">+{PBAC_FLOODING_SCORE}</span>
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-rose-700">
+                            Noch keine Produkte erfasst. Nutze die Buttons unten, um deine Blutung festzuhalten.
+                          </p>
+                        )}
                       </div>
                       <div className="space-y-4">
                         <TermHeadline termKey="pbac" />
@@ -6713,11 +6795,10 @@ export default function HomePage() {
                         <div className="grid gap-4 sm:grid-cols-2">
                           {PBAC_PRODUCT_ITEMS.map((item) => {
                             const value = pbacCounts[item.id] ?? 0;
-                            const max = 12;
-                            const sliderId = `${item.id}-slider`;
-                            const sliderHintId = `${item.id}-slider-hint`;
-                            const sliderWarningId = `${item.id}-slider-warning`;
-                            const describedBy = value === max ? `${sliderHintId} ${sliderWarningId}` : sliderHintId;
+                            const max = PBAC_MAX_PRODUCT_COUNT;
+                            const warningId = `${item.id}-counter-warning`;
+                            const decrementDisabled = value === 0;
+                            const incrementDisabled = value === max;
 
                             return (
                               <Labeled
@@ -6725,42 +6806,47 @@ export default function HomePage() {
                                 label={item.label}
                                 tech={TERMS.pbac.tech}
                                 help={TERMS.pbac.help}
-                                htmlFor={sliderId}
                                 meta={
                                   <span className="ml-1 flex h-12 w-12 flex-none items-center justify-center rounded-full border border-rose-100 bg-rose-50 text-rose-500">
                                     <item.Icon className="h-full w-full" />
                                   </span>
                                 }
                               >
-                                <div className="space-y-2">
-                                  <Slider
-                                    id={sliderId}
-                                    min={0}
-                                    max={max}
-                                    step={1}
-                                    value={[value]}
-                                    onValueChange={([nextValue]) => {
-                                      const clampedValue = Math.min(max, Math.max(0, nextValue ?? 0));
-                                      setPbacCounts((prev) => {
-                                        if (prev[item.id] === clampedValue) {
-                                          return prev;
-                                        }
-                                        return { ...prev, [item.id]: clampedValue };
-                                      });
-                                    }}
-                                    aria-describedby={describedBy}
-                                  />
-                                  <div id={sliderHintId} className="flex justify-between text-xs text-rose-600">
-                                    <span>0</span>
-                                    <span>{max}</span>
+                                <div className="space-y-3 rounded-lg border border-rose-100 bg-white/60 p-4">
+                                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="flex items-center justify-center gap-3">
+                                      <button
+                                        type="button"
+                                        className="flex h-12 w-12 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-600 shadow-sm transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                        onClick={() => updatePbacCount(item.id, value - 1, max)}
+                                        aria-label={`Ein ${item.label} entfernen`}
+                                        disabled={decrementDisabled}
+                                      >
+                                        <Minus className="h-5 w-5" aria-hidden />
+                                      </button>
+                                      <div className="min-w-[4.5rem] text-center">
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Anzahl</p>
+                                        <p className="text-3xl font-bold text-rose-900">{value}</p>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        className="flex h-12 w-12 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-600 shadow-sm transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                        onClick={() => updatePbacCount(item.id, value + 1, max)}
+                                        aria-label={`Ein ${item.label} hinzufügen`}
+                                        disabled={incrementDisabled}
+                                      >
+                                        <Plus className="h-5 w-5" aria-hidden />
+                                      </button>
+                                    </div>
+                                    <div className="flex items-center gap-3 text-xs text-rose-600 sm:text-sm">
+                                      <span className="rounded-full bg-rose-100/80 px-2 py-1 text-xs font-semibold text-rose-700">
+                                        +{item.score} PBAC
+                                      </span>
+                                      <span>pro Produkt</span>
+                                    </div>
                                   </div>
-                                  <SliderValueDisplay
-                                    value={value}
-                                    label="Aktuelle Anzahl"
-                                    className="w-full sm:w-auto"
-                                  />
                                   {value === max ? (
-                                    <p id={sliderWarningId} className="text-sm font-medium text-rose-800">
+                                    <p id={warningId} className="text-sm font-medium text-rose-800">
                                       Bei mehr als zwölf bitte ärztlich abklären.
                                     </p>
                                   ) : null}
@@ -6793,13 +6879,7 @@ export default function HomePage() {
                                     step={1}
                                     value={[value]}
                                     onValueChange={([nextValue]) => {
-                                      const clampedValue = Math.min(6, Math.max(0, nextValue ?? 0));
-                                      setPbacCounts((prev) => {
-                                        if (prev[item.id] === clampedValue) {
-                                          return prev;
-                                        }
-                                        return { ...prev, [item.id]: clampedValue };
-                                      });
+                                      updatePbacCount(item.id, nextValue ?? 0, 6);
                                     }}
                                     aria-describedby={sliderHintId}
                                   />
