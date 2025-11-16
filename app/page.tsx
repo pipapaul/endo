@@ -3637,7 +3637,10 @@ export default function HomePage() {
     pbacProductSummary.some((item) => item.count > 0) ||
     pbacClotSummary.some((item) => item.count > 0) ||
     pbacFlooding;
-  const showPbacSummaryInToolbar = activeView === "daily" && dailyDraft.bleeding.isBleeding;
+  const showPbacSummaryInToolbar =
+    activeView === "daily" &&
+    dailyActiveCategory === "bleeding" &&
+    dailyDraft.bleeding.isBleeding;
   const renderPbacSummaryPanel = () => (
     <div className="space-y-4 rounded-xl border border-rose-100 bg-rose-50/90 p-4 text-sm text-rose-700 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -3746,6 +3749,7 @@ export default function HomePage() {
         score: selectedItem.score,
         Icon: selectedItem.Icon,
       });
+      setCategoryCompletion("bleeding", true);
       if (bleedingQuickAddNoticeTimeoutRef.current) {
         window.clearTimeout(bleedingQuickAddNoticeTimeoutRef.current);
       }
@@ -3764,6 +3768,7 @@ export default function HomePage() {
     setBleedingQuickAddOpen,
     setPendingBleedingQuickAdd,
     setBleedingQuickAddNotice,
+    setCategoryCompletion,
     today,
   ]);
 
