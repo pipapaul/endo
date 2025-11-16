@@ -694,6 +694,21 @@ const PBAC_PRODUCT_GROUPS: Record<PbacProduct, (typeof PBAC_PRODUCT_ITEMS)[numbe
   pad: PBAC_PRODUCT_ITEMS.filter((item) => item.product === "pad"),
   tampon: PBAC_PRODUCT_ITEMS.filter((item) => item.product === "tampon"),
 } as const;
+const PBAC_PRODUCT_ITEM_BY_ID: Record<PbacProductItemId, (typeof PBAC_PRODUCT_ITEMS)[number]> =
+  PBAC_PRODUCT_ITEMS.reduce(
+    (acc, item) => {
+      acc[item.id] = item;
+      return acc;
+    },
+    {} as Record<PbacProductItemId, (typeof PBAC_PRODUCT_ITEMS)[number]>
+  );
+const PBAC_SHORTCUT_PRODUCT_ORDER: PbacProduct[] = ["pad", "tampon"];
+const PBAC_SHORTCUT_SATURATION_ORDER: PbacSaturation[] = ["light", "medium", "heavy"];
+const PBAC_SATURATION_COLOR_CLASSES: Record<PbacSaturation, string> = {
+  light: "bg-rose-200",
+  medium: "bg-rose-500",
+  heavy: "bg-rose-800",
+};
 
 const PBAC_ENTRY_CATEGORY_OPTIONS = [
   { id: "pad", label: "Binde", description: "Anzahl & Stärke" },
@@ -2685,6 +2700,7 @@ export default function HomePage() {
   const [activePbacCategory, setActivePbacCategory] = useState<PbacEntryCategory>("pad");
   const [bleedingQuickAddOpen, setBleedingQuickAddOpen] = useState(false);
   const [pendingBleedingQuickAdd, setPendingBleedingQuickAdd] = useState<PbacProductItemId | null>(null);
+  const [bleedingQuickAddNotice, setBleedingQuickAddNotice] = useState<string | null>(null);
   const updatePbacCount = useCallback(
     (itemId: (typeof PBAC_ITEMS)[number]["id"], nextValue: number, max = PBAC_MAX_PRODUCT_COUNT) => {
       setPbacCounts((prev) => {
@@ -3673,6 +3689,8 @@ export default function HomePage() {
       }
       return { ...prev, [pendingBleedingQuickAdd]: nextValue };
     });
+    const addedItem = PBAC_PRODUCT_ITEM_BY_ID[pendingBleedingQuickAdd];
+    setBleedingQuickAddNotice(addedItem ? `${addedItem.label} hinzugefügt` : "Produkt hinzugefügt");
     setPendingBleedingQuickAdd(null);
   }, [
     dailyDraft.date,
@@ -3681,9 +3699,16 @@ export default function HomePage() {
     setDailyDraft,
     setPbacCounts,
     setBleedingQuickAddOpen,
+    setBleedingQuickAddNotice,
     setPendingBleedingQuickAdd,
     today,
   ]);
+
+  useEffect(() => {
+    if (!bleedingQuickAddNotice) return;
+    const timeout = window.setTimeout(() => setBleedingQuickAddNotice(null), 2000);
+    return () => window.clearTimeout(timeout);
+  }, [bleedingQuickAddNotice]);
 
   useEffect(() => {
     if (!dailySaveNotice) return;
@@ -6170,31 +6195,58 @@ export default function HomePage() {
                     <Button
                       type="button"
                       variant="outline"
+                      aria-label="Schmerzen öffnen"
                       onClick={handlePainShortcut}
-                      className="flex w-full flex-1 flex-col items-start justify-center gap-1 rounded-2xl border-rose-200 bg-white/80 px-4 py-3 text-left text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
+                      className="flex w-full flex-1 flex-col items-center justify-center gap-2 rounded-2xl border-rose-200 bg-white/80 px-4 py-3 text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
                     >
-                      <span className="flex items-center gap-2 text-sm font-semibold">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-rose-100 text-rose-500">
-                          <PainIcon className="h-4 w-4" aria-hidden />
-                        </span>
-                        Schmerzen
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-500">
+                        <PainIcon className="h-5 w-5" aria-hidden />
                       </span>
-                      <span className="text-xs text-rose-500">Direkt öffnen</span>
+                      <span className="sr-only">Schmerzen Shortcut</span>
                     </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setBleedingQuickAddOpen(true)}
-                      className="flex w-full flex-1 flex-col items-start justify-center gap-1 rounded-2xl border-rose-200 bg-white/80 px-4 py-3 text-left text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
-                    >
-                      <span className="flex items-center gap-2 text-sm font-semibold">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-rose-100 text-rose-500">
-                          <PeriodIcon className="h-4 w-4" aria-hidden />
+                    <div className="flex flex-1 flex-col gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        aria-label="Periode Produkt hinzufügen"
+                        onClick={() => setBleedingQuickAddOpen(true)}
+                        className="flex w-full flex-1 flex-col items-center justify-center gap-2 rounded-2xl border-rose-200 bg-white/80 px-4 py-3 text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
+                      >
+                        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-500">
+                          <PeriodIcon className="h-5 w-5" aria-hidden />
                         </span>
-                        Periode
-                      </span>
-                      <span className="text-xs text-rose-500">Produkt +1</span>
-                    </Button>
+                        <div className="flex items-center gap-2" aria-hidden="true">
+                          {PBAC_SHORTCUT_PRODUCT_ORDER.map((product) => (
+                            <div key={product} className="flex flex-col items-center gap-1">
+                              {PBAC_SHORTCUT_SATURATION_ORDER.map((saturation) => {
+                                const itemKey = `${product}_${saturation}` as PbacProductItemId;
+                                const value = pbacCounts[itemKey] ?? 0;
+                                return (
+                                  <span
+                                    key={`${product}-${saturation}`}
+                                    className={cn(
+                                      "h-1.5 w-1.5 rounded-full transition",
+                                      PBAC_SATURATION_COLOR_CLASSES[saturation],
+                                      value > 0 ? "opacity-100" : "opacity-30"
+                                    )}
+                                  />
+                                );
+                              })}
+                            </div>
+                          ))}
+                        </div>
+                        <span className="sr-only">Periode Shortcut</span>
+                      </Button>
+                      {bleedingQuickAddNotice ? (
+                        <span
+                          role="status"
+                          aria-live="polite"
+                          className="text-[11px] font-semibold uppercase tracking-wide text-rose-500"
+                        >
+                          {bleedingQuickAddNotice}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
                 <Button
