@@ -3703,76 +3703,6 @@ export default function HomePage() {
   const gadSeverity = monthlyDraft.mental?.gad7Severity ?? mapGadSeverity(monthlyDraft.mental?.gad7);
 
   useEffect(() => {
-    if (!pendingBleedingQuickAdd) {
-      return;
-    }
-    if (dailyDraft.date !== today) {
-      selectDailyDate(today);
-      return;
-    }
-    const selectedItem = PBAC_PRODUCT_ITEMS.find((item) => item.id === pendingBleedingQuickAdd);
-    if (!selectedItem) {
-      setPendingBleedingQuickAdd(null);
-      return;
-    }
-    setBleedingQuickAddOpen(false);
-    setDailyDraft((prev) => {
-      if (prev.date !== today) {
-        return prev;
-      }
-      const previousBleeding = prev.bleeding ?? { isBleeding: false };
-      return {
-        ...prev,
-        bleeding: {
-          isBleeding: true,
-          clots: previousBleeding.clots ?? false,
-          flooding: previousBleeding.flooding ?? false,
-          pbacScore: previousBleeding.pbacScore,
-        },
-      };
-    });
-    let didAddProduct = false;
-    setPbacCounts((prev) => {
-      const current = prev[pendingBleedingQuickAdd] ?? 0;
-      const nextValue = Math.min(PBAC_MAX_PRODUCT_COUNT, current + 1);
-      if (current === nextValue) {
-        return prev;
-      }
-      didAddProduct = true;
-      return { ...prev, [pendingBleedingQuickAdd]: nextValue };
-    });
-    if (didAddProduct) {
-      setBleedingQuickAddNotice({
-        id: Date.now(),
-        label: selectedItem.label,
-        saturation: selectedItem.saturation,
-        score: selectedItem.score,
-        Icon: selectedItem.Icon,
-      });
-      setCategoryCompletion("bleeding", true);
-      if (bleedingQuickAddNoticeTimeoutRef.current) {
-        window.clearTimeout(bleedingQuickAddNoticeTimeoutRef.current);
-      }
-      bleedingQuickAddNoticeTimeoutRef.current = window.setTimeout(() => {
-        setBleedingQuickAddNotice(null);
-      }, 2400);
-    }
-    setPendingBleedingQuickAdd(null);
-  }, [
-    dailyDraft.date,
-    bleedingQuickAddNoticeTimeoutRef,
-    pendingBleedingQuickAdd,
-    selectDailyDate,
-    setDailyDraft,
-    setPbacCounts,
-    setBleedingQuickAddOpen,
-    setPendingBleedingQuickAdd,
-    setBleedingQuickAddNotice,
-    setCategoryCompletion,
-    today,
-  ]);
-
-  useEffect(() => {
     if (!dailySaveNotice) return;
     const timeout = window.setTimeout(() => setDailySaveNotice(null), 3000);
     return () => window.clearTimeout(timeout);
@@ -5292,6 +5222,76 @@ export default function HomePage() {
     },
     [dailyCategoryCompletionTitles, dailyScopeKey, sectionCompletionContextValue]
   );
+
+  useEffect(() => {
+    if (!pendingBleedingQuickAdd) {
+      return;
+    }
+    if (dailyDraft.date !== today) {
+      selectDailyDate(today);
+      return;
+    }
+    const selectedItem = PBAC_PRODUCT_ITEMS.find((item) => item.id === pendingBleedingQuickAdd);
+    if (!selectedItem) {
+      setPendingBleedingQuickAdd(null);
+      return;
+    }
+    setBleedingQuickAddOpen(false);
+    setDailyDraft((prev) => {
+      if (prev.date !== today) {
+        return prev;
+      }
+      const previousBleeding = prev.bleeding ?? { isBleeding: false };
+      return {
+        ...prev,
+        bleeding: {
+          isBleeding: true,
+          clots: previousBleeding.clots ?? false,
+          flooding: previousBleeding.flooding ?? false,
+          pbacScore: previousBleeding.pbacScore,
+        },
+      };
+    });
+    let didAddProduct = false;
+    setPbacCounts((prev) => {
+      const current = prev[pendingBleedingQuickAdd] ?? 0;
+      const nextValue = Math.min(PBAC_MAX_PRODUCT_COUNT, current + 1);
+      if (current === nextValue) {
+        return prev;
+      }
+      didAddProduct = true;
+      return { ...prev, [pendingBleedingQuickAdd]: nextValue };
+    });
+    if (didAddProduct) {
+      setBleedingQuickAddNotice({
+        id: Date.now(),
+        label: selectedItem.label,
+        saturation: selectedItem.saturation,
+        score: selectedItem.score,
+        Icon: selectedItem.Icon,
+      });
+      setCategoryCompletion("bleeding", true);
+      if (bleedingQuickAddNoticeTimeoutRef.current) {
+        window.clearTimeout(bleedingQuickAddNoticeTimeoutRef.current);
+      }
+      bleedingQuickAddNoticeTimeoutRef.current = window.setTimeout(() => {
+        setBleedingQuickAddNotice(null);
+      }, 2400);
+    }
+    setPendingBleedingQuickAdd(null);
+  }, [
+    dailyDraft.date,
+    bleedingQuickAddNoticeTimeoutRef,
+    pendingBleedingQuickAdd,
+    selectDailyDate,
+    setDailyDraft,
+    setPbacCounts,
+    setBleedingQuickAddOpen,
+    setPendingBleedingQuickAdd,
+    setBleedingQuickAddNotice,
+    setCategoryCompletion,
+    today,
+  ]);
 
   const categoryZeroStates = useMemo<
     Partial<Record<TrackableDailyCategoryId, boolean>>
