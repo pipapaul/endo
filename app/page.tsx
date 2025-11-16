@@ -695,6 +695,33 @@ const PBAC_PRODUCT_GROUPS: Record<PbacProduct, (typeof PBAC_PRODUCT_ITEMS)[numbe
   tampon: PBAC_PRODUCT_ITEMS.filter((item) => item.product === "tampon"),
 } as const;
 
+const PBAC_SATURATION_DOT_CLASSES: Record<PbacSaturation, string> = {
+  light: "bg-rose-200",
+  medium: "bg-rose-500",
+  heavy: "bg-rose-700",
+};
+
+const PBAC_SATURATION_ICON_CLASSES: Record<PbacSaturation, string> = {
+  light: "bg-rose-100 text-rose-500",
+  medium: "bg-rose-200 text-rose-600",
+  heavy: "bg-rose-500 text-rose-50",
+};
+
+const PBAC_SATURATION_LABELS: Record<PbacSaturation, string> = {
+  light: "leicht",
+  medium: "mittel",
+  heavy: "stark",
+};
+const PBAC_SATURATION_ORDER: PbacSaturation[] = ["light", "medium", "heavy"];
+
+type BleedingQuickAddNotice = {
+  id: number;
+  label: string;
+  saturation: PbacSaturation;
+  score: number;
+  Icon: ComponentType<SVGProps<SVGSVGElement>>;
+};
+
 const PBAC_ENTRY_CATEGORY_OPTIONS = [
   { id: "pad", label: "Binde", description: "Anzahl & Stärke" },
   { id: "tampon", label: "Tampon", description: "Anzahl & Stärke" },
@@ -2685,6 +2712,8 @@ export default function HomePage() {
   const [activePbacCategory, setActivePbacCategory] = useState<PbacEntryCategory>("pad");
   const [bleedingQuickAddOpen, setBleedingQuickAddOpen] = useState(false);
   const [pendingBleedingQuickAdd, setPendingBleedingQuickAdd] = useState<PbacProductItemId | null>(null);
+  const [bleedingQuickAddNotice, setBleedingQuickAddNotice] = useState<BleedingQuickAddNotice | null>(null);
+  const bleedingQuickAddNoticeTimeoutRef = useRef<number | null>(null);
   const updatePbacCount = useCallback(
     (itemId: (typeof PBAC_ITEMS)[number]["id"], nextValue: number, max = PBAC_MAX_PRODUCT_COUNT) => {
       setPbacCounts((prev) => {
@@ -2702,6 +2731,13 @@ export default function HomePage() {
       setActivePbacCategory("pad");
     }
   }, [dailyDraft.bleeding.isBleeding]);
+  useEffect(() => {
+    return () => {
+      if (bleedingQuickAddNoticeTimeoutRef.current) {
+        window.clearTimeout(bleedingQuickAddNoticeTimeoutRef.current);
+      }
+    };
+  }, []);
   const [dailyCategorySnapshots, setDailyCategorySnapshots] = useState<
     Partial<Record<TrackableDailyCategoryId, string>>
   >({});
@@ -3649,6 +3685,11 @@ export default function HomePage() {
       selectDailyDate(today);
       return;
     }
+    const selectedItem = PBAC_PRODUCT_ITEMS.find((item) => item.id === pendingBleedingQuickAdd);
+    if (!selectedItem) {
+      setPendingBleedingQuickAdd(null);
+      return;
+    }
     setBleedingQuickAddOpen(false);
     setDailyDraft((prev) => {
       if (prev.date !== today) {
@@ -3665,23 +3706,42 @@ export default function HomePage() {
         },
       };
     });
+    let didAddProduct = false;
     setPbacCounts((prev) => {
       const current = prev[pendingBleedingQuickAdd] ?? 0;
       const nextValue = Math.min(PBAC_MAX_PRODUCT_COUNT, current + 1);
       if (current === nextValue) {
         return prev;
       }
+      didAddProduct = true;
       return { ...prev, [pendingBleedingQuickAdd]: nextValue };
     });
+    if (didAddProduct) {
+      setBleedingQuickAddNotice({
+        id: Date.now(),
+        label: selectedItem.label,
+        saturation: selectedItem.saturation,
+        score: selectedItem.score,
+        Icon: selectedItem.Icon,
+      });
+      if (bleedingQuickAddNoticeTimeoutRef.current) {
+        window.clearTimeout(bleedingQuickAddNoticeTimeoutRef.current);
+      }
+      bleedingQuickAddNoticeTimeoutRef.current = window.setTimeout(() => {
+        setBleedingQuickAddNotice(null);
+      }, 2400);
+    }
     setPendingBleedingQuickAdd(null);
   }, [
     dailyDraft.date,
+    bleedingQuickAddNoticeTimeoutRef,
     pendingBleedingQuickAdd,
     selectDailyDate,
     setDailyDraft,
     setPbacCounts,
     setBleedingQuickAddOpen,
     setPendingBleedingQuickAdd,
+    setBleedingQuickAddNotice,
     today,
   ]);
 
@@ -5347,6 +5407,39 @@ export default function HomePage() {
     setPendingBleedingQuickAdd(itemId);
     setBleedingQuickAddOpen(false);
   }, []);
+  const bleedingShortcutProducts = useMemo(() => {
+    if (dailyDraft.date !== today) {
+      return {
+        dots: [] as PbacSaturation[],
+        summary: { light: 0, medium: 0, heavy: 0 } as Record<PbacSaturation, number>,
+        total: 0,
+      };
+    }
+    const summary: Record<PbacSaturation, number> = { light: 0, medium: 0, heavy: 0 };
+    const dots: PbacSaturation[] = [];
+    PBAC_PRODUCT_ITEMS.forEach((item) => {
+      const count = pbacCounts[item.id] ?? 0;
+      if (!count) {
+        return;
+      }
+      summary[item.saturation] += count;
+      for (let index = 0; index < count; index += 1) {
+        dots.push(item.saturation);
+      }
+    });
+    return { dots, summary, total: dots.length };
+  }, [dailyDraft.date, pbacCounts, today]);
+  const periodShortcutAriaLabel = useMemo(() => {
+    if (!bleedingShortcutProducts.total) {
+      return "Periode: Produkt hinzufügen";
+    }
+    const detailParts = PBAC_SATURATION_ORDER.filter(
+      (key) => bleedingShortcutProducts.summary[key] > 0
+    ).map((key) => `${bleedingShortcutProducts.summary[key]}× ${PBAC_SATURATION_LABELS[key]}`);
+    const details = detailParts.length ? ` – ${detailParts.join(", ")}` : "";
+    return `Periode: ${bleedingShortcutProducts.total} Produkte${details}`;
+  }, [bleedingShortcutProducts]);
+  const BleedingQuickAddNoticeIcon = bleedingQuickAddNotice?.Icon;
 
   const dailyCategoryButtons = useMemo(
     () =>
@@ -6171,29 +6264,40 @@ export default function HomePage() {
                       type="button"
                       variant="outline"
                       onClick={handlePainShortcut}
-                      className="flex w-full flex-1 flex-col items-start justify-center gap-1 rounded-2xl border-rose-200 bg-white/80 px-4 py-3 text-left text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
+                      aria-label="Schmerzen öffnen"
+                      className="flex w-full flex-1 flex-col items-center justify-center gap-3 rounded-2xl border-rose-200 bg-white/80 px-3 py-4 text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
                     >
-                      <span className="flex items-center gap-2 text-sm font-semibold">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-rose-100 text-rose-500">
-                          <PainIcon className="h-4 w-4" aria-hidden />
-                        </span>
-                        Schmerzen
+                      <span className="sr-only">Schmerzen öffnen</span>
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-500">
+                        <PainIcon className="h-5 w-5" aria-hidden />
                       </span>
-                      <span className="text-xs text-rose-500">Direkt öffnen</span>
                     </Button>
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() => setBleedingQuickAddOpen(true)}
-                      className="flex w-full flex-1 flex-col items-start justify-center gap-1 rounded-2xl border-rose-200 bg-white/80 px-4 py-3 text-left text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
+                      aria-label={periodShortcutAriaLabel}
+                      className="flex w-full flex-1 flex-col items-center justify-center gap-3 rounded-2xl border-rose-200 bg-white/80 px-3 py-4 text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
                     >
-                      <span className="flex items-center gap-2 text-sm font-semibold">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-rose-100 text-rose-500">
-                          <PeriodIcon className="h-4 w-4" aria-hidden />
-                        </span>
-                        Periode
+                      <span className="sr-only">{periodShortcutAriaLabel}</span>
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-500">
+                        <PeriodIcon className="h-5 w-5" aria-hidden />
                       </span>
-                      <span className="text-xs text-rose-500">Produkt +1</span>
+                      <div className="flex min-h-[0.75rem] flex-wrap items-center justify-center gap-1" aria-hidden>
+                        {bleedingShortcutProducts.dots.length === 0 ? (
+                          <span className="h-1 w-6 rounded-full bg-rose-100" />
+                        ) : (
+                          bleedingShortcutProducts.dots.map((saturation, index) => (
+                            <span
+                              key={`${saturation}-${index}`}
+                              className={cn(
+                                "h-2 w-2 rounded-full shadow-sm shadow-rose-200/60",
+                                PBAC_SATURATION_DOT_CLASSES[saturation]
+                              )}
+                            />
+                          ))
+                        )}
+                      </div>
                     </Button>
                   </div>
                 </div>
@@ -8427,6 +8531,39 @@ export default function HomePage() {
           )}
         </main>
       </SectionCompletionContext.Provider>
+      {bleedingQuickAddNotice && BleedingQuickAddNoticeIcon ? (
+        <div className="pointer-events-none fixed inset-x-0 top-6 z-[55] flex justify-center px-4">
+          <div
+            key={bleedingQuickAddNotice.id}
+            className="flex w-full max-w-sm items-center gap-3 rounded-3xl border border-rose-100/80 bg-white/90 px-4 py-3 text-sm text-rose-900 shadow-2xl shadow-rose-100/70 backdrop-blur transition"
+            role="status"
+            aria-live="polite"
+          >
+            <span
+              className={cn(
+                "flex h-12 w-12 items-center justify-center rounded-2xl",
+                PBAC_SATURATION_ICON_CLASSES[bleedingQuickAddNotice.saturation]
+              )}
+              aria-hidden
+            >
+              <BleedingQuickAddNoticeIcon className="h-6 w-6" aria-hidden />
+            </span>
+            <div className="flex flex-1 flex-col gap-0.5">
+              <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+                Hinzugefügt
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-rose-900">{bleedingQuickAddNotice.label}</span>
+                <span className="text-xs font-semibold text-rose-500">
+                  +{bleedingQuickAddNotice.score} PBAC
+                </span>
+              </div>
+              <span className="text-[11px] uppercase tracking-wide text-rose-400">Periode</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {bleedingQuickAddOpen ? (
         <div
           className="fixed inset-0 z-[60] flex items-end justify-center bg-rose-950/40 px-4 py-6 sm:items-center"
