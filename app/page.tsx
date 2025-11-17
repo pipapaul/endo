@@ -5627,16 +5627,12 @@ export default function HomePage() {
     resetPainQuickAddState();
     manualDailySelectionRef.current = false;
     selectDailyDate(today);
-    setDailyActiveCategory("pain");
-    setActiveView("daily");
   }, [
     painQuickIntensity,
     painQuickQuality,
     painQuickRegion,
     resetPainQuickAddState,
     selectDailyDate,
-    setActiveView,
-    setDailyActiveCategory,
     setPendingPainQuickAdd,
     today,
   ]);
