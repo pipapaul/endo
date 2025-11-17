@@ -150,6 +150,31 @@ export function validateDailyEntry(entry: DailyEntry): ValidationIssue[] {
     }
   }
 
+  if (entry.painTimeline !== undefined) {
+    if (!Array.isArray(entry.painTimeline)) {
+      issues.push({ path: "painTimeline", message: "Schmerzverlauf muss als Liste gespeichert werden." });
+    } else {
+      entry.painTimeline.forEach((item, index) => {
+        if (!item || typeof item !== "object") {
+          issues.push({ path: `painTimeline[${index}]`, message: "Ungültiger Schmerzverlauf-Eintrag." });
+          return;
+        }
+        if (typeof item.timestamp !== "string" || Number.isNaN(new Date(item.timestamp).getTime())) {
+          issues.push({
+            path: `painTimeline[${index}].timestamp`,
+            message: "Zeitpunkt muss als ISO-Datum mit Uhrzeit gespeichert werden.",
+          });
+        }
+        if (!intRange(item.intensity, 0, 10)) {
+          issues.push({
+            path: `painTimeline[${index}].intensity`,
+            message: "Schmerzintensität muss eine ganze Zahl zwischen 0 und 10 sein.",
+          });
+        }
+      });
+    }
+  }
+
   if (entry.ovulationPain) {
     const { side, intensity } = entry.ovulationPain;
     const allowedSides = new Set(["links", "rechts", "beidseitig", "unsicher"]);

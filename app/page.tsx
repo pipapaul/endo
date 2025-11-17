@@ -147,6 +147,15 @@ const HEAD_REGION_ID = "head";
 const MIGRAINE_LABEL = "Migräne";
 const MIGRAINE_WITH_AURA_LABEL = "Migräne mit Aura";
 const MIGRAINE_QUALITY_SET = new Set<string>(MIGRAINE_PAIN_QUALITIES);
+const PAIN_QUICK_ADD_VALUES = Array.from({ length: 11 }, (_, index) => index);
+const describePainIntensity = (value: number) => {
+  if (value >= 9) return "extrem";
+  if (value >= 7) return "sehr stark";
+  if (value >= 5) return "stark";
+  if (value >= 3) return "mittel";
+  if (value >= 1) return "leicht";
+  return "kein Schmerz";
+};
 type OvulationPainSide = Exclude<NonNullable<DailyEntry["ovulationPain"]>["side"], undefined>;
 
 const OVULATION_PAIN_SIDES: OvulationPainSide[] = [
@@ -324,6 +333,14 @@ const buildDailyDraftWithPainRegions = (
 };
 
 type BodyRegion = { id: string; label: string };
+
+type PainTimelinePoint = {
+  id: string;
+  minutes: number;
+  intensity: number;
+  timestamp: string;
+  timeLabel: string;
+};
 
 type DailyCategoryId =
   | "overview"
@@ -855,6 +872,7 @@ const pruneDailyEntryByCompletion = (
     next.painQuality = [] as DailyEntry["painQuality"];
     next.painNRS = 0;
     next.impactNRS = 0;
+    next.painTimeline = [];
     delete (next as { ovulationPain?: DailyEntry["ovulationPain"] }).ovulationPain;
     delete (next.symptoms as Partial<DailyEntry["symptoms"]>).deepDyspareunia;
   }
@@ -984,6 +1002,11 @@ const extractDailyCategorySnapshot = (
           painQuality: [...(entry.painQuality ?? [])],
           painNRS: typeof entry.painNRS === "number" ? entry.painNRS : null,
           impactNRS: typeof entry.impactNRS === "number" ? entry.impactNRS : null,
+          painTimeline: (entry.painTimeline ?? []).map((item) => ({
+            id: item.id,
+            timestamp: item.timestamp,
+            intensity: item.intensity,
+          })),
           headacheOpt: entry.headacheOpt ? deepClone(entry.headacheOpt) : null,
           ovulationPain: entry.ovulationPain ? deepClone(entry.ovulationPain) : null,
           symptoms: {
@@ -1125,6 +1148,7 @@ const restoreDailyCategorySnapshot = (
             painQuality?: string[];
             painNRS?: number | null;
             impactNRS?: number | null;
+            painTimeline?: DailyEntry["painTimeline"];
             headacheOpt?: DailyEntry["headacheOpt"] | null;
             ovulationPain?: DailyEntry["ovulationPain"] | null;
             symptoms?: { deepDyspareunia?: SymptomSnapshot };
@@ -1144,6 +1168,29 @@ const restoreDailyCategorySnapshot = (
         }
         if (data.impactNRS !== undefined) {
           nextEntry.impactNRS = data.impactNRS ?? undefined;
+        }
+        if (data.painTimeline) {
+          const normalizedTimeline = data.painTimeline
+            .map((item, index) => {
+              if (!item || typeof item.timestamp !== "string") {
+                return null;
+              }
+              const intensity =
+                typeof item.intensity === "number" && Number.isFinite(item.intensity)
+                  ? Math.max(0, Math.min(10, Math.round(item.intensity)))
+                  : 0;
+              const id =
+                typeof item.id === "string" && item.id
+                  ? item.id
+                  : `pain-snapshot-${index}-${item.timestamp}`;
+              return { id, timestamp: item.timestamp, intensity };
+            })
+            .filter(
+              (item): item is NonNullable<DailyEntry["painTimeline"]>[number] => item !== null
+            );
+          nextEntry.painTimeline = normalizedTimeline;
+        } else {
+          nextEntry.painTimeline = [];
         }
         nextEntry.headacheOpt = data.headacheOpt ? deepClone(data.headacheOpt) : undefined;
         nextEntry.ovulationPain = data.ovulationPain ? deepClone(data.ovulationPain) : undefined;
@@ -1607,6 +1654,7 @@ const createEmptyDailyEntry = (date: string): DailyEntry => ({
   painNRS: 0,
   painQuality: [],
   painMapRegionIds: [],
+  painTimeline: [],
 
   bleeding: { isBleeding: false },
   symptoms: {},
@@ -2710,6 +2758,8 @@ export default function HomePage() {
   const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
   const [pbacCounts, setPbacCounts] = useState<PbacCounts>({ ...PBAC_DEFAULT_COUNTS });
   const [activePbacCategory, setActivePbacCategory] = useState<PbacEntryCategory>("pad");
+  const [painQuickAddOpen, setPainQuickAddOpen] = useState(false);
+  const [pendingPainQuickAdd, setPendingPainQuickAdd] = useState<number | null>(null);
   const [bleedingQuickAddOpen, setBleedingQuickAddOpen] = useState(false);
   const [pendingBleedingQuickAdd, setPendingBleedingQuickAdd] = useState<PbacProductItemId | null>(null);
   const [bleedingQuickAddNotice, setBleedingQuickAddNotice] = useState<BleedingQuickAddNotice | null>(null);
@@ -5249,6 +5299,44 @@ export default function HomePage() {
   );
 
   useEffect(() => {
+    if (pendingPainQuickAdd === null) {
+      return;
+    }
+    if (dailyDraft.date !== today) {
+      selectDailyDate(today);
+      return;
+    }
+    const normalizedValue = Math.max(0, Math.min(10, Math.round(pendingPainQuickAdd)));
+    setPainQuickAddOpen(false);
+    setDailyDraft((prev) => {
+      if (prev.date !== today) {
+        return prev;
+      }
+      const now = new Date();
+      const entry = {
+        id: `${now.getTime()}-${Math.random().toString(36).slice(2, 7)}`,
+        timestamp: now.toISOString(),
+        intensity: normalizedValue,
+      } as NonNullable<DailyEntry["painTimeline"]>[number];
+      const timeline = Array.isArray(prev.painTimeline) ? prev.painTimeline : [];
+      return {
+        ...prev,
+        painTimeline: [...timeline, entry],
+      };
+    });
+    setCategoryCompletion("pain", true);
+    setPendingPainQuickAdd(null);
+  }, [
+    dailyDraft.date,
+    pendingPainQuickAdd,
+    selectDailyDate,
+    setCategoryCompletion,
+    setDailyDraft,
+    setPainQuickAddOpen,
+    today,
+  ]);
+
+  useEffect(() => {
     if (!pendingBleedingQuickAdd) {
       return;
     }
@@ -5329,12 +5417,14 @@ export default function HomePage() {
         const painQuality = entry.painQuality ?? [];
         const painNRS = typeof entry.painNRS === "number" ? entry.painNRS : 0;
         const impactNRS = typeof entry.impactNRS === "number" ? entry.impactNRS : 0;
+        const painTimelineCount = (entry.painTimeline ?? []).length;
         return (
           painRegions.length === 0 &&
           painMapRegionIds.length === 0 &&
           painQuality.length === 0 &&
           painNRS <= 0 &&
-          impactNRS <= 0
+          impactNRS <= 0 &&
+          painTimelineCount === 0
         );
       })();
 
@@ -5400,6 +5490,7 @@ export default function HomePage() {
       painQuality: [],
       painNRS: 0,
       impactNRS: 0,
+      painTimeline: [],
     }));
     setCategoryCompletion("pain", true);
   }, [confirmQuickActionReset, setCategoryCompletion, setDailyDraft]);
@@ -5449,16 +5540,20 @@ export default function HomePage() {
   }, [confirmQuickActionReset, setCategoryCompletion, setDailyDraft]);
 
   const handlePainShortcut = useCallback(() => {
-    manualDailySelectionRef.current = false;
-    selectDailyDate(today);
-    setDailyActiveCategory("pain");
-    setActiveView("daily");
-  }, [selectDailyDate, setActiveView, setDailyActiveCategory, today]);
+    setPainQuickAddOpen(true);
+  }, []);
+
+  const handlePainQuickAddSelect = useCallback((value: number) => {
+    setPendingPainQuickAdd(value);
+    setPainQuickAddOpen(false);
+  }, []);
 
   const handleBleedingQuickAddSelect = useCallback((itemId: PbacProductItemId) => {
     setPendingBleedingQuickAdd(itemId);
     setBleedingQuickAddOpen(false);
   }, []);
+  const isDailyDraftToday = dailyDraft.date === today;
+  const draftTimelineForToday = isDailyDraftToday ? dailyDraft.painTimeline : undefined;
   const bleedingShortcutProducts = useMemo(() => {
     if (dailyDraft.date !== today) {
       return {
@@ -5481,6 +5576,32 @@ export default function HomePage() {
     });
     return { dots, summary, total: dots.length };
   }, [dailyDraft.date, pbacCounts, today]);
+  const todayPainTimeline = useMemo<PainTimelinePoint[]>(() => {
+    const storedEntry = derivedDailyEntries.find((entry) => entry.date === today);
+    const sourceTimeline = storedEntry?.painTimeline ?? (isDailyDraftToday ? draftTimelineForToday : []);
+    const timeline = Array.isArray(sourceTimeline) ? sourceTimeline : [];
+    return timeline
+      .map((item, index) => {
+        if (!item || typeof item.timestamp !== "string") {
+          return null;
+        }
+        const timestamp = new Date(item.timestamp);
+        if (Number.isNaN(timestamp.getTime())) {
+          return null;
+        }
+        const minutes = timestamp.getHours() * 60 + timestamp.getMinutes();
+        const intensity = Math.max(0, Math.min(10, Math.round(item.intensity ?? 0)));
+        return {
+          id: item.id ?? `pain-${index}-${item.timestamp}`,
+          minutes,
+          intensity,
+          timestamp: item.timestamp,
+          timeLabel: timestamp.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }),
+        } satisfies PainTimelinePoint;
+      })
+      .filter((item): item is PainTimelinePoint => item !== null)
+      .sort((a, b) => a.minutes - b.minutes);
+  }, [derivedDailyEntries, draftTimelineForToday, isDailyDraftToday, today]);
   const periodShortcutAriaLabel = useMemo(() => {
     if (!bleedingShortcutProducts.total) {
       return "Periode: Produkt hinzufügen";
@@ -5491,6 +5612,19 @@ export default function HomePage() {
     const details = detailParts.length ? ` – ${detailParts.join(", ")}` : "";
     return `Periode: ${bleedingShortcutProducts.total} Produkte${details}`;
   }, [bleedingShortcutProducts]);
+  const painShortcutAriaLabel = useMemo(() => {
+    if (!todayPainTimeline.length) {
+      return "Jetzt aktuellen Schmerz mit Uhrzeit erfassen";
+    }
+    const summary = todayPainTimeline
+      .slice(-3)
+      .map((item) => `${item.intensity}/10 um ${item.timeLabel}`)
+      .join(", ");
+    return `Heute bereits ${todayPainTimeline.length} Schmerzeinträge (${summary}). Tippe für einen weiteren schnellen Eintrag.`;
+  }, [todayPainTimeline]);
+  const lastPainEvent = todayPainTimeline.length
+    ? todayPainTimeline[todayPainTimeline.length - 1]
+    : null;
   const BleedingQuickAddNoticeIcon = bleedingQuickAddNotice?.Icon;
 
   const dailyCategoryButtons = useMemo(
@@ -6320,13 +6454,67 @@ export default function HomePage() {
                       type="button"
                       variant="outline"
                       onClick={handlePainShortcut}
-                      aria-label="Schmerzen öffnen"
-                      className="flex w-full flex-1 flex-col items-center justify-center gap-3 rounded-2xl border-rose-200 bg-white/80 px-3 py-4 text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
+                      aria-label={painShortcutAriaLabel}
+                      className="flex w-full flex-1 flex-col items-stretch justify-between gap-3 rounded-2xl border-rose-200 bg-white/80 px-3 py-4 text-left text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
                     >
-                      <span className="sr-only">Schmerzen öffnen</span>
-                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-500">
-                        <PainIcon className="h-5 w-5" aria-hidden />
-                      </span>
+                      <span className="sr-only">{painShortcutAriaLabel}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-500">
+                          <PainIcon className="h-5 w-5" aria-hidden />
+                        </span>
+                        <div className="flex flex-col">
+                          <span className="text-xs font-semibold uppercase tracking-wide text-rose-400">
+                            Schmerzen
+                          </span>
+                          <span className="text-sm font-semibold text-rose-900">
+                            {todayPainTimeline.length ? `${todayPainTimeline.length}× heute` : "Jetzt erfassen"}
+                          </span>
+                          <span className="text-xs text-rose-500">
+                            {lastPainEvent
+                              ? `${lastPainEvent.intensity}/10 · ${lastPainEvent.timeLabel}`
+                              : "Uhrzeit wird automatisch gespeichert"}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <div className="relative h-12 w-full overflow-hidden rounded-full bg-rose-50/70" aria-hidden>
+                          {todayPainTimeline.length === 0 ? (
+                            <div className="absolute inset-0 flex items-center justify-center text-[11px] text-rose-300">
+                              Kein Verlauf
+                            </div>
+                          ) : (
+                            todayPainTimeline.map((point) => {
+                              const leftPercent = (point.minutes / 1440) * 100;
+                              const heightPercent = 25 + (point.intensity / 10) * 75;
+                              const barClass =
+                                point.intensity >= 8
+                                  ? "bg-rose-600"
+                                  : point.intensity >= 5
+                                  ? "bg-rose-500"
+                                  : point.intensity >= 3
+                                  ? "bg-rose-400"
+                                  : "bg-rose-300";
+                              return (
+                                <span
+                                  key={point.id}
+                                  className={cn(
+                                    "pointer-events-none absolute bottom-0 w-1.5 rounded-full shadow-sm shadow-rose-200/80",
+                                    barClass
+                                  )}
+                                  style={{ left: `calc(${leftPercent}% - 3px)`, height: `${heightPercent}%` }}
+                                />
+                              );
+                            })
+                          )}
+                        </div>
+                        <div
+                          className="flex justify-between text-[10px] uppercase tracking-wide text-rose-300"
+                          aria-hidden
+                        >
+                          <span>0 Uhr</span>
+                          <span>24 Uhr</span>
+                        </div>
+                      </div>
                     </Button>
                     <Button
                       type="button"
@@ -8587,6 +8775,58 @@ export default function HomePage() {
           )}
         </main>
       </SectionCompletionContext.Provider>
+      {painQuickAddOpen ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-rose-950/40 px-4 py-6 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Aktuellen Schmerz hinzufügen"
+          onClick={() => setPainQuickAddOpen(false)}
+        >
+          <div
+            className="w-full max-w-md space-y-5 rounded-3xl bg-white p-5 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">Schmerzen</p>
+                <p className="text-lg font-semibold text-rose-900">Jetzt protokollieren</p>
+                <p className="text-sm text-rose-500">Wähle deine aktuelle Schmerzstärke (0 = kein Schmerz).</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPainQuickAddOpen(false)}
+                className="rounded-full border border-rose-100 p-2 text-rose-500 transition hover:border-rose-200 hover:text-rose-700"
+                aria-label="Schließen"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {PAIN_QUICK_ADD_VALUES.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => handlePainQuickAddSelect(value)}
+                  className={cn(
+                    "flex w-20 flex-col items-center justify-center rounded-2xl border px-3 py-2 text-center shadow-sm transition",
+                    value >= 8
+                      ? "border-rose-500 bg-rose-100 text-rose-700"
+                      : value >= 5
+                        ? "border-rose-200 bg-rose-50 text-rose-700"
+                        : "border-rose-100 bg-white text-rose-700"
+                  )}
+                >
+                  <span className="text-xl font-semibold">{value}</span>
+                  <span className="text-[11px] uppercase tracking-wide text-rose-400">/10</span>
+                  <span className="text-[11px] text-rose-500">{describePainIntensity(value)}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-rose-500">Die Uhrzeit wird automatisch gespeichert und als Verlauf angezeigt.</p>
+          </div>
+        </div>
+      ) : null}
       {bleedingQuickAddNotice && BleedingQuickAddNoticeIcon ? (
         <div
           className="pointer-events-none fixed inset-x-0 top-4 z-[55] flex justify-center px-4 sm:inset-auto sm:right-6 sm:top-6 sm:justify-end sm:px-0"

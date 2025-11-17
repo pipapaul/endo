@@ -6,6 +6,12 @@ export interface FeatureFlags {
   moduleDizziness?: boolean;
 }
 
+export interface PainTimelineEntry {
+  id: ID;
+  timestamp: string;
+  intensity: number;
+}
+
 export interface DailyEntry {
   date: string; // ISO YYYY-MM-DD
 
@@ -29,6 +35,7 @@ export interface DailyEntry {
     | "Migräne mit Aura"
   )[];
   painMapRegionIds: ID[];
+  painTimeline?: PainTimelineEntry[];
   bleeding: {
     isBleeding: boolean;
     pbacScore?: number; // >=0 when isBleeding
