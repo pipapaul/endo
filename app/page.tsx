@@ -6975,7 +6975,7 @@ export default function HomePage() {
                   onComplete={() => setDailyActiveCategory("overview")}
                 >
                   <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                    {hasPainSummaryData && !showPainSummaryInToolbar ? (
+                    {hasPainSummaryData ? (
                       <div className="md:col-span-2">{renderPainSummaryPanel()}</div>
                     ) : null}
                     <div className="space-y-6">
