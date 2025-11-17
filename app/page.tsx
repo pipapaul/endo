@@ -325,6 +325,17 @@ const buildDailyDraftWithPainRegions = (
 
 type BodyRegion = { id: string; label: string };
 
+type QuickPainEvent = {
+  id: number;
+  date: string;
+  timestamp: string;
+  regionId: string;
+  intensity: number;
+  quality: DailyEntry["painQuality"][number] | null;
+};
+
+type PendingQuickPainAdd = Omit<QuickPainEvent, "date">;
+
 type DailyCategoryId =
   | "overview"
   | "pain"
@@ -1390,6 +1401,15 @@ const formatShortGermanDate = (iso: string) => {
   const parsed = parseIsoDate(iso);
   if (!parsed) return iso;
   return parsed.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+};
+
+const formatShortTimeLabel = (iso: string | null) => {
+  if (!iso) return null;
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
 };
 
 const describeBleedingLevel = (point: CycleOverviewPoint) => {
@@ -2713,6 +2733,13 @@ export default function HomePage() {
   const [bleedingQuickAddOpen, setBleedingQuickAddOpen] = useState(false);
   const [pendingBleedingQuickAdd, setPendingBleedingQuickAdd] = useState<PbacProductItemId | null>(null);
   const [bleedingQuickAddNotice, setBleedingQuickAddNotice] = useState<BleedingQuickAddNotice | null>(null);
+  const [painQuickAddOpen, setPainQuickAddOpen] = useState(false);
+  const [painQuickStep, setPainQuickStep] = useState<1 | 2 | 3>(1);
+  const [painQuickRegion, setPainQuickRegion] = useState<string | null>(null);
+  const [painQuickQuality, setPainQuickQuality] = useState<DailyEntry["painQuality"][number] | null>(null);
+  const [painQuickIntensity, setPainQuickIntensity] = useState(5);
+  const [pendingPainQuickAdd, setPendingPainQuickAdd] = useState<PendingQuickPainAdd | null>(null);
+  const [painShortcutEvents, setPainShortcutEvents] = useState<QuickPainEvent[]>([]);
   const bleedingQuickAddNoticeTimeoutRef = useRef<number | null>(null);
   const dailyShortcutButtonRef = useRef<HTMLButtonElement | null>(null);
   const [shortcutButtonsHeight, setShortcutButtonsHeight] = useState<number | null>(null);
@@ -2758,6 +2785,38 @@ export default function HomePage() {
       };
     });
   }, [dailyDraft.bleeding.isBleeding, pbacCounts, setDailyDraft]);
+
+  const todaysPainShortcutEvents = useMemo(
+    () => painShortcutEvents.filter((event) => event.date === today),
+    [painShortcutEvents, today]
+  );
+
+  const painShortcutTimeline = useMemo(() => {
+    const segments = Array(6).fill(0);
+    todaysPainShortcutEvents.forEach((event) => {
+      const parsed = new Date(event.timestamp);
+      if (Number.isNaN(parsed.getTime())) {
+        return;
+      }
+      const hour = parsed.getHours() + parsed.getMinutes() / 60;
+      const index = Math.min(segments.length - 1, Math.max(0, Math.floor((hour / 24) * segments.length)));
+      const clampedIntensity = Math.max(0, Math.min(10, Math.round(event.intensity)));
+      segments[index] = Math.max(segments[index], clampedIntensity);
+    });
+    return segments;
+  }, [todaysPainShortcutEvents]);
+
+  const latestPainShortcutEvent = todaysPainShortcutEvents.length
+    ? todaysPainShortcutEvents[todaysPainShortcutEvents.length - 1]
+    : null;
+  const quickPainQualityOptions = useMemo(
+    () => (painQuickRegion === HEAD_REGION_ID ? ALL_PAIN_QUALITIES : PAIN_QUALITIES),
+    [painQuickRegion]
+  );
+  const quickPainRegionLabel = useMemo(
+    () => (painQuickRegion ? getRegionLabel(painQuickRegion) : null),
+    [painQuickRegion]
+  );
   useEffect(() => {
     return () => {
       if (bleedingQuickAddNoticeTimeoutRef.current) {
@@ -5318,6 +5377,76 @@ export default function HomePage() {
     today,
   ]);
 
+  useEffect(() => {
+    if (!pendingPainQuickAdd) {
+      return;
+    }
+    if (dailyDraft.date !== today) {
+      selectDailyDate(today);
+      return;
+    }
+    const { regionId, intensity, quality, timestamp, id } = pendingPainQuickAdd;
+    setDailyDraft((prev) => {
+      if (prev.date !== today) {
+        return prev;
+      }
+      const current = prev.painRegions ?? [];
+      const nextRegions = [...current] as NonNullable<DailyEntry["painRegions"]>;
+      const existingIndex = nextRegions.findIndex((region) => region.regionId === regionId);
+      const existingRegion = existingIndex === -1 ? null : nextRegions[existingIndex];
+      let nextQualities = existingRegion?.qualities ? [...existingRegion.qualities] : ([] as DailyEntry["painQuality"]);
+      if (quality) {
+        const merged = new Set(nextQualities);
+        merged.add(quality);
+        let normalized = Array.from(merged) as DailyEntry["painQuality"];
+        if (regionId === HEAD_REGION_ID) {
+          normalized = sanitizeHeadRegionQualities(normalized);
+        } else {
+          normalized = normalized.filter((entry) => !MIGRAINE_QUALITY_SET.has(entry)) as DailyEntry["painQuality"];
+        }
+        nextQualities = normalized;
+      } else if (regionId !== HEAD_REGION_ID) {
+        nextQualities = nextQualities.filter((entry) => !MIGRAINE_QUALITY_SET.has(entry)) as DailyEntry["painQuality"];
+      }
+      const updatedRegion = {
+        ...(existingRegion ?? { regionId, nrs: intensity, qualities: [] as DailyEntry["painQuality"] }),
+        regionId,
+        nrs: intensity,
+        qualities: nextQualities,
+        time: timestamp,
+      } satisfies NonNullable<DailyEntry["painRegions"]>[number];
+      if (existingIndex === -1) {
+        nextRegions.push(updatedRegion);
+      } else {
+        nextRegions[existingIndex] = updatedRegion;
+      }
+      return buildDailyDraftWithPainRegions(prev, nextRegions);
+    });
+    const eventDateMatch = timestamp.match(/^(\d{4}-\d{2}-\d{2})/);
+    const resolvedDate = eventDateMatch ? eventDateMatch[1] : today;
+    setPainShortcutEvents((prev) => [
+      ...prev,
+      {
+        id,
+        date: resolvedDate,
+        intensity,
+        timestamp,
+        regionId,
+        quality: quality ?? null,
+      },
+    ]);
+    setCategoryCompletion("pain", true);
+    setPendingPainQuickAdd(null);
+  }, [
+    dailyDraft.date,
+    pendingPainQuickAdd,
+    selectDailyDate,
+    setDailyDraft,
+    setPainShortcutEvents,
+    setCategoryCompletion,
+    today,
+  ]);
+
   const categoryZeroStates = useMemo<
     Partial<Record<TrackableDailyCategoryId, boolean>>
   >(
@@ -5448,12 +5577,69 @@ export default function HomePage() {
     setCategoryCompletion("medication", true);
   }, [confirmQuickActionReset, setCategoryCompletion, setDailyDraft]);
 
+  const resetPainQuickAddState = useCallback(() => {
+    setPainQuickStep(1);
+    setPainQuickRegion(null);
+    setPainQuickQuality(null);
+    setPainQuickIntensity(5);
+  }, []);
+
+  const handlePainQuickRegionSelect = useCallback((regionId: string) => {
+    setPainQuickRegion(regionId);
+    setPainQuickQuality(null);
+    setPainQuickStep(2);
+  }, []);
+
+  const handlePainQuickQualitySelect = useCallback((quality: DailyEntry["painQuality"][number]) => {
+    setPainQuickQuality(quality);
+    setPainQuickStep(3);
+  }, []);
+
   const handlePainShortcut = useCallback(() => {
+    resetPainQuickAddState();
+    setPainQuickAddOpen(true);
+  }, [resetPainQuickAddState]);
+
+  const handlePainQuickClose = useCallback(() => {
+    setPainQuickAddOpen(false);
+    resetPainQuickAddState();
+  }, [resetPainQuickAddState]);
+
+  const handlePainQuickBack = useCallback(() => {
+    setPainQuickStep((prev) => (prev > 1 ? ((prev - 1) as 1 | 2 | 3) : prev));
+  }, []);
+
+  const handlePainQuickConfirm = useCallback(() => {
+    if (!painQuickRegion || !painQuickQuality) {
+      return;
+    }
+    const now = new Date();
+    const timestamp = now.toISOString();
+    const id = now.getTime();
+    setPendingPainQuickAdd({
+      id,
+      regionId: painQuickRegion,
+      quality: painQuickQuality,
+      intensity: Math.max(0, Math.min(10, Math.round(painQuickIntensity))),
+      timestamp,
+    });
+    setPainQuickAddOpen(false);
+    resetPainQuickAddState();
     manualDailySelectionRef.current = false;
     selectDailyDate(today);
     setDailyActiveCategory("pain");
     setActiveView("daily");
-  }, [selectDailyDate, setActiveView, setDailyActiveCategory, today]);
+  }, [
+    painQuickIntensity,
+    painQuickQuality,
+    painQuickRegion,
+    resetPainQuickAddState,
+    selectDailyDate,
+    setActiveView,
+    setDailyActiveCategory,
+    setPendingPainQuickAdd,
+    today,
+  ]);
 
   const handleBleedingQuickAddSelect = useCallback((itemId: PbacProductItemId) => {
     setPendingBleedingQuickAdd(itemId);
@@ -5491,6 +5677,16 @@ export default function HomePage() {
     const details = detailParts.length ? ` – ${detailParts.join(", ")}` : "";
     return `Periode: ${bleedingShortcutProducts.total} Produkte${details}`;
   }, [bleedingShortcutProducts]);
+  const painShortcutAriaLabel = useMemo(() => {
+    if (!latestPainShortcutEvent) {
+      return "Schmerzen schnell erfassen";
+    }
+    const timeLabel = formatShortTimeLabel(latestPainShortcutEvent.timestamp);
+    const regionLabel = getRegionLabel(latestPainShortcutEvent.regionId);
+    return timeLabel
+      ? `Schmerz aktualisieren – ${regionLabel} ${timeLabel}`
+      : `Schmerz aktualisieren – ${regionLabel}`;
+  }, [latestPainShortcutEvent]);
   const BleedingQuickAddNoticeIcon = bleedingQuickAddNotice?.Icon;
 
   const dailyCategoryButtons = useMemo(
@@ -6316,18 +6512,33 @@ export default function HomePage() {
                     className="flex w-[8.75rem] min-w-[8rem] flex-col gap-3 sm:min-h-[180px]"
                     style={shortcutButtonsHeight ? { height: shortcutButtonsHeight } : undefined}
                   >
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={handlePainShortcut}
-                      aria-label="Schmerzen öffnen"
-                      className="flex w-full flex-1 flex-col items-center justify-center gap-3 rounded-2xl border-rose-200 bg-white/80 px-3 py-4 text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
-                    >
-                      <span className="sr-only">Schmerzen öffnen</span>
-                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-500">
-                        <PainIcon className="h-5 w-5" aria-hidden />
-                      </span>
-                    </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handlePainShortcut}
+                    aria-label={painShortcutAriaLabel}
+                    className="flex w-full flex-1 flex-col items-center justify-center gap-3 rounded-2xl border-rose-200 bg-white/80 px-3 py-4 text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
+                  >
+                    <span className="sr-only">{painShortcutAriaLabel}</span>
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-500">
+                      <PainIcon className="h-5 w-5" aria-hidden />
+                    </span>
+                    <div className="flex h-8 w-full items-end justify-center gap-0.5" aria-hidden>
+                      {painShortcutTimeline.map((value, index) => {
+                        const height = 4 + (value / 10) * 18;
+                        return (
+                          <span
+                            key={`pain-bar-${index}`}
+                            className={cn(
+                              "w-1.5 rounded-full bg-rose-100 transition",
+                              value > 0 ? "bg-rose-500 shadow-sm shadow-rose-200" : "bg-rose-100"
+                            )}
+                            style={{ height }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </Button>
                     <Button
                       type="button"
                       variant="outline"
@@ -8619,6 +8830,163 @@ export default function HomePage() {
               </div>
               <span className="text-[11px] uppercase tracking-wide text-rose-400">Periode</span>
             </div>
+          </div>
+        </div>
+      ) : null}
+      {painQuickAddOpen ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-rose-950/40 px-4 py-6 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Schmerz schnell erfassen"
+          onClick={handlePainQuickClose}
+        >
+          <div
+            className="w-full max-w-md space-y-4 rounded-3xl bg-white p-5 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">Schmerz</p>
+                <p className="text-lg font-semibold text-rose-900">Shortcut</p>
+              </div>
+              <div className="flex items-center gap-1">
+                {painQuickStep > 1 ? (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handlePainQuickBack();
+                    }}
+                    className="rounded-full border border-rose-100 p-2 text-rose-500 transition hover:border-rose-200 hover:text-rose-700"
+                    aria-label="Zurück"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handlePainQuickClose();
+                  }}
+                  className="rounded-full border border-rose-100 p-2 text-rose-500 transition hover:border-rose-200 hover:text-rose-700"
+                  aria-label="Schließen"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center gap-1" aria-hidden>
+              {[1, 2, 3].map((step) => (
+                <span
+                  key={`pain-step-${step}`}
+                  className={cn(
+                    "h-1.5 flex-1 rounded-full",
+                    painQuickStep >= step ? "bg-rose-500" : "bg-rose-100"
+                  )}
+                />
+              ))}
+            </div>
+            {(quickPainRegionLabel || painQuickQuality) && (
+              <div className="flex flex-wrap gap-2 text-xs text-rose-500">
+                {quickPainRegionLabel ? (
+                  <span className="rounded-full bg-rose-50 px-2 py-0.5 text-rose-600">{quickPainRegionLabel}</span>
+                ) : null}
+                {painQuickQuality ? (
+                  <span className="rounded-full bg-rose-50 px-2 py-0.5 text-rose-600">{painQuickQuality}</span>
+                ) : null}
+              </div>
+            )}
+            {painQuickStep === 1 ? (
+              <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">Ort</p>
+                <div className="max-h-[50vh] space-y-2 overflow-y-auto pr-1">
+                  {BODY_REGION_GROUPS.map((group) => (
+                    <div key={group.id} className="rounded-2xl border border-rose-100 bg-rose-50 p-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-rose-400">
+                        {group.label}
+                      </p>
+                      <div className="mt-2 grid grid-cols-2 gap-1.5 text-left text-xs">
+                        {group.regions.map((region) => {
+                          const isSelected = painQuickRegion === region.id;
+                          return (
+                            <button
+                              key={region.id}
+                              type="button"
+                              onClick={() => handlePainQuickRegionSelect(region.id)}
+                              className={cn(
+                                "rounded-xl border px-2 py-1.5 text-left transition",
+                                isSelected
+                                  ? "border-rose-400 bg-white text-rose-800 shadow"
+                                  : "border-transparent bg-white/80 text-rose-600 hover:border-rose-200"
+                              )}
+                            >
+                              {region.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {painQuickStep === 2 ? (
+              <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">Art</p>
+                <div className="grid grid-cols-2 gap-1.5 text-sm">
+                  {quickPainQualityOptions.map((quality) => {
+                    const isSelected = painQuickQuality === quality;
+                    return (
+                      <button
+                        key={quality}
+                        type="button"
+                        onClick={() => handlePainQuickQualitySelect(quality)}
+                        className={cn(
+                          "rounded-xl border px-3 py-1.5 text-left transition",
+                          isSelected
+                            ? "border-rose-400 bg-white text-rose-800 shadow"
+                            : "border-transparent bg-rose-50 text-rose-600 hover:border-rose-200"
+                        )}
+                      >
+                        {quality}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+            {painQuickStep === 3 ? (
+              <div className="space-y-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">Stärke</p>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <Slider
+                      min={0}
+                      max={10}
+                      step={1}
+                      value={[painQuickIntensity]}
+                      onValueChange={([value]) => setPainQuickIntensity(value ?? 0)}
+                      aria-label="Schmerzstärke"
+                    />
+                    <div className="flex justify-between text-[11px] text-rose-400">
+                      <span>0</span>
+                      <span>10</span>
+                    </div>
+                  </div>
+                  <SliderValueDisplay value={painQuickIntensity} />
+                </div>
+                <Button
+                  type="button"
+                  className="w-full"
+                  onClick={handlePainQuickConfirm}
+                  disabled={!painQuickRegion || !painQuickQuality}
+                >
+                  speichern
+                </Button>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
