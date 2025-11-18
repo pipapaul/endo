@@ -336,6 +336,26 @@ type QuickPainEvent = {
 
 type PendingQuickPainAdd = QuickPainEvent;
 
+const PAIN_SHORTCUT_SEGMENT_COUNT = 6;
+
+const computePainShortcutTimeline = (events: QuickPainEvent[]): number[] => {
+  const segments = Array(PAIN_SHORTCUT_SEGMENT_COUNT).fill(0);
+  events.forEach((event) => {
+    const parsed = new Date(event.timestamp);
+    if (Number.isNaN(parsed.getTime())) {
+      return;
+    }
+    const hour = parsed.getHours() + parsed.getMinutes() / 60;
+    const index = Math.min(
+      segments.length - 1,
+      Math.max(0, Math.floor((hour / 24) * segments.length))
+    );
+    const clampedIntensity = Math.max(0, Math.min(10, Math.round(event.intensity)));
+    segments[index] = Math.max(segments[index], clampedIntensity);
+  });
+  return segments;
+};
+
 type DailyCategoryId =
   | "overview"
   | "pain"
@@ -1388,6 +1408,7 @@ type CycleOverviewPoint = {
   isBleeding: boolean;
   ovulationPositive: boolean;
   ovulationPainIntensity: number | null;
+  painTimeline: number[] | null;
 };
 
 type CycleOverviewData = {
@@ -1509,6 +1530,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
         dateLabel: formatShortGermanDate(point.date),
         painValue,
         isCurrentDay: point.date === todayIso,
+        painTimeline: point.painTimeline ?? null,
       };
     });
   }, [data.points, todayIso]);
@@ -1520,6 +1542,8 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
       }
 
       const payload = props.payload[0].payload as CycleOverviewChartPoint;
+      const timeline = Array.isArray(payload.painTimeline) ? payload.painTimeline : null;
+      const hasTimeline = timeline ? timeline.some((value) => value > 0) : false;
 
       return (
         <div className="rounded-lg border border-rose-100 bg-white p-3 text-xs text-rose-700 shadow-sm">
@@ -1528,6 +1552,26 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
           <p>Blutung: {payload.bleedingLabel}</p>
           {payload.pbacScore !== null ? <p>PBAC: {payload.pbacScore}</p> : null}
           {payload.ovulationPositive ? <p>Eisprung markiert</p> : null}
+          {hasTimeline && timeline ? (
+            <div className="mt-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-rose-400">Tagesverlauf</p>
+              <div className="mt-1 flex items-end gap-0.5">
+                {timeline.map((value, index) => {
+                  const height = 4 + (value / 10) * 14;
+                  return (
+                    <span
+                      key={`pain-tooltip-bar-${payload.date}-${index}`}
+                      className={cn(
+                        "w-1.5 rounded-full bg-rose-100",
+                        value > 0 ? "bg-rose-500" : "bg-rose-100"
+                      )}
+                      style={{ height }}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
         </div>
       );
     },
@@ -2791,20 +2835,28 @@ export default function HomePage() {
     [painShortcutEvents, today]
   );
 
-  const painShortcutTimeline = useMemo(() => {
-    const segments = Array(6).fill(0);
-    todaysPainShortcutEvents.forEach((event) => {
-      const parsed = new Date(event.timestamp);
-      if (Number.isNaN(parsed.getTime())) {
-        return;
+  const painShortcutTimelineByDate = useMemo<Partial<Record<string, number[]>>>(() => {
+    if (!painShortcutEvents.length) {
+      return {};
+    }
+    const grouped: Record<string, QuickPainEvent[]> = {};
+    painShortcutEvents.forEach((event) => {
+      if (!grouped[event.date]) {
+        grouped[event.date] = [];
       }
-      const hour = parsed.getHours() + parsed.getMinutes() / 60;
-      const index = Math.min(segments.length - 1, Math.max(0, Math.floor((hour / 24) * segments.length)));
-      const clampedIntensity = Math.max(0, Math.min(10, Math.round(event.intensity)));
-      segments[index] = Math.max(segments[index], clampedIntensity);
+      grouped[event.date].push(event);
     });
-    return segments;
-  }, [todaysPainShortcutEvents]);
+    const timelines: Partial<Record<string, number[]>> = {};
+    Object.entries(grouped).forEach(([date, events]) => {
+      timelines[date] = computePainShortcutTimeline(events);
+    });
+    return timelines;
+  }, [painShortcutEvents]);
+
+  const painShortcutTimeline = useMemo(
+    () => computePainShortcutTimeline(todaysPainShortcutEvents),
+    [todaysPainShortcutEvents]
+  );
 
   const latestPainShortcutEvent = todaysPainShortcutEvents.length
     ? todaysPainShortcutEvents[todaysPainShortcutEvents.length - 1]
@@ -3355,6 +3407,7 @@ export default function HomePage() {
         isBleeding: entry.bleeding?.isBleeding ?? false,
         ovulationPositive: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
         ovulationPainIntensity: entry.ovulationPain?.intensity ?? null,
+        painTimeline: null,
       });
     });
 
@@ -3364,8 +3417,11 @@ export default function HomePage() {
       currentDate.setDate(startDate.getDate() + dayOffset);
       const iso = formatDate(currentDate);
       const existing = pointsByDate.get(iso);
-      points.push(
-        existing ?? {
+      const timeline = painShortcutTimelineByDate[iso] ?? null;
+      if (existing) {
+        points.push({ ...existing, painTimeline: timeline });
+      } else {
+        points.push({
           date: iso,
           cycleDay: null,
           painNRS: 0,
@@ -3373,15 +3429,16 @@ export default function HomePage() {
           isBleeding: false,
           ovulationPositive: false,
           ovulationPainIntensity: null,
-        }
-      );
+          painTimeline: timeline,
+        });
+      }
     }
 
     return {
       startDate: formatDate(startDate),
       points,
     };
-  }, [annotatedDailyEntries, today]);
+  }, [annotatedDailyEntries, painShortcutTimelineByDate, today]);
 
   const canGoToNextDay = useMemo(() => dailyDraft.date < today, [dailyDraft.date, today]);
 
