@@ -3803,6 +3803,44 @@ export default function HomePage() {
   const hasPainSummaryData = painSummaryRegions.length > 0;
   const showPainSummaryInToolbar =
     activeView === "daily" && dailyActiveCategory === "pain" && hasPainSummaryData;
+  const renderPainSummaryToolbar = () => {
+    if (!hasPainSummaryData) {
+      return null;
+    }
+
+    return (
+      <div className="rounded-xl border border-rose-100 bg-white/80 p-3 text-[11px] text-rose-700 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-rose-500">
+          <span>Schmerzübersicht</span>
+          {typeof painSummaryMaxIntensity === "number" ? (
+            <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] text-rose-700">
+              Max. {painSummaryMaxIntensity}/10
+            </span>
+          ) : null}
+        </div>
+        <div className="mt-2 flex flex-wrap gap-2 text-xs text-rose-900">
+          {painSummaryRegions.map((region) => {
+            const details: string[] = [];
+            if (typeof region.intensity === "number") {
+              details.push(`${region.intensity}/10`);
+            }
+            if (region.qualities.length) {
+              details.push(formatList(region.qualities, 2));
+            }
+            return (
+              <span
+                key={region.id}
+                className="inline-flex items-center gap-1 rounded-full bg-rose-50/80 px-3 py-1 text-xs font-medium text-rose-800"
+              >
+                <span className="font-semibold text-rose-900">{region.label}</span>
+                {details.length ? <span className="text-rose-500">· {details.join(" · ")}</span> : null}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
   const renderPainSummaryPanel = () => {
     if (!hasPainSummaryData) {
       return null;
@@ -6450,7 +6488,7 @@ export default function HomePage() {
             <div className="flex flex-wrap items-center justify-end gap-2">{toolbarBadgeItems}</div>
           </div>
           {infoMessage ? <p className="text-xs text-rose-600 sm:text-sm">{infoMessage}</p> : null}
-          {showPainSummaryInToolbar ? renderPainSummaryPanel() : null}
+          {showPainSummaryInToolbar ? renderPainSummaryToolbar() : null}
           {showPbacSummaryInToolbar ? renderPbacSummaryPanel() : null}
         </div>
       </header>
