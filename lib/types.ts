@@ -14,6 +14,7 @@ export interface DailyEntry {
     regionId: ID;
     nrs: number;
     qualities: DailyEntry["painQuality"];
+    time?: string;
   }>;
 
   impactNRS?: number;
