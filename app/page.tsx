@@ -334,7 +334,7 @@ type QuickPainEvent = {
   quality: DailyEntry["painQuality"][number] | null;
 };
 
-type PendingQuickPainAdd = Omit<QuickPainEvent, "date">;
+type PendingQuickPainAdd = QuickPainEvent;
 
 type DailyCategoryId =
   | "overview"
@@ -3780,6 +3780,73 @@ export default function HomePage() {
       )}
     </div>
   );
+  const painSummaryRegions = useMemo(
+    () =>
+      (dailyDraft.painRegions ?? []).map((region) => ({
+        id: region.regionId,
+        label: getRegionLabel(region.regionId),
+        intensity:
+          typeof region.nrs === "number" ? Math.max(0, Math.min(10, Math.round(region.nrs))) : null,
+        qualities: (region.qualities ?? []).filter(Boolean),
+      })),
+    [dailyDraft.painRegions]
+  );
+  const painSummaryMaxIntensity = useMemo(() => {
+    const intensities = painSummaryRegions
+      .map((region) => region.intensity)
+      .filter((value): value is number => typeof value === "number");
+    if (!intensities.length) {
+      return null;
+    }
+    return Math.max(...intensities);
+  }, [painSummaryRegions]);
+  const hasPainSummaryData = painSummaryRegions.length > 0;
+  const showPainSummaryInToolbar =
+    activeView === "daily" && dailyActiveCategory === "pain" && hasPainSummaryData;
+  const renderPainSummaryPanel = () => {
+    if (!hasPainSummaryData) {
+      return null;
+    }
+    return (
+      <div className="space-y-4 rounded-xl border border-rose-100 bg-rose-50/90 p-4 text-sm text-rose-700 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Schmerzübersicht</p>
+            <TermHeadline termKey="bodyMap" />
+          </div>
+          <div className="text-right">
+            <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Max. Intensität</p>
+            <p className="text-3xl font-bold text-rose-900">
+              {typeof painSummaryMaxIntensity === "number" ? `${painSummaryMaxIntensity}/10` : "–"}
+            </p>
+            <p className="text-xs font-medium text-rose-500">
+              {painSummaryRegions.length} Bereich{painSummaryRegions.length === 1 ? "" : "e"}
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {painSummaryRegions.map((region) => (
+            <span
+              key={region.id}
+              className="flex min-w-[8rem] flex-col gap-1 rounded-xl border border-rose-100 bg-white/90 px-3 py-2 text-xs text-rose-900 shadow-sm sm:min-w-[11rem]"
+            >
+              <span className="flex items-center justify-between gap-2 text-sm font-semibold">
+                <span className="truncate">{region.label}</span>
+                {typeof region.intensity === "number" ? (
+                  <span className="text-rose-600">{region.intensity}/10</span>
+                ) : null}
+              </span>
+              {region.qualities.length ? (
+                <span className="text-rose-600">{formatList(region.qualities, 2)}</span>
+              ) : (
+                <span className="text-rose-400">Noch keine Art gewählt</span>
+              )}
+            </span>
+          ))}
+        </div>
+      </div>
+    );
+  };
   const currentPbacForNotice = dailyDraft.bleeding.isBleeding ? pbacScore : dailyDraft.bleeding.pbacScore ?? 0;
   const showDizzinessNotice =
     activeDizziness && dailyDraft.dizzinessOpt?.present && currentPbacForNotice >= HEAVY_BLEED_PBAC;
@@ -5381,13 +5448,13 @@ export default function HomePage() {
     if (!pendingPainQuickAdd) {
       return;
     }
-    if (dailyDraft.date !== today) {
-      selectDailyDate(today);
+    const { date, regionId, intensity, quality, timestamp } = pendingPainQuickAdd;
+    if (dailyDraft.date !== date) {
+      selectDailyDate(date);
       return;
     }
-    const { regionId, intensity, quality, timestamp, id } = pendingPainQuickAdd;
     setDailyDraft((prev) => {
-      if (prev.date !== today) {
+      if (prev.date !== date) {
         return prev;
       }
       const current = prev.painRegions ?? [];
@@ -5422,19 +5489,7 @@ export default function HomePage() {
       }
       return buildDailyDraftWithPainRegions(prev, nextRegions);
     });
-    const eventDateMatch = timestamp.match(/^(\d{4}-\d{2}-\d{2})/);
-    const resolvedDate = eventDateMatch ? eventDateMatch[1] : today;
-    setPainShortcutEvents((prev) => [
-      ...prev,
-      {
-        id,
-        date: resolvedDate,
-        intensity,
-        timestamp,
-        regionId,
-        quality: quality ?? null,
-      },
-    ]);
+    setPainShortcutEvents((prev) => [...prev, pendingPainQuickAdd]);
     setCategoryCompletion("pain", true);
     setPendingPainQuickAdd(null);
   }, [
@@ -5444,7 +5499,6 @@ export default function HomePage() {
     setDailyDraft,
     setPainShortcutEvents,
     setCategoryCompletion,
-    today,
   ]);
 
   const categoryZeroStates = useMemo<
@@ -5615,9 +5669,10 @@ export default function HomePage() {
     }
     const now = new Date();
     const timestamp = now.toISOString();
-    const id = now.getTime();
+    const date = formatDate(now);
     setPendingPainQuickAdd({
-      id,
+      id: now.getTime(),
+      date,
       regionId: painQuickRegion,
       quality: painQuickQuality,
       intensity: Math.max(0, Math.min(10, Math.round(painQuickIntensity))),
@@ -5626,19 +5681,14 @@ export default function HomePage() {
     setPainQuickAddOpen(false);
     resetPainQuickAddState();
     manualDailySelectionRef.current = false;
-    selectDailyDate(today);
-    setDailyActiveCategory("pain");
-    setActiveView("daily");
+    selectDailyDate(date);
   }, [
     painQuickIntensity,
     painQuickQuality,
     painQuickRegion,
     resetPainQuickAddState,
     selectDailyDate,
-    setActiveView,
-    setDailyActiveCategory,
     setPendingPainQuickAdd,
-    today,
   ]);
 
   const handleBleedingQuickAddSelect = useCallback((itemId: PbacProductItemId) => {
@@ -6400,6 +6450,7 @@ export default function HomePage() {
             <div className="flex flex-wrap items-center justify-end gap-2">{toolbarBadgeItems}</div>
           </div>
           {infoMessage ? <p className="text-xs text-rose-600 sm:text-sm">{infoMessage}</p> : null}
+          {showPainSummaryInToolbar ? renderPainSummaryPanel() : null}
           {showPbacSummaryInToolbar ? renderPbacSummaryPanel() : null}
         </div>
       </header>
@@ -6911,6 +6962,9 @@ export default function HomePage() {
                   onComplete={() => setDailyActiveCategory("overview")}
                 >
                   <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                    {hasPainSummaryData ? (
+                      <div className="md:col-span-2">{renderPainSummaryPanel()}</div>
+                    ) : null}
                     <div className="space-y-6">
                       <TermField termKey="bodyMap">
                         <BodyMap
