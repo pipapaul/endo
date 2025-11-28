@@ -2695,9 +2695,6 @@ export default function HomePage() {
   const [painQuickRegion, setPainQuickRegion] = useState<string | null>(null);
   const [painQuickQuality, setPainQuickQuality] = useState<DailyEntry["painQuality"][number] | null>(null);
   const [painQuickIntensity, setPainQuickIntensity] = useState(5);
-  const [painQuickDeepDyspareunia, setPainQuickDeepDyspareunia] = useState(false);
-  const [painQuickOvulationActive, setPainQuickOvulationActive] = useState(false);
-  const [painQuickOvulationSide, setPainQuickOvulationSide] = useState<OvulationPainSide>("unsicher");
   const [pendingPainQuickAdd, setPendingPainQuickAdd] = useState<PendingQuickPainAdd | null>(null);
   const [painShortcutEvents, setPainShortcutEvents] = useState<QuickPainEvent[]>([]);
   const bleedingQuickAddNoticeTimeoutRef = useRef<number | null>(null);
@@ -4829,87 +4826,6 @@ export default function HomePage() {
       </p>
     ));
 
-  const renderPainRegionCard = (regionId: string) => {
-    const regions = dailyDraft.painRegions ?? [];
-    const regionIndex = regions.findIndex((region) => region.regionId === regionId);
-    if (regionIndex === -1) {
-      return null;
-    }
-    const region = regions[regionIndex];
-    const qualityChoices = region.regionId === HEAD_REGION_ID ? HEAD_PAIN_QUALITIES : PAIN_QUALITIES;
-    return (
-      <div
-        id={`body-map-region-${region.regionId}`}
-        tabIndex={-1}
-        className="space-y-3 rounded-lg border border-rose-100 bg-white p-4"
-      >
-        <div className="flex items-start justify-between gap-2">
-          <p className="font-medium text-rose-800">Schmerzen in: {getRegionLabel(region.regionId)}</p>
-          <button
-            type="button"
-            onClick={() => removePainRegion(region.regionId)}
-            className="rounded-full border border-rose-100 p-1 text-rose-400 transition hover:border-rose-200 hover:text-rose-700"
-            aria-label={`${getRegionLabel(region.regionId)} entfernen`}
-          >
-            <X className="h-4 w-4" aria-hidden />
-          </button>
-        </div>
-        {renderIssuesForPath(`painRegions[${regionIndex}].regionId`)}
-        <div className="space-y-2">
-          <Label className="text-xs text-rose-600" htmlFor={`region-nrs-${region.regionId}`}>
-            Intensität (0–10)
-          </Label>
-          <NrsInput
-            id={`region-nrs-${region.regionId}`}
-            value={region.nrs}
-            onChange={(value) => {
-              setDailyDraft((prev) => {
-                const nextRegions = (prev.painRegions ?? []).map((r) =>
-                  r.regionId === region.regionId
-                    ? {
-                        ...r,
-                        nrs: Math.max(0, Math.min(10, Math.round(value))),
-                      }
-                    : r
-                ) as NonNullable<DailyEntry["painRegions"]>;
-                return buildDailyDraftWithPainRegions(prev, nextRegions);
-              });
-            }}
-          />
-          {renderIssuesForPath(`painRegions[${regionIndex}].nrs`)}
-        </div>
-        <div className="space-y-2">
-          <Label className="text-xs text-rose-600">Schmerzcharakter in dieser Region</Label>
-          <MultiSelectChips
-            options={qualityChoices.map((quality) => ({ value: quality, label: quality }))}
-            value={region.qualities}
-            onToggle={(next) => {
-              setDailyDraft((prev) => {
-                const updatedQualities =
-                  region.regionId === HEAD_REGION_ID
-                    ? sanitizeHeadRegionQualities(next as DailyEntry["painQuality"])
-                    : (next as DailyEntry["painQuality"]);
-                const nextRegions = (prev.painRegions ?? []).map((r) =>
-                  r.regionId === region.regionId
-                    ? {
-                        ...r,
-                        qualities: updatedQualities,
-                      }
-                    : r
-                ) as NonNullable<DailyEntry["painRegions"]>;
-                return buildDailyDraftWithPainRegions(prev, nextRegions);
-              });
-            }}
-          />
-          {renderIssuesForPath(`painRegions[${regionIndex}].qualities`)}
-          {(region.qualities ?? []).map((_, qualityIndex) =>
-            renderIssuesForPath(`painRegions[${regionIndex}].qualities[${qualityIndex}]`)
-          )}
-        </div>
-      </div>
-    );
-  };
-
   const optionalSensorsLabel = sensorsVisible ? "Optional (Hilfsmittel) ausblenden" : "Optional (Hilfsmittel) einblenden";
 
   const cycleOverlay = useMemo(() => {
@@ -5602,9 +5518,6 @@ export default function HomePage() {
     setPainQuickRegion(null);
     setPainQuickQuality(null);
     setPainQuickIntensity(5);
-    setPainQuickDeepDyspareunia(false);
-    setPainQuickOvulationActive(false);
-    setPainQuickOvulationSide("unsicher");
   }, []);
 
   const handlePainQuickRegionSelect = useCallback((regionId: string) => {
@@ -5674,21 +5587,6 @@ export default function HomePage() {
           nextRegions[existingIndex] = nextRegion;
         }
         const nextDraft = buildDailyDraftWithPainRegions(prev, nextRegions);
-        if (painQuickDeepDyspareunia) {
-          nextDraft.symptoms = {
-            ...nextDraft.symptoms,
-            deepDyspareunia: {
-              present: true,
-              score: nextDraft.symptoms?.deepDyspareunia?.score ?? 0,
-            },
-          };
-        }
-        if (painQuickOvulationActive) {
-          nextDraft.ovulationPain = {
-            side: painQuickOvulationSide,
-            intensity,
-          };
-        }
         return nextDraft;
       });
       setCategoryCompletion("pain", true);
@@ -5714,10 +5612,7 @@ export default function HomePage() {
     selectDailyDate(date);
   }, [
     painQuickContext,
-    painQuickDeepDyspareunia,
     painQuickIntensity,
-    painQuickOvulationActive,
-    painQuickOvulationSide,
     painQuickQuality,
     painQuickRegion,
     setCategoryCompletion,
@@ -7027,34 +6922,7 @@ export default function HomePage() {
                       Schmerz hinzufügen
                     </Button>
                   </div>
-                  <div className="grid gap-6 md:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-                    <div className="space-y-4">
-                      <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm font-semibold text-rose-900">Erfasste Schmerzen</p>
-                          {dailyDraft.painRegions?.length ? (
-                            <span className="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700">
-                              {dailyDraft.painRegions.length}
-                            </span>
-                          ) : null}
-                        </div>
-                        {dailyDraft.painRegions?.length ? (
-                          <div className="space-y-3">
-                            {dailyDraft.painRegions.map((region) => (
-                              <div key={region.regionId}>{renderPainRegionCard(region.regionId)}</div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-rose-700">
-                            Noch keine Schmerzen erfasst. Nutze „Schmerz hinzufügen“, um einen Eintrag anzulegen.
-                          </p>
-                        )}
-                        {renderIssuesForPath("painRegions")}
-                        {renderIssuesForPath("painMapRegionIds")}
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
+                  <div className="space-y-4">
                       <details
                         className="group rounded-lg border border-rose-100 bg-rose-50 text-rose-700 [&[open]>summary]:border-b [&[open]>summary]:bg-rose-100"
                         open={deepDyspareuniaCardOpen}
@@ -7231,7 +7099,6 @@ export default function HomePage() {
                         </div>
                       </TermField>
                       {renderIssuesForPath("impactNRS")}
-                    </div>
                   </div>
                 </Section>
               </div>
@@ -9110,56 +8977,6 @@ export default function HomePage() {
                   </div>
                   <SliderValueDisplay value={painQuickIntensity} />
                 </div>
-                {painQuickContext === "module" ? (
-                  <div className="space-y-3 rounded-xl border border-rose-100 bg-rose-50 p-3">
-                    <div className="space-y-1 rounded-lg bg-white/60 p-3">
-                      <label className="flex items-center gap-2 text-sm font-medium text-rose-900">
-                        <Checkbox
-                          checked={painQuickDeepDyspareunia}
-                          onChange={(event) => setPainQuickDeepDyspareunia(event.target.checked)}
-                        />
-                        <span>Schmerzen beim Sex markieren</span>
-                      </label>
-                      <p className="text-xs text-rose-600">
-                        Setzt den Eintrag „Schmerzen beim Sex“ für heute auf vorhanden.
-                      </p>
-                    </div>
-                    <div className="space-y-2 rounded-lg bg-white/60 p-3">
-                      <label className="flex items-center gap-2 text-sm font-medium text-rose-900">
-                        <Checkbox
-                          checked={painQuickOvulationActive}
-                          onChange={(event) => setPainQuickOvulationActive(event.target.checked)}
-                        />
-                        <span>Vermuteter Eisprung</span>
-                      </label>
-                      {painQuickOvulationActive ? (
-                        <div className="space-y-2">
-                          <Label className="text-xs text-rose-600">Seite</Label>
-                          <Select
-                            value={painQuickOvulationSide}
-                            onValueChange={(value) =>
-                              setPainQuickOvulationSide(value as OvulationPainSide)
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Auswählen" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {OVULATION_PAIN_SIDES.map((side) => (
-                                <SelectItem key={side} value={side}>
-                                  {OVULATION_PAIN_SIDE_LABELS[side]}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <p className="text-xs text-rose-600">
-                            Die Schmerzstärke wird mit dem obigen Wert gespeichert.
-                          </p>
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
                 <Button
                   type="button"
                   className="w-full"
