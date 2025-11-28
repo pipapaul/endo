@@ -2778,6 +2778,7 @@ export default function HomePage() {
   const [pendingBleedingQuickAdd, setPendingBleedingQuickAdd] = useState<PbacProductItemId | null>(null);
   const [bleedingQuickAddNotice, setBleedingQuickAddNotice] = useState<BleedingQuickAddNotice | null>(null);
   const [painQuickAddOpen, setPainQuickAddOpen] = useState(false);
+  const [painQuickContext, setPainQuickContext] = useState<"shortcut" | "module">("shortcut");
   const [painQuickStep, setPainQuickStep] = useState<1 | 2 | 3>(1);
   const [painQuickRegion, setPainQuickRegion] = useState<string | null>(null);
   const [painQuickQuality, setPainQuickQuality] = useState<DailyEntry["painQuality"][number] | null>(null);
@@ -3869,6 +3870,14 @@ export default function HomePage() {
               >
                 <span className="font-semibold text-rose-900">{region.label}</span>
                 {details.length ? <span className="text-rose-500">· {details.join(" · ")}</span> : null}
+                <button
+                  type="button"
+                  onClick={() => removePainRegion(region.id)}
+                  className="rounded-full p-1 text-rose-400 transition hover:bg-rose-100 hover:text-rose-700"
+                  aria-label={`${region.label} entfernen`}
+                >
+                  <X className="h-3 w-3" aria-hidden />
+                </button>
               </span>
             );
           })}
@@ -5724,11 +5733,19 @@ export default function HomePage() {
 
   const handlePainShortcut = useCallback(() => {
     resetPainQuickAddState();
+    setPainQuickContext("shortcut");
+    setPainQuickAddOpen(true);
+  }, [resetPainQuickAddState]);
+
+  const handlePainModuleQuickAdd = useCallback(() => {
+    resetPainQuickAddState();
+    setPainQuickContext("module");
     setPainQuickAddOpen(true);
   }, [resetPainQuickAddState]);
 
   const handlePainQuickClose = useCallback(() => {
     setPainQuickAddOpen(false);
+    setPainQuickContext("shortcut");
     resetPainQuickAddState();
   }, [resetPainQuickAddState]);
 
@@ -5740,6 +5757,43 @@ export default function HomePage() {
     if (!painQuickRegion || !painQuickQuality) {
       return;
     }
+    const intensity = Math.max(0, Math.min(10, Math.round(painQuickIntensity)));
+    if (painQuickContext === "module") {
+      setDailyDraft((prev) => {
+        const current = prev.painRegions ?? [];
+        const nextRegions = [...current] as NonNullable<DailyEntry["painRegions"]>;
+        const existingIndex = nextRegions.findIndex((region) => region.regionId === painQuickRegion);
+        const existingRegion = existingIndex === -1 ? null : nextRegions[existingIndex];
+        const mergedQualities = new Set(existingRegion?.qualities ?? []);
+        mergedQualities.add(painQuickQuality);
+        let normalized = Array.from(mergedQualities) as DailyEntry["painQuality"];
+        if (painQuickRegion === HEAD_REGION_ID) {
+          normalized = sanitizeHeadRegionQualities(normalized);
+        } else {
+          normalized = normalized.filter((entry) => !MIGRAINE_QUALITY_SET.has(entry)) as DailyEntry["painQuality"];
+        }
+        const nextRegion: NonNullable<DailyEntry["painRegions"]>[number] = {
+          ...(existingRegion ?? { regionId: painQuickRegion, nrs: intensity, qualities: [] as DailyEntry["painQuality"] }),
+          regionId: painQuickRegion,
+          nrs: intensity,
+          qualities: normalized,
+        };
+        if ("time" in nextRegion) {
+          const { time: _omit, ...rest } = nextRegion as typeof nextRegion & { time?: string };
+          nextRegions[existingIndex === -1 ? nextRegions.length : existingIndex] = rest;
+        } else if (existingIndex === -1) {
+          nextRegions.push(nextRegion);
+        } else {
+          nextRegions[existingIndex] = nextRegion;
+        }
+        return buildDailyDraftWithPainRegions(prev, nextRegions);
+      });
+      setCategoryCompletion("pain", true);
+      setPainQuickAddOpen(false);
+      resetPainQuickAddState();
+      return;
+    }
+
     const now = new Date();
     const timestamp = now.toISOString();
     const date = formatDate(now);
@@ -5748,7 +5802,7 @@ export default function HomePage() {
       date,
       regionId: painQuickRegion,
       quality: painQuickQuality,
-      intensity: Math.max(0, Math.min(10, Math.round(painQuickIntensity))),
+      intensity,
       timestamp,
     });
     setPainQuickAddOpen(false);
@@ -5756,9 +5810,12 @@ export default function HomePage() {
     manualDailySelectionRef.current = false;
     selectDailyDate(date);
   }, [
+    painQuickContext,
     painQuickIntensity,
     painQuickQuality,
     painQuickRegion,
+    setCategoryCompletion,
+    setDailyDraft,
     resetPainQuickAddState,
     selectDailyDate,
     setPendingPainQuickAdd,
@@ -7056,6 +7113,14 @@ export default function HomePage() {
                   description="Zuerst betroffene Körperbereiche wählen, anschließend Intensität und Schmerzart je Region erfassen"
                   onComplete={() => setDailyActiveCategory("overview")}
                 >
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-100 bg-white/80 p-3 text-sm text-rose-800">
+                    <p className="text-sm text-rose-700">
+                      Füge neue Schmerz-Einträge mit drei schnellen Schritten hinzu.
+                    </p>
+                    <Button type="button" variant="outline" onClick={handlePainModuleQuickAdd}>
+                      Schmerz hinzufügen
+                    </Button>
+                  </div>
                   <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                     <div className="space-y-6">
                       <TermField termKey="bodyMap">
@@ -8994,7 +9059,9 @@ export default function HomePage() {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">Schmerz</p>
-                <p className="text-lg font-semibold text-rose-900">Shortcut</p>
+                <p className="text-lg font-semibold text-rose-900">
+                  {painQuickContext === "module" ? "Schmerz hinzufügen" : "Shortcut"}
+                </p>
               </div>
               <div className="flex items-center gap-1">
                 {painQuickStep > 1 ? (
