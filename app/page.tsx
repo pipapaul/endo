@@ -2785,8 +2785,6 @@ export default function HomePage() {
   const [pendingPainQuickAdd, setPendingPainQuickAdd] = useState<PendingQuickPainAdd | null>(null);
   const [painShortcutEvents, setPainShortcutEvents] = useState<QuickPainEvent[]>([]);
   const bleedingQuickAddNoticeTimeoutRef = useRef<number | null>(null);
-  const dailyShortcutButtonRef = useRef<HTMLButtonElement | null>(null);
-  const [shortcutButtonsHeight, setShortcutButtonsHeight] = useState<number | null>(null);
   const updatePbacCount = useCallback(
     (itemId: (typeof PBAC_ITEMS)[number]["id"], nextValue: number, max = PBAC_MAX_PRODUCT_COUNT) => {
       setPbacCounts((prev) => {
@@ -2875,26 +2873,6 @@ export default function HomePage() {
         window.clearTimeout(bleedingQuickAddNoticeTimeoutRef.current);
       }
     };
-  }, []);
-  useLayoutEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    const element = dailyShortcutButtonRef.current;
-    if (!element) {
-      return;
-    }
-    const updateHeight = () => {
-      setShortcutButtonsHeight(element.getBoundingClientRect().height);
-    };
-    updateHeight();
-    if (typeof ResizeObserver === "undefined") {
-      const interval = window.setInterval(updateHeight, 250);
-      return () => window.clearInterval(interval);
-    }
-    const observer = new ResizeObserver(() => updateHeight());
-    observer.observe(element);
-    return () => observer.disconnect();
   }, []);
   const [dailyCategorySnapshots, setDailyCategorySnapshots] = useState<
     Partial<Record<TrackableDailyCategoryId, string>>
@@ -6636,62 +6614,85 @@ export default function HomePage() {
                 <div
                   role="group"
                   aria-label={painShortcutAriaLabel}
-                  className="flex flex-1 min-w-[12rem] items-center justify-between gap-2 rounded-xl border border-rose-100 bg-white/80 px-3 py-2 text-rose-800 shadow-sm"
+                  className="flex flex-1 min-w-[12rem] items-center gap-3 rounded-xl border border-rose-100 bg-white/80 px-3 py-2 text-rose-800 shadow-sm"
                 >
-                  <div className="flex flex-col leading-tight">
-                    <span className="text-[12px] font-semibold leading-tight">Akut-Schmerzen</span>
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-rose-500">
-                      quick tracker
-                    </span>
-                  </div>
-                  <div className="flex h-6 items-end gap-0.5" aria-hidden>
-                    {painShortcutTimeline.map((value, index) => {
-                      const height = 4 + (value / 10) * 14;
-                      return (
-                        <span
-                          key={`pain-inline-bar-${index}`}
-                          className={cn(
-                            "w-1.5 rounded-full bg-rose-100 transition",
-                            value > 0 ? "bg-rose-500 shadow-sm shadow-rose-200" : "bg-rose-100"
-                          )}
-                          style={{ height }}
-                        />
-                      );
-                    })}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={handlePainShortcut}
+                    aria-label={painShortcutAriaLabel}
+                    className="h-9 w-9 rounded-full border-rose-200 bg-white text-rose-700 shadow-sm transition hover:border-rose-300 hover:bg-rose-50"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                  <div className="flex flex-1 items-center justify-between gap-2">
+                    <div className="flex flex-col leading-tight">
+                      <span className="text-[12px] font-semibold leading-tight">Akut-Schmerzen</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-rose-500">
+                        quick tracker
+                      </span>
+                    </div>
+                    <div className="flex h-6 items-end gap-0.5" aria-hidden>
+                      {painShortcutTimeline.map((value, index) => {
+                        const height = 4 + (value / 10) * 14;
+                        return (
+                          <span
+                            key={`pain-inline-bar-${index}`}
+                            className={cn(
+                              "w-1.5 rounded-full bg-rose-100 transition",
+                              value > 0 ? "bg-rose-500 shadow-sm shadow-rose-200" : "bg-rose-100"
+                            )}
+                            style={{ height }}
+                          />
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
                 <div
                   role="group"
                   aria-label={periodShortcutAriaLabel}
-                  className="flex flex-1 min-w-[12rem] items-center justify-between gap-2 rounded-xl border border-rose-100 bg-white/80 px-3 py-2 text-rose-800 shadow-sm"
+                  className="flex flex-1 min-w-[12rem] items-center gap-3 rounded-xl border border-rose-100 bg-white/80 px-3 py-2 text-rose-800 shadow-sm"
                 >
-                  <div className="flex flex-col leading-tight">
-                    <span className="text-[12px] font-semibold leading-tight">Periodenprodukte</span>
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-rose-500">
-                      quick tracker
-                    </span>
-                  </div>
-                  <div className="flex min-h-[0.75rem] flex-wrap items-center justify-end gap-1" aria-hidden>
-                    {bleedingShortcutProducts.dots.length === 0 ? (
-                      <span className="h-1 w-6 rounded-full bg-rose-100" />
-                    ) : (
-                      bleedingShortcutProducts.dots.map((saturation, index) => (
-                        <span
-                          key={`period-inline-dot-${saturation}-${index}`}
-                          className={cn(
-                            "h-2 w-2 rounded-full shadow-sm shadow-rose-200/60",
-                            PBAC_SATURATION_DOT_CLASSES[saturation]
-                          )}
-                        />
-                      ))
-                    )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setBleedingQuickAddOpen(true)}
+                    aria-label={periodShortcutAriaLabel}
+                    className="h-9 w-9 rounded-full border-rose-200 bg-white text-rose-700 shadow-sm transition hover:border-rose-300 hover:bg-rose-50"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                  <div className="flex flex-1 items-center justify-between gap-2">
+                    <div className="flex flex-col leading-tight">
+                      <span className="text-[12px] font-semibold leading-tight">Periodenprodukte</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-rose-500">
+                        quick tracker
+                      </span>
+                    </div>
+                    <div className="flex min-h-[0.75rem] flex-wrap items-center justify-end gap-1" aria-hidden>
+                      {bleedingShortcutProducts.dots.length === 0 ? (
+                        <span className="h-1 w-6 rounded-full bg-rose-100" />
+                      ) : (
+                        bleedingShortcutProducts.dots.map((saturation, index) => (
+                          <span
+                            key={`period-inline-dot-${saturation}-${index}`}
+                            className={cn(
+                              "h-2 w-2 rounded-full shadow-sm shadow-rose-200/60",
+                              PBAC_SATURATION_DOT_CLASSES[saturation]
+                            )}
+                          />
+                        ))
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-3">
-                <div className="flex gap-3 sm:col-span-3 lg:col-span-2">
+                <div className="sm:col-span-3 lg:col-span-2">
                   <Button
-                    ref={dailyShortcutButtonRef}
                     type="button"
                     onClick={() => {
                       manualDailySelectionRef.current = false;
@@ -6701,7 +6702,7 @@ export default function HomePage() {
                       setDailyActiveCategory("overview");
                       setActiveView("daily");
                     }}
-                    className="flex min-h-[180px] flex-1 flex-col items-start justify-start gap-2 rounded-2xl bg-rose-600 px-6 py-5 text-left text-white shadow-lg transition hover:bg-rose-500"
+                    className="flex min-h-[180px] w-full flex-col items-start justify-start gap-2 rounded-2xl bg-rose-600 px-6 py-5 text-left text-white shadow-lg transition hover:bg-rose-500"
                   >
                     <span className="text-lg font-semibold">Täglicher Check-in</span>
                     <span className="text-sm text-rose-50/80">In unter einer Minute erledigt</span>
@@ -6712,39 +6713,6 @@ export default function HomePage() {
                       </span>
                     )}
                   </Button>
-                  <div
-                    className="flex w-[8.75rem] min-w-[8rem] flex-col gap-3 sm:min-h-[180px]"
-                    style={shortcutButtonsHeight ? { height: shortcutButtonsHeight } : undefined}
-                  >
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handlePainShortcut}
-                    aria-label={painShortcutAriaLabel}
-                    className="flex w-full flex-1 flex-col items-center justify-center gap-1.5 rounded-2xl border-rose-200 bg-white/80 px-3 py-4 text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
-                  >
-                    <div className="flex w-full flex-col items-center gap-0.5 text-center">
-                      <span className="text-[13px] font-semibold leading-tight text-rose-900">Akut-Schmerzen</span>
-                      <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-rose-500">
-                        quick tracker
-                      </span>
-                    </div>
-                  </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setBleedingQuickAddOpen(true)}
-                      aria-label={periodShortcutAriaLabel}
-                      className="flex w-full flex-1 flex-col items-center justify-center gap-1.5 rounded-2xl border-rose-200 bg-white/80 px-3 py-4 text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
-                    >
-                      <div className="flex w-full flex-col items-center gap-0.5 text-center">
-                        <span className="text-[13px] font-semibold leading-tight text-rose-900">Periodenprodukte</span>
-                        <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-rose-500">
-                          quick tracker
-                        </span>
-                      </div>
-                    </Button>
-                  </div>
                 </div>
                 <Button
                   type="button"
