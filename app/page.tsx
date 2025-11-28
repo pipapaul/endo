@@ -6632,6 +6632,62 @@ export default function HomePage() {
                 {infoMessage && <p className="text-sm font-medium text-rose-600">{infoMessage}</p>}
               </header>
               {cycleOverview ? <CycleOverviewMiniChart data={cycleOverview} /> : null}
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <div
+                  role="group"
+                  aria-label={painShortcutAriaLabel}
+                  className="flex flex-1 min-w-[12rem] items-center justify-between gap-2 rounded-xl border border-rose-100 bg-white/80 px-3 py-2 text-rose-800 shadow-sm"
+                >
+                  <div className="flex flex-col leading-tight">
+                    <span className="text-[12px] font-semibold leading-tight">Akut-Schmerzen</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-rose-500">
+                      quick tracker
+                    </span>
+                  </div>
+                  <div className="flex h-6 items-end gap-0.5" aria-hidden>
+                    {painShortcutTimeline.map((value, index) => {
+                      const height = 4 + (value / 10) * 14;
+                      return (
+                        <span
+                          key={`pain-inline-bar-${index}`}
+                          className={cn(
+                            "w-1.5 rounded-full bg-rose-100 transition",
+                            value > 0 ? "bg-rose-500 shadow-sm shadow-rose-200" : "bg-rose-100"
+                          )}
+                          style={{ height }}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+                <div
+                  role="group"
+                  aria-label={periodShortcutAriaLabel}
+                  className="flex flex-1 min-w-[12rem] items-center justify-between gap-2 rounded-xl border border-rose-100 bg-white/80 px-3 py-2 text-rose-800 shadow-sm"
+                >
+                  <div className="flex flex-col leading-tight">
+                    <span className="text-[12px] font-semibold leading-tight">Periodenprodukte</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-rose-500">
+                      quick tracker
+                    </span>
+                  </div>
+                  <div className="flex min-h-[0.75rem] flex-wrap items-center justify-end gap-1" aria-hidden>
+                    {bleedingShortcutProducts.dots.length === 0 ? (
+                      <span className="h-1 w-6 rounded-full bg-rose-100" />
+                    ) : (
+                      bleedingShortcutProducts.dots.map((saturation, index) => (
+                        <span
+                          key={`period-inline-dot-${saturation}-${index}`}
+                          className={cn(
+                            "h-2 w-2 rounded-full shadow-sm shadow-rose-200/60",
+                            PBAC_SATURATION_DOT_CLASSES[saturation]
+                          )}
+                        />
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="flex gap-3 sm:col-span-3 lg:col-span-2">
                   <Button
