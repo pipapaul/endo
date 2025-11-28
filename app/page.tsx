@@ -1964,46 +1964,6 @@ function ScoreInput({
   );
 }
 
-function MultiSelectChips({
-  options,
-  value,
-  onToggle,
-}: {
-  options: { value: string; label: string }[];
-  value: string[];
-  onToggle: (next: string[]) => void;
-}) {
-  const toggle = (option: string) => {
-    const set = new Set(value);
-    if (set.has(option)) {
-      set.delete(option);
-    } else {
-      set.add(option);
-    }
-    onToggle(Array.from(set));
-  };
-  return (
-    <div className="flex flex-wrap gap-2">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          onClick={() => toggle(option.value)}
-          aria-pressed={value.includes(option.value)}
-          className={cn(
-            "rounded-full border px-3 py-1 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2",
-            value.includes(option.value)
-              ? "border-rose-500 bg-rose-500 text-white shadow-sm"
-              : "border-rose-200 bg-white text-rose-700 hover:border-rose-400 hover:bg-rose-50"
-          )}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 const MODULE_TERMS: ModuleTerms = {
   urinaryOpt: TERMS.urinaryOpt,
   headacheOpt: TERMS.headacheOpt,
@@ -2470,84 +2430,6 @@ function normalizeImportedMonthlyEntry(entry: MonthlyEntry & Record<string, unkn
   return normalized;
 }
 
-function BodyMap({
-  value,
-  onChange,
-  renderRegionCard,
-}: {
-  value: string[];
-  onChange: (next: string[]) => void;
-  renderRegionCard: (regionId: string) => ReactNode;
-}) {
-  return (
-    <div className="space-y-3">
-      {BODY_REGION_GROUPS.map((group) => {
-        const selectedCount = group.regions.filter((region) => value.includes(region.id)).length;
-        return (
-          <details
-            key={group.id}
-            id={`body-map-group-${group.id}`}
-            className="group rounded-lg border border-rose-100 bg-rose-50 text-rose-700 [&[open]>summary]:border-b [&[open]>summary]:bg-rose-100"
-          >
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-rose-800 [&::-webkit-details-marker]:hidden">
-              <span>{group.label}</span>
-              <span className="text-xs font-normal text-rose-500">
-                {selectedCount > 0 ? `${selectedCount} ausgewählt` : "Auswählen"}
-              </span>
-            </summary>
-            <div className="border-t border-rose-100 bg-white px-3 py-3">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {group.regions.map((region) => {
-                  const isSelected = value.includes(region.id);
-                  return (
-                    <button
-                      key={region.id}
-                      type="button"
-                      onClick={() => {
-                        const set = new Set(value);
-                        if (set.has(region.id)) {
-                          set.delete(region.id);
-                        } else {
-                          set.add(region.id);
-                        }
-                        onChange(Array.from(set));
-                      }}
-                      className={cn(
-                        "w-full rounded-md border px-3 py-2 text-left text-sm transition",
-                        isSelected
-                          ? "border-rose-400 bg-rose-100 text-rose-700"
-                          : "border-rose-100 bg-white text-rose-600 hover:border-rose-300 hover:bg-rose-50"
-                      )}
-                    >
-                      {region.label}
-                    </button>
-                  );
-                })}
-              </div>
-              {(() => {
-                const cards = group.regions
-                  .filter((region) => value.includes(region.id))
-                  .map((region) => ({ id: region.id, node: renderRegionCard(region.id) }))
-                  .filter((entry): entry is { id: string; node: ReactNode } => Boolean(entry.node));
-                if (cards.length === 0) {
-                  return null;
-                }
-                return (
-                  <div className="mt-3 space-y-3">
-                    {cards.map((entry) => (
-                      <div key={entry.id}>{entry.node}</div>
-                    ))}
-                  </div>
-                );
-              })()}
-            </div>
-          </details>
-        );
-      })}
-    </div>
-  );
-}
-
 function computePbacScore(counts: PbacCounts, flooding: boolean) {
   const base = PBAC_ITEMS.reduce((total, item) => total + counts[item.id] * item.score, 0);
   return base + (flooding ? PBAC_FLOODING_SCORE : 0);
@@ -2777,6 +2659,11 @@ export default function HomePage() {
   const [bleedingQuickAddOpen, setBleedingQuickAddOpen] = useState(false);
   const [pendingBleedingQuickAdd, setPendingBleedingQuickAdd] = useState<PbacProductItemId | null>(null);
   const [bleedingQuickAddNotice, setBleedingQuickAddNotice] = useState<BleedingQuickAddNotice | null>(null);
+  const [painWizardActive, setPainWizardActive] = useState(false);
+  const [painWizardStep, setPainWizardStep] = useState<1 | 2 | 3>(1);
+  const [painWizardRegion, setPainWizardRegion] = useState<string | null>(null);
+  const [painWizardQuality, setPainWizardQuality] = useState<DailyEntry["painQuality"][number] | null>(null);
+  const [painWizardIntensity, setPainWizardIntensity] = useState(5);
   const [painQuickAddOpen, setPainQuickAddOpen] = useState(false);
   const [painQuickStep, setPainQuickStep] = useState<1 | 2 | 3>(1);
   const [painQuickRegion, setPainQuickRegion] = useState<string | null>(null);
@@ -2859,6 +2746,14 @@ export default function HomePage() {
   const latestPainShortcutEvent = todaysPainShortcutEvents.length
     ? todaysPainShortcutEvents[todaysPainShortcutEvents.length - 1]
     : null;
+  const painWizardQualityOptions = useMemo(
+    () => (painWizardRegion === HEAD_REGION_ID ? ALL_PAIN_QUALITIES : PAIN_QUALITIES),
+    [painWizardRegion]
+  );
+  const painWizardRegionLabel = useMemo(
+    () => (painWizardRegion ? getRegionLabel(painWizardRegion) : null),
+    [painWizardRegion]
+  );
   const quickPainQualityOptions = useMemo(
     () => (painQuickRegion === HEAD_REGION_ID ? ALL_PAIN_QUALITIES : PAIN_QUALITIES),
     [painQuickRegion]
@@ -3865,10 +3760,22 @@ export default function HomePage() {
             return (
               <span
                 key={region.id}
-                className="inline-flex items-center gap-1 rounded-full bg-rose-50/80 px-3 py-1 text-xs font-medium text-rose-800"
+                className="inline-flex items-center gap-2 rounded-full bg-rose-50/80 px-3 py-1 text-xs font-medium text-rose-800"
               >
-                <span className="font-semibold text-rose-900">{region.label}</span>
-                {details.length ? <span className="text-rose-500">· {details.join(" · ")}</span> : null}
+                <span className="flex items-center gap-1">
+                  <span className="font-semibold text-rose-900">{region.label}</span>
+                  {details.length ? <span className="text-rose-500">· {details.join(" · ")}</span> : null}
+                </span>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7 text-rose-500 hover:text-rose-700"
+                  onClick={() => removePainRegion(region.id)}
+                  aria-label={`${region.label} entfernen`}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
               </span>
             );
           })}
@@ -4172,27 +4079,6 @@ export default function HomePage() {
     });
   };
 
-  const updatePainRegionsFromSelection = useCallback(
-    (selectedIds: string[]) => {
-      setDailyDraft((prev) => {
-        const existing = prev.painRegions ?? [];
-        const nextList: NonNullable<DailyEntry["painRegions"]> = [];
-
-        selectedIds.forEach((id) => {
-          const found = existing.find((region) => region.regionId === id);
-          if (found) {
-            nextList.push(found);
-          } else {
-            nextList.push({ regionId: id, nrs: 0, qualities: [] });
-          }
-        });
-
-        return buildDailyDraftWithPainRegions(prev, nextList);
-      });
-    },
-    [setDailyDraft]
-  );
-
   const removePainRegion = useCallback(
     (regionId: string) => {
       setDailyDraft((prev) => {
@@ -4208,25 +4094,95 @@ export default function HomePage() {
     [setDailyDraft]
   );
 
-  const focusPainRegion = useCallback((regionId: string) => {
-    if (typeof document === "undefined") return;
-    const groupId = REGION_TO_GROUP_ID[regionId];
-    if (groupId) {
-      const groupElement = document.getElementById(`body-map-group-${groupId}`) as HTMLDetailsElement | null;
-      if (groupElement) {
-        groupElement.open = true;
-      }
-    }
-    const target = document.getElementById(`body-map-region-${regionId}`);
-    if (target instanceof HTMLElement) {
-      target.scrollIntoView({ behavior: "smooth", block: "center" });
-      try {
-        target.focus({ preventScroll: true });
-      } catch (_error) {
-        target.focus();
-      }
-    }
+  const resetPainWizard = useCallback(() => {
+    setPainWizardActive(false);
+    setPainWizardStep(1);
+    setPainWizardRegion(null);
+    setPainWizardQuality(null);
+    setPainWizardIntensity(5);
   }, []);
+
+  const startPainWizard = useCallback(() => {
+    setPainWizardActive(true);
+    setPainWizardStep(1);
+    setPainWizardRegion(null);
+    setPainWizardQuality(null);
+    setPainWizardIntensity(5);
+  }, []);
+
+  const handlePainWizardRegionSelect = useCallback((regionId: string) => {
+    setPainWizardRegion(regionId);
+    setPainWizardStep(2);
+    setPainWizardQuality(null);
+  }, []);
+
+  const handlePainWizardQualitySelect = useCallback((quality: DailyEntry["painQuality"][number]) => {
+    setPainWizardQuality(quality);
+    setPainWizardStep(3);
+  }, []);
+
+  const handlePainWizardBack = useCallback(() => {
+    setPainWizardStep((prev) => {
+      if (prev === 1) {
+        resetPainWizard();
+        return prev;
+      }
+      if (prev === 2) {
+        setPainWizardQuality(null);
+        return 1;
+      }
+      return 2;
+    });
+  }, [resetPainWizard]);
+
+  const handlePainWizardConfirm = useCallback(() => {
+    if (!painWizardRegion || !painWizardQuality) {
+      return;
+    }
+    const normalizedIntensity = Math.max(0, Math.min(10, Math.round(painWizardIntensity)));
+    setDailyDraft((prev) => {
+      const current = prev.painRegions ?? [];
+      const nextRegions = [...current] as NonNullable<DailyEntry["painRegions"]>;
+      const existingIndex = nextRegions.findIndex((region) => region.regionId === painWizardRegion);
+      const existingRegion = existingIndex === -1 ? null : nextRegions[existingIndex];
+
+      const mergedQualities = new Set(existingRegion?.qualities ?? []);
+      mergedQualities.add(painWizardQuality);
+
+      let normalizedQualities = Array.from(mergedQualities) as DailyEntry["painQuality"];
+      if (painWizardRegion === HEAD_REGION_ID) {
+        normalizedQualities = sanitizeHeadRegionQualities(normalizedQualities);
+      } else {
+        normalizedQualities = normalizedQualities.filter(
+          (entry) => !MIGRAINE_QUALITY_SET.has(entry)
+        ) as DailyEntry["painQuality"];
+      }
+
+      const updatedRegion = {
+        ...(existingRegion ?? { regionId: painWizardRegion, nrs: normalizedIntensity, qualities: [] }),
+        regionId: painWizardRegion,
+        nrs: normalizedIntensity,
+        qualities: normalizedQualities,
+      } satisfies NonNullable<DailyEntry["painRegions"]>[number];
+
+      if (existingIndex === -1) {
+        nextRegions.push(updatedRegion);
+      } else {
+        nextRegions[existingIndex] = updatedRegion;
+      }
+
+      return buildDailyDraftWithPainRegions(prev, nextRegions);
+    });
+    setCategoryCompletion("pain", true);
+    resetPainWizard();
+  }, [
+    painWizardIntensity,
+    painWizardQuality,
+    painWizardRegion,
+    resetPainWizard,
+    setCategoryCompletion,
+    setDailyDraft,
+  ]);
 
   const handleDailySubmit = (options?: { goToHome?: boolean }): boolean => {
     const payload: DailyEntry = {
@@ -4945,77 +4901,6 @@ export default function HomePage() {
         {issue.message}
       </p>
     ));
-
-  const renderPainRegionCard = (regionId: string) => {
-    const regions = dailyDraft.painRegions ?? [];
-    const regionIndex = regions.findIndex((region) => region.regionId === regionId);
-    if (regionIndex === -1) {
-      return null;
-    }
-    const region = regions[regionIndex];
-    const qualityChoices = region.regionId === HEAD_REGION_ID ? HEAD_PAIN_QUALITIES : PAIN_QUALITIES;
-    return (
-      <div
-        id={`body-map-region-${region.regionId}`}
-        tabIndex={-1}
-        className="space-y-3 rounded-lg border border-rose-100 bg-white p-4"
-      >
-        <p className="font-medium text-rose-800">Schmerzen in: {getRegionLabel(region.regionId)}</p>
-        {renderIssuesForPath(`painRegions[${regionIndex}].regionId`)}
-        <div className="space-y-2">
-          <Label className="text-xs text-rose-600" htmlFor={`region-nrs-${region.regionId}`}>
-            Intensität (0–10)
-          </Label>
-          <NrsInput
-            id={`region-nrs-${region.regionId}`}
-            value={region.nrs}
-            onChange={(value) => {
-              setDailyDraft((prev) => {
-                const nextRegions = (prev.painRegions ?? []).map((r) =>
-                  r.regionId === region.regionId
-                    ? {
-                        ...r,
-                        nrs: Math.max(0, Math.min(10, Math.round(value))),
-                      }
-                    : r
-                ) as NonNullable<DailyEntry["painRegions"]>;
-                return buildDailyDraftWithPainRegions(prev, nextRegions);
-              });
-            }}
-          />
-          {renderIssuesForPath(`painRegions[${regionIndex}].nrs`)}
-        </div>
-        <div className="space-y-2">
-          <Label className="text-xs text-rose-600">Schmerzcharakter in dieser Region</Label>
-          <MultiSelectChips
-            options={qualityChoices.map((quality) => ({ value: quality, label: quality }))}
-            value={region.qualities}
-            onToggle={(next) => {
-              setDailyDraft((prev) => {
-                const updatedQualities =
-                  region.regionId === HEAD_REGION_ID
-                    ? sanitizeHeadRegionQualities(next as DailyEntry["painQuality"])
-                    : (next as DailyEntry["painQuality"]);
-                const nextRegions = (prev.painRegions ?? []).map((r) =>
-                  r.regionId === region.regionId
-                    ? {
-                        ...r,
-                        qualities: updatedQualities,
-                      }
-                    : r
-                ) as NonNullable<DailyEntry["painRegions"]>;
-                return buildDailyDraftWithPainRegions(prev, nextRegions);
-              });
-            }}
-          />
-          {renderIssuesForPath(`painRegions[${regionIndex}].qualities`)}
-          {(region.qualities ?? []).map((_, qualityIndex) =>
-            renderIssuesForPath(`painRegions[${regionIndex}].qualities[${qualityIndex}]`)
-          )}
-        </div>
-      </div>
-    );
-  };
 
   const optionalSensorsLabel = sensorsVisible ? "Optional (Hilfsmittel) ausblenden" : "Optional (Hilfsmittel) einblenden";
 
@@ -7057,16 +6942,202 @@ export default function HomePage() {
                   onComplete={() => setDailyActiveCategory("overview")}
                 >
                   <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                    <div className="space-y-6">
+                    <div className="space-y-4">
                       <TermField termKey="bodyMap">
-                        <BodyMap
-                          value={(dailyDraft.painRegions ?? []).map((region) => region.regionId)}
-                          onChange={updatePainRegionsFromSelection}
-                          renderRegionCard={renderPainRegionCard}
-                        />
-                        {renderIssuesForPath("painRegions")}
-                        {renderIssuesForPath("painMapRegionIds")}
+                        <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="space-y-1">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Schmerzübersicht</p>
+                              <TermHeadline termKey="bodyMap" />
+                            </div>
+                            {painWizardActive ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="rounded-full border border-rose-100 bg-rose-50/80 text-xs font-medium text-rose-700 hover:border-rose-200 hover:bg-rose-100"
+                                onClick={resetPainWizard}
+                              >
+                                Abbrechen
+                              </Button>
+                            ) : (
+                              <Button type="button" onClick={startPainWizard}>
+                                Schmerz hinzufügen
+                              </Button>
+                            )}
+                          </div>
+                          {hasPainSummaryData ? (
+                            <div className="flex flex-wrap gap-2 text-xs text-rose-900">
+                              {painSummaryRegions.map((region) => {
+                                const details: string[] = [];
+                                if (typeof region.intensity === "number") {
+                                  details.push(`${region.intensity}/10`);
+                                }
+                                if (region.qualities.length) {
+                                  details.push(formatList(region.qualities, 2));
+                                }
+                                return (
+                                  <span
+                                    key={region.id}
+                                    className="inline-flex items-center gap-2 rounded-full border border-rose-100 bg-rose-50/80 px-3 py-1 text-xs font-medium text-rose-800 shadow-sm"
+                                  >
+                                    <span className="flex items-center gap-1">
+                                      <span className="font-semibold text-rose-900">{region.label}</span>
+                                      {details.length ? <span className="text-rose-500">· {details.join(" · ")}</span> : null}
+                                    </span>
+                                    <Button
+                                      type="button"
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-7 w-7 text-rose-500 hover:text-rose-700"
+                                      onClick={() => removePainRegion(region.id)}
+                                      aria-label={`${region.label} entfernen`}
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </Button>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-rose-600">Noch keine Schmerzen hinzugefügt.</p>
+                          )}
+                          <div className="space-y-1 text-xs text-rose-600">
+                            {renderIssuesForPath("painRegions")}
+                            {renderIssuesForPath("painMapRegionIds")}
+                          </div>
+                        </div>
                       </TermField>
+
+                      {painWizardActive ? (
+                        <div className="space-y-4 rounded-lg border border-rose-100 bg-rose-50 p-4 text-sm text-rose-700">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm font-semibold text-rose-800">Schmerz hinzufügen</p>
+                            <div className="flex flex-1 items-center justify-end gap-1">
+                              {[1, 2, 3].map((step) => (
+                                <span
+                                  key={`pain-wizard-step-${step}`}
+                                  className={cn(
+                                    "h-1.5 w-16 rounded-full",
+                                    painWizardStep >= step ? "bg-rose-500" : "bg-rose-100"
+                                  )}
+                                />
+                              ))}
+                            </div>
+                          </div>
+
+                          {(painWizardRegionLabel || painWizardQuality) && (
+                            <div className="flex flex-wrap gap-2 text-xs text-rose-500">
+                              {painWizardRegionLabel ? (
+                                <span className="rounded-full bg-white px-2 py-0.5 text-rose-600">{painWizardRegionLabel}</span>
+                              ) : null}
+                              {painWizardQuality ? (
+                                <span className="rounded-full bg-white px-2 py-0.5 text-rose-600">{painWizardQuality}</span>
+                              ) : null}
+                            </div>
+                          )}
+
+                          {painWizardStep === 1 ? (
+                            <div className="space-y-3">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">Ort</p>
+                              <div className="max-h-[50vh] space-y-2 overflow-y-auto pr-1">
+                                {BODY_REGION_GROUPS.map((group) => (
+                                  <div key={group.id} className="rounded-2xl border border-rose-100 bg-white p-3">
+                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-rose-400">{group.label}</p>
+                                    <div className="mt-2 grid grid-cols-2 gap-1.5 text-left text-xs">
+                                      {group.regions.map((region) => {
+                                        const isSelected = painWizardRegion === region.id;
+                                        return (
+                                          <button
+                                            key={region.id}
+                                            type="button"
+                                            onClick={() => handlePainWizardRegionSelect(region.id)}
+                                            className={cn(
+                                              "rounded-xl border px-2 py-1.5 text-left transition",
+                                              isSelected
+                                                ? "border-rose-400 bg-white text-rose-800 shadow"
+                                                : "border-transparent bg-white/80 text-rose-600 hover:border-rose-200"
+                                            )}
+                                          >
+                                            {region.label}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {painWizardStep === 2 ? (
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">Art</p>
+                                <Button type="button" variant="ghost" size="sm" onClick={handlePainWizardBack}>
+                                  Zurück
+                                </Button>
+                              </div>
+                              <div className="grid grid-cols-2 gap-1.5 text-sm">
+                                {painWizardQualityOptions.map((quality) => {
+                                  const isSelected = painWizardQuality === quality;
+                                  return (
+                                    <button
+                                      key={quality}
+                                      type="button"
+                                      onClick={() => handlePainWizardQualitySelect(quality)}
+                                      className={cn(
+                                        "rounded-xl border px-3 py-1.5 text-left transition",
+                                        isSelected
+                                          ? "border-rose-400 bg-white text-rose-800 shadow"
+                                          : "border-transparent bg-rose-50 text-rose-600 hover:border-rose-200"
+                                      )}
+                                    >
+                                      {quality}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {painWizardStep === 3 ? (
+                            <div className="space-y-4">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">Stärke</p>
+                                <Button type="button" variant="ghost" size="sm" onClick={handlePainWizardBack}>
+                                  Zurück
+                                </Button>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <div className="flex-1">
+                                  <Slider
+                                    min={0}
+                                    max={10}
+                                    step={1}
+                                    value={[painWizardIntensity]}
+                                    onValueChange={([value]) => setPainWizardIntensity(value ?? 0)}
+                                    aria-label="Schmerzstärke"
+                                  />
+                                  <div className="flex justify-between text-[11px] text-rose-400">
+                                    <span>0</span>
+                                    <span>10</span>
+                                  </div>
+                                </div>
+                                <SliderValueDisplay value={painWizardIntensity} />
+                              </div>
+                              <Button
+                                type="button"
+                                className="w-full"
+                                onClick={handlePainWizardConfirm}
+                                disabled={!painWizardRegion || !painWizardQuality}
+                              >
+                                Speichern
+                              </Button>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="space-y-4">
