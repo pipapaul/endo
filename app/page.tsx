@@ -463,16 +463,6 @@ const BODY_REGION_GROUPS: { id: string; label: string; regions: BodyRegion[] }[]
   },
 ];
 
-const REGION_TO_GROUP_ID: Record<string, string> = BODY_REGION_GROUPS.reduce(
-  (acc, group) => {
-    group.regions.forEach((region) => {
-      acc[region.id] = group.id;
-    });
-    return acc;
-  },
-  {} as Record<string, string>
-);
-
 const ABDOMEN_REGION_IDS = new Set(
   (BODY_REGION_GROUPS.find((group) => group.id === "abdomen")?.regions ?? []).map((region) => region.id)
 );
@@ -2471,84 +2461,6 @@ function normalizeImportedMonthlyEntry(entry: MonthlyEntry & Record<string, unkn
   return normalized;
 }
 
-function BodyMap({
-  value,
-  onChange,
-  renderRegionCard,
-}: {
-  value: string[];
-  onChange: (next: string[]) => void;
-  renderRegionCard: (regionId: string) => ReactNode;
-}) {
-  return (
-    <div className="space-y-3">
-      {BODY_REGION_GROUPS.map((group) => {
-        const selectedCount = group.regions.filter((region) => value.includes(region.id)).length;
-        return (
-          <details
-            key={group.id}
-            id={`body-map-group-${group.id}`}
-            className="group rounded-lg border border-rose-100 bg-rose-50 text-rose-700 [&[open]>summary]:border-b [&[open]>summary]:bg-rose-100"
-          >
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-rose-800 [&::-webkit-details-marker]:hidden">
-              <span>{group.label}</span>
-              <span className="text-xs font-normal text-rose-500">
-                {selectedCount > 0 ? `${selectedCount} ausgewählt` : "Auswählen"}
-              </span>
-            </summary>
-            <div className="border-t border-rose-100 bg-white px-3 py-3">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {group.regions.map((region) => {
-                  const isSelected = value.includes(region.id);
-                  return (
-                    <button
-                      key={region.id}
-                      type="button"
-                      onClick={() => {
-                        const set = new Set(value);
-                        if (set.has(region.id)) {
-                          set.delete(region.id);
-                        } else {
-                          set.add(region.id);
-                        }
-                        onChange(Array.from(set));
-                      }}
-                      className={cn(
-                        "w-full rounded-md border px-3 py-2 text-left text-sm transition",
-                        isSelected
-                          ? "border-rose-400 bg-rose-100 text-rose-700"
-                          : "border-rose-100 bg-white text-rose-600 hover:border-rose-300 hover:bg-rose-50"
-                      )}
-                    >
-                      {region.label}
-                    </button>
-                  );
-                })}
-              </div>
-              {(() => {
-                const cards = group.regions
-                  .filter((region) => value.includes(region.id))
-                  .map((region) => ({ id: region.id, node: renderRegionCard(region.id) }))
-                  .filter((entry): entry is { id: string; node: ReactNode } => Boolean(entry.node));
-                if (cards.length === 0) {
-                  return null;
-                }
-                return (
-                  <div className="mt-3 space-y-3">
-                    {cards.map((entry) => (
-                      <div key={entry.id}>{entry.node}</div>
-                    ))}
-                  </div>
-                );
-              })()}
-            </div>
-          </details>
-        );
-      })}
-    </div>
-  );
-}
-
 function computePbacScore(counts: PbacCounts, flooding: boolean) {
   const base = PBAC_ITEMS.reduce((total, item) => total + counts[item.id] * item.score, 0);
   return base + (flooding ? PBAC_FLOODING_SCORE : 0);
@@ -2779,6 +2691,7 @@ export default function HomePage() {
   const [pendingBleedingQuickAdd, setPendingBleedingQuickAdd] = useState<PbacProductItemId | null>(null);
   const [bleedingQuickAddNotice, setBleedingQuickAddNotice] = useState<BleedingQuickAddNotice | null>(null);
   const [painQuickAddOpen, setPainQuickAddOpen] = useState(false);
+  const [painQuickContext, setPainQuickContext] = useState<"shortcut" | "module">("shortcut");
   const [painQuickStep, setPainQuickStep] = useState<1 | 2 | 3>(1);
   const [painQuickRegion, setPainQuickRegion] = useState<string | null>(null);
   const [painQuickQuality, setPainQuickQuality] = useState<DailyEntry["painQuality"][number] | null>(null);
@@ -2786,8 +2699,6 @@ export default function HomePage() {
   const [pendingPainQuickAdd, setPendingPainQuickAdd] = useState<PendingQuickPainAdd | null>(null);
   const [painShortcutEvents, setPainShortcutEvents] = useState<QuickPainEvent[]>([]);
   const bleedingQuickAddNoticeTimeoutRef = useRef<number | null>(null);
-  const dailyShortcutButtonRef = useRef<HTMLButtonElement | null>(null);
-  const [shortcutButtonsHeight, setShortcutButtonsHeight] = useState<number | null>(null);
   const updatePbacCount = useCallback(
     (itemId: (typeof PBAC_ITEMS)[number]["id"], nextValue: number, max = PBAC_MAX_PRODUCT_COUNT) => {
       setPbacCounts((prev) => {
@@ -2876,26 +2787,6 @@ export default function HomePage() {
         window.clearTimeout(bleedingQuickAddNoticeTimeoutRef.current);
       }
     };
-  }, []);
-  useLayoutEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    const element = dailyShortcutButtonRef.current;
-    if (!element) {
-      return;
-    }
-    const updateHeight = () => {
-      setShortcutButtonsHeight(element.getBoundingClientRect().height);
-    };
-    updateHeight();
-    if (typeof ResizeObserver === "undefined") {
-      const interval = window.setInterval(updateHeight, 250);
-      return () => window.clearInterval(interval);
-    }
-    const observer = new ResizeObserver(() => updateHeight());
-    observer.observe(element);
-    return () => observer.disconnect();
   }, []);
   const [dailyCategorySnapshots, setDailyCategorySnapshots] = useState<
     Partial<Record<TrackableDailyCategoryId, string>>
@@ -3892,6 +3783,14 @@ export default function HomePage() {
               >
                 <span className="font-semibold text-rose-900">{region.label}</span>
                 {details.length ? <span className="text-rose-500">· {details.join(" · ")}</span> : null}
+                <button
+                  type="button"
+                  onClick={() => removePainRegion(region.id)}
+                  className="rounded-full p-1 text-rose-400 transition hover:bg-rose-100 hover:text-rose-700"
+                  aria-label={`${region.label} entfernen`}
+                >
+                  <X className="h-3 w-3" aria-hidden />
+                </button>
               </span>
             );
           })}
@@ -4195,27 +4094,6 @@ export default function HomePage() {
     });
   };
 
-  const updatePainRegionsFromSelection = useCallback(
-    (selectedIds: string[]) => {
-      setDailyDraft((prev) => {
-        const existing = prev.painRegions ?? [];
-        const nextList: NonNullable<DailyEntry["painRegions"]> = [];
-
-        selectedIds.forEach((id) => {
-          const found = existing.find((region) => region.regionId === id);
-          if (found) {
-            nextList.push(found);
-          } else {
-            nextList.push({ regionId: id, nrs: 0, qualities: [] });
-          }
-        });
-
-        return buildDailyDraftWithPainRegions(prev, nextList);
-      });
-    },
-    [setDailyDraft]
-  );
-
   const removePainRegion = useCallback(
     (regionId: string) => {
       setDailyDraft((prev) => {
@@ -4230,26 +4108,6 @@ export default function HomePage() {
     },
     [setDailyDraft]
   );
-
-  const focusPainRegion = useCallback((regionId: string) => {
-    if (typeof document === "undefined") return;
-    const groupId = REGION_TO_GROUP_ID[regionId];
-    if (groupId) {
-      const groupElement = document.getElementById(`body-map-group-${groupId}`) as HTMLDetailsElement | null;
-      if (groupElement) {
-        groupElement.open = true;
-      }
-    }
-    const target = document.getElementById(`body-map-region-${regionId}`);
-    if (target instanceof HTMLElement) {
-      target.scrollIntoView({ behavior: "smooth", block: "center" });
-      try {
-        target.focus({ preventScroll: true });
-      } catch (_error) {
-        target.focus();
-      }
-    }
-  }, []);
 
   const handleDailySubmit = (options?: { goToHome?: boolean }): boolean => {
     const payload: DailyEntry = {
@@ -4969,77 +4827,6 @@ export default function HomePage() {
       </p>
     ));
 
-  const renderPainRegionCard = (regionId: string) => {
-    const regions = dailyDraft.painRegions ?? [];
-    const regionIndex = regions.findIndex((region) => region.regionId === regionId);
-    if (regionIndex === -1) {
-      return null;
-    }
-    const region = regions[regionIndex];
-    const qualityChoices = region.regionId === HEAD_REGION_ID ? HEAD_PAIN_QUALITIES : PAIN_QUALITIES;
-    return (
-      <div
-        id={`body-map-region-${region.regionId}`}
-        tabIndex={-1}
-        className="space-y-3 rounded-lg border border-rose-100 bg-white p-4"
-      >
-        <p className="font-medium text-rose-800">Schmerzen in: {getRegionLabel(region.regionId)}</p>
-        {renderIssuesForPath(`painRegions[${regionIndex}].regionId`)}
-        <div className="space-y-2">
-          <Label className="text-xs text-rose-600" htmlFor={`region-nrs-${region.regionId}`}>
-            Intensität (0–10)
-          </Label>
-          <NrsInput
-            id={`region-nrs-${region.regionId}`}
-            value={region.nrs}
-            onChange={(value) => {
-              setDailyDraft((prev) => {
-                const nextRegions = (prev.painRegions ?? []).map((r) =>
-                  r.regionId === region.regionId
-                    ? {
-                        ...r,
-                        nrs: Math.max(0, Math.min(10, Math.round(value))),
-                      }
-                    : r
-                ) as NonNullable<DailyEntry["painRegions"]>;
-                return buildDailyDraftWithPainRegions(prev, nextRegions);
-              });
-            }}
-          />
-          {renderIssuesForPath(`painRegions[${regionIndex}].nrs`)}
-        </div>
-        <div className="space-y-2">
-          <Label className="text-xs text-rose-600">Schmerzcharakter in dieser Region</Label>
-          <MultiSelectChips
-            options={qualityChoices.map((quality) => ({ value: quality, label: quality }))}
-            value={region.qualities}
-            onToggle={(next) => {
-              setDailyDraft((prev) => {
-                const updatedQualities =
-                  region.regionId === HEAD_REGION_ID
-                    ? sanitizeHeadRegionQualities(next as DailyEntry["painQuality"])
-                    : (next as DailyEntry["painQuality"]);
-                const nextRegions = (prev.painRegions ?? []).map((r) =>
-                  r.regionId === region.regionId
-                    ? {
-                        ...r,
-                        qualities: updatedQualities,
-                      }
-                    : r
-                ) as NonNullable<DailyEntry["painRegions"]>;
-                return buildDailyDraftWithPainRegions(prev, nextRegions);
-              });
-            }}
-          />
-          {renderIssuesForPath(`painRegions[${regionIndex}].qualities`)}
-          {(region.qualities ?? []).map((_, qualityIndex) =>
-            renderIssuesForPath(`painRegions[${regionIndex}].qualities[${qualityIndex}]`)
-          )}
-        </div>
-      </div>
-    );
-  };
-
   const optionalSensorsLabel = sensorsVisible ? "Optional (Hilfsmittel) ausblenden" : "Optional (Hilfsmittel) einblenden";
 
   const cycleOverlay = useMemo(() => {
@@ -5747,11 +5534,19 @@ export default function HomePage() {
 
   const handlePainShortcut = useCallback(() => {
     resetPainQuickAddState();
+    setPainQuickContext("shortcut");
+    setPainQuickAddOpen(true);
+  }, [resetPainQuickAddState]);
+
+  const handlePainModuleQuickAdd = useCallback(() => {
+    resetPainQuickAddState();
+    setPainQuickContext("module");
     setPainQuickAddOpen(true);
   }, [resetPainQuickAddState]);
 
   const handlePainQuickClose = useCallback(() => {
     setPainQuickAddOpen(false);
+    setPainQuickContext("shortcut");
     resetPainQuickAddState();
   }, [resetPainQuickAddState]);
 
@@ -5763,6 +5558,44 @@ export default function HomePage() {
     if (!painQuickRegion || !painQuickQuality) {
       return;
     }
+    const intensity = Math.max(0, Math.min(10, Math.round(painQuickIntensity)));
+    if (painQuickContext === "module") {
+      setDailyDraft((prev) => {
+        const current = prev.painRegions ?? [];
+        const nextRegions = [...current] as NonNullable<DailyEntry["painRegions"]>;
+        const existingIndex = nextRegions.findIndex((region) => region.regionId === painQuickRegion);
+        const existingRegion = existingIndex === -1 ? null : nextRegions[existingIndex];
+        const mergedQualities = new Set(existingRegion?.qualities ?? []);
+        mergedQualities.add(painQuickQuality);
+        let normalized = Array.from(mergedQualities) as DailyEntry["painQuality"];
+        if (painQuickRegion === HEAD_REGION_ID) {
+          normalized = sanitizeHeadRegionQualities(normalized);
+        } else {
+          normalized = normalized.filter((entry) => !MIGRAINE_QUALITY_SET.has(entry)) as DailyEntry["painQuality"];
+        }
+        const nextRegion: NonNullable<DailyEntry["painRegions"]>[number] = {
+          ...(existingRegion ?? { regionId: painQuickRegion, nrs: intensity, qualities: [] as DailyEntry["painQuality"] }),
+          regionId: painQuickRegion,
+          nrs: intensity,
+          qualities: normalized,
+        };
+        if ("time" in nextRegion) {
+          const { time: _omit, ...rest } = nextRegion as typeof nextRegion & { time?: string };
+          nextRegions[existingIndex === -1 ? nextRegions.length : existingIndex] = rest;
+        } else if (existingIndex === -1) {
+          nextRegions.push(nextRegion);
+        } else {
+          nextRegions[existingIndex] = nextRegion;
+        }
+        const nextDraft = buildDailyDraftWithPainRegions(prev, nextRegions);
+        return nextDraft;
+      });
+      setCategoryCompletion("pain", true);
+      setPainQuickAddOpen(false);
+      resetPainQuickAddState();
+      return;
+    }
+
     const now = new Date();
     const timestamp = now.toISOString();
     const date = formatDate(now);
@@ -5771,7 +5604,7 @@ export default function HomePage() {
       date,
       regionId: painQuickRegion,
       quality: painQuickQuality,
-      intensity: Math.max(0, Math.min(10, Math.round(painQuickIntensity))),
+      intensity,
       timestamp,
     });
     setPainQuickAddOpen(false);
@@ -5779,9 +5612,12 @@ export default function HomePage() {
     manualDailySelectionRef.current = false;
     selectDailyDate(date);
   }, [
+    painQuickContext,
     painQuickIntensity,
     painQuickQuality,
     painQuickRegion,
+    setCategoryCompletion,
+    setDailyDraft,
     resetPainQuickAddState,
     selectDailyDate,
     setPendingPainQuickAdd,
@@ -6631,10 +6467,89 @@ export default function HomePage() {
                 {infoMessage && <p className="text-sm font-medium text-rose-600">{infoMessage}</p>}
               </header>
               {cycleOverview ? <CycleOverviewMiniChart data={cycleOverview} /> : null}
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="flex gap-3 sm:col-span-3 lg:col-span-2">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <div
+                  role="group"
+                  aria-label={painShortcutAriaLabel}
+                  className="flex flex-1 min-w-[12rem] items-center gap-3 rounded-xl border border-rose-100 bg-white/80 px-3 py-2 text-rose-800 shadow-sm"
+                >
                   <Button
-                    ref={dailyShortcutButtonRef}
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={handlePainShortcut}
+                    aria-label={painShortcutAriaLabel}
+                    className="h-9 w-9 rounded-full border-rose-200 bg-white text-rose-700 shadow-sm transition hover:border-rose-300 hover:bg-rose-50"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                  <div className="flex flex-1 items-center justify-between gap-2">
+                    <div className="flex flex-col leading-tight">
+                      <span className="text-[12px] font-semibold leading-tight">Akut-Schmerzen</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-rose-500">
+                        quick tracker
+                      </span>
+                    </div>
+                    <div className="flex h-6 items-end gap-0.5" aria-hidden>
+                      {painShortcutTimeline.map((value, index) => {
+                        const height = 4 + (value / 10) * 14;
+                        return (
+                          <span
+                            key={`pain-inline-bar-${index}`}
+                            className={cn(
+                              "w-1.5 rounded-full bg-rose-100 transition",
+                              value > 0 ? "bg-rose-500 shadow-sm shadow-rose-200" : "bg-rose-100"
+                            )}
+                            style={{ height }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+                <div
+                  role="group"
+                  aria-label={periodShortcutAriaLabel}
+                  className="flex flex-1 min-w-[12rem] items-center gap-3 rounded-xl border border-rose-100 bg-white/80 px-3 py-2 text-rose-800 shadow-sm"
+                >
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setBleedingQuickAddOpen(true)}
+                    aria-label={periodShortcutAriaLabel}
+                    className="h-9 w-9 rounded-full border-rose-200 bg-white text-rose-700 shadow-sm transition hover:border-rose-300 hover:bg-rose-50"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                  <div className="flex flex-1 items-center justify-between gap-2">
+                    <div className="flex flex-col leading-tight">
+                      <span className="text-[12px] font-semibold leading-tight">Periodenprodukte</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-rose-500">
+                        quick tracker
+                      </span>
+                    </div>
+                    <div className="flex min-h-[0.75rem] flex-wrap items-center justify-end gap-1" aria-hidden>
+                      {bleedingShortcutProducts.dots.length === 0 ? (
+                        <span className="h-1 w-6 rounded-full bg-rose-100" />
+                      ) : (
+                        bleedingShortcutProducts.dots.map((saturation, index) => (
+                          <span
+                            key={`period-inline-dot-${saturation}-${index}`}
+                            className={cn(
+                              "h-2 w-2 rounded-full shadow-sm shadow-rose-200/60",
+                              PBAC_SATURATION_DOT_CLASSES[saturation]
+                            )}
+                          />
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="sm:col-span-3 lg:col-span-2">
+                  <Button
                     type="button"
                     onClick={() => {
                       manualDailySelectionRef.current = false;
@@ -6644,7 +6559,7 @@ export default function HomePage() {
                       setDailyActiveCategory("overview");
                       setActiveView("daily");
                     }}
-                    className="flex min-h-[180px] flex-1 flex-col items-start justify-start gap-2 rounded-2xl bg-rose-600 px-6 py-5 text-left text-white shadow-lg transition hover:bg-rose-500"
+                    className="flex min-h-[180px] w-full flex-col items-start justify-start gap-2 rounded-2xl bg-rose-600 px-6 py-5 text-left text-white shadow-lg transition hover:bg-rose-500"
                   >
                     <span className="text-lg font-semibold">Täglicher Check-in</span>
                     <span className="text-sm text-rose-50/80">In unter einer Minute erledigt</span>
@@ -6655,65 +6570,6 @@ export default function HomePage() {
                       </span>
                     )}
                   </Button>
-                  <div
-                    className="flex w-[8.75rem] min-w-[8rem] flex-col gap-3 sm:min-h-[180px]"
-                    style={shortcutButtonsHeight ? { height: shortcutButtonsHeight } : undefined}
-                  >
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handlePainShortcut}
-                    aria-label={painShortcutAriaLabel}
-                    className="flex w-full flex-1 flex-col items-center justify-center gap-3 rounded-2xl border-rose-200 bg-white/80 px-3 py-4 text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
-                  >
-                    <span className="sr-only">{painShortcutAriaLabel}</span>
-                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-500">
-                      <PainIcon className="h-5 w-5" aria-hidden />
-                    </span>
-                    <div className="flex h-8 w-full items-end justify-center gap-0.5" aria-hidden>
-                      {painShortcutTimeline.map((value, index) => {
-                        const height = 4 + (value / 10) * 18;
-                        return (
-                          <span
-                            key={`pain-bar-${index}`}
-                            className={cn(
-                              "w-1.5 rounded-full bg-rose-100 transition",
-                              value > 0 ? "bg-rose-500 shadow-sm shadow-rose-200" : "bg-rose-100"
-                            )}
-                            style={{ height }}
-                          />
-                        );
-                      })}
-                    </div>
-                  </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setBleedingQuickAddOpen(true)}
-                      aria-label={periodShortcutAriaLabel}
-                      className="flex w-full flex-1 flex-col items-center justify-center gap-3 rounded-2xl border-rose-200 bg-white/80 px-3 py-4 text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
-                    >
-                      <span className="sr-only">{periodShortcutAriaLabel}</span>
-                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-500">
-                        <PeriodIcon className="h-5 w-5" aria-hidden />
-                      </span>
-                      <div className="flex min-h-[0.75rem] flex-wrap items-center justify-center gap-1" aria-hidden>
-                        {bleedingShortcutProducts.dots.length === 0 ? (
-                          <span className="h-1 w-6 rounded-full bg-rose-100" />
-                        ) : (
-                          bleedingShortcutProducts.dots.map((saturation, index) => (
-                            <span
-                              key={`${saturation}-${index}`}
-                              className={cn(
-                                "h-2 w-2 rounded-full shadow-sm shadow-rose-200/60",
-                                PBAC_SATURATION_DOT_CLASSES[saturation]
-                              )}
-                            />
-                          ))
-                        )}
-                      </div>
-                    </Button>
-                  </div>
                 </div>
                 <Button
                   type="button"
@@ -7054,23 +6910,18 @@ export default function HomePage() {
               <div className={cn("space-y-6", dailyActiveCategory === "pain" ? "" : "hidden")}> 
                 <Section
                   title="Schmerzen"
-                  description="Zuerst betroffene Körperbereiche wählen, anschließend Intensität und Schmerzart je Region erfassen"
+                  description="Schmerzen hinzufügen, Intensität und Art je Region festhalten und Auswirkungen dokumentieren"
                   onComplete={() => setDailyActiveCategory("overview")}
                 >
-                  <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                    <div className="space-y-6">
-                      <TermField termKey="bodyMap">
-                        <BodyMap
-                          value={(dailyDraft.painRegions ?? []).map((region) => region.regionId)}
-                          onChange={updatePainRegionsFromSelection}
-                          renderRegionCard={renderPainRegionCard}
-                        />
-                        {renderIssuesForPath("painRegions")}
-                        {renderIssuesForPath("painMapRegionIds")}
-                      </TermField>
-                    </div>
-
-                    <div className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-100 bg-white/80 p-3 text-sm text-rose-800">
+                    <p className="text-sm text-rose-700">
+                      Füge neue Schmerz-Einträge mit drei schnellen Schritten hinzu.
+                    </p>
+                    <Button type="button" variant="outline" onClick={handlePainModuleQuickAdd}>
+                      Schmerz hinzufügen
+                    </Button>
+                  </div>
+                  <div className="space-y-4">
                       <details
                         className="group rounded-lg border border-rose-100 bg-rose-50 text-rose-700 [&[open]>summary]:border-b [&[open]>summary]:bg-rose-100"
                         open={deepDyspareuniaCardOpen}
@@ -7247,7 +7098,6 @@ export default function HomePage() {
                         </div>
                       </TermField>
                       {renderIssuesForPath("impactNRS")}
-                    </div>
                   </div>
                 </Section>
               </div>
@@ -8995,7 +8845,9 @@ export default function HomePage() {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">Schmerz</p>
-                <p className="text-lg font-semibold text-rose-900">Shortcut</p>
+                <p className="text-lg font-semibold text-rose-900">
+                  {painQuickContext === "module" ? "Schmerz hinzufügen" : "Shortcut"}
+                </p>
               </div>
               <div className="flex items-center gap-1">
                 {painQuickStep > 1 ? (
