@@ -6665,26 +6665,13 @@ export default function HomePage() {
                     variant="outline"
                     onClick={handlePainShortcut}
                     aria-label={painShortcutAriaLabel}
-                    className="flex w-full flex-1 flex-col items-center justify-center gap-3 rounded-2xl border-rose-200 bg-white/80 px-3 py-4 text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
+                    className="flex w-full flex-1 flex-col items-center justify-center gap-1.5 rounded-2xl border-rose-200 bg-white/80 px-3 py-4 text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
                   >
-                    <span className="sr-only">{painShortcutAriaLabel}</span>
-                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-500">
-                      <PainIcon className="h-5 w-5" aria-hidden />
-                    </span>
-                    <div className="flex h-8 w-full items-end justify-center gap-0.5" aria-hidden>
-                      {painShortcutTimeline.map((value, index) => {
-                        const height = 4 + (value / 10) * 18;
-                        return (
-                          <span
-                            key={`pain-bar-${index}`}
-                            className={cn(
-                              "w-1.5 rounded-full bg-rose-100 transition",
-                              value > 0 ? "bg-rose-500 shadow-sm shadow-rose-200" : "bg-rose-100"
-                            )}
-                            style={{ height }}
-                          />
-                        );
-                      })}
+                    <div className="flex w-full flex-col items-center gap-0.5 text-center">
+                      <span className="text-[13px] font-semibold leading-tight text-rose-900">Akut-Schmerzen</span>
+                      <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-rose-500">
+                        quick tracker
+                      </span>
                     </div>
                   </Button>
                     <Button
@@ -6692,26 +6679,13 @@ export default function HomePage() {
                       variant="outline"
                       onClick={() => setBleedingQuickAddOpen(true)}
                       aria-label={periodShortcutAriaLabel}
-                      className="flex w-full flex-1 flex-col items-center justify-center gap-3 rounded-2xl border-rose-200 bg-white/80 px-3 py-4 text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
+                      className="flex w-full flex-1 flex-col items-center justify-center gap-1.5 rounded-2xl border-rose-200 bg-white/80 px-3 py-4 text-rose-900 shadow-sm transition hover:border-rose-300 hover:text-rose-900"
                     >
-                      <span className="sr-only">{periodShortcutAriaLabel}</span>
-                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-500">
-                        <PeriodIcon className="h-5 w-5" aria-hidden />
-                      </span>
-                      <div className="flex min-h-[0.75rem] flex-wrap items-center justify-center gap-1" aria-hidden>
-                        {bleedingShortcutProducts.dots.length === 0 ? (
-                          <span className="h-1 w-6 rounded-full bg-rose-100" />
-                        ) : (
-                          bleedingShortcutProducts.dots.map((saturation, index) => (
-                            <span
-                              key={`${saturation}-${index}`}
-                              className={cn(
-                                "h-2 w-2 rounded-full shadow-sm shadow-rose-200/60",
-                                PBAC_SATURATION_DOT_CLASSES[saturation]
-                              )}
-                            />
-                          ))
-                        )}
+                      <div className="flex w-full flex-col items-center gap-0.5 text-center">
+                        <span className="text-[13px] font-semibold leading-tight text-rose-900">Periodenprodukte</span>
+                        <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-rose-500">
+                          quick tracker
+                        </span>
                       </div>
                     </Button>
                   </div>
