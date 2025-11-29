@@ -45,8 +45,7 @@ export interface DailyEntry {
     fatigue?: { present: boolean; score?: number };
     bloating?: { present: boolean; score?: number };
   };
-  meds: { name: string; doseMg?: number; times?: string[] }[];
-  rescueDosesCount?: number;
+  rescueMeds?: { name: string; doseMg?: number; time?: string }[];
 
   sleep?: { hours?: number; quality?: number; awakenings?: number };
   gi?: { bristolType?: 1 | 2 | 3 | 4 | 5 | 6 | 7 };

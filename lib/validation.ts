@@ -235,21 +235,24 @@ export function validateDailyEntry(entry: DailyEntry): ValidationIssue[] {
     }
   });
 
-  entry.meds.forEach((med, index) => {
+  const rescueTimeRegex = /^\d{2}:\d{2}$/;
+  (entry.rescueMeds ?? []).forEach((med, index) => {
     if (!med.name) {
-      issues.push({ path: `meds[${index}].name`, message: "Medikament benötigt eine Bezeichnung." });
+      issues.push({ path: `rescueMeds[${index}].name`, message: "Medikament benötigt eine Bezeichnung." });
     }
     if (med.doseMg !== undefined && (!Number.isFinite(med.doseMg) || med.doseMg < 0)) {
       issues.push({
-        path: `meds[${index}].doseMg`,
+        path: `rescueMeds[${index}].doseMg`,
         message: "Dosen müssen als nicht-negative Zahl in mg angegeben werden.",
       });
     }
+    if (med.time && !rescueTimeRegex.test(med.time)) {
+      issues.push({
+        path: `rescueMeds[${index}].time`,
+        message: "Uhrzeit bitte im Format HH:MM angeben.",
+      });
+    }
   });
-
-  if (entry.rescueDosesCount !== undefined && !Number.isInteger(entry.rescueDosesCount)) {
-    issues.push({ path: "rescueDosesCount", message: "Anzahl der Akutdosen muss eine Ganzzahl sein." });
-  }
 
   if (entry.sleep) {
     const { hours, quality, awakenings } = entry.sleep;

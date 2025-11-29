@@ -11,13 +11,13 @@ describe("normalizeDailyEntry", () => {
       painQuality: [],
       painMapRegionIds: [],
       symptoms: {},
-      meds: [],
+      rescueMeds: [],
     } as unknown as DailyEntry;
 
     const normalized = normalizeDailyEntry(legacyEntry);
 
     expect(normalized.bleeding).toEqual({ isBleeding: false });
-    expect(normalized.meds).toEqual([]);
+    expect(normalized.rescueMeds).toEqual([]);
     expect(normalized.symptoms).toEqual({});
     expect(normalized.painRegions).toEqual([]);
   });
@@ -31,7 +31,7 @@ describe("normalizeDailyEntry", () => {
       painRegions: [],
       bleeding: { isBleeding: true, pbacScore: 12 },
       symptoms: {},
-      meds: [],
+      rescueMeds: [],
     };
 
     const normalized = normalizeDailyEntry(entry);

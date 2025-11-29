@@ -41,6 +41,7 @@ import {
   HardDrive,
   Home,
   Minus,
+  Pill,
   Plus,
   ShieldCheck,
   Smartphone,
@@ -158,6 +159,16 @@ const MIGRAINE_LABEL = "Migräne";
 const MIGRAINE_WITH_AURA_LABEL = "Migräne mit Aura";
 const MIGRAINE_QUALITY_SET = new Set<string>(MIGRAINE_PAIN_QUALITIES);
 type OvulationPainSide = Exclude<NonNullable<DailyEntry["ovulationPain"]>["side"], undefined>;
+
+const STANDARD_RESCUE_MEDS = [
+  "Ibuprofen",
+  "Paracetamol",
+  "Naproxen",
+  "Diclofenac",
+  "Buscopan",
+  "Novalgin",
+  "Triptan",
+] as const;
 
 const OVULATION_PAIN_SIDES: OvulationPainSide[] = [
   "links",
@@ -901,8 +912,7 @@ const pruneDailyEntryByCompletion = (
   }
 
   if (!completion.medication) {
-    next.meds = [];
-    delete (next as { rescueDosesCount?: DailyEntry["rescueDosesCount"] }).rescueDosesCount;
+    next.rescueMeds = [];
   }
 
   if (!completion.sleep) {
@@ -1052,13 +1062,11 @@ const extractDailyCategorySnapshot = (
     case "medication": {
       return {
         entry: {
-          meds: (entry.meds ?? []).map((med) => ({
+          rescueMeds: (entry.rescueMeds ?? []).map((med) => ({
             name: med.name,
             doseMg: typeof med.doseMg === "number" ? med.doseMg : null,
-            times: [...(med.times ?? [])],
+            time: med.time ?? null,
           })),
-          rescueDosesCount:
-            typeof entry.rescueDosesCount === "number" ? entry.rescueDosesCount : null,
         },
       };
     }
@@ -1236,20 +1244,15 @@ const restoreDailyCategorySnapshot = (
     case "medication": {
       const data = snapshot.entry as
         | {
-            meds?: DailyEntry["meds"];
-            rescueDosesCount?: number | null;
+            rescueMeds?: DailyEntry["rescueMeds"];
           }
         | undefined;
-      if (data?.meds) {
-        nextEntry.meds = data.meds.map((med) => ({
+      if (data?.rescueMeds) {
+        nextEntry.rescueMeds = data.rescueMeds.map((med) => ({
           name: med.name,
           doseMg: typeof med.doseMg === "number" ? med.doseMg : undefined,
-          times: [...(med.times ?? [])],
+          time: med.time ?? undefined,
         }));
-      }
-      if (data) {
-        nextEntry.rescueDosesCount =
-          typeof data.rescueDosesCount === "number" ? data.rescueDosesCount : undefined;
       }
       break;
     }
@@ -1674,7 +1677,7 @@ const createEmptyDailyEntry = (date: string): DailyEntry => ({
 
   bleeding: { isBleeding: false },
   symptoms: {},
-  meds: [],
+  rescueMeds: [],
   ovulation: {},
 });
 
@@ -2546,15 +2549,15 @@ function CheckInHistoryTooltip({ active, payload }: TooltipProps<number, string>
 function CorrelationTooltip({ active, payload }: TooltipProps<number, string>) {
   if (!active || !payload?.length) return null;
   const { payload: point, name } = payload[0] as {
-    payload: { x: number; y: number; date: string };
+    payload: { x: number; y: number; date: string; yLabel?: string; xLabel?: string };
     name?: string;
   };
   return (
     <div className="rounded-lg border border-rose-200 bg-white p-3 text-xs text-rose-700 shadow-sm">
       <p className="font-semibold text-rose-800">{formatShortGermanDate(point.date)}</p>
       <p>{name}</p>
-      <p>Schmerz (NRS): {point.y.toFixed(1)}</p>
-      <p>Wert: {point.x.toLocaleString("de-DE")}</p>
+      <p>{point.yLabel ?? "Schmerz (NRS)"}: {point.y.toFixed(1)}</p>
+      <p>Wert: {(point.xLabel ?? point.x.toLocaleString("de-DE")) as string}</p>
     </div>
   );
 }
@@ -2685,6 +2688,8 @@ export default function HomePage() {
   const [featureFlags, setFeatureFlags, featureStorage] = usePersistentState<FeatureFlags>("endo.flags.v1", {});
   const [dismissedCheckIns, setDismissedCheckIns, dismissedCheckInsStorage] =
     usePersistentState<string[]>("endo.dismissedCheckIns.v1", []);
+  const [customRescueMeds, setCustomRescueMeds, _customRescueMedsStorage] =
+    usePersistentState<string[]>("endo.rescueMeds.v1", []);
   const derivedDailyEntries = useMemo(
     () => dailyEntries.map((entry) => applyAutomatedPainSymptoms(normalizeDailyEntry(entry))),
     [dailyEntries]
@@ -2709,6 +2714,15 @@ export default function HomePage() {
   const [painQuickIntensity, setPainQuickIntensity] = useState(5);
   const [pendingPainQuickAdd, setPendingPainQuickAdd] = useState<PendingQuickPainAdd | null>(null);
   const [painShortcutEvents, setPainShortcutEvents] = useState<QuickPainEvent[]>([]);
+  const [rescueWizard, setRescueWizard] = useState<
+    | { step: 1 | 2 | 3; name?: string; doseMg?: number; time?: string }
+    | null
+  >(null);
+  const [customRescueName, setCustomRescueName] = useState("");
+  const rescueMedOptions = useMemo(
+    () => Array.from(new Set<string>([...STANDARD_RESCUE_MEDS, ...customRescueMeds])).sort(),
+    [customRescueMeds]
+  );
   const bleedingQuickAddNoticeTimeoutRef = useRef<number | null>(null);
   const updatePbacCount = useCallback(
     (itemId: (typeof PBAC_ITEMS)[number]["id"], nextValue: number, max = PBAC_MAX_PRODUCT_COUNT) => {
@@ -4164,7 +4178,13 @@ export default function HomePage() {
             flooding: dailyDraft.bleeding.flooding ?? false,
           }
         : { isBleeding: false },
-      meds: dailyDraft.meds.filter((med) => med.name.trim().length > 0),
+      rescueMeds: (dailyDraft.rescueMeds ?? [])
+        .filter((med) => med.name.trim().length > 0)
+        .map((med) => ({
+          name: med.name.trim(),
+          doseMg: typeof med.doseMg === "number" ? Math.max(0, Math.round(med.doseMg)) : undefined,
+          time: med.time?.trim(),
+        })),
       notesTags: painQualityOther
         ? Array.from(
             new Set([...(dailyDraft.notesTags ?? []), `Schmerz anders: ${painQualityOther.trim()}`])
@@ -4978,6 +4998,64 @@ export default function HomePage() {
     analyticsRangeDays,
   ]);
 
+  const medicationLast7Days = useMemo(() => {
+    if (!todayDate) {
+      return [] as Array<{
+        date: string;
+        label: string;
+        rescueCount: number;
+        tooltip: string;
+      }>;
+    }
+
+    const entryByDate = new Map(derivedDailyEntries.map((entry) => [entry.date, entry]));
+    const days: Array<{
+      date: string;
+      label: string;
+      rescueCount: number;
+      tooltip: string;
+    }> = [];
+
+    for (let offset = 6; offset >= 0; offset -= 1) {
+      const current = new Date(todayDate);
+      current.setDate(todayDate.getDate() - offset);
+      const iso = formatDate(current);
+      const entry = entryByDate.get(iso);
+      const rescueMeds = (entry?.rescueMeds ?? []).filter((med) => med.name.trim().length > 0);
+      const rescueCount = rescueMeds.length;
+      const medsDetails = rescueMeds.map((med) => {
+        const medParts = [med.name.trim()];
+        if (typeof med.doseMg === "number") {
+          medParts.push(`${med.doseMg} mg`);
+        }
+        if (med.time) {
+          medParts.push(med.time);
+        }
+        return medParts.join(" • ");
+      });
+      const tooltipLines = medsDetails.length
+        ? medsDetails
+        : ["Keine Rescue-Medikation eingetragen."];
+
+      days.push({
+        date: iso,
+        label: current.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit" }),
+        rescueCount,
+        tooltip: tooltipLines.length
+          ? `${current.toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit" })}\n${tooltipLines.join(
+              "\n"
+            )}`
+          : `${current.toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit" })}\nKeine Medikamente eingetragen`,
+      });
+    }
+
+    return days;
+  }, [derivedDailyEntries, todayDate]);
+
+  const totalMedicationsLast7Days = useMemo(() => {
+    return medicationLast7Days.reduce((sum, day) => sum + day.rescueCount, 0);
+  }, [medicationLast7Days]);
+
   const painTrendText = useMemo(() => {
     if (typeof painImprovement === "number") {
       if (painImprovement > 0.2) {
@@ -5211,6 +5289,19 @@ export default function HomePage() {
   }, [annotatedDailyEntries, cycleOverlay, hasDailyEntryForToday, today]);
 
   const correlations = useMemo(() => {
+    const buildCorrelation = (
+      points: Array<{ x: number | null; y: number | null; date: string; xLabel?: string; yLabel?: string }>
+    ) => {
+      const filtered = points.filter(
+        (point): point is { x: number; y: number; date: string; xLabel?: string; yLabel?: string } =>
+          point.x !== null && point.y !== null
+      );
+      const pairs = filtered.map(({ x, y }) => ({ x, y }));
+      return { r: computePearson(pairs), n: pairs.length, points: filtered };
+    };
+
+    const bleedingDays = derivedDailyEntries.filter((entry) => entry.bleeding?.isBleeding);
+
     const sleepDetailed = annotatedDailyEntries
       .map(({ entry }) => ({
         x: typeof entry.sleep?.quality === "number" ? entry.sleep.quality : null,
@@ -5225,11 +5316,165 @@ export default function HomePage() {
         date: entry.date,
       }))
       .filter((point): point is { x: number; y: number; date: string } => point.x !== null && point.y !== null);
+    const medicationPoints = derivedDailyEntries.map((entry) => {
+      const rescueDoses = (entry.rescueMeds ?? []).filter((med) => med.name.trim().length > 0).length;
+      const medicationScore = rescueDoses;
+      const medicationLabel = rescueDoses
+        ? `${rescueDoses} Rescue-Dose${rescueDoses > 1 ? "n" : ""}`
+        : "Keine Rescue-Medikation";
+      return {
+        x: medicationScore,
+        xLabel: medicationLabel,
+        pain: typeof entry.painNRS === "number" ? entry.painNRS : null,
+        impact: typeof entry.impactNRS === "number" ? entry.impactNRS : null,
+        date: entry.date,
+      };
+    });
     const sleepPairs = sleepDetailed.map(({ x, y }) => ({ x, y }));
     const stepsPairs = stepsDetailed.map(({ x, y }) => ({ x, y }));
+    const ovulationPainPoints = derivedDailyEntries.map((entry) => ({
+      x: typeof entry.ovulationPain?.intensity === "number" ? entry.ovulationPain.intensity : null,
+      y: typeof entry.painNRS === "number" ? entry.painNRS : null,
+      date: entry.date,
+      xLabel: typeof entry.ovulationPain?.intensity === "number" ? undefined : "Keine Angabe",
+      yLabel: "Schmerz (NRS)",
+    }));
+    const ovulationPainRegions = derivedDailyEntries.map((entry) => ({
+      x: typeof entry.ovulationPain?.intensity === "number" ? entry.ovulationPain.intensity : null,
+      y: (entry.painRegions ?? []).length,
+      date: entry.date,
+      xLabel: typeof entry.ovulationPain?.intensity === "number" ? undefined : "Keine Angabe",
+      yLabel: "Betroffene Regionen",
+    }));
+    const lhPain = derivedDailyEntries.map((entry) => {
+      const lhPositive = entry.ovulation?.lhPositive;
+      const x = lhPositive === true ? 1 : lhPositive === false ? 0 : null;
+      return {
+        x,
+        xLabel: lhPositive === true ? "Positiv" : lhPositive === false ? "Negativ" : undefined,
+        y: typeof entry.painNRS === "number" ? entry.painNRS : null,
+        date: entry.date,
+        yLabel: "Schmerz (NRS)",
+      };
+    });
+    const lhRegions = derivedDailyEntries.map((entry) => {
+      const lhPositive = entry.ovulation?.lhPositive;
+      const x = lhPositive === true ? 1 : lhPositive === false ? 0 : null;
+      return {
+        x,
+        xLabel: lhPositive === true ? "Positiv" : lhPositive === false ? "Negativ" : undefined,
+        y: (entry.painRegions ?? []).length,
+        date: entry.date,
+        yLabel: "Betroffene Regionen",
+      };
+    });
+    const bbtPain = derivedDailyEntries.map((entry) => ({
+      x: typeof entry.ovulation?.bbtCelsius === "number" ? entry.ovulation.bbtCelsius : null,
+      y: typeof entry.painNRS === "number" ? entry.painNRS : null,
+      date: entry.date,
+      yLabel: "Schmerz (NRS)",
+    }));
+    const bbtRegions = derivedDailyEntries.map((entry) => ({
+      x: typeof entry.ovulation?.bbtCelsius === "number" ? entry.ovulation.bbtCelsius : null,
+      y: (entry.painRegions ?? []).length,
+      date: entry.date,
+      yLabel: "Betroffene Regionen",
+    }));
     return {
       sleep: { r: computePearson(sleepPairs), n: sleepPairs.length, points: sleepDetailed },
       steps: { r: computePearson(stepsPairs), n: stepsPairs.length, points: stepsDetailed },
+      pbacPain: buildCorrelation(
+        bleedingDays.map((entry) => ({
+          x: typeof entry.bleeding?.pbacScore === "number" ? entry.bleeding.pbacScore : null,
+          y: typeof entry.painNRS === "number" ? entry.painNRS : null,
+          date: entry.date,
+          yLabel: "Schmerz (NRS)",
+        }))
+      ),
+      pbacImpact: buildCorrelation(
+        bleedingDays.map((entry) => ({
+          x: typeof entry.bleeding?.pbacScore === "number" ? entry.bleeding.pbacScore : null,
+          y: typeof entry.impactNRS === "number" ? entry.impactNRS : null,
+          date: entry.date,
+          yLabel: "Beeinträchtigung (NRS)",
+        }))
+      ),
+      clotsPain: buildCorrelation(
+        bleedingDays.map((entry) => {
+          const clots = entry.bleeding?.clots;
+          const x = clots === true ? 1 : clots === false ? 0 : null;
+          return {
+            x,
+            xLabel: clots === true ? "Ja" : clots === false ? "Nein" : undefined,
+            y: typeof entry.painNRS === "number" ? entry.painNRS : null,
+            date: entry.date,
+            yLabel: "Schmerz (NRS)",
+          };
+        })
+      ),
+      clotsImpact: buildCorrelation(
+        bleedingDays.map((entry) => {
+          const clots = entry.bleeding?.clots;
+          const x = clots === true ? 1 : clots === false ? 0 : null;
+          return {
+            x,
+            xLabel: clots === true ? "Ja" : clots === false ? "Nein" : undefined,
+            y: typeof entry.impactNRS === "number" ? entry.impactNRS : null,
+            date: entry.date,
+            yLabel: "Beeinträchtigung (NRS)",
+          };
+        })
+      ),
+      floodingPain: buildCorrelation(
+        bleedingDays.map((entry) => {
+          const flooding = entry.bleeding?.flooding;
+          const x = flooding === true ? 1 : flooding === false ? 0 : null;
+          return {
+            x,
+            xLabel: flooding === true ? "Ja" : flooding === false ? "Nein" : undefined,
+            y: typeof entry.painNRS === "number" ? entry.painNRS : null,
+            date: entry.date,
+            yLabel: "Schmerz (NRS)",
+          };
+        })
+      ),
+      floodingImpact: buildCorrelation(
+        bleedingDays.map((entry) => {
+          const flooding = entry.bleeding?.flooding;
+          const x = flooding === true ? 1 : flooding === false ? 0 : null;
+          return {
+            x,
+            xLabel: flooding === true ? "Ja" : flooding === false ? "Nein" : undefined,
+            y: typeof entry.impactNRS === "number" ? entry.impactNRS : null,
+            date: entry.date,
+            yLabel: "Beeinträchtigung (NRS)",
+          };
+        })
+      ),
+      ovulationPain: buildCorrelation(ovulationPainPoints),
+      ovulationPainRegions: buildCorrelation(ovulationPainRegions),
+      ovulationLH: buildCorrelation(lhPain),
+      ovulationLHRegions: buildCorrelation(lhRegions),
+      ovulationBBT: buildCorrelation(bbtPain),
+      ovulationBBTRegions: buildCorrelation(bbtRegions),
+      medicationPain: buildCorrelation(
+        medicationPoints.map((point) => ({
+          x: point.x,
+          y: point.pain,
+          date: point.date,
+          xLabel: point.xLabel,
+          yLabel: "Schmerz (NRS)",
+        }))
+      ),
+      medicationImpact: buildCorrelation(
+        medicationPoints.map((point) => ({
+          x: point.x,
+          y: point.impact,
+          date: point.date,
+          xLabel: point.xLabel,
+          yLabel: "Beeinträchtigung (NRS)",
+        }))
+      ),
     };
   }, [annotatedDailyEntries, derivedDailyEntries]);
 
@@ -5600,10 +5845,8 @@ export default function HomePage() {
       })();
 
       const isMedicationZero = (() => {
-        const meds = entry.meds ?? [];
-        const rescue = entry.rescueDosesCount;
-        const rescueZero = rescue === undefined || rescue === null || rescue === 0;
-        return meds.length === 0 && rescueZero;
+        const meds = entry.rescueMeds ?? [];
+        return meds.length === 0;
       })();
 
       return {
@@ -5679,11 +5922,77 @@ export default function HomePage() {
     }
     setDailyDraft((prev) => ({
       ...prev,
-      meds: [],
-      rescueDosesCount: undefined,
+      rescueMeds: [],
     }));
     setCategoryCompletion("medication", true);
   }, [confirmQuickActionReset, setCategoryCompletion, setDailyDraft]);
+
+  const startRescueWizard = useCallback(() => {
+    setRescueWizard({ step: 1 });
+  }, []);
+
+  const resetRescueWizard = useCallback(() => {
+    setRescueWizard(null);
+    setCustomRescueName("");
+  }, []);
+
+  const handleRescueNameSelect = useCallback((name: string) => {
+    setRescueWizard((prev) => ({ ...(prev ?? { step: 1 }), name, step: 2 }));
+  }, []);
+
+  const handleRescueWizardNext = useCallback(() => {
+    setRescueWizard((prev) => {
+      if (!prev) return prev;
+      if (prev.step === 1 && prev.name) return { ...prev, step: 2 };
+      if (prev.step === 2) return { ...prev, step: 3 };
+      return prev;
+    });
+  }, []);
+
+  const handleRescueWizardBack = useCallback(() => {
+    setRescueWizard((prev) => {
+      if (!prev || prev.step === 1) return prev;
+      return { ...prev, step: (prev.step - 1) as 1 | 2 | 3 };
+    });
+  }, []);
+
+  const handleRescueWizardSave = useCallback(() => {
+    setRescueWizard((current) => {
+      if (!current?.name || current.doseMg === undefined || !current.time) {
+        return current;
+      }
+      const nextDose = { name: current.name, doseMg: current.doseMg, time: current.time };
+      setDailyDraft((prev) => ({
+        ...prev,
+        rescueMeds: [...(prev.rescueMeds ?? []), nextDose],
+      }));
+      setCategoryCompletion("medication", true);
+      return null;
+    });
+  }, [setCategoryCompletion, setDailyDraft]);
+
+  const handleCustomRescueSubmit = useCallback(() => {
+    const trimmed = customRescueName.trim();
+    if (!trimmed) {
+      return;
+    }
+    setCustomRescueMeds((prev) => {
+      const next = Array.from(new Set([...prev, trimmed]));
+      return next;
+    });
+    setRescueWizard({ step: 2, name: trimmed });
+    setCustomRescueName("");
+  }, [customRescueName, setCustomRescueMeds]);
+
+  const removeRescueMed = useCallback(
+    (index: number) => {
+      setDailyDraft((prev) => ({
+        ...prev,
+        rescueMeds: (prev.rescueMeds ?? []).filter((_, i) => i !== index),
+      }));
+    },
+    [setDailyDraft]
+  );
 
   const resetPainQuickAddState = useCallback(() => {
     setPainQuickStep(1);
@@ -6270,16 +6579,20 @@ export default function HomePage() {
       summaries.bleeding = bleedLines;
 
       const medicationLines: string[] = [];
-      const meds = entry.meds ?? [];
-      const medNames = meds.map((med) => med.name).filter((name): name is string => Boolean(name));
-      if (medNames.length) {
-        medicationLines.push(`Regelmäßig: ${formatList(medNames, 3)}`);
-      }
-      if (typeof entry.rescueDosesCount === "number") {
-        medicationLines.push(`Rescue-Dosen: ${entry.rescueDosesCount}`);
-      }
-      if (!medicationLines.length) {
-        medicationLines.push("Keine Medikamente eingetragen.");
+      const rescueMeds = (entry.rescueMeds ?? []).filter((med) => med.name);
+      if (rescueMeds.length) {
+        rescueMeds.forEach((med) => {
+          const parts = [med.name];
+          if (typeof med.doseMg === "number") {
+            parts.push(`${med.doseMg} mg`);
+          }
+          if (med.time) {
+            parts.push(med.time);
+          }
+          medicationLines.push(parts.join(" • "));
+        });
+      } else {
+        medicationLines.push("Keine Rescue-Medikation eingetragen.");
       }
       summaries.medication = medicationLines;
 
@@ -7736,109 +8049,152 @@ export default function HomePage() {
               <div className={cn("space-y-6", dailyActiveCategory === "medication" ? "" : "hidden")}> 
                 <Section
                   title={TERMS.meds.label}
-                  description="Eingenommene Medikamente & Hilfen des Tages"
+                  description="Akut-/Rescue-Medikation des Tages erfassen"
                   onComplete={() => setDailyActiveCategory("overview")}
                 >
                   <div className="grid gap-4">
                     <TermHeadline termKey="meds" />
-                    {dailyDraft.meds.map((med, index) => (
-                      <div key={index} className="grid gap-2 rounded-lg border border-rose-100 bg-rose-50 p-4">
-                        <div className="grid gap-1">
-                          <Label htmlFor={`med-name-${index}`}>Präparat / Hilfe</Label>
-                          <Input
-                            id={`med-name-${index}`}
-                            value={med.name}
-                            onChange={(event) => {
-                              const updated = [...dailyDraft.meds];
-                              updated[index] = { ...updated[index], name: event.target.value };
-                              setDailyDraft((prev) => ({ ...prev, meds: updated }));
-                            }}
-                          />
-                          {renderIssuesForPath(`meds[${index}].name`)}
-                        </div>
-                        <div className="grid gap-1 sm:grid-cols-2">
-                          <div>
-                            <Label htmlFor={`med-dose-${index}`}>Dosis (mg)</Label>
-                            <Input
-                              id={`med-dose-${index}`}
-                              type="number"
-                              min={0}
-                              value={med.doseMg ?? ""}
-                              onChange={(event) => {
-                                const updated = [...dailyDraft.meds];
-                                const nextValue = event.target.value ? Number(event.target.value) : undefined;
-                                updated[index] = { ...updated[index], doseMg: nextValue };
-                                setDailyDraft((prev) => ({ ...prev, meds: updated }));
-                              }}
-                            />
-                            {renderIssuesForPath(`meds[${index}].doseMg`)}
-                          </div>
-                          <div>
-                            <Label htmlFor={`med-times-${index}`}>Einnahmezeiten (HH:MM, kommasepariert)</Label>
-                            <Input
-                              id={`med-times-${index}`}
-                              placeholder="08:00, 14:00"
-                              value={(med.times ?? []).join(", ")}
-                              onChange={(event) => {
-                                const times = event.target.value
-                                  .split(",")
-                                  .map((value) => value.trim())
-                                  .filter(Boolean);
-                                const updated = [...dailyDraft.meds];
-                                updated[index] = { ...updated[index], times };
-                                setDailyDraft((prev) => ({ ...prev, meds: updated }));
-                              }}
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            className="text-xs text-rose-600"
-                            onClick={() => {
-                              setDailyDraft((prev) => ({
-                                ...prev,
-                                meds: prev.meds.filter((_, i) => i !== index),
-                              }));
-                            }}
-                          >
-                            Entfernen
+                    <div className="space-y-2">
+                      {(dailyDraft.rescueMeds ?? []).length ? (
+                        (dailyDraft.rescueMeds ?? []).map((med, index) => {
+                          const detailParts = [
+                            typeof med.doseMg === "number" ? `${med.doseMg} mg` : null,
+                            med.time ?? null,
+                          ].filter(Boolean);
+                          return (
+                            <div
+                              key={`${med.name}-${index}`}
+                              className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-rose-100 bg-rose-50 p-3"
+                            >
+                              <div className="space-y-1 text-sm">
+                                <p className="font-semibold text-rose-800">{med.name || "Ohne Namen"}</p>
+                                <p className="text-rose-700">{detailParts.length ? detailParts.join(" • ") : "Keine Details hinterlegt"}</p>
+                                <div className="space-y-0.5 text-xs text-rose-600">
+                                  {renderIssuesForPath(`rescueMeds[${index}].name`)}
+                                  {renderIssuesForPath(`rescueMeds[${index}].doseMg`)}
+                                  {renderIssuesForPath(`rescueMeds[${index}].time`)}
+                                </div>
+                              </div>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="text-rose-600"
+                                onClick={() => removeRescueMed(index)}
+                              >
+                                Entfernen
+                              </Button>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <p className="text-sm text-rose-600">Noch keine Rescue-Dosen dokumentiert.</p>
+                      )}
+                    </div>
+                    {rescueWizard ? (
+                      <div className="space-y-3 rounded-lg border border-rose-100 bg-white p-4 shadow-sm">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-semibold text-rose-800">Dosis hinzufügen</p>
+                          <Button type="button" variant="ghost" size="sm" onClick={resetRescueWizard}>
+                            Abbrechen
                           </Button>
                         </div>
+                        <div className="grid gap-3">
+                          <div className="space-y-2">
+                            <Label className="text-xs text-rose-600">Schritt 1: Medikament auswählen</Label>
+                            <div className="flex flex-wrap gap-2">
+                              {rescueMedOptions.map((name) => (
+                                <Button
+                                  key={name}
+                                  type="button"
+                                  variant={rescueWizard.name === name ? "default" : "outline"}
+                                  size="sm"
+                                  className="rounded-full"
+                                  onClick={() => handleRescueNameSelect(name)}
+                                >
+                                  {name}
+                                </Button>
+                              ))}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Input
+                                placeholder="Anderes Medikament anlegen"
+                                value={customRescueName}
+                                onChange={(event) => setCustomRescueName(event.target.value)}
+                              />
+                              <Button type="button" variant="secondary" size="sm" onClick={handleCustomRescueSubmit}>
+                                Anlegen
+                              </Button>
+                            </div>
+                          </div>
+                          {rescueWizard.step >= 2 ? (
+                            <div className="space-y-1">
+                              <Label className="text-xs text-rose-600">Schritt 2: Dosis (mg) auswählen</Label>
+                              <Input
+                                type="number"
+                                min={0}
+                                value={rescueWizard.doseMg ?? ""}
+                                onChange={(event) =>
+                                  setRescueWizard((prev) =>
+                                    prev
+                                      ? {
+                                          ...prev,
+                                          doseMg: event.target.value ? Number(event.target.value) : undefined,
+                                        }
+                                      : prev
+                                  )
+                                }
+                              />
+                            </div>
+                          ) : null}
+                          {rescueWizard.step >= 3 ? (
+                            <div className="space-y-1">
+                              <Label className="text-xs text-rose-600">Schritt 3: Uhrzeit angeben</Label>
+                              <Input
+                                type="time"
+                                value={rescueWizard.time ?? ""}
+                                onChange={(event) =>
+                                  setRescueWizard((prev) => (prev ? { ...prev, time: event.target.value } : prev))
+                                }
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          {rescueWizard.step > 1 ? (
+                            <Button type="button" variant="ghost" size="sm" onClick={handleRescueWizardBack}>
+                              Zurück
+                            </Button>
+                          ) : null}
+                          {rescueWizard.step < 3 ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={handleRescueWizardNext}
+                              disabled={
+                                (rescueWizard.step === 1 && !rescueWizard.name) ||
+                                (rescueWizard.step === 2 && rescueWizard.doseMg === undefined)
+                              }
+                            >
+                              Weiter
+                            </Button>
+                          ) : (
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={handleRescueWizardSave}
+                              disabled={!rescueWizard.name || rescueWizard.doseMg === undefined || !rescueWizard.time}
+                            >
+                              Dosis speichern
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                    ))}
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="justify-start"
-                      onClick={() =>
-                        setDailyDraft((prev) => ({
-                          ...prev,
-                          meds: [...prev.meds, { name: "", doseMg: undefined, times: [] }],
-                        }))
-                      }
-                    >
-                      + Medikament oder Hilfe ergänzen
-                    </Button>
-                    <div className="grid gap-2">
-                      <TermField termKey="rescue" htmlFor="rescue-count">
-                        <Input
-                          id="rescue-count"
-                          type="number"
-                          min={0}
-                          step={1}
-                          value={dailyDraft.rescueDosesCount ?? ""}
-                          onChange={(event) =>
-                            setDailyDraft((prev) => ({
-                              ...prev,
-                              rescueDosesCount: event.target.value ? Number(event.target.value) : undefined,
-                            }))
-                          }
-                        />
-                        {renderIssuesForPath("rescueDosesCount")}
-                      </TermField>
-                    </div>
+                    ) : (
+                      <Button type="button" variant="secondary" className="justify-start" onClick={startRescueWizard}>
+                        Dosis hinzufügen
+                      </Button>
+                    )}
                   </div>
                 </Section>
               </div>
@@ -8503,6 +8859,65 @@ export default function HomePage() {
               </Section>
 
               <Section
+                title="Medikation der letzten 7 Tage"
+                description="Eine Kapsel pro dokumentiertem Eintrag – inklusive Rescue-Dosen."
+                completionEnabled={false}
+              >
+                <div className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-rose-600">
+                      <span>Heute und die letzten 6 Tage</span>
+                      <span className="flex items-center gap-1 rounded-full bg-sky-100 px-2 py-1 text-[11px] font-semibold text-sky-700">
+                        <Pill className="h-3.5 w-3.5 text-sky-600" />
+                        Rescue-Dosen
+                      </span>
+                    </div>
+                  <div className="overflow-hidden rounded-2xl border border-rose-100 bg-white/80 p-3 shadow-sm">
+                    <div className="flex items-end justify-between gap-2">
+                      {medicationLast7Days.map((day) => {
+                          const pills = [...new Array(day.rescueCount).fill("rescue" as const)];
+                          const label = `${day.label}: ${day.rescueCount}x dokumentiert`;
+                        return (
+                          <div
+                            key={day.date}
+                            className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center"
+                            aria-label={label}
+                            title={day.tooltip}
+                          >
+                            <div className="text-[11px] font-semibold leading-tight text-rose-600">{day.label}</div>
+                            <div className="flex h-24 w-full items-end justify-center">
+                              {pills.length ? (
+                                <div className="flex flex-col-reverse items-center justify-start gap-[6px]">
+                                  {pills.map((type, index) => (
+                                    <Pill
+                                      key={`${day.date}-${type}-${index}`}
+                                      className={cn(
+                                        "h-4 w-4 drop-shadow-sm",
+                                        type === "rescue" ? "text-sky-600" : "text-rose-500"
+                                      )}
+                                    />
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-sm text-rose-300">–</span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-rose-700">
+                              {day.rescueCount === 1 ? "1×" : `${day.rescueCount}×`}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <p className="text-xs text-rose-600">
+                    {totalMedicationsLast7Days
+                      ? `${totalMedicationsLast7Days} dokumentierte Dosen in den letzten 7 Tagen.`
+                      : "Keine Medikamente in den letzten 7 Tagen eingetragen."}
+                  </p>
+                </div>
+              </Section>
+
+              <Section
                 title="Check-in Momentum"
                 description="Wie konsequent du in den letzten Wochen dokumentiert hast"
                 completionEnabled={false}
@@ -8634,6 +9049,109 @@ export default function HomePage() {
                     </div>
                   </div>
                   <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                      <h4 className="text-sm font-semibold text-rose-800">Medikation &amp; Schmerz/Belastung</h4>
+                      <div className="flex flex-col text-xs text-rose-500 sm:flex-row sm:gap-3">
+                        <span>
+                          Schmerz r = {" "}
+                          {correlations.medicationPain.r !== null
+                            ? correlations.medicationPain.r.toFixed(2)
+                            : "–"} (n={correlations.medicationPain.n})
+                        </span>
+                        <span>
+                          Beeinträchtigung r = {" "}
+                          {correlations.medicationImpact.r !== null
+                            ? correlations.medicationImpact.r.toFixed(2)
+                            : "–"} (n={correlations.medicationImpact.n})
+                        </span>
+                      </div>
+                    </div>
+                    <div className="h-56 w-full">
+                      {correlations.medicationPain.points.length >= 2 || correlations.medicationImpact.points.length >= 2 ? (
+                        <ResponsiveContainer>
+                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
+                            <XAxis
+                              type="number"
+                              dataKey="x"
+                              name="Medikation/Rescue"
+                              domain={[0, "dataMax"]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                              tickFormatter={(value: number) => value.toLocaleString("de-DE")}
+                            />
+                            <YAxis
+                              type="number"
+                              dataKey="y"
+                              name="Schmerz-/Beeinträchtigung (NRS)"
+                              domain={[0, 10]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                            {correlations.medicationPain.points.length >= 2 ? (
+                              <Scatter data={correlations.medicationPain.points} fill="#0ea5e9" name="Schmerz (NRS)" />
+                            ) : null}
+                            {correlations.medicationImpact.points.length >= 2 ? (
+                              <Scatter
+                                data={correlations.medicationImpact.points}
+                                fill="#f97316"
+                                name="Beeinträchtigung (NRS)"
+                              />
+                            ) : null}
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
+                          Dokumentiere Medikation oder Rescue-Dosen sowie Schmerz bzw. Beeinträchtigung, um diese Beziehung zu sehen.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-rose-800">PBAC-Score &amp; Schmerz</h4>
+                      <span className="text-xs text-rose-500">
+                        r = {correlations.pbacPain.r !== null ? correlations.pbacPain.r.toFixed(2) : "–"} (n={
+                          correlations.pbacPain.n
+                        })
+                      </span>
+                    </div>
+                    <div className="h-56 w-full">
+                      {correlations.pbacPain.points.length >= 2 ? (
+                        <ResponsiveContainer>
+                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
+                            <XAxis
+                              type="number"
+                              dataKey="x"
+                              name="PBAC-Score"
+                              domain={[0, "dataMax"]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <YAxis
+                              type="number"
+                              dataKey="y"
+                              name="Schmerz (NRS)"
+                              domain={[0, 10]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                            <Scatter data={correlations.pbacPain.points} fill="#f97316" name="PBAC-Score" />
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
+                          Trage PBAC-Werte an Blutungstagen ein, um den Zusammenhang zu sehen.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
                     <div className="flex items-center justify-between">
                       <h4 className="text-sm font-semibold text-rose-800">Schritte &amp; Schmerz</h4>
                       <span className="text-xs text-rose-500">
@@ -8672,6 +9190,491 @@ export default function HomePage() {
                       ) : (
                         <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
                           Erfasse Schritte, um mögliche Zusammenhänge zu sehen.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-rose-800">PBAC-Score &amp; Beeinträchtigung</h4>
+                      <span className="text-xs text-rose-500">
+                        r = {correlations.pbacImpact.r !== null ? correlations.pbacImpact.r.toFixed(2) : "–"} (n={
+                          correlations.pbacImpact.n
+                        })
+                      </span>
+                    </div>
+                    <div className="h-56 w-full">
+                      {correlations.pbacImpact.points.length >= 2 ? (
+                        <ResponsiveContainer>
+                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
+                            <XAxis
+                              type="number"
+                              dataKey="x"
+                              name="PBAC-Score"
+                              domain={[0, "dataMax"]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <YAxis
+                              type="number"
+                              dataKey="y"
+                              name="Beeinträchtigung (NRS)"
+                              domain={[0, 10]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                            <Scatter data={correlations.pbacImpact.points} fill="#f59e0b" name="PBAC-Score" />
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
+                          Dokumentiere PBAC und Beeinträchtigung an Blutungstagen, um diese Korrelation zu sehen.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-rose-800">Koagel &amp; Schmerz</h4>
+                      <span className="text-xs text-rose-500">
+                        r = {correlations.clotsPain.r !== null ? correlations.clotsPain.r.toFixed(2) : "–"} (n={
+                          correlations.clotsPain.n
+                        })
+                      </span>
+                    </div>
+                    <div className="h-56 w-full">
+                      {correlations.clotsPain.points.length >= 2 ? (
+                        <ResponsiveContainer>
+                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
+                            <XAxis
+                              type="number"
+                              dataKey="x"
+                              name="Koagel"
+                              domain={[-0.1, 1.1]}
+                              ticks={[0, 1]}
+                              tickFormatter={(value: number) => (value >= 1 ? "Ja" : "Nein")}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <YAxis
+                              type="number"
+                              dataKey="y"
+                              name="Schmerz (NRS)"
+                              domain={[0, 10]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                            <Scatter data={correlations.clotsPain.points} fill="#0ea5e9" name="Koagel" />
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
+                          Erfasse Koagel an Blutungstagen, um den Zusammenhang zu erkennen.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-rose-800">Koagel &amp; Beeinträchtigung</h4>
+                      <span className="text-xs text-rose-500">
+                        r = {correlations.clotsImpact.r !== null ? correlations.clotsImpact.r.toFixed(2) : "–"} (n={
+                          correlations.clotsImpact.n
+                        })
+                      </span>
+                    </div>
+                    <div className="h-56 w-full">
+                      {correlations.clotsImpact.points.length >= 2 ? (
+                        <ResponsiveContainer>
+                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
+                            <XAxis
+                              type="number"
+                              dataKey="x"
+                              name="Koagel"
+                              domain={[-0.1, 1.1]}
+                              ticks={[0, 1]}
+                              tickFormatter={(value: number) => (value >= 1 ? "Ja" : "Nein")}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <YAxis
+                              type="number"
+                              dataKey="y"
+                              name="Beeinträchtigung (NRS)"
+                              domain={[0, 10]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                            <Scatter data={correlations.clotsImpact.points} fill="#22c55e" name="Koagel" />
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
+                          Erfasse Koagel und Beeinträchtigung, um die Korrelation zu berechnen.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-rose-800">Flooding &amp; Schmerz</h4>
+                      <span className="text-xs text-rose-500">
+                        r = {correlations.floodingPain.r !== null ? correlations.floodingPain.r.toFixed(2) : "–"} (n={
+                          correlations.floodingPain.n
+                        })
+                      </span>
+                    </div>
+                    <div className="h-56 w-full">
+                      {correlations.floodingPain.points.length >= 2 ? (
+                        <ResponsiveContainer>
+                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
+                            <XAxis
+                              type="number"
+                              dataKey="x"
+                              name="Flooding"
+                              domain={[-0.1, 1.1]}
+                              ticks={[0, 1]}
+                              tickFormatter={(value: number) => (value >= 1 ? "Ja" : "Nein")}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <YAxis
+                              type="number"
+                              dataKey="y"
+                              name="Schmerz (NRS)"
+                              domain={[0, 10]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                            <Scatter data={correlations.floodingPain.points} fill="#a855f7" name="Flooding" />
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
+                          Erfasse Flooding während der Blutung, um die Auswertung zu sehen.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-rose-800">Flooding &amp; Beeinträchtigung</h4>
+                      <span className="text-xs text-rose-500">
+                        r = {correlations.floodingImpact.r !== null ? correlations.floodingImpact.r.toFixed(2) : "–"} (n={
+                          correlations.floodingImpact.n
+                        })
+                      </span>
+                    </div>
+                    <div className="h-56 w-full">
+                      {correlations.floodingImpact.points.length >= 2 ? (
+                        <ResponsiveContainer>
+                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
+                            <XAxis
+                              type="number"
+                              dataKey="x"
+                              name="Flooding"
+                              domain={[-0.1, 1.1]}
+                              ticks={[0, 1]}
+                              tickFormatter={(value: number) => (value >= 1 ? "Ja" : "Nein")}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <YAxis
+                              type="number"
+                              dataKey="y"
+                              name="Beeinträchtigung (NRS)"
+                              domain={[0, 10]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                            <Scatter data={correlations.floodingImpact.points} fill="#ec4899" name="Flooding" />
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
+                          Erfasse Flooding und Beeinträchtigung an Blutungstagen, um diese Beziehung zu sehen.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-rose-800">Ovulationsschmerz &amp; Schmerz</h4>
+                      <span className="text-xs text-rose-500">
+                        r = {correlations.ovulationPain.r !== null ? correlations.ovulationPain.r.toFixed(2) : "–"} (n={
+                          correlations.ovulationPain.n
+                        })
+                      </span>
+                    </div>
+                    <div className="h-56 w-full">
+                      {correlations.ovulationPain.points.length >= 2 ? (
+                        <ResponsiveContainer>
+                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
+                            <XAxis
+                              type="number"
+                              dataKey="x"
+                              name={TERMS.ovulationPain.label}
+                              domain={[0, 10]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <YAxis
+                              type="number"
+                              dataKey="y"
+                              name="Schmerz (NRS)"
+                              domain={[0, 10]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                            <Scatter data={correlations.ovulationPain.points} fill="#7c3aed" name="Ovulationsschmerz" />
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
+                          Trage Intensität des Mittelschmerzes ein, um den Zusammenhang zu sehen.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-rose-800">Ovulationsschmerz &amp; Regionen</h4>
+                      <span className="text-xs text-rose-500">
+                        r = {correlations.ovulationPainRegions.r !== null
+                          ? correlations.ovulationPainRegions.r.toFixed(2)
+                          : "–"} (n={correlations.ovulationPainRegions.n})
+                      </span>
+                    </div>
+                    <div className="h-56 w-full">
+                      {correlations.ovulationPainRegions.points.length >= 2 ? (
+                        <ResponsiveContainer>
+                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
+                            <XAxis
+                              type="number"
+                              dataKey="x"
+                              name={TERMS.ovulationPain.label}
+                              domain={[0, 10]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <YAxis
+                              type="number"
+                              dataKey="y"
+                              name="Betroffene Regionen"
+                              domain={[0, "dataMax"]}
+                              allowDecimals={false}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                            <Scatter
+                              data={correlations.ovulationPainRegions.points}
+                              fill="#0ea5e9"
+                              name="Ovulationsschmerz"
+                            />
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
+                          Dokumentiere Regionen und Mittelschmerz, um diese Grafik zu sehen.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-rose-800">LH-Positivität &amp; Schmerz</h4>
+                      <span className="text-xs text-rose-500">
+                        r = {correlations.ovulationLH.r !== null ? correlations.ovulationLH.r.toFixed(2) : "–"} (n={
+                          correlations.ovulationLH.n
+                        })
+                      </span>
+                    </div>
+                    <div className="h-56 w-full">
+                      {correlations.ovulationLH.points.length >= 2 ? (
+                        <ResponsiveContainer>
+                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
+                            <XAxis
+                              type="number"
+                              dataKey="x"
+                              name="LH-Test"
+                              domain={[-0.1, 1.1]}
+                              ticks={[0, 1]}
+                              tickFormatter={(value: number) => (value >= 1 ? "Positiv" : "Negativ")}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <YAxis
+                              type="number"
+                              dataKey="y"
+                              name="Schmerz (NRS)"
+                              domain={[0, 10]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                            <Scatter data={correlations.ovulationLH.points} fill="#22d3ee" name="LH-Test" />
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
+                          Markiere positive und negative LH-Tests, um den Zusammenhang zu sehen.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-rose-800">LH-Positivität &amp; Regionen</h4>
+                      <span className="text-xs text-rose-500">
+                        r = {correlations.ovulationLHRegions.r !== null
+                          ? correlations.ovulationLHRegions.r.toFixed(2)
+                          : "–"} (n={correlations.ovulationLHRegions.n})
+                      </span>
+                    </div>
+                    <div className="h-56 w-full">
+                      {correlations.ovulationLHRegions.points.length >= 2 ? (
+                        <ResponsiveContainer>
+                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
+                            <XAxis
+                              type="number"
+                              dataKey="x"
+                              name="LH-Test"
+                              domain={[-0.1, 1.1]}
+                              ticks={[0, 1]}
+                              tickFormatter={(value: number) => (value >= 1 ? "Positiv" : "Negativ")}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <YAxis
+                              type="number"
+                              dataKey="y"
+                              name="Betroffene Regionen"
+                              domain={[0, "dataMax"]}
+                              allowDecimals={false}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                            <Scatter data={correlations.ovulationLHRegions.points} fill="#84cc16" name="LH-Test" />
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
+                          Kombiniere LH-Tests mit betroffenen Regionen, um diese Grafik zu befüllen.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-rose-800">Basaltemperatur &amp; Schmerz</h4>
+                      <span className="text-xs text-rose-500">
+                        r = {correlations.ovulationBBT.r !== null ? correlations.ovulationBBT.r.toFixed(2) : "–"} (n={
+                          correlations.ovulationBBT.n
+                        })
+                      </span>
+                    </div>
+                    <div className="h-56 w-full">
+                      {correlations.ovulationBBT.points.length >= 2 ? (
+                        <ResponsiveContainer>
+                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
+                            <XAxis
+                              type="number"
+                              dataKey="x"
+                              name="Basaltemperatur"
+                              domain={[34, 38]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <YAxis
+                              type="number"
+                              dataKey="y"
+                              name="Schmerz (NRS)"
+                              domain={[0, 10]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                            <Scatter data={correlations.ovulationBBT.points} fill="#fb7185" name="Basaltemperatur" />
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
+                          Erfasse deine BBT, um sie mit Schmerzen zu vergleichen.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-rose-800">Basaltemperatur &amp; Regionen</h4>
+                      <span className="text-xs text-rose-500">
+                        r = {correlations.ovulationBBTRegions.r !== null
+                          ? correlations.ovulationBBTRegions.r.toFixed(2)
+                          : "–"} (n={correlations.ovulationBBTRegions.n})
+                      </span>
+                    </div>
+                    <div className="h-56 w-full">
+                      {correlations.ovulationBBTRegions.points.length >= 2 ? (
+                        <ResponsiveContainer>
+                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
+                            <XAxis
+                              type="number"
+                              dataKey="x"
+                              name="Basaltemperatur"
+                              domain={[34, 38]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <YAxis
+                              type="number"
+                              dataKey="y"
+                              name="Betroffene Regionen"
+                              domain={[0, "dataMax"]}
+                              allowDecimals={false}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                            <Scatter
+                              data={correlations.ovulationBBTRegions.points}
+                              fill="#f472b6"
+                              name="Basaltemperatur"
+                            />
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
+                          Erfasse Basaltemperatur und betroffene Bereiche, um diesen Plot zu sehen.
                         </div>
                       )}
                     </div>
