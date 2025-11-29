@@ -5237,6 +5237,24 @@ export default function HomePage() {
         date: entry.date,
       }))
       .filter((point): point is { x: number; y: number; date: string } => point.x !== null && point.y !== null);
+    const medicationPoints = derivedDailyEntries.map((entry) => {
+      const medsTaken = (entry.meds ?? []).some((med) => med.name.trim().length > 0);
+      const rescueDoses = typeof entry.rescueDosesCount === "number" ? entry.rescueDosesCount : 0;
+      const medicationScore = (medsTaken ? 1 : 0) + rescueDoses;
+      const medicationLabel = (() => {
+        if (medicationScore === 0) return "Keine Medikation";
+        if (medsTaken && rescueDoses) return `Medikation + ${rescueDoses} Rescue`;
+        if (medsTaken) return "Medikation genommen";
+        return `${rescueDoses} Rescue`;
+      })();
+      return {
+        x: medicationScore,
+        xLabel: medicationLabel,
+        pain: typeof entry.painNRS === "number" ? entry.painNRS : null,
+        impact: typeof entry.impactNRS === "number" ? entry.impactNRS : null,
+        date: entry.date,
+      };
+    });
     const sleepPairs = sleepDetailed.map(({ x, y }) => ({ x, y }));
     const stepsPairs = stepsDetailed.map(({ x, y }) => ({ x, y }));
     const ovulationPainPoints = derivedDailyEntries.map((entry) => ({
@@ -5364,6 +5382,24 @@ export default function HomePage() {
       ovulationLHRegions: buildCorrelation(lhRegions),
       ovulationBBT: buildCorrelation(bbtPain),
       ovulationBBTRegions: buildCorrelation(bbtRegions),
+      medicationPain: buildCorrelation(
+        medicationPoints.map((point) => ({
+          x: point.x,
+          y: point.pain,
+          date: point.date,
+          xLabel: point.xLabel,
+          yLabel: "Schmerz (NRS)",
+        }))
+      ),
+      medicationImpact: buildCorrelation(
+        medicationPoints.map((point) => ({
+          x: point.x,
+          y: point.impact,
+          date: point.date,
+          xLabel: point.xLabel,
+          yLabel: "Beeinträchtigung (NRS)",
+        }))
+      ),
     };
   }, [annotatedDailyEntries, derivedDailyEntries]);
 
@@ -8765,6 +8801,67 @@ export default function HomePage() {
                       ) : (
                         <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
                           Für die Korrelation werden mindestens zwei Schlafwerte benötigt.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                      <h4 className="text-sm font-semibold text-rose-800">Medikation &amp; Schmerz/Belastung</h4>
+                      <div className="flex flex-col text-xs text-rose-500 sm:flex-row sm:gap-3">
+                        <span>
+                          Schmerz r = {" "}
+                          {correlations.medicationPain.r !== null
+                            ? correlations.medicationPain.r.toFixed(2)
+                            : "–"} (n={correlations.medicationPain.n})
+                        </span>
+                        <span>
+                          Beeinträchtigung r = {" "}
+                          {correlations.medicationImpact.r !== null
+                            ? correlations.medicationImpact.r.toFixed(2)
+                            : "–"} (n={correlations.medicationImpact.n})
+                        </span>
+                      </div>
+                    </div>
+                    <div className="h-56 w-full">
+                      {correlations.medicationPain.points.length >= 2 || correlations.medicationImpact.points.length >= 2 ? (
+                        <ResponsiveContainer>
+                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
+                            <XAxis
+                              type="number"
+                              dataKey="x"
+                              name="Medikation/Rescue"
+                              domain={[0, "dataMax"]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                              tickFormatter={(value: number) => value.toLocaleString("de-DE")}
+                            />
+                            <YAxis
+                              type="number"
+                              dataKey="y"
+                              name="Schmerz-/Beeinträchtigung (NRS)"
+                              domain={[0, 10]}
+                              stroke="#fb7185"
+                              tick={{ fontSize: 12 }}
+                            />
+                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                            {correlations.medicationPain.points.length >= 2 ? (
+                              <Scatter data={correlations.medicationPain.points} fill="#0ea5e9" name="Schmerz (NRS)" />
+                            ) : null}
+                            {correlations.medicationImpact.points.length >= 2 ? (
+                              <Scatter
+                                data={correlations.medicationImpact.points}
+                                fill="#f97316"
+                                name="Beeinträchtigung (NRS)"
+                              />
+                            ) : null}
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
+                          Dokumentiere Medikation oder Rescue-Dosen sowie Schmerz bzw. Beeinträchtigung, um diese Beziehung zu sehen.
                         </div>
                       )}
                     </div>
