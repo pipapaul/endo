@@ -107,6 +107,15 @@ const SYMPTOM_TERMS: Record<SymptomKey, TermDescriptor> = {
 
 type TrendMetricKey = "pain" | "impact" | "symptomAverage" | "sleepQuality" | "steps";
 
+type PendingCheckInType = "daily" | "weekly" | "monthly";
+
+type PendingCheckIn = {
+  key: string;
+  type: PendingCheckInType;
+  label: string;
+  description: string;
+};
+
 type PendingOverviewConfirm =
   | { action: "change-date"; targetDate: string; options?: { manual?: boolean } }
   | { action: "go-home" };
@@ -2673,6 +2682,8 @@ export default function HomePage() {
   const [dailyEntries, setDailyEntries, dailyStorage] = usePersistentState<DailyEntry[]>("endo.daily.v2", []);
   const [monthlyEntries, setMonthlyEntries, monthlyStorage] = usePersistentState<MonthlyEntry[]>("endo.monthly.v2", []);
   const [featureFlags, setFeatureFlags, featureStorage] = usePersistentState<FeatureFlags>("endo.flags.v1", {});
+  const [dismissedCheckIns, setDismissedCheckIns, dismissedCheckInsStorage] =
+    usePersistentState<string[]>("endo.dismissedCheckIns.v1", []);
   const derivedDailyEntries = useMemo(
     () => dailyEntries.map((entry) => applyAutomatedPainSymptoms(normalizeDailyEntry(entry))),
     [dailyEntries]
@@ -2740,6 +2751,15 @@ export default function HomePage() {
       };
     });
   }, [dailyDraft.bleeding.isBleeding, pbacCounts, setDailyDraft]);
+
+  useEffect(() => {
+    const updateNow = () => setCurrentTime(new Date());
+    updateNow();
+    const interval = window.setInterval(updateNow, 60_000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, []);
 
   const todaysPainShortcutEvents = useMemo(
     () => painShortcutEvents.filter((event) => event.date === today),
@@ -2865,6 +2885,7 @@ export default function HomePage() {
     sectionCompletionStorage,
     dailyDraftStorage,
     monthlyDraftStorage,
+    dismissedCheckInsStorage,
   ];
   const storageReady = storageMetas.every((meta) => meta.ready);
   const storageErrors = storageMetas.map((meta) => meta.error).filter(Boolean) as string[];
@@ -3030,6 +3051,9 @@ export default function HomePage() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallHint, setShowInstallHint] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
+  const [currentTime, setCurrentTime] = useState<Date>(() => new Date());
+  const [showCheckInPopup, setShowCheckInPopup] = useState(false);
+  const [pendingDismissCheckIn, setPendingDismissCheckIn] = useState<PendingCheckIn | null>(null);
 
   const isDailyDirty = useMemo(
     () => JSON.stringify(dailyDraft) !== JSON.stringify(lastSavedDailySnapshot),
@@ -3340,6 +3364,12 @@ export default function HomePage() {
 
   const currentMonth = useMemo(() => today.slice(0, 7), [today]);
   const todayDate = useMemo(() => parseIsoDate(today), [today]);
+  const isDailyCheckInDue = useMemo(() => {
+    if (!todayDate) return false;
+    const dueTime = new Date(todayDate);
+    dueTime.setHours(18, 0, 0, 0);
+    return currentTime.getTime() >= dueTime.getTime();
+  }, [currentTime, todayDate]);
   const todayLabel = useMemo(() => {
     if (!todayDate) return null;
     return todayDate.toLocaleDateString("de-DE", {
@@ -4579,6 +4609,99 @@ export default function HomePage() {
   const weeklyBannerText = isSunday
     ? "Es ist Sonntag. Zeit für deinen wöchentlichen Check In."
     : "Fülle diese Fragen möglichst jeden Sonntag aus.";
+
+  const rawPendingCheckIns = useMemo<PendingCheckIn[]>(() => {
+    const items: PendingCheckIn[] = [];
+
+    if (storageReady && isDailyCheckInDue && !hasDailyEntryForToday) {
+      items.push({
+        key: `daily:${today}`,
+        type: "daily",
+        label: "Täglicher Check-in",
+        description: "Heute ab 18:00 Uhr fällig",
+      });
+    }
+
+    if (showWeeklyReminderBadge) {
+      items.push({
+        key: `weekly:${currentIsoWeek}`,
+        type: "weekly",
+        label: "Wöchentlicher Check-in",
+        description: "Diese Woche steht noch an",
+      });
+    }
+
+    if (showMonthlyReminderBadge) {
+      items.push({
+        key: `monthly:${currentMonth}`,
+        type: "monthly",
+        label: "Monatlicher Check-in",
+        description: "Seit 28 Tagen kein Monatsupdate",
+      });
+    }
+
+    return items;
+  }, [
+    currentIsoWeek,
+    currentMonth,
+    hasDailyEntryForToday,
+    isDailyCheckInDue,
+    showMonthlyReminderBadge,
+    showWeeklyReminderBadge,
+    storageReady,
+    today,
+  ]);
+
+  const pendingCheckIns = useMemo(
+    () => rawPendingCheckIns.filter((item) => !dismissedCheckIns.includes(item.key)),
+    [dismissedCheckIns, rawPendingCheckIns]
+  );
+
+  useEffect(() => {
+    setDismissedCheckIns((previous) =>
+      previous.filter((key) => rawPendingCheckIns.some((item) => item.key === key))
+    );
+  }, [rawPendingCheckIns, setDismissedCheckIns]);
+
+  useEffect(() => {
+    if (!pendingCheckIns.length) {
+      setShowCheckInPopup(false);
+      setPendingDismissCheckIn(null);
+    }
+  }, [pendingCheckIns.length]);
+
+  const handleFillCheckIn = useCallback(
+    (type: PendingCheckInType) => {
+      setShowCheckInPopup(false);
+      setPendingDismissCheckIn(null);
+
+      if (type === "daily") {
+        manualDailySelectionRef.current = false;
+        if (dailyDraft.date !== today) {
+          selectDailyDate(today);
+        }
+        setDailyActiveCategory("overview");
+        setActiveView("daily");
+        return;
+      }
+
+      if (type === "weekly") {
+        setActiveView("weekly");
+        return;
+      }
+
+      setActiveView("monthly");
+    },
+    [dailyDraft.date, selectDailyDate, setActiveView, setDailyActiveCategory, today]
+  );
+
+  const dismissCheckIn = useCallback(
+    (key: string) => {
+      setDismissedCheckIns((previous) => (previous.includes(key) ? previous : [...previous, key]));
+      setPendingDismissCheckIn(null);
+    },
+    [setDismissedCheckIns]
+  );
 
   const analyticsRangeStartIso = useMemo(() => {
     if (!todayDate) {
@@ -6335,6 +6458,69 @@ export default function HomePage() {
     ]
   );
 
+  const showFloatingCheckInBadge = activeView === "home" && pendingCheckIns.length > 0 && !showBirthdayGreeting;
+
+  const floatingCheckInBadge = showFloatingCheckInBadge ? (
+    <div className="pointer-events-none fixed right-4 top-4 z-[90] flex flex-col items-end gap-2 sm:right-6">
+      <button
+        type="button"
+        onClick={() => setShowCheckInPopup((previous) => !previous)}
+        className="pointer-events-auto flex h-14 w-14 items-center justify-center rounded-full bg-rose-600 text-lg font-bold text-white shadow-xl ring-4 ring-white transition hover:bg-rose-500 focus:outline-none focus-visible:ring-4 focus-visible:ring-rose-300"
+        aria-label={`Fällige Check-ins anzeigen (${pendingCheckIns.length})`}
+      >
+        {pendingCheckIns.length}
+      </button>
+      {showCheckInPopup ? (
+        <div className="pointer-events-auto w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-rose-200 bg-white/95 p-4 text-left shadow-xl backdrop-blur">
+          <div className="mb-3 flex items-start justify-between gap-2">
+            <div className="flex flex-col">
+              <p className="text-sm font-semibold text-rose-900">Fällige Check-ins</p>
+              <p className="text-xs text-rose-700">Ausstehende Einträge schnell erledigen</p>
+            </div>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              onClick={() => setShowCheckInPopup(false)}
+              aria-label="Check-in Badge schließen"
+              className="text-rose-500"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="space-y-3">
+            {pendingCheckIns.map((checkIn) => (
+              <div
+                key={checkIn.key}
+                className="flex items-start justify-between gap-3 rounded-xl bg-rose-50/80 p-3"
+              >
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-rose-900">{checkIn.label}</p>
+                  <p className="text-xs text-rose-700">{checkIn.description}</p>
+                </div>
+                <div className="flex flex-col items-end gap-2 sm:flex-row">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`${checkIn.label} ausfallen lassen`}
+                    onClick={() => setPendingDismissCheckIn(checkIn)}
+                    className="text-rose-500 hover:text-rose-700"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                  <Button type="button" size="sm" onClick={() => handleFillCheckIn(checkIn.type)}>
+                    ausfüllen
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  ) : null;
+
   const detailToolbar = !isHomeView ? (
     <>
       <header
@@ -6395,6 +6581,7 @@ export default function HomePage() {
 
   return (
     <div className="relative flex min-h-screen flex-col">
+      {floatingCheckInBadge}
       {showBirthdayGreeting && (
         <div
           className="fixed inset-0 z-[100] flex flex-col bg-gradient-to-br from-rose-50 via-white to-rose-100 px-6 py-12 text-center"
@@ -9037,6 +9224,40 @@ export default function HomePage() {
               ))}
             </div>
             <p className="text-xs text-rose-500">Die Auswahl wird direkt für heute gezählt.</p>
+          </div>
+        </div>
+      ) : null}
+      {pendingDismissCheckIn ? (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-rose-950/40 px-4 py-6">
+          <div
+            className="w-full max-w-sm space-y-4 rounded-2xl bg-white p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Check-in ausfallen lassen"
+          >
+            <div className="space-y-2">
+              <h2 className="text-lg font-semibold text-rose-900">Diesen Check-in ausfallen lassen?</h2>
+              <p className="text-sm text-rose-700">{pendingDismissCheckIn.label}</p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  handleFillCheckIn(pendingDismissCheckIn.type);
+                }}
+                className="sm:w-auto"
+              >
+                ausfüllen
+              </Button>
+              <Button
+                type="button"
+                onClick={() => dismissCheckIn(pendingDismissCheckIn.key)}
+                className="sm:w-auto"
+              >
+                ausfallen lassen
+              </Button>
+            </div>
           </div>
         </div>
       ) : null}
