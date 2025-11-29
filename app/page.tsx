@@ -8736,43 +8736,45 @@ export default function HomePage() {
                       Rescue
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
-                    {medicationLast7Days.map((day) => {
-                      const pills = [
-                        ...new Array(day.medsCount).fill("regular" as const),
-                        ...new Array(day.rescueCount).fill("rescue" as const),
-                      ];
-                      const label = `${day.label}: ${day.total} Einnahmen`;
-                      return (
-                        <div
-                          key={day.date}
-                          className="flex flex-col gap-2 rounded-xl border border-rose-100 bg-white/80 p-3 text-center shadow-sm"
-                          aria-label={label}
-                        >
-                          <div className="text-xs font-semibold text-rose-600">{day.label}</div>
-                          <div className="flex min-h-[96px] items-end justify-center">
-                            {pills.length ? (
-                              <div className="flex flex-col-reverse items-center justify-start gap-1">
-                                {pills.map((type, index) => (
-                                  <Pill
-                                    key={`${day.date}-${type}-${index}`}
-                                    className={cn(
-                                      "h-5 w-5 drop-shadow-sm",
-                                      type === "rescue" ? "text-sky-600" : "text-rose-500"
-                                    )}
-                                  />
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-sm text-rose-300">–</span>
-                            )}
+                  <div className="overflow-hidden rounded-2xl border border-rose-100 bg-white/80 p-3 shadow-sm">
+                    <div className="flex items-end justify-between gap-2">
+                      {medicationLast7Days.map((day) => {
+                        const pills = [
+                          ...new Array(day.medsCount).fill("regular" as const),
+                          ...new Array(day.rescueCount).fill("rescue" as const),
+                        ];
+                        const label = `${day.label}: ${day.total} Einnahmen`;
+                        return (
+                          <div
+                            key={day.date}
+                            className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center"
+                            aria-label={label}
+                          >
+                            <div className="text-[11px] font-semibold leading-tight text-rose-600">{day.label}</div>
+                            <div className="flex h-24 w-full items-end justify-center">
+                              {pills.length ? (
+                                <div className="flex flex-col-reverse items-center justify-start gap-[6px]">
+                                  {pills.map((type, index) => (
+                                    <Pill
+                                      key={`${day.date}-${type}-${index}`}
+                                      className={cn(
+                                        "h-4 w-4 drop-shadow-sm",
+                                        type === "rescue" ? "text-sky-600" : "text-rose-500"
+                                      )}
+                                    />
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-sm text-rose-300">–</span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-rose-700">
+                              {day.total === 1 ? "1 Einnahme" : `${day.total} Einnahmen`}
+                            </div>
                           </div>
-                          <div className="text-xs text-rose-700">
-                            {day.total === 1 ? "1 Einnahme" : `${day.total} Einnahmen`}
-                          </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
                   <p className="text-xs text-rose-600">
                     {totalMedicationsLast7Days
