@@ -4986,6 +4986,7 @@ export default function HomePage() {
         medsCount: number;
         rescueCount: number;
         total: number;
+        tooltip: string;
       }>;
     }
 
@@ -4996,6 +4997,7 @@ export default function HomePage() {
       medsCount: number;
       rescueCount: number;
       total: number;
+      tooltip: string;
     }> = [];
 
     for (let offset = 6; offset >= 0; offset -= 1) {
@@ -5003,8 +5005,23 @@ export default function HomePage() {
       current.setDate(todayDate.getDate() - offset);
       const iso = formatDate(current);
       const entry = entryByDate.get(iso);
-      const medsCount = (entry?.meds ?? []).filter((med) => med.name.trim().length > 0).length;
+      const medsWithNames = (entry?.meds ?? []).filter((med) => med.name.trim().length > 0);
+      const medsCount = medsWithNames.length;
       const rescueCount = typeof entry?.rescueDosesCount === "number" ? entry.rescueDosesCount : 0;
+      const medsDetails = medsWithNames.map((med) => {
+        const medParts = [med.name.trim()];
+        if (typeof med.doseMg === "number") {
+          medParts.push(`${med.doseMg} mg`);
+        }
+        if (med.times?.length) {
+          medParts.push(med.times.join(", "));
+        }
+        return medParts.join(" • ");
+      });
+      const tooltipLines = [
+        ...medsDetails,
+        rescueCount === 1 ? "1 Rescue-Dose" : `${rescueCount} Rescue-Dosen`,
+      ];
 
       days.push({
         date: iso,
@@ -5012,6 +5029,11 @@ export default function HomePage() {
         medsCount,
         rescueCount,
         total: medsCount + rescueCount,
+        tooltip: tooltipLines.length
+          ? `${current.toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit" })}\n${tooltipLines.join(
+              "\n"
+            )}`
+          : `${current.toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit" })}\nKeine Medikamente eingetragen`,
       });
     }
 
@@ -8721,7 +8743,7 @@ export default function HomePage() {
 
               <Section
                 title="Medikation der letzten 7 Tage"
-                description="Eine Kapsel pro dokumentierter Einnahme – inklusive Rescue-Dosen."
+                description="Eine Kapsel pro dokumentiertem Eintrag – inklusive Rescue-Dosen."
                 completionEnabled={false}
               >
                 <div className="space-y-4">
@@ -8743,12 +8765,13 @@ export default function HomePage() {
                           ...new Array(day.medsCount).fill("regular" as const),
                           ...new Array(day.rescueCount).fill("rescue" as const),
                         ];
-                        const label = `${day.label}: ${day.total} Einnahmen`;
+                        const label = `${day.label}: ${day.total}x dokumentiert`;
                         return (
                           <div
                             key={day.date}
                             className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center"
                             aria-label={label}
+                            title={day.tooltip}
                           >
                             <div className="text-[11px] font-semibold leading-tight text-rose-600">{day.label}</div>
                             <div className="flex h-24 w-full items-end justify-center">
@@ -8769,7 +8792,7 @@ export default function HomePage() {
                               )}
                             </div>
                             <div className="text-[11px] text-rose-700">
-                              {day.total === 1 ? "1 Einnahme" : `${day.total} Einnahmen`}
+                              {day.total === 1 ? "1×" : `${day.total}×`}
                             </div>
                           </div>
                         );
@@ -8778,7 +8801,7 @@ export default function HomePage() {
                   </div>
                   <p className="text-xs text-rose-600">
                     {totalMedicationsLast7Days
-                      ? `${totalMedicationsLast7Days} dokumentierte Einnahmen in den letzten 7 Tagen.`
+                      ? `${totalMedicationsLast7Days} dokumentierte Dosen in den letzten 7 Tagen.`
                       : "Keine Medikamente in den letzten 7 Tagen eingetragen."}
                   </p>
                 </div>
