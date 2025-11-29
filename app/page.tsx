@@ -4986,6 +4986,7 @@ export default function HomePage() {
         medsCount: number;
         rescueCount: number;
         total: number;
+        tooltip: string;
       }>;
     }
 
@@ -4996,6 +4997,7 @@ export default function HomePage() {
       medsCount: number;
       rescueCount: number;
       total: number;
+      tooltip: string;
     }> = [];
 
     for (let offset = 6; offset >= 0; offset -= 1) {
@@ -5003,8 +5005,23 @@ export default function HomePage() {
       current.setDate(todayDate.getDate() - offset);
       const iso = formatDate(current);
       const entry = entryByDate.get(iso);
-      const medsCount = (entry?.meds ?? []).filter((med) => med.name.trim().length > 0).length;
+      const medsWithNames = (entry?.meds ?? []).filter((med) => med.name.trim().length > 0);
+      const medsCount = medsWithNames.length;
       const rescueCount = typeof entry?.rescueDosesCount === "number" ? entry.rescueDosesCount : 0;
+      const medsDetails = medsWithNames.map((med) => {
+        const medParts = [med.name.trim()];
+        if (typeof med.doseMg === "number") {
+          medParts.push(`${med.doseMg} mg`);
+        }
+        if (med.times?.length) {
+          medParts.push(med.times.join(", "));
+        }
+        return medParts.join(" • ");
+      });
+      const tooltipLines = [
+        ...medsDetails,
+        rescueCount === 1 ? "1 Rescue-Dose" : `${rescueCount} Rescue-Dosen`,
+      ];
 
       days.push({
         date: iso,
@@ -5012,6 +5029,11 @@ export default function HomePage() {
         medsCount,
         rescueCount,
         total: medsCount + rescueCount,
+        tooltip: tooltipLines.length
+          ? `${current.toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit" })}\n${tooltipLines.join(
+              "\n"
+            )}`
+          : `${current.toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit" })}\nKeine Medikamente eingetragen`,
       });
     }
 
@@ -8721,7 +8743,7 @@ export default function HomePage() {
 
               <Section
                 title="Medikation der letzten 7 Tage"
-                description="Eine Kapsel pro dokumentierter Einnahme – inklusive Rescue-Dosen."
+                description="Eine Kapsel pro dokumentiertem Eintrag – inklusive Rescue-Dosen."
                 completionEnabled={false}
               >
                 <div className="space-y-4">
@@ -8736,47 +8758,50 @@ export default function HomePage() {
                       Rescue
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
-                    {medicationLast7Days.map((day) => {
-                      const pills = [
-                        ...new Array(day.medsCount).fill("regular" as const),
-                        ...new Array(day.rescueCount).fill("rescue" as const),
-                      ];
-                      const label = `${day.label}: ${day.total} Einnahmen`;
-                      return (
-                        <div
-                          key={day.date}
-                          className="flex flex-col gap-2 rounded-xl border border-rose-100 bg-white/80 p-3 text-center shadow-sm"
-                          aria-label={label}
-                        >
-                          <div className="text-xs font-semibold text-rose-600">{day.label}</div>
-                          <div className="flex min-h-[96px] items-end justify-center">
-                            {pills.length ? (
-                              <div className="flex flex-col-reverse items-center justify-start gap-1">
-                                {pills.map((type, index) => (
-                                  <Pill
-                                    key={`${day.date}-${type}-${index}`}
-                                    className={cn(
-                                      "h-5 w-5 drop-shadow-sm",
-                                      type === "rescue" ? "text-sky-600" : "text-rose-500"
-                                    )}
-                                  />
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-sm text-rose-300">–</span>
-                            )}
+                  <div className="overflow-hidden rounded-2xl border border-rose-100 bg-white/80 p-3 shadow-sm">
+                    <div className="flex items-end justify-between gap-2">
+                      {medicationLast7Days.map((day) => {
+                        const pills = [
+                          ...new Array(day.medsCount).fill("regular" as const),
+                          ...new Array(day.rescueCount).fill("rescue" as const),
+                        ];
+                        const label = `${day.label}: ${day.total}x dokumentiert`;
+                        return (
+                          <div
+                            key={day.date}
+                            className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center"
+                            aria-label={label}
+                            title={day.tooltip}
+                          >
+                            <div className="text-[11px] font-semibold leading-tight text-rose-600">{day.label}</div>
+                            <div className="flex h-24 w-full items-end justify-center">
+                              {pills.length ? (
+                                <div className="flex flex-col-reverse items-center justify-start gap-[6px]">
+                                  {pills.map((type, index) => (
+                                    <Pill
+                                      key={`${day.date}-${type}-${index}`}
+                                      className={cn(
+                                        "h-4 w-4 drop-shadow-sm",
+                                        type === "rescue" ? "text-sky-600" : "text-rose-500"
+                                      )}
+                                    />
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-sm text-rose-300">–</span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-rose-700">
+                              {day.total === 1 ? "1×" : `${day.total}×`}
+                            </div>
                           </div>
-                          <div className="text-xs text-rose-700">
-                            {day.total === 1 ? "1 Einnahme" : `${day.total} Einnahmen`}
-                          </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
                   <p className="text-xs text-rose-600">
                     {totalMedicationsLast7Days
-                      ? `${totalMedicationsLast7Days} dokumentierte Einnahmen in den letzten 7 Tagen.`
+                      ? `${totalMedicationsLast7Days} dokumentierte Dosen in den letzten 7 Tagen.`
                       : "Keine Medikamente in den letzten 7 Tagen eingetragen."}
                   </p>
                 </div>
