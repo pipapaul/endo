@@ -41,6 +41,7 @@ import {
   HardDrive,
   Home,
   Minus,
+  Pill,
   Plus,
   ShieldCheck,
   Smartphone,
@@ -4977,6 +4978,50 @@ export default function HomePage() {
     analyticsRangeDays,
   ]);
 
+  const medicationLast7Days = useMemo(() => {
+    if (!todayDate) {
+      return [] as Array<{
+        date: string;
+        label: string;
+        medsCount: number;
+        rescueCount: number;
+        total: number;
+      }>;
+    }
+
+    const entryByDate = new Map(derivedDailyEntries.map((entry) => [entry.date, entry]));
+    const days: Array<{
+      date: string;
+      label: string;
+      medsCount: number;
+      rescueCount: number;
+      total: number;
+    }> = [];
+
+    for (let offset = 6; offset >= 0; offset -= 1) {
+      const current = new Date(todayDate);
+      current.setDate(todayDate.getDate() - offset);
+      const iso = formatDate(current);
+      const entry = entryByDate.get(iso);
+      const medsCount = (entry?.meds ?? []).filter((med) => med.name.trim().length > 0).length;
+      const rescueCount = typeof entry?.rescueDosesCount === "number" ? entry.rescueDosesCount : 0;
+
+      days.push({
+        date: iso,
+        label: current.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit" }),
+        medsCount,
+        rescueCount,
+        total: medsCount + rescueCount,
+      });
+    }
+
+    return days;
+  }, [derivedDailyEntries, todayDate]);
+
+  const totalMedicationsLast7Days = useMemo(() => {
+    return medicationLast7Days.reduce((sum, day) => sum + day.total, 0);
+  }, [medicationLast7Days]);
+
   const painTrendText = useMemo(() => {
     if (typeof painImprovement === "number") {
       if (painImprovement > 0.2) {
@@ -8671,6 +8716,69 @@ export default function HomePage() {
                       </div>
                     )}
                   </div>
+                </div>
+              </Section>
+
+              <Section
+                title="Medikation der letzten 7 Tage"
+                description="Eine Kapsel pro dokumentierter Einnahme – inklusive Rescue-Dosen."
+                completionEnabled={false}
+              >
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-rose-600">
+                    <span>Heute und die letzten 6 Tage</span>
+                    <span className="flex items-center gap-1 rounded-full bg-rose-100 px-2 py-1 text-[11px] font-semibold text-rose-700">
+                      <Pill className="h-3.5 w-3.5 text-rose-600" />
+                      Medikation
+                    </span>
+                    <span className="flex items-center gap-1 rounded-full bg-sky-100 px-2 py-1 text-[11px] font-semibold text-sky-700">
+                      <Pill className="h-3.5 w-3.5 text-sky-600" />
+                      Rescue
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+                    {medicationLast7Days.map((day) => {
+                      const pills = [
+                        ...new Array(day.medsCount).fill("regular" as const),
+                        ...new Array(day.rescueCount).fill("rescue" as const),
+                      ];
+                      const label = `${day.label}: ${day.total} Einnahmen`;
+                      return (
+                        <div
+                          key={day.date}
+                          className="flex flex-col gap-2 rounded-xl border border-rose-100 bg-white/80 p-3 text-center shadow-sm"
+                          aria-label={label}
+                        >
+                          <div className="text-xs font-semibold text-rose-600">{day.label}</div>
+                          <div className="flex min-h-[96px] items-end justify-center">
+                            {pills.length ? (
+                              <div className="flex flex-col-reverse items-center justify-start gap-1">
+                                {pills.map((type, index) => (
+                                  <Pill
+                                    key={`${day.date}-${type}-${index}`}
+                                    className={cn(
+                                      "h-5 w-5 drop-shadow-sm",
+                                      type === "rescue" ? "text-sky-600" : "text-rose-500"
+                                    )}
+                                  />
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-sm text-rose-300">–</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-rose-700">
+                            {day.total === 1 ? "1 Einnahme" : `${day.total} Einnahmen`}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-rose-600">
+                    {totalMedicationsLast7Days
+                      ? `${totalMedicationsLast7Days} dokumentierte Einnahmen in den letzten 7 Tagen.`
+                      : "Keine Medikamente in den letzten 7 Tagen eingetragen."}
+                  </p>
                 </div>
               </Section>
 
