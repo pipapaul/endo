@@ -1645,6 +1645,18 @@ const BRISTOL_TYPES = [
   { value: 7, label: "Typ 7" },
 ] as const;
 
+const STANDARD_MEDICATIONS = [
+  "Ibuprofen",
+  "Naproxen",
+  "Paracetamol",
+  "Dienogest",
+  "Gestagen (Pille)",
+  "Hormonspirale",
+] as const;
+
+const MEDICATION_DOSE_OPTIONS = [25, 50, 75, 100, 200, 400, 600, 800] as const;
+const CUSTOM_MEDICATION_KEY = "__custom";
+
 const MS_PER_DAY = 86_400_000;
 
 const formatDate = (date: Date) => {
@@ -2659,6 +2671,10 @@ function formatIsoWeekCompactLabel(isoWeek: string | null): string | null {
   return `KW ${String(parts.week).padStart(2, "0")} · ${startLabel}–${endLabel}`;
 }
 
+function formatTimeForInput(date: Date) {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
 function computePearson(pairs: { x: number; y: number }[]) {
   if (pairs.length < 2) return null;
   const n = pairs.length;
@@ -2709,7 +2725,25 @@ export default function HomePage() {
   const [painQuickIntensity, setPainQuickIntensity] = useState(5);
   const [pendingPainQuickAdd, setPendingPainQuickAdd] = useState<PendingQuickPainAdd | null>(null);
   const [painShortcutEvents, setPainShortcutEvents] = useState<QuickPainEvent[]>([]);
+  const [medicationQuickAddOpen, setMedicationQuickAddOpen] = useState(false);
+  const [medicationQuickStep, setMedicationQuickStep] = useState<1 | 2 | 3>(1);
+  const [medicationQuickName, setMedicationQuickName] = useState<string | null>(null);
+  const [medicationQuickCustomName, setMedicationQuickCustomName] = useState("");
+  const [medicationQuickDose, setMedicationQuickDose] = useState<number | null>(null);
+  const [medicationQuickTime, setMedicationQuickTime] = useState("");
   const bleedingQuickAddNoticeTimeoutRef = useRef<number | null>(null);
+  const medicationQuickNameValue = useMemo(
+    () =>
+      (medicationQuickName === CUSTOM_MEDICATION_KEY
+        ? medicationQuickCustomName.trim()
+        : medicationQuickName?.trim() ?? ""
+      ).slice(0, 120),
+    [medicationQuickCustomName, medicationQuickName]
+  );
+  const medicationQuickReady = useMemo(
+    () => Boolean(medicationQuickNameValue && medicationQuickDose !== null && medicationQuickTime),
+    [medicationQuickDose, medicationQuickNameValue, medicationQuickTime]
+  );
   const updatePbacCount = useCallback(
     (itemId: (typeof PBAC_ITEMS)[number]["id"], nextValue: number, max = PBAC_MAX_PRODUCT_COUNT) => {
       setPbacCounts((prev) => {
@@ -2752,6 +2786,12 @@ export default function HomePage() {
       };
     });
   }, [dailyDraft.bleeding.isBleeding, pbacCounts, setDailyDraft]);
+
+  useEffect(() => {
+    if (medicationQuickStep === 3 && !medicationQuickTime) {
+      setMedicationQuickTime(formatTimeForInput(new Date()));
+    }
+  }, [medicationQuickStep, medicationQuickTime]);
 
   useEffect(() => {
     const updateNow = () => setCurrentTime(new Date());
@@ -5922,6 +5962,74 @@ export default function HomePage() {
     setCategoryCompletion("medication", true);
   }, [confirmQuickActionReset, setCategoryCompletion, setDailyDraft]);
 
+  const resetMedicationQuickAddState = useCallback(() => {
+    setMedicationQuickStep(1);
+    setMedicationQuickName(null);
+    setMedicationQuickCustomName("");
+    setMedicationQuickDose(null);
+    setMedicationQuickTime("");
+  }, []);
+
+  const handleMedicationQuickOpen = useCallback(() => {
+    resetMedicationQuickAddState();
+    setMedicationQuickAddOpen(true);
+  }, [resetMedicationQuickAddState]);
+
+  const handleMedicationQuickClose = useCallback(() => {
+    setMedicationQuickAddOpen(false);
+    resetMedicationQuickAddState();
+  }, [resetMedicationQuickAddState]);
+
+  const handleMedicationQuickBack = useCallback(() => {
+    setMedicationQuickStep((prev) => (prev > 1 ? ((prev - 1) as 1 | 2 | 3) : prev));
+  }, []);
+
+  const handleMedicationQuickSelect = useCallback((name: string) => {
+    setMedicationQuickName(name);
+    if (name !== CUSTOM_MEDICATION_KEY) {
+      setMedicationQuickStep(2);
+    }
+  }, []);
+
+  const handleMedicationQuickDoseSelect = useCallback((dose: number) => {
+    setMedicationQuickDose(dose);
+    setMedicationQuickStep(3);
+  }, []);
+
+  const handleMedicationQuickNext = useCallback(() => {
+    if (medicationQuickStep === 1 && medicationQuickNameValue) {
+      setMedicationQuickStep(2);
+      return;
+    }
+    if (medicationQuickStep === 2 && medicationQuickDose !== null) {
+      setMedicationQuickStep(3);
+    }
+  }, [medicationQuickDose, medicationQuickNameValue, medicationQuickStep]);
+
+  const handleMedicationQuickConfirm = useCallback(() => {
+    if (!medicationQuickReady) {
+      return;
+    }
+    setDailyDraft((prev) => ({
+      ...prev,
+      meds: [
+        ...prev.meds,
+        { name: medicationQuickNameValue, doseMg: medicationQuickDose ?? undefined, times: [medicationQuickTime] },
+      ],
+    }));
+    setMedicationQuickAddOpen(false);
+    resetMedicationQuickAddState();
+    setCategoryCompletion("medication", true);
+  }, [
+    medicationQuickDose,
+    medicationQuickNameValue,
+    medicationQuickReady,
+    medicationQuickTime,
+    resetMedicationQuickAddState,
+    setCategoryCompletion,
+    setDailyDraft,
+  ]);
+
   const resetPainQuickAddState = useCallback(() => {
     setPainQuickStep(1);
     setPainQuickRegion(null);
@@ -7972,94 +8080,14 @@ export default function HomePage() {
                 </Section>
               </div>
 
-              <div className={cn("space-y-6", dailyActiveCategory === "medication" ? "" : "hidden")}> 
+              <div className={cn("space-y-6", dailyActiveCategory === "medication" ? "" : "hidden")}>
                 <Section
                   title={TERMS.meds.label}
-                  description="Eingenommene Medikamente & Hilfen des Tages"
+                  description="Eingenommene regelmäßige Medikamente des Tages"
                   onComplete={() => setDailyActiveCategory("overview")}
                 >
                   <div className="grid gap-4">
                     <TermHeadline termKey="meds" />
-                    {dailyDraft.meds.map((med, index) => (
-                      <div key={index} className="grid gap-2 rounded-lg border border-rose-100 bg-rose-50 p-4">
-                        <div className="grid gap-1">
-                          <Label htmlFor={`med-name-${index}`}>Präparat / Hilfe</Label>
-                          <Input
-                            id={`med-name-${index}`}
-                            value={med.name}
-                            onChange={(event) => {
-                              const updated = [...dailyDraft.meds];
-                              updated[index] = { ...updated[index], name: event.target.value };
-                              setDailyDraft((prev) => ({ ...prev, meds: updated }));
-                            }}
-                          />
-                          {renderIssuesForPath(`meds[${index}].name`)}
-                        </div>
-                        <div className="grid gap-1 sm:grid-cols-2">
-                          <div>
-                            <Label htmlFor={`med-dose-${index}`}>Dosis (mg)</Label>
-                            <Input
-                              id={`med-dose-${index}`}
-                              type="number"
-                              min={0}
-                              value={med.doseMg ?? ""}
-                              onChange={(event) => {
-                                const updated = [...dailyDraft.meds];
-                                const nextValue = event.target.value ? Number(event.target.value) : undefined;
-                                updated[index] = { ...updated[index], doseMg: nextValue };
-                                setDailyDraft((prev) => ({ ...prev, meds: updated }));
-                              }}
-                            />
-                            {renderIssuesForPath(`meds[${index}].doseMg`)}
-                          </div>
-                          <div>
-                            <Label htmlFor={`med-times-${index}`}>Einnahmezeiten (HH:MM, kommasepariert)</Label>
-                            <Input
-                              id={`med-times-${index}`}
-                              placeholder="08:00, 14:00"
-                              value={(med.times ?? []).join(", ")}
-                              onChange={(event) => {
-                                const times = event.target.value
-                                  .split(",")
-                                  .map((value) => value.trim())
-                                  .filter(Boolean);
-                                const updated = [...dailyDraft.meds];
-                                updated[index] = { ...updated[index], times };
-                                setDailyDraft((prev) => ({ ...prev, meds: updated }));
-                              }}
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            className="text-xs text-rose-600"
-                            onClick={() => {
-                              setDailyDraft((prev) => ({
-                                ...prev,
-                                meds: prev.meds.filter((_, i) => i !== index),
-                              }));
-                            }}
-                          >
-                            Entfernen
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="justify-start"
-                      onClick={() =>
-                        setDailyDraft((prev) => ({
-                          ...prev,
-                          meds: [...prev.meds, { name: "", doseMg: undefined, times: [] }],
-                        }))
-                      }
-                    >
-                      + Medikament oder Hilfe ergänzen
-                    </Button>
                     <div className="grid gap-2">
                       <TermField termKey="rescue" htmlFor="rescue-count">
                         <Input
@@ -8075,9 +8103,66 @@ export default function HomePage() {
                             }))
                           }
                         />
-                        {renderIssuesForPath("rescueDosesCount")}
                       </TermField>
+                      {renderIssuesForPath("rescueDosesCount")}
                     </div>
+                    <div className="rounded-lg border border-rose-100 bg-white p-4 text-rose-800">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-sm text-rose-700">
+                          Füge deine geplanten Medikamente Schritt für Schritt hinzu.
+                        </p>
+                        <Button type="button" variant="outline" onClick={handleMedicationQuickOpen}>
+                          Dosis hinzufügen
+                        </Button>
+                      </div>
+                      <p className="mt-2 text-xs text-rose-500">
+                        Erst Medikament auswählen, dann Dosis (mg) bestimmen und Uhrzeit speichern.
+                      </p>
+                    </div>
+                    {dailyDraft.meds.length ? (
+                      <div className="space-y-3">
+                        {dailyDraft.meds.map((med, index) => {
+                          const timesLabel =
+                            med.times && med.times.length ? ` • ${med.times.filter(Boolean).join(", ")}` : "";
+                          return (
+                            <div
+                              key={`${med.name}-${index}`}
+                              className="space-y-2 rounded-lg border border-rose-100 bg-rose-50 p-4"
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div className="space-y-1">
+                                  <p className="font-semibold text-rose-900">{med.name || "Ohne Namen"}</p>
+                                  <p className="text-xs text-rose-600">
+                                    {med.doseMg ? `${med.doseMg} mg` : "keine Dosis angegeben"}
+                                    {timesLabel}
+                                  </p>
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-rose-600"
+                                  onClick={() =>
+                                    setDailyDraft((prev) => ({
+                                      ...prev,
+                                      meds: prev.meds.filter((_, i) => i !== index),
+                                    }))
+                                  }
+                                >
+                                  Entfernen
+                                </Button>
+                              </div>
+                              <div className="space-y-1 text-xs text-rose-600">
+                                {renderIssuesForPath(`meds[${index}].name`)}
+                                {renderIssuesForPath(`meds[${index}].doseMg`)}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-rose-700">Noch keine regelmäßigen Medikamente hinterlegt.</p>
+                    )}
                   </div>
                 </Section>
               </div>
@@ -9954,6 +10039,175 @@ export default function HomePage() {
                 </span>
               </div>
               <span className="text-[11px] uppercase tracking-wide text-rose-400">Periode</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {medicationQuickAddOpen ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-rose-950/40 px-4 py-6 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Medikament hinzufügen"
+          onClick={handleMedicationQuickClose}
+        >
+          <div
+            className="w-full max-w-md space-y-4 rounded-3xl bg-white p-5 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">Medikation</p>
+                <p className="text-lg font-semibold text-rose-900">Dosis hinzufügen</p>
+              </div>
+              <div className="flex items-center gap-1">
+                {medicationQuickStep > 1 ? (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleMedicationQuickBack();
+                    }}
+                    className="rounded-full border border-rose-100 p-2 text-rose-500 transition hover:border-rose-200 hover:text-rose-700"
+                    aria-label="Zurück"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleMedicationQuickClose();
+                  }}
+                  className="rounded-full border border-rose-100 p-2 text-rose-500 transition hover:border-rose-200 hover:text-rose-700"
+                  aria-label="Schließen"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center gap-1" aria-hidden>
+              {[1, 2, 3].map((step) => (
+                <span
+                  key={`medication-step-${step}`}
+                  className={cn("h-1.5 flex-1 rounded-full", medicationQuickStep >= step ? "bg-rose-500" : "bg-rose-100")}
+                />
+              ))}
+            </div>
+            {(medicationQuickNameValue || medicationQuickDose || medicationQuickTime) && (
+              <div className="flex flex-wrap gap-2 text-xs text-rose-500">
+                {medicationQuickNameValue ? (
+                  <span className="rounded-full bg-rose-50 px-2 py-0.5 text-rose-600">{medicationQuickNameValue}</span>
+                ) : null}
+                {medicationQuickDose ? (
+                  <span className="rounded-full bg-rose-50 px-2 py-0.5 text-rose-600">{medicationQuickDose} mg</span>
+                ) : null}
+                {medicationQuickTime ? (
+                  <span className="rounded-full bg-rose-50 px-2 py-0.5 text-rose-600">{medicationQuickTime} Uhr</span>
+                ) : null}
+              </div>
+            )}
+            {medicationQuickStep === 1 ? (
+              <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">Medikament</p>
+                <div className="flex flex-wrap gap-2">
+                  {STANDARD_MEDICATIONS.map((med) => (
+                    <Button
+                      key={med}
+                      type="button"
+                      variant={medicationQuickName === med ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => handleMedicationQuickSelect(med)}
+                    >
+                      {med}
+                    </Button>
+                  ))}
+                  <Button
+                    type="button"
+                    variant={medicationQuickName === CUSTOM_MEDICATION_KEY ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => handleMedicationQuickSelect(CUSTOM_MEDICATION_KEY)}
+                  >
+                    Anderes Medikament anlegen
+                  </Button>
+                </div>
+                {medicationQuickName === CUSTOM_MEDICATION_KEY ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="custom-medication-name">Medikamentenname</Label>
+                    <Input
+                      id="custom-medication-name"
+                      value={medicationQuickCustomName}
+                      onChange={(event) => setMedicationQuickCustomName(event.target.value)}
+                      placeholder="Freitext"
+                    />
+                    <p className="text-xs text-rose-500">
+                      Falls dein Präparat nicht in der Liste steht.
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {medicationQuickStep === 2 ? (
+              <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">Dosis (mg)</p>
+                <div className="flex flex-wrap gap-2">
+                  {MEDICATION_DOSE_OPTIONS.map((dose) => (
+                    <Button
+                      key={dose}
+                      type="button"
+                      variant={medicationQuickDose === dose ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => handleMedicationQuickDoseSelect(dose)}
+                    >
+                      {dose} mg
+                    </Button>
+                  ))}
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="medication-custom-dose">Eigene Dosis (mg)</Label>
+                  <Input
+                    id="medication-custom-dose"
+                    type="number"
+                    min={0}
+                    step={25}
+                    value={medicationQuickDose ?? ""}
+                    onChange={(event) =>
+                      setMedicationQuickDose(event.target.value ? Number(event.target.value) : null)
+                    }
+                  />
+                  <p className="text-xs text-rose-500">Trage hier eine andere Dosierung ein.</p>
+                </div>
+              </div>
+            ) : null}
+            {medicationQuickStep === 3 ? (
+              <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">Uhrzeit</p>
+                <div className="space-y-1">
+                  <Label htmlFor="medication-dose-time">Uhrzeit der Einnahme</Label>
+                  <Input
+                    id="medication-dose-time"
+                    type="time"
+                    value={medicationQuickTime}
+                    onChange={(event) => setMedicationQuickTime(event.target.value)}
+                  />
+                </div>
+                <p className="text-xs text-rose-500">Speichere die Dosis zusammen mit Uhrzeit.</p>
+              </div>
+            ) : null}
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                className="w-full sm:w-auto"
+                onClick={medicationQuickStep === 3 ? handleMedicationQuickConfirm : handleMedicationQuickNext}
+                disabled={
+                  (medicationQuickStep === 1 && !medicationQuickNameValue) ||
+                  (medicationQuickStep === 2 && medicationQuickDose === null) ||
+                  (medicationQuickStep === 3 && !medicationQuickReady)
+                }
+              >
+                {medicationQuickStep === 3 ? "Dosis speichern" : "Weiter"}
+              </Button>
             </div>
           </div>
         </div>
