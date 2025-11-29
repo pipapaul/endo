@@ -3364,12 +3364,6 @@ export default function HomePage() {
 
   const currentMonth = useMemo(() => today.slice(0, 7), [today]);
   const todayDate = useMemo(() => parseIsoDate(today), [today]);
-  const isDailyCheckInDue = useMemo(() => {
-    if (!todayDate) return false;
-    const dueTime = new Date(todayDate);
-    dueTime.setHours(18, 0, 0, 0);
-    return currentTime.getTime() >= dueTime.getTime();
-  }, [currentTime, todayDate]);
   const todayLabel = useMemo(() => {
     if (!todayDate) return null;
     return todayDate.toLocaleDateString("de-DE", {
@@ -3384,6 +3378,25 @@ export default function HomePage() {
     if (!todayDate) return false;
     return todayDate.getDay() === 0;
   }, [todayDate]);
+
+  const pendingCheckInDates = useMemo(() => {
+    if (!todayDate) return [] as { iso: string; date: Date }[];
+    const dates: { iso: string; date: Date }[] = [];
+    for (let offset = 0; offset < 5; offset += 1) {
+      const date = new Date(todayDate);
+      date.setDate(todayDate.getDate() - offset);
+      dates.push({ iso: formatDate(date), date });
+    }
+    return dates;
+  }, [todayDate]);
+
+  const formatPendingDateLabel = useCallback((date: Date) => {
+    return date.toLocaleDateString("de-DE", {
+      weekday: "short",
+      day: "2-digit",
+      month: "2-digit",
+    });
+  }, []);
 
   const selectedMonthLabel = useMemo(() => {
     const monthDate = monthToDate(monthlyDraft.month);
@@ -4563,6 +4576,14 @@ export default function HomePage() {
     return null;
   }, [annotatedDailyEntries]);
 
+  const monthlyReminderStartDate = useMemo(() => {
+    if (!latestCycleStartDate) return null;
+    const start = new Date(latestCycleStartDate);
+    start.setDate(start.getDate() + 28);
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }, [latestCycleStartDate]);
+
   const isMonthlyReminderDue = useMemo(() => {
     if (!latestCycleStartDate || !todayDate) return false;
     const diffMs = todayDate.getTime() - latestCycleStartDate.getTime();
@@ -4601,61 +4622,88 @@ export default function HomePage() {
     return `In ${daysUntilMonthlySuggested} Tagen wieder ausfüllen`;
   }, [daysUntilMonthlySuggested]);
 
-  const showWeeklyReminderBadge =
-    storageReady && weeklyReportsReady && isSunday && !hasWeeklyReportForCurrentWeek;
-  const showMonthlyReminderBadge =
-    storageReady && isMonthlyReminderDue && !hasMonthlyEntryForCurrentMonth;
-
   const weeklyBannerText = isSunday
     ? "Es ist Sonntag. Zeit für deinen wöchentlichen Check In."
     : "Fülle diese Fragen möglichst jeden Sonntag aus.";
 
   const rawPendingCheckIns = useMemo<PendingCheckIn[]>(() => {
     const items: PendingCheckIn[] = [];
+    if (!storageReady || !todayDate) {
+      return items;
+    }
 
-    if (storageReady && isDailyCheckInDue && !hasDailyEntryForToday) {
+    pendingCheckInDates.forEach(({ iso, date }) => {
+      const hasEntry = dailyEntries.some((entry) => entry.date === iso);
+      if (hasEntry) return;
+
+      const dueTime = new Date(date);
+      dueTime.setHours(18, 0, 0, 0);
+      if (currentTime.getTime() < dueTime.getTime()) return;
+
       items.push({
-        key: `daily:${today}`,
+        key: `daily:${iso}`,
         type: "daily",
-        label: "Täglicher Check-in",
-        description: "Heute ab 18:00 Uhr fällig",
+        label: `Täglicher Check-in (${formatPendingDateLabel(date)})`,
+        description: iso === today ? "Heute ab 18:00 Uhr fällig" : "Überfällig",
+      });
+    });
+
+    if (weeklyReportsReady) {
+      pendingCheckInDates.forEach(({ date }) => {
+        if (date.getDay() !== 0) return;
+        const isoWeekKey = dateToIsoWeek(date);
+        const hasReport = weeklyReports.some((report) => report.isoWeekKey === isoWeekKey);
+        if (hasReport) return;
+        const startOfDue = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        if (currentTime < startOfDue) return;
+
+        items.push({
+          key: `weekly:${isoWeekKey}`,
+          type: "weekly",
+          label: "Wöchentlicher Check-in",
+          description: `Fällig seit ${formatPendingDateLabel(date)}`,
+        });
       });
     }
 
-    if (showWeeklyReminderBadge) {
-      items.push({
-        key: `weekly:${currentIsoWeek}`,
-        type: "weekly",
-        label: "Wöchentlicher Check-in",
-        description: "Diese Woche steht noch an",
-      });
-    }
-
-    if (showMonthlyReminderBadge) {
-      items.push({
-        key: `monthly:${currentMonth}`,
-        type: "monthly",
-        label: "Monatlicher Check-in",
-        description: "Seit 28 Tagen kein Monatsupdate",
-      });
+    if (monthlyReminderStartDate && monthlyReminderStartDate <= todayDate && !hasMonthlyEntryForCurrentMonth) {
+      const diffDays = Math.floor(
+        (todayDate.getTime() - monthlyReminderStartDate.getTime()) / MS_PER_DAY
+      );
+      if (diffDays >= 0 && diffDays < 5) {
+        const dueLabel = formatPendingDateLabel(monthlyReminderStartDate);
+        items.push({
+          key: `monthly:${currentMonth}`,
+          type: "monthly",
+          label: "Monatlicher Check-in",
+          description: `Fällig seit ${dueLabel}`,
+        });
+      }
     }
 
     return items;
   }, [
-    currentIsoWeek,
     currentMonth,
-    hasDailyEntryForToday,
-    isDailyCheckInDue,
-    showMonthlyReminderBadge,
-    showWeeklyReminderBadge,
+    currentTime,
+    dailyEntries,
+    hasMonthlyEntryForCurrentMonth,
+    monthlyReminderStartDate,
+    pendingCheckInDates,
     storageReady,
+    formatPendingDateLabel,
     today,
+    todayDate,
+    weeklyReports,
+    weeklyReportsReady,
   ]);
 
   const pendingCheckIns = useMemo(
     () => rawPendingCheckIns.filter((item) => !dismissedCheckIns.includes(item.key)),
     [dismissedCheckIns, rawPendingCheckIns]
   );
+
+  const showWeeklyReminderBadge = pendingCheckIns.some((item) => item.type === "weekly");
+  const showMonthlyReminderBadge = pendingCheckIns.some((item) => item.type === "monthly");
 
   useEffect(() => {
     setDismissedCheckIns((previous) =>
