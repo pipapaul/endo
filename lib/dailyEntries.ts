@@ -6,7 +6,7 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
   const needsPainRegionsNormalization = !Array.isArray(entry.painRegions);
   const needsPainQualityNormalization = !Array.isArray(entry.painQuality);
   const needsPainMapIdsNormalization = !Array.isArray(entry.painMapRegionIds);
-  const needsMedsNormalization = !Array.isArray(entry.meds);
+  const needsRescueMedsNormalization = !Array.isArray(entry.rescueMeds);
   const needsSymptomsNormalization = entry.symptoms === undefined;
 
   if (
@@ -14,7 +14,7 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
     !needsPainRegionsNormalization &&
     !needsPainQualityNormalization &&
     !needsPainMapIdsNormalization &&
-    !needsMedsNormalization &&
+    !needsRescueMedsNormalization &&
     !needsSymptomsNormalization
   ) {
     return entry;
@@ -37,7 +37,12 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
   const painRegions = Array.isArray(entry.painRegions) ? entry.painRegions : [];
   const painQuality = Array.isArray(entry.painQuality) ? entry.painQuality : [];
   const painMapRegionIds = Array.isArray(entry.painMapRegionIds) ? entry.painMapRegionIds : [];
-  const meds = Array.isArray(entry.meds) ? entry.meds : [];
+  const legacyMeds = (entry as { meds?: { name: string; doseMg?: number; times?: string[] }[] }).meds;
+  const rescueMeds = Array.isArray(entry.rescueMeds)
+    ? entry.rescueMeds
+    : Array.isArray(legacyMeds)
+      ? legacyMeds.map((med) => ({ name: med.name, doseMg: med.doseMg, time: med.times?.[0] }))
+      : [];
   const symptoms = entry.symptoms ?? {};
 
   return {
@@ -46,7 +51,7 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
     painRegions,
     painQuality,
     painMapRegionIds,
-    meds,
+    rescueMeds,
     symptoms,
   };
 }
