@@ -6053,31 +6053,18 @@ export default function HomePage() {
     if (painQuickContext === "module") {
       setDailyDraft((prev) => {
         const current = prev.painRegions ?? [];
-        const nextRegions = [...current] as NonNullable<DailyEntry["painRegions"]>;
-        const existingIndex = nextRegions.findIndex((region) => region.regionId === painQuickRegion);
-        const existingRegion = existingIndex === -1 ? null : nextRegions[existingIndex];
-        const mergedQualities = new Set(existingRegion?.qualities ?? []);
-        mergedQualities.add(painQuickQuality);
-        let normalized = Array.from(mergedQualities) as DailyEntry["painQuality"];
+        let normalized = [painQuickQuality].filter(Boolean) as DailyEntry["painQuality"];
         if (painQuickRegion === HEAD_REGION_ID) {
           normalized = sanitizeHeadRegionQualities(normalized);
         } else {
           normalized = normalized.filter((entry) => !MIGRAINE_QUALITY_SET.has(entry)) as DailyEntry["painQuality"];
         }
         const nextRegion: NonNullable<DailyEntry["painRegions"]>[number] = {
-          ...(existingRegion ?? { regionId: painQuickRegion, nrs: intensity, qualities: [] as DailyEntry["painQuality"] }),
           regionId: painQuickRegion,
           nrs: intensity,
           qualities: normalized,
         };
-        if ("time" in nextRegion) {
-          const { time: _omit, ...rest } = nextRegion as typeof nextRegion & { time?: string };
-          nextRegions[existingIndex === -1 ? nextRegions.length : existingIndex] = rest;
-        } else if (existingIndex === -1) {
-          nextRegions.push(nextRegion);
-        } else {
-          nextRegions[existingIndex] = nextRegion;
-        }
+        const nextRegions = [...current, nextRegion] as NonNullable<DailyEntry["painRegions"]>;
         const nextDraft = buildDailyDraftWithPainRegions(prev, nextRegions);
         return nextDraft;
       });
