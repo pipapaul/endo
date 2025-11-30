@@ -5786,31 +5786,6 @@ export default function HomePage() {
       selectDailyDate(date);
       return;
     }
-    setDailyDraft((prev) => {
-      if (prev.date !== date) {
-        return prev;
-      }
-      const current = prev.painRegions ?? [];
-      const nextRegions = [...current] as NonNullable<DailyEntry["painRegions"]>;
-      let nextQualities = [] as DailyEntry["painQuality"];
-      if (quality) {
-        let normalized = [quality] as DailyEntry["painQuality"];
-        if (regionId === HEAD_REGION_ID) {
-          normalized = sanitizeHeadRegionQualities(normalized);
-        } else {
-          normalized = normalized.filter((entry) => !MIGRAINE_QUALITY_SET.has(entry)) as DailyEntry["painQuality"];
-        }
-        nextQualities = normalized;
-      }
-      const updatedRegion = {
-        regionId,
-        nrs: intensity,
-        qualities: nextQualities,
-        time: timestamp,
-      } satisfies NonNullable<DailyEntry["painRegions"]>[number];
-      nextRegions.push(updatedRegion);
-      return buildDailyDraftWithPainRegions(prev, nextRegions);
-    });
     setPainShortcutEvents((prev) => [...prev, pendingPainQuickAdd]);
     setCategoryCompletion("pain", true);
     setPendingPainQuickAdd(null);
