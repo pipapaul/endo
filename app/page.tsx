@@ -32,11 +32,13 @@ import {
 import type { DotProps, TooltipProps } from "recharts";
 import {
   AlertTriangle,
+  Activity,
   Calendar,
   CalendarDays,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Flame,
   Download,
   HardDrive,
   Home,
@@ -50,7 +52,7 @@ import {
   X,
 } from "lucide-react";
 
-import { DailyEntry, FeatureFlags, MonthlyEntry } from "@/lib/types";
+import { DailyEntry, FeatureFlags, MonthlyEntry, PainGranularity, PainTimeOfDay } from "@/lib/types";
 import { normalizeDailyEntry } from "@/lib/dailyEntries";
 import { TERMS } from "@/lib/terms";
 import type { ModuleTerms, TermDescriptor, TermKey } from "@/lib/terms";
@@ -353,14 +355,56 @@ type QuickPainEvent = {
   regionId: string;
   intensity: number;
   quality: DailyEntry["painQuality"][number] | null;
+  timeOfDay?: PainTimeOfDay[];
+  granularity?: PainGranularity;
 };
 
 type PendingQuickPainAdd = QuickPainEvent;
 
-const PAIN_SHORTCUT_SEGMENT_COUNT = 6;
+type PainShortcutTimelineSegment = {
+  maxIntensity: number;
+  eventCount: number;
+};
 
-const computePainShortcutTimeline = (events: QuickPainEvent[]): number[] => {
-  const segments = Array(PAIN_SHORTCUT_SEGMENT_COUNT).fill(0);
+const PAIN_SHORTCUT_SEGMENT_COUNT = 6;
+const PAIN_TIMES_OF_DAY: PainTimeOfDay[] = ["morgens", "mittags", "abends"];
+const PAIN_TIME_OF_DAY_SET = new Set<PainTimeOfDay>(PAIN_TIMES_OF_DAY);
+const PAIN_TIME_OF_DAY_LABEL: Record<PainTimeOfDay, string> = {
+  morgens: "Morgens",
+  mittags: "Mittags",
+  abends: "Abends",
+};
+
+const formatPainTimeOfDayList = (timeOfDay?: PainTimeOfDay[]): string | null => {
+  if (!Array.isArray(timeOfDay) || !timeOfDay.length) {
+    return null;
+  }
+  return timeOfDay.map((time) => PAIN_TIME_OF_DAY_LABEL[time] ?? time).join(" / ");
+};
+
+const normalizeQuickPainEvent = (event: QuickPainEvent): QuickPainEvent => {
+  let timeOfDay: PainTimeOfDay[] = [];
+  if (Array.isArray(event.timeOfDay)) {
+    const filtered = event.timeOfDay.filter((time): time is PainTimeOfDay => PAIN_TIME_OF_DAY_SET.has(time));
+    const isSameArray =
+      filtered.length === event.timeOfDay.length &&
+      filtered.every((value, index) => value === event.timeOfDay?.[index]);
+    timeOfDay = isSameArray ? (event.timeOfDay as PainTimeOfDay[]) : filtered;
+  }
+  const granularity: PainGranularity = timeOfDay.length ? "dritteltag" : event.granularity ?? "tag";
+  if (timeOfDay === event.timeOfDay && granularity === event.granularity) {
+    return event;
+  }
+  return { ...event, timeOfDay, granularity };
+};
+
+const computePainShortcutTimeline = (
+  events: QuickPainEvent[]
+): PainShortcutTimelineSegment[] => {
+  const segments: PainShortcutTimelineSegment[] = Array.from(
+    { length: PAIN_SHORTCUT_SEGMENT_COUNT },
+    () => ({ maxIntensity: 0, eventCount: 0 })
+  );
   events.forEach((event) => {
     const parsed = new Date(event.timestamp);
     if (Number.isNaN(parsed.getTime())) {
@@ -372,7 +416,11 @@ const computePainShortcutTimeline = (events: QuickPainEvent[]): number[] => {
       Math.max(0, Math.floor((hour / 24) * segments.length))
     );
     const clampedIntensity = Math.max(0, Math.min(10, Math.round(event.intensity)));
-    segments[index] = Math.max(segments[index], clampedIntensity);
+    const current = segments[index];
+    segments[index] = {
+      maxIntensity: Math.max(current.maxIntensity, clampedIntensity),
+      eventCount: current.eventCount + 1,
+    };
   });
   return segments;
 };
@@ -1411,7 +1459,7 @@ type CycleOverviewPoint = {
   isBleeding: boolean;
   ovulationPositive: boolean;
   ovulationPainIntensity: number | null;
-  painTimeline: number[] | null;
+  painTimeline: PainShortcutTimelineSegment[] | null;
 };
 
 type CycleOverviewData = {
@@ -1434,6 +1482,19 @@ const formatShortTimeLabel = (iso: string | null) => {
     return null;
   }
   return parsed.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+};
+
+const describeQuickPainEvent = (event: QuickPainEvent) => {
+  const timeLabel =
+    formatPainTimeOfDayList(event.timeOfDay) ??
+    formatShortTimeLabel(event.timestamp) ??
+    (event.granularity === "tag" ? "Ganzer Tag" : null);
+
+  const parts = [timeLabel, getRegionLabel(event.regionId), `${event.intensity}/10`];
+  if (event.quality) {
+    parts.push(event.quality);
+  }
+  return parts.filter(Boolean).join(" · ");
 };
 
 const describeBleedingLevel = (point: CycleOverviewPoint) => {
@@ -1546,7 +1607,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
 
       const payload = props.payload[0].payload as CycleOverviewChartPoint;
       const timeline = Array.isArray(payload.painTimeline) ? payload.painTimeline : null;
-      const hasTimeline = timeline ? timeline.some((value) => value > 0) : false;
+      const hasTimeline = timeline ? timeline.some((segment) => segment.eventCount > 0) : false;
 
       return (
         <div className="rounded-lg border border-rose-100 bg-white p-3 text-xs text-rose-700 shadow-sm">
@@ -1559,16 +1620,27 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
             <div className="mt-2">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-rose-400">Tagesverlauf</p>
               <div className="mt-1 flex items-end gap-0.5">
-                {timeline.map((value, index) => {
-                  const height = 4 + (value / 10) * 14;
+                {timeline.map((segment, index) => {
+                  const height = 4 + (segment.maxIntensity / 10) * 14;
+                  const hasMultiple = segment.eventCount > 1;
                   return (
                     <span
                       key={`pain-tooltip-bar-${payload.date}-${index}`}
                       className={cn(
                         "w-1.5 rounded-full bg-rose-100",
-                        value > 0 ? "bg-rose-500" : "bg-rose-100"
+                        segment.eventCount > 0 ? "bg-rose-500" : "bg-rose-100"
                       )}
-                      style={{ height }}
+                      style={{
+                        height,
+                        backgroundImage: hasMultiple
+                          ? "repeating-linear-gradient(135deg, #fb7185, #fb7185 6px, #fecdd3 6px, #fecdd3 10px)"
+                          : undefined,
+                      }}
+                      title={
+                        segment.eventCount > 0
+                          ? `${segment.eventCount} Ereignis${segment.eventCount > 1 ? "se" : ""}`
+                          : undefined
+                      }
                     />
                   );
                 })}
@@ -2712,8 +2784,16 @@ export default function HomePage() {
   const [painQuickRegion, setPainQuickRegion] = useState<string | null>(null);
   const [painQuickQuality, setPainQuickQuality] = useState<DailyEntry["painQuality"][number] | null>(null);
   const [painQuickIntensity, setPainQuickIntensity] = useState(5);
+  const [painQuickTimesOfDay, setPainQuickTimesOfDay] = useState<PainTimeOfDay[]>([]);
   const [pendingPainQuickAdd, setPendingPainQuickAdd] = useState<PendingQuickPainAdd | null>(null);
-  const [painShortcutEvents, setPainShortcutEvents] = useState<QuickPainEvent[]>([]);
+  const [painShortcutEvents, setPainShortcutEvents] = usePersistentState<QuickPainEvent[]>(
+    "endo.quickPainEvents.v1",
+    []
+  );
+  const normalizedPainShortcutEvents = useMemo(
+    () => painShortcutEvents.map(normalizeQuickPainEvent),
+    [painShortcutEvents]
+  );
   const [rescueWizard, setRescueWizard] = useState<
     | { step: 1 | 2 | 3; name?: string; doseMg?: number; time?: string }
     | null
@@ -2724,6 +2804,14 @@ export default function HomePage() {
     [customRescueMeds]
   );
   const bleedingQuickAddNoticeTimeoutRef = useRef<number | null>(null);
+  useEffect(() => {
+    const hasChanges =
+      normalizedPainShortcutEvents.length !== painShortcutEvents.length ||
+      normalizedPainShortcutEvents.some((event, index) => event !== painShortcutEvents[index]);
+    if (hasChanges) {
+      setPainShortcutEvents(normalizedPainShortcutEvents);
+    }
+  }, [normalizedPainShortcutEvents, painShortcutEvents, setPainShortcutEvents]);
   const updatePbacCount = useCallback(
     (itemId: (typeof PBAC_ITEMS)[number]["id"], nextValue: number, max = PBAC_MAX_PRODUCT_COUNT) => {
       setPbacCounts((prev) => {
@@ -2777,31 +2865,46 @@ export default function HomePage() {
   }, []);
 
   const todaysPainShortcutEvents = useMemo(
-    () => painShortcutEvents.filter((event) => event.date === today),
-    [painShortcutEvents, today]
+    () => normalizedPainShortcutEvents.filter((event) => event.date === today),
+    [normalizedPainShortcutEvents, today]
   );
 
-  const painShortcutTimelineByDate = useMemo<Partial<Record<string, number[]>>>(() => {
-    if (!painShortcutEvents.length) {
+  const painShortcutTimelineByDate = useMemo<
+    Partial<Record<string, PainShortcutTimelineSegment[]>>
+  >(() => {
+    if (!normalizedPainShortcutEvents.length) {
       return {};
     }
     const grouped: Record<string, QuickPainEvent[]> = {};
-    painShortcutEvents.forEach((event) => {
+    normalizedPainShortcutEvents.forEach((event) => {
       if (!grouped[event.date]) {
         grouped[event.date] = [];
       }
       grouped[event.date].push(event);
     });
-    const timelines: Partial<Record<string, number[]>> = {};
+    const timelines: Partial<Record<string, PainShortcutTimelineSegment[]>> = {};
     Object.entries(grouped).forEach(([date, events]) => {
       timelines[date] = computePainShortcutTimeline(events);
     });
     return timelines;
-  }, [painShortcutEvents]);
+  }, [normalizedPainShortcutEvents]);
 
   const painShortcutTimeline = useMemo(
     () => computePainShortcutTimeline(todaysPainShortcutEvents),
     [todaysPainShortcutEvents]
+  );
+
+  const painShortcutEventsForDraftDate = useMemo(
+    () => normalizedPainShortcutEvents.filter((event) => event.date === dailyDraft.date),
+    [dailyDraft.date, normalizedPainShortcutEvents]
+  );
+
+  const sortedPainShortcutEvents = useMemo(
+    () =>
+      painShortcutEventsForDraftDate
+        .slice()
+        .sort((a, b) => a.timestamp.localeCompare(b.timestamp)),
+    [painShortcutEventsForDraftDate]
   );
 
   const latestPainShortcutEvent = todaysPainShortcutEvents.length
@@ -2814,6 +2917,10 @@ export default function HomePage() {
   const quickPainRegionLabel = useMemo(
     () => (painQuickRegion ? getRegionLabel(painQuickRegion) : null),
     [painQuickRegion]
+  );
+  const painQuickTimeLabel = useMemo(
+    () => formatPainTimeOfDayList(painQuickTimesOfDay),
+    [painQuickTimesOfDay]
   );
   useEffect(() => {
     return () => {
@@ -3807,10 +3914,12 @@ export default function HomePage() {
     return Math.max(...intensities);
   }, [painSummaryRegions]);
   const hasPainSummaryData = painSummaryRegions.length > 0;
+  const hasAcutePainEvents = sortedPainShortcutEvents.length > 0;
+  const hasAnyPainSummaryData = hasPainSummaryData || hasAcutePainEvents;
   const showPainSummaryInToolbar =
-    activeView === "daily" && dailyActiveCategory === "pain" && hasPainSummaryData;
+    activeView === "daily" && dailyActiveCategory === "pain" && hasAnyPainSummaryData;
   const renderPainSummaryToolbar = () => {
-    if (!hasPainSummaryData) {
+    if (!hasAnyPainSummaryData) {
       return null;
     }
 
@@ -3823,78 +3932,80 @@ export default function HomePage() {
               Max. {painSummaryMaxIntensity}/10
             </span>
           ) : null}
-        </div>
-        <div className="mt-2 flex flex-wrap gap-2 text-xs text-rose-900">
-          {painSummaryRegions.map((region) => {
-            const details: string[] = [];
-            if (typeof region.intensity === "number") {
-              details.push(`${region.intensity}/10`);
-            }
-            if (region.qualities.length) {
-              details.push(formatList(region.qualities, 2));
-            }
-            return (
-              <span
-                key={region.id}
-                className="inline-flex items-center gap-1 rounded-full bg-rose-50/80 px-3 py-1 text-xs font-medium text-rose-800"
-              >
-                <span className="font-semibold text-rose-900">{region.label}</span>
-                {details.length ? <span className="text-rose-500">· {details.join(" · ")}</span> : null}
-                <button
-                  type="button"
-                  onClick={() => removePainRegion(region.id)}
-                  className="rounded-full p-1 text-rose-400 transition hover:bg-rose-100 hover:text-rose-700"
-                  aria-label={`${region.label} entfernen`}
-                >
-                  <X className="h-3 w-3" aria-hidden />
-                </button>
-              </span>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-  const renderPainSummaryPanel = () => {
-    if (!hasPainSummaryData) {
-      return null;
-    }
-    return (
-      <div className="space-y-4 rounded-xl border border-rose-100 bg-rose-50/90 p-4 text-sm text-rose-700 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Schmerzübersicht</p>
-            <TermHeadline termKey="bodyMap" />
-          </div>
-          <div className="text-right">
-            <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Max. Intensität</p>
-            <p className="text-3xl font-bold text-rose-900">
-              {typeof painSummaryMaxIntensity === "number" ? `${painSummaryMaxIntensity}/10` : "–"}
-            </p>
-            <p className="text-xs font-medium text-rose-500">
-              {painSummaryRegions.length} Bereich{painSummaryRegions.length === 1 ? "" : "e"}
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {painSummaryRegions.map((region) => (
-            <span
-              key={region.id}
-              className="flex min-w-[8rem] flex-col gap-1 rounded-xl border border-rose-100 bg-white/90 px-3 py-2 text-xs text-rose-900 shadow-sm sm:min-w-[11rem]"
-            >
-              <span className="flex items-center justify-between gap-2 text-sm font-semibold">
-                <span className="truncate">{region.label}</span>
-                {typeof region.intensity === "number" ? (
-                  <span className="text-rose-600">{region.intensity}/10</span>
-                ) : null}
-              </span>
-              {region.qualities.length ? (
-                <span className="text-rose-600">{formatList(region.qualities, 2)}</span>
-              ) : (
-                <span className="text-rose-400">Noch keine Art gewählt</span>
-              )}
+          {hasAcutePainEvents ? (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-700">
+              {sortedPainShortcutEvents.length} Akut-Einträge
             </span>
-          ))}
+          ) : null}
+        </div>
+        <div className="mt-3 space-y-2 text-xs text-rose-900">
+          {hasAcutePainEvents ? (
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-rose-600">
+                <Flame className="h-3.5 w-3.5" aria-hidden />
+                <span>Akut-Schmerzen</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {sortedPainShortcutEvents.map((event) => {
+                  const timeLabel =
+                    formatPainTimeOfDayList(event.timeOfDay) ??
+                    formatShortTimeLabel(event.timestamp) ??
+                    (event.granularity === "tag" ? "Ganzer Tag" : null);
+                  return (
+                    <span
+                      key={event.id}
+                      className="inline-flex items-center gap-2 rounded-full bg-rose-50/80 px-3 py-1 text-[11px] font-medium text-rose-800"
+                    >
+                      {timeLabel ? (
+                        <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+                          {timeLabel}
+                        </span>
+                      ) : null}
+                      <span className="text-rose-700">{getRegionLabel(event.regionId)}</span>
+                      <span className="text-rose-500">{event.intensity}/10</span>
+                      {event.quality ? <span className="text-rose-500">{event.quality}</span> : null}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+          {hasPainSummaryData ? (
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-rose-600">
+                <Activity className="h-3.5 w-3.5" aria-hidden />
+                <span>Dokumentierte Schmerzen</span>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs text-rose-900">
+                {painSummaryRegions.map((region) => {
+                  const details: string[] = [];
+                  if (typeof region.intensity === "number") {
+                    details.push(`${region.intensity}/10`);
+                  }
+                  if (region.qualities.length) {
+                    details.push(formatList(region.qualities, 2));
+                  }
+                  return (
+                    <span
+                      key={region.id}
+                      className="inline-flex items-center gap-1 rounded-full bg-rose-50/80 px-3 py-1 text-xs font-medium text-rose-800"
+                    >
+                      <span className="font-semibold text-rose-900">{region.label}</span>
+                      {details.length ? <span className="text-rose-500">· {details.join(" · ")}</span> : null}
+                      <button
+                        type="button"
+                        onClick={() => removePainRegion(region.id)}
+                        className="rounded-full p-1 text-rose-400 transition hover:bg-rose-100 hover:text-rose-700"
+                        aria-label={`${region.label} entfernen`}
+                      >
+                        <X className="h-3 w-3" aria-hidden />
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     );
@@ -5752,42 +5863,6 @@ export default function HomePage() {
       selectDailyDate(date);
       return;
     }
-    setDailyDraft((prev) => {
-      if (prev.date !== date) {
-        return prev;
-      }
-      const current = prev.painRegions ?? [];
-      const nextRegions = [...current] as NonNullable<DailyEntry["painRegions"]>;
-      const existingIndex = nextRegions.findIndex((region) => region.regionId === regionId);
-      const existingRegion = existingIndex === -1 ? null : nextRegions[existingIndex];
-      let nextQualities = existingRegion?.qualities ? [...existingRegion.qualities] : ([] as DailyEntry["painQuality"]);
-      if (quality) {
-        const merged = new Set(nextQualities);
-        merged.add(quality);
-        let normalized = Array.from(merged) as DailyEntry["painQuality"];
-        if (regionId === HEAD_REGION_ID) {
-          normalized = sanitizeHeadRegionQualities(normalized);
-        } else {
-          normalized = normalized.filter((entry) => !MIGRAINE_QUALITY_SET.has(entry)) as DailyEntry["painQuality"];
-        }
-        nextQualities = normalized;
-      } else if (regionId !== HEAD_REGION_ID) {
-        nextQualities = nextQualities.filter((entry) => !MIGRAINE_QUALITY_SET.has(entry)) as DailyEntry["painQuality"];
-      }
-      const updatedRegion = {
-        ...(existingRegion ?? { regionId, nrs: intensity, qualities: [] as DailyEntry["painQuality"] }),
-        regionId,
-        nrs: intensity,
-        qualities: nextQualities,
-        time: timestamp,
-      } satisfies NonNullable<DailyEntry["painRegions"]>[number];
-      if (existingIndex === -1) {
-        nextRegions.push(updatedRegion);
-      } else {
-        nextRegions[existingIndex] = updatedRegion;
-      }
-      return buildDailyDraftWithPainRegions(prev, nextRegions);
-    });
     setPainShortcutEvents((prev) => [...prev, pendingPainQuickAdd]);
     setCategoryCompletion("pain", true);
     setPendingPainQuickAdd(null);
@@ -5999,6 +6074,7 @@ export default function HomePage() {
     setPainQuickRegion(null);
     setPainQuickQuality(null);
     setPainQuickIntensity(5);
+    setPainQuickTimesOfDay([]);
   }, []);
 
   const handlePainQuickRegionSelect = useCallback((regionId: string) => {
@@ -6010,6 +6086,15 @@ export default function HomePage() {
   const handlePainQuickQualitySelect = useCallback((quality: DailyEntry["painQuality"][number]) => {
     setPainQuickQuality(quality);
     setPainQuickStep(3);
+  }, []);
+
+  const handlePainQuickTimeToggle = useCallback((time: PainTimeOfDay) => {
+    setPainQuickTimesOfDay((prev) => {
+      if (prev.includes(time)) {
+        return prev.filter((entry) => entry !== time);
+      }
+      return [...prev, time];
+    });
   }, []);
 
   const handlePainShortcut = useCallback(() => {
@@ -6035,7 +6120,8 @@ export default function HomePage() {
   }, []);
 
   const handlePainQuickConfirm = useCallback(() => {
-    if (!painQuickRegion || !painQuickQuality) {
+    const requiresTimeSelection = painQuickContext === "module";
+    if (!painQuickRegion || !painQuickQuality || (requiresTimeSelection && painQuickTimesOfDay.length === 0)) {
       return;
     }
     const intensity = Math.max(0, Math.min(10, Math.round(painQuickIntensity)));
@@ -6053,11 +6139,18 @@ export default function HomePage() {
         } else {
           normalized = normalized.filter((entry) => !MIGRAINE_QUALITY_SET.has(entry)) as DailyEntry["painQuality"];
         }
+        const existingTimes = Array.isArray(existingRegion?.timeOfDay)
+          ? (existingRegion.timeOfDay.filter((time) => PAIN_TIME_OF_DAY_SET.has(time as PainTimeOfDay)) as PainTimeOfDay[])
+          : [];
+        const mergedTimes = Array.from(new Set([...existingTimes, ...painQuickTimesOfDay])) as PainTimeOfDay[];
+        const nextGranularity: PainGranularity = mergedTimes.length ? "dritteltag" : existingRegion?.granularity ?? "tag";
         const nextRegion: NonNullable<DailyEntry["painRegions"]>[number] = {
           ...(existingRegion ?? { regionId: painQuickRegion, nrs: intensity, qualities: [] as DailyEntry["painQuality"] }),
           regionId: painQuickRegion,
           nrs: intensity,
           qualities: normalized,
+          timeOfDay: mergedTimes,
+          granularity: nextGranularity,
         };
         if ("time" in nextRegion) {
           const { time: _omit, ...rest } = nextRegion as typeof nextRegion & { time?: string };
@@ -6079,14 +6172,18 @@ export default function HomePage() {
     const now = new Date();
     const timestamp = now.toISOString();
     const date = formatDate(now);
-    setPendingPainQuickAdd({
+    const nextEvent: PendingQuickPainAdd = {
       id: now.getTime(),
       date,
       regionId: painQuickRegion,
       quality: painQuickQuality,
       intensity,
       timestamp,
-    });
+      ...(painQuickTimesOfDay.length && requiresTimeSelection
+        ? { timeOfDay: painQuickTimesOfDay, granularity: "dritteltag" as const }
+        : {}),
+    };
+    setPendingPainQuickAdd(nextEvent);
     setPainQuickAddOpen(false);
     resetPainQuickAddState();
     manualDailySelectionRef.current = false;
@@ -6096,6 +6193,7 @@ export default function HomePage() {
     painQuickIntensity,
     painQuickQuality,
     painQuickRegion,
+    painQuickTimesOfDay,
     setCategoryCompletion,
     setDailyDraft,
     resetPainQuickAddState,
@@ -6143,7 +6241,10 @@ export default function HomePage() {
     if (!latestPainShortcutEvent) {
       return "Schmerzen schnell erfassen";
     }
-    const timeLabel = formatShortTimeLabel(latestPainShortcutEvent.timestamp);
+    const timeLabel =
+      formatPainTimeOfDayList(latestPainShortcutEvent.timeOfDay) ??
+      formatShortTimeLabel(latestPainShortcutEvent.timestamp) ??
+      (latestPainShortcutEvent.granularity === "tag" ? "Ganzer Tag" : null);
     const regionLabel = getRegionLabel(latestPainShortcutEvent.regionId);
     return timeLabel
       ? `Schmerz aktualisieren – ${regionLabel} ${timeLabel}`
@@ -6490,6 +6591,14 @@ export default function HomePage() {
 
       const painRegions = entry.painRegions ?? [];
       const painLines: string[] = [];
+
+      if (sortedPainShortcutEvents.length) {
+        painLines.push("Akut-Einträge:");
+        sortedPainShortcutEvents.forEach((event) => {
+          painLines.push(describeQuickPainEvent(event));
+        });
+      }
+
       if (painRegions.length) {
         const regionLabels = painRegions.map((region) => getRegionLabel(region.regionId));
         painLines.push(`Bereiche: ${formatList(regionLabels, 3)}`);
@@ -6712,7 +6821,7 @@ export default function HomePage() {
 
       return summaries;
     },
-    [dailyDraft]
+    [dailyDraft, sortedPainShortcutEvents]
   );
 
   useLayoutEffect(() => {
@@ -7039,16 +7148,27 @@ export default function HomePage() {
                       </span>
                     </div>
                     <div className="flex h-6 items-end gap-0.5" aria-hidden>
-                      {painShortcutTimeline.map((value, index) => {
-                        const height = 4 + (value / 10) * 14;
+                      {painShortcutTimeline.map((segment, index) => {
+                        const height = 4 + (segment.maxIntensity / 10) * 14;
+                        const hasMultiple = segment.eventCount > 1;
                         return (
                           <span
                             key={`pain-inline-bar-${index}`}
                             className={cn(
                               "w-1.5 rounded-full bg-rose-100 transition",
-                              value > 0 ? "bg-rose-500 shadow-sm shadow-rose-200" : "bg-rose-100"
+                              segment.eventCount > 0 ? "bg-rose-500 shadow-sm shadow-rose-200" : "bg-rose-100"
                             )}
-                            style={{ height }}
+                            style={{
+                              height,
+                              backgroundImage: hasMultiple
+                                ? "repeating-linear-gradient(135deg, #fb7185, #fb7185 6px, #fecdd3 6px, #fecdd3 10px)"
+                                : undefined,
+                            }}
+                            title={
+                              segment.eventCount > 0
+                                ? `${segment.eventCount} Ereignis${segment.eventCount > 1 ? "se" : ""}`
+                                : undefined
+                            }
                           />
                         );
                       })}
@@ -7408,14 +7528,82 @@ export default function HomePage() {
                               ))}
                             </div>
                           ) : null}
-                          {isCompleted && summaryLines.length ? (
-                            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/80 p-3 text-xs text-amber-900">
-                              <ul className="space-y-1 text-amber-800">
-                                {summaryLines.map((line, index) => (
-                                  <li key={index}>{line}</li>
-                                ))}
-                              </ul>
-                            </div>
+                          {isCompleted ? (
+                            category.id === "pain" ? (
+                              <div className="mt-4 space-y-3 rounded-lg border border-amber-200 bg-amber-50/80 p-3 text-xs text-amber-900">
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                                    <Flame className="h-3.5 w-3.5" aria-hidden />
+                                    <span>Akut-Schmerzen</span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {hasAcutePainEvents ? (
+                                      sortedPainShortcutEvents.map((event) => {
+                                        const timeLabel =
+                                          formatPainTimeOfDayList(event.timeOfDay) ??
+                                          formatShortTimeLabel(event.timestamp) ??
+                                          (event.granularity === "tag" ? "Ganzer Tag" : null);
+                                        return (
+                                          <span
+                                            key={event.id}
+                                            className="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-1 text-[11px] font-medium text-amber-900"
+                                          >
+                                            {timeLabel ? (
+                                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                                                {timeLabel}
+                                              </span>
+                                            ) : null}
+                                            <span className="text-amber-800">{getRegionLabel(event.regionId)}</span>
+                                            <span className="text-amber-600">{event.intensity}/10</span>
+                                            {event.quality ? <span className="text-amber-600">{event.quality}</span> : null}
+                                          </span>
+                                        );
+                                      })
+                                    ) : (
+                                      <span className="text-amber-700">Keine Akut-Schmerzen erfasst.</span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="space-y-2 border-t border-amber-200 pt-2">
+                                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                                    <Activity className="h-3.5 w-3.5" aria-hidden />
+                                    <span>Dokumentierte Schmerzen</span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {painSummaryRegions.length ? (
+                                      painSummaryRegions.map((region) => {
+                                        const details: string[] = [];
+                                        if (typeof region.intensity === "number") {
+                                          details.push(`${region.intensity}/10`);
+                                        }
+                                        if (region.qualities.length) {
+                                          details.push(formatList(region.qualities, 2));
+                                        }
+                                        return (
+                                          <span
+                                            key={region.id}
+                                            className="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-1 text-[11px] font-medium text-amber-900"
+                                          >
+                                            <span className="font-semibold text-amber-950">{region.label}</span>
+                                            {details.length ? <span className="text-amber-700">· {details.join(" · ")}</span> : null}
+                                          </span>
+                                        );
+                                      })
+                                    ) : (
+                                      <span className="text-amber-700">Noch keine Bereiche dokumentiert.</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ) : summaryLines.length ? (
+                              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/80 p-3 text-xs text-amber-900">
+                                <ul className="space-y-1 text-amber-800">
+                                  {summaryLines.map((line, index) => (
+                                    <li key={index}>{line}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null
                           ) : null}
                         </div>
                       );
@@ -7470,11 +7658,11 @@ export default function HomePage() {
                     </Button>
                   </div>
                   <div className="space-y-4">
-                      <details
-                        className="group rounded-lg border border-rose-100 bg-rose-50 text-rose-700 [&[open]>summary]:border-b [&[open]>summary]:bg-rose-100"
-                        open={deepDyspareuniaCardOpen}
-                        onToggle={(event) => setDeepDyspareuniaCardOpen(event.currentTarget.open)}
-                      >
+                    <details
+                      className="group rounded-lg border border-rose-100 bg-rose-50 text-rose-700 [&[open]>summary]:border-b [&[open]>summary]:bg-rose-100"
+                      open={deepDyspareuniaCardOpen}
+                      onToggle={(event) => setDeepDyspareuniaCardOpen(event.currentTarget.open)}
+                    >
                         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-rose-800 [&::-webkit-details-marker]:hidden">
                           <span>{TERMS.deepDyspareunia.label}</span>
                           <span className="text-xs font-normal text-rose-500">{deepDyspareuniaSummary}</span>
@@ -10125,13 +10313,16 @@ export default function HomePage() {
                 />
               ))}
             </div>
-            {(quickPainRegionLabel || painQuickQuality) && (
+            {(quickPainRegionLabel || painQuickQuality || painQuickTimeLabel) && (
               <div className="flex flex-wrap gap-2 text-xs text-rose-500">
                 {quickPainRegionLabel ? (
                   <span className="rounded-full bg-rose-50 px-2 py-0.5 text-rose-600">{quickPainRegionLabel}</span>
                 ) : null}
                 {painQuickQuality ? (
                   <span className="rounded-full bg-rose-50 px-2 py-0.5 text-rose-600">{painQuickQuality}</span>
+                ) : null}
+                {painQuickTimeLabel ? (
+                  <span className="rounded-full bg-rose-50 px-2 py-0.5 text-rose-600">{painQuickTimeLabel}</span>
                 ) : null}
               </div>
             )}
@@ -10196,6 +10387,36 @@ export default function HomePage() {
             ) : null}
             {painQuickStep === 3 ? (
               <div className="space-y-4">
+                {painQuickContext === "module" ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">Zeitraum</p>
+                    <div className="grid grid-cols-3 gap-1.5 text-sm">
+                      {PAIN_TIMES_OF_DAY.map((time) => {
+                        const isSelected = painQuickTimesOfDay.includes(time);
+                        return (
+                          <button
+                            key={time}
+                            type="button"
+                            onClick={() => handlePainQuickTimeToggle(time)}
+                            className={cn(
+                              "rounded-xl border px-3 py-1.5 text-left transition",
+                              isSelected
+                                ? "border-rose-400 bg-white text-rose-800 shadow"
+                                : "border-transparent bg-rose-50 text-rose-600 hover:border-rose-200",
+                            )}
+                          >
+                            {PAIN_TIME_OF_DAY_LABEL[time]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {!painQuickTimesOfDay.length ? (
+                      <p className="text-[11px] text-rose-400">Bitte mindestens einen Zeitraum auswählen.</p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="text-sm text-rose-600">Zeitpunkt wird automatisch mit Zeitstempel erfasst.</p>
+                )}
                 <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">Stärke</p>
                 <div className="flex items-center gap-3">
                   <div className="flex-1">
@@ -10218,7 +10439,7 @@ export default function HomePage() {
                   type="button"
                   className="w-full"
                   onClick={handlePainQuickConfirm}
-                  disabled={!painQuickRegion || !painQuickQuality}
+                  disabled={!painQuickRegion || !painQuickQuality || (painQuickContext === "module" && painQuickTimesOfDay.length === 0)}
                 >
                   speichern
                 </Button>
