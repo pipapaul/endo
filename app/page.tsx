@@ -11,7 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ChangeEvent, ComponentType, ReactNode, SVGProps } from "react";
+import type { ChangeEvent, ComponentType, CSSProperties, ReactNode, SVGProps } from "react";
 import {
   LineChart,
   Line,
@@ -356,10 +356,15 @@ type QuickPainEvent = {
 
 type PendingQuickPainAdd = QuickPainEvent;
 
+type PainTimelineSegment = { maxIntensity: number; count: number };
+
 const PAIN_SHORTCUT_SEGMENT_COUNT = 6;
 
-const computePainShortcutTimeline = (events: QuickPainEvent[]): number[] => {
-  const segments = Array(PAIN_SHORTCUT_SEGMENT_COUNT).fill(0);
+const createEmptyPainTimeline = (): PainTimelineSegment[] =>
+  Array.from({ length: PAIN_SHORTCUT_SEGMENT_COUNT }, () => ({ maxIntensity: 0, count: 0 }));
+
+const computePainShortcutTimeline = (events: QuickPainEvent[]): PainTimelineSegment[] => {
+  const segments = createEmptyPainTimeline();
   events.forEach((event) => {
     const parsed = new Date(event.timestamp);
     if (Number.isNaN(parsed.getTime())) {
@@ -371,9 +376,27 @@ const computePainShortcutTimeline = (events: QuickPainEvent[]): number[] => {
       Math.max(0, Math.floor((hour / 24) * segments.length))
     );
     const clampedIntensity = Math.max(0, Math.min(10, Math.round(event.intensity)));
-    segments[index] = Math.max(segments[index], clampedIntensity);
+    segments[index].maxIntensity = Math.max(segments[index].maxIntensity, clampedIntensity);
+    segments[index].count += 1;
   });
   return segments;
+};
+
+const getPainTimelineBarStyle = (segment: PainTimelineSegment): CSSProperties => {
+  const height = 4 + (segment.maxIntensity / 10) * 14;
+  const hasPain = segment.maxIntensity > 0;
+  const style: CSSProperties = {
+    height,
+    backgroundColor: hasPain ? "#fb7185" : "#f3f4f6",
+    boxShadow: hasPain ? "0 1px 3px rgba(244,63,94,0.25)" : undefined,
+  };
+
+  if (hasPain && segment.count > 1) {
+    style.backgroundImage =
+      "repeating-linear-gradient(135deg, #fb7185, #fb7185 6px, #ffe4e6 6px, #ffe4e6 10px)";
+  }
+
+  return style;
 };
 
 type DailyCategoryId =
@@ -1410,7 +1433,7 @@ type CycleOverviewPoint = {
   isBleeding: boolean;
   ovulationPositive: boolean;
   ovulationPainIntensity: number | null;
-  painTimeline: number[] | null;
+  painTimeline: PainTimelineSegment[] | null;
 };
 
 type CycleOverviewData = {
@@ -1545,7 +1568,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
 
       const payload = props.payload[0].payload as CycleOverviewChartPoint;
       const timeline = Array.isArray(payload.painTimeline) ? payload.painTimeline : null;
-      const hasTimeline = timeline ? timeline.some((value) => value > 0) : false;
+      const hasTimeline = timeline ? timeline.some((segment) => segment.maxIntensity > 0) : false;
 
       return (
         <div className="rounded-lg border border-rose-100 bg-white p-3 text-xs text-rose-700 shadow-sm">
@@ -1558,16 +1581,15 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
             <div className="mt-2">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-rose-400">Tagesverlauf</p>
               <div className="mt-1 flex items-end gap-0.5">
-                {timeline.map((value, index) => {
-                  const height = 4 + (value / 10) * 14;
+                {timeline.map((segment, index) => {
+                  const style = getPainTimelineBarStyle(segment);
+                  const title = segment.count > 1 ? `${segment.count} Ereignisse` : "1 Ereignis";
                   return (
                     <span
                       key={`pain-tooltip-bar-${payload.date}-${index}`}
-                      className={cn(
-                        "w-1.5 rounded-full bg-rose-100",
-                        value > 0 ? "bg-rose-500" : "bg-rose-100"
-                      )}
-                      style={{ height }}
+                      className="w-1.5 rounded-full"
+                      style={style}
+                      title={segment.count ? title : "Keine Ereignisse"}
                     />
                   );
                 })}
@@ -2780,7 +2802,7 @@ export default function HomePage() {
     [painShortcutEvents, today]
   );
 
-  const painShortcutTimelineByDate = useMemo<Partial<Record<string, number[]>>>(() => {
+  const painShortcutTimelineByDate = useMemo<Partial<Record<string, PainTimelineSegment[]>>>(() => {
     if (!painShortcutEvents.length) {
       return {};
     }
@@ -2791,7 +2813,7 @@ export default function HomePage() {
       }
       grouped[event.date].push(event);
     });
-    const timelines: Partial<Record<string, number[]>> = {};
+    const timelines: Partial<Record<string, PainTimelineSegment[]>> = {};
     Object.entries(grouped).forEach(([date, events]) => {
       timelines[date] = computePainShortcutTimeline(events);
     });
@@ -3787,12 +3809,14 @@ export default function HomePage() {
   );
   const painSummaryRegions = useMemo(
     () =>
-      (dailyDraft.painRegions ?? []).map((region) => ({
-        id: region.regionId,
+      (dailyDraft.painRegions ?? []).map((region, index) => ({
+        key: region.time ? `${region.regionId}-${region.time}-${index}` : `${region.regionId}-${index}`,
+        index,
         label: getRegionLabel(region.regionId),
         intensity:
           typeof region.nrs === "number" ? Math.max(0, Math.min(10, Math.round(region.nrs))) : null,
         qualities: (region.qualities ?? []).filter(Boolean),
+        timeLabel: formatShortTimeLabel(region.time ?? null),
       })),
     [dailyDraft.painRegions]
   );
@@ -3826,6 +3850,9 @@ export default function HomePage() {
         <div className="mt-2 flex flex-wrap gap-2 text-xs text-rose-900">
           {painSummaryRegions.map((region) => {
             const details: string[] = [];
+            if (region.timeLabel) {
+              details.push(region.timeLabel);
+            }
             if (typeof region.intensity === "number") {
               details.push(`${region.intensity}/10`);
             }
@@ -3834,14 +3861,14 @@ export default function HomePage() {
             }
             return (
               <span
-                key={region.id}
+                key={region.key}
                 className="inline-flex items-center gap-1 rounded-full bg-rose-50/80 px-3 py-1 text-xs font-medium text-rose-800"
               >
                 <span className="font-semibold text-rose-900">{region.label}</span>
                 {details.length ? <span className="text-rose-500">· {details.join(" · ")}</span> : null}
                 <button
                   type="button"
-                  onClick={() => removePainRegion(region.id)}
+                  onClick={() => removePainRegion(region.index)}
                   className="rounded-full p-1 text-rose-400 transition hover:bg-rose-100 hover:text-rose-700"
                   aria-label={`${region.label} entfernen`}
                 >
@@ -3875,21 +3902,24 @@ export default function HomePage() {
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {painSummaryRegions.map((region) => (
-            <span
-              key={region.id}
-              className="flex min-w-[8rem] flex-col gap-1 rounded-xl border border-rose-100 bg-white/90 px-3 py-2 text-xs text-rose-900 shadow-sm sm:min-w-[11rem]"
-            >
-              <span className="flex items-center justify-between gap-2 text-sm font-semibold">
-                <span className="truncate">{region.label}</span>
-                {typeof region.intensity === "number" ? (
-                  <span className="text-rose-600">{region.intensity}/10</span>
+          <div className="flex flex-wrap gap-2">
+            {painSummaryRegions.map((region) => (
+              <span
+                key={region.key}
+                className="flex min-w-[8rem] flex-col gap-1 rounded-xl border border-rose-100 bg-white/90 px-3 py-2 text-xs text-rose-900 shadow-sm sm:min-w-[11rem]"
+              >
+                <span className="flex items-center justify-between gap-2 text-sm font-semibold">
+                  <span className="truncate">{region.label}</span>
+                  {typeof region.intensity === "number" ? (
+                    <span className="text-rose-600">{region.intensity}/10</span>
+                  ) : null}
+                </span>
+                {region.timeLabel ? (
+                  <span className="text-[11px] font-medium text-rose-500">{region.timeLabel}</span>
                 ) : null}
-              </span>
-              {region.qualities.length ? (
-                <span className="text-rose-600">{formatList(region.qualities, 2)}</span>
-              ) : (
+                {region.qualities.length ? (
+                  <span className="text-rose-600">{formatList(region.qualities, 2)}</span>
+                ) : (
                 <span className="text-rose-400">Noch keine Art gewählt</span>
               )}
             </span>
@@ -4151,14 +4181,13 @@ export default function HomePage() {
   };
 
   const removePainRegion = useCallback(
-    (regionId: string) => {
+    (regionIndex: number) => {
       setDailyDraft((prev) => {
         const current = prev.painRegions ?? [];
-        if (!current.some((region) => region.regionId === regionId)) {
+        if (!current[regionIndex]) {
           return prev;
         }
-        const nextRegions = current
-          .filter((region) => region.regionId !== regionId) as NonNullable<DailyEntry["painRegions"]>;
+        const nextRegions = current.filter((_, index) => index !== regionIndex) as NonNullable<DailyEntry["painRegions"]>;
         return buildDailyDraftWithPainRegions(prev, nextRegions);
       });
     },
@@ -5756,36 +5785,19 @@ export default function HomePage() {
         return prev;
       }
       const current = prev.painRegions ?? [];
-      const nextRegions = [...current] as NonNullable<DailyEntry["painRegions"]>;
-      const existingIndex = nextRegions.findIndex((region) => region.regionId === regionId);
-      const existingRegion = existingIndex === -1 ? null : nextRegions[existingIndex];
-      let nextQualities = existingRegion?.qualities ? [...existingRegion.qualities] : ([] as DailyEntry["painQuality"]);
-      if (quality) {
-        const merged = new Set(nextQualities);
-        merged.add(quality);
-        let normalized = Array.from(merged) as DailyEntry["painQuality"];
-        if (regionId === HEAD_REGION_ID) {
-          normalized = sanitizeHeadRegionQualities(normalized);
-        } else {
-          normalized = normalized.filter((entry) => !MIGRAINE_QUALITY_SET.has(entry)) as DailyEntry["painQuality"];
-        }
-        nextQualities = normalized;
-      } else if (regionId !== HEAD_REGION_ID) {
+      let nextQualities = quality ? ([quality] as DailyEntry["painQuality"]) : ([] as DailyEntry["painQuality"]);
+      if (regionId === HEAD_REGION_ID) {
+        nextQualities = sanitizeHeadRegionQualities(nextQualities);
+      } else {
         nextQualities = nextQualities.filter((entry) => !MIGRAINE_QUALITY_SET.has(entry)) as DailyEntry["painQuality"];
       }
-      const updatedRegion = {
-        ...(existingRegion ?? { regionId, nrs: intensity, qualities: [] as DailyEntry["painQuality"] }),
+      const newRegion: NonNullable<DailyEntry["painRegions"]>[number] = {
         regionId,
         nrs: intensity,
         qualities: nextQualities,
         time: timestamp,
-      } satisfies NonNullable<DailyEntry["painRegions"]>[number];
-      if (existingIndex === -1) {
-        nextRegions.push(updatedRegion);
-      } else {
-        nextRegions[existingIndex] = updatedRegion;
-      }
-      return buildDailyDraftWithPainRegions(prev, nextRegions);
+      };
+      return buildDailyDraftWithPainRegions(prev, [...current, newRegion]);
     });
     setPainShortcutEvents((prev) => [...prev, pendingPainQuickAdd]);
     setCategoryCompletion("pain", true);
@@ -6489,23 +6501,32 @@ export default function HomePage() {
 
       const painRegions = entry.painRegions ?? [];
       const painLines: string[] = [];
-      if (painRegions.length) {
-        const regionLabels = painRegions.map((region) => getRegionLabel(region.regionId));
-        painLines.push(`Bereiche: ${formatList(regionLabels, 3)}`);
-        const intensities = painRegions
-          .map((region) => (typeof region.nrs === "number" ? region.nrs : null))
-          .filter((value): value is number => value !== null);
-        if (intensities.length) {
-          painLines.push(`Max.: ${Math.max(...intensities)}/10`);
+      painRegions.forEach((region) => {
+        const parts = [getRegionLabel(region.regionId)];
+        const timeLabel = formatShortTimeLabel(region.time ?? null);
+        if (timeLabel) {
+          parts.push(timeLabel);
         }
-        const qualities = Array.from(
-          new Set(
-            painRegions.flatMap((region) => region.qualities ?? [])
-          )
-        );
+        if (typeof region.nrs === "number") {
+          parts.push(`${Math.max(0, Math.min(10, Math.round(region.nrs)))}/10`);
+        }
+        const qualities = (region.qualities ?? []).filter(Boolean);
         if (qualities.length) {
-          painLines.push(`Qualitäten: ${formatList(qualities, 3)}`);
+          parts.push(formatList(qualities, 2));
         }
+        painLines.push(parts.join(" · "));
+      });
+      const aggregateIntensities = painRegions
+        .map((region) => (typeof region.nrs === "number" ? region.nrs : null))
+        .filter((value): value is number => value !== null);
+      if (aggregateIntensities.length) {
+        painLines.push(`Max.: ${Math.max(...aggregateIntensities)}/10`);
+      }
+      const aggregateQualities = Array.from(
+        new Set(painRegions.flatMap((region) => region.qualities ?? []))
+      );
+      if (aggregateQualities.length) {
+        painLines.push(`Qualitäten: ${formatList(aggregateQualities, 3)}`);
       }
       const deepDyspareuniaSymptom = entry.symptoms?.deepDyspareunia;
       if (deepDyspareuniaSymptom?.present) {
@@ -7040,16 +7061,18 @@ export default function HomePage() {
                       </span>
                     </div>
                     <div className="flex h-6 items-end gap-0.5" aria-hidden>
-                      {painShortcutTimeline.map((value, index) => {
-                        const height = 4 + (value / 10) * 14;
+                      {painShortcutTimeline.map((segment, index) => {
+                        const style = getPainTimelineBarStyle(segment);
                         return (
                           <span
                             key={`pain-inline-bar-${index}`}
-                            className={cn(
-                              "w-1.5 rounded-full bg-rose-100 transition",
-                              value > 0 ? "bg-rose-500 shadow-sm shadow-rose-200" : "bg-rose-100"
-                            )}
-                            style={{ height }}
+                            className="w-1.5 rounded-full transition"
+                            style={style}
+                            title={
+                              segment.count
+                                ? `${segment.count} Ereignis${segment.count > 1 ? "se" : ""}`
+                                : "Keine Ereignisse"
+                            }
                           />
                         );
                       })}
