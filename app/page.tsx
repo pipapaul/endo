@@ -2821,7 +2821,7 @@ export default function HomePage() {
       }
       grouped[event.date].push(event);
     });
-    const timelines: Partial<Record<string, number[]>> = {};
+    const timelines: Partial<Record<string, PainShortcutTimelineSegment[]>> = {};
     Object.entries(grouped).forEach(([date, events]) => {
       timelines[date] = computePainShortcutTimeline(events);
     });
