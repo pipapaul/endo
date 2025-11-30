@@ -4009,107 +4009,6 @@ export default function HomePage() {
       </div>
     );
   };
-  const renderPainSummaryPanel = () => {
-    if (!hasAnyPainSummaryData) {
-      return null;
-    }
-    return (
-      <div className="space-y-4 rounded-xl border border-rose-100 bg-rose-50/90 p-4 text-sm text-rose-700 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Schmerzübersicht</p>
-            <TermHeadline termKey="bodyMap" />
-          </div>
-          <div className="space-y-1 text-right">
-            <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Max. Intensität</p>
-            <p className="text-3xl font-bold text-rose-900">
-              {typeof painSummaryMaxIntensity === "number" ? `${painSummaryMaxIntensity}/10` : "–"}
-            </p>
-            <div className="flex flex-wrap justify-end gap-2 text-[11px] font-semibold uppercase tracking-wide text-rose-500">
-              {hasAcutePainEvents ? (
-                <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-700">
-                  {sortedPainShortcutEvents.length} Akut
-                </span>
-              ) : null}
-              {hasPainSummaryData ? (
-                <span className="rounded-full bg-rose-100 px-2 py-1 text-rose-700">
-                  {painSummaryRegions.length} Bereich{painSummaryRegions.length === 1 ? "" : "e"}
-                </span>
-              ) : null}
-            </div>
-          </div>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="space-y-2 rounded-lg border border-amber-100 bg-white/80 p-3 text-xs text-amber-900">
-            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-amber-600">
-              <Flame className="h-3.5 w-3.5" aria-hidden />
-              <span>Akut-Schmerzen</span>
-            </div>
-            {hasAcutePainEvents ? (
-              <div className="space-y-2">
-                {sortedPainShortcutEvents.map((event) => {
-                  const timeLabel =
-                    formatPainTimeOfDayList(event.timeOfDay) ??
-                    formatShortTimeLabel(event.timestamp) ??
-                    (event.granularity === "tag" ? "Ganzer Tag" : null);
-                  const description = describeQuickPainEvent(event);
-                  return (
-                    <div
-                      key={event.id}
-                      className="flex items-center gap-2 rounded-md border border-amber-100 bg-amber-50/80 px-3 py-2"
-                    >
-                      <div className="flex flex-col text-xs text-amber-800">
-                        <span className="text-[11px] font-semibold uppercase tracking-wide text-amber-600">
-                          {timeLabel ?? "Zeit"}
-                        </span>
-                        <span className="font-semibold text-amber-900">{getRegionLabel(event.regionId)}</span>
-                        <span className="text-amber-700">{description}</span>
-                      </div>
-                      <span className="ml-auto rounded-full bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-800">
-                        {event.intensity}/10
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-amber-700">Keine Akut-Schmerzen dokumentiert.</p>
-            )}
-          </div>
-          <div className="space-y-2 rounded-lg border border-rose-100 bg-white/80 p-3 text-xs text-rose-900">
-            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-rose-600">
-              <Activity className="h-3.5 w-3.5" aria-hidden />
-              <span>Dokumentierte Schmerzen</span>
-            </div>
-            {hasPainSummaryData ? (
-              <div className="flex flex-wrap gap-2">
-                {painSummaryRegions.map((region) => (
-                  <span
-                    key={region.id}
-                    className="flex min-w-[8rem] flex-col gap-1 rounded-xl border border-rose-100 bg-white/90 px-3 py-2 text-xs text-rose-900 shadow-sm sm:min-w-[11rem]"
-                  >
-                    <span className="flex items-center justify-between gap-2 text-sm font-semibold">
-                      <span className="truncate">{region.label}</span>
-                      {typeof region.intensity === "number" ? (
-                        <span className="text-rose-600">{region.intensity}/10</span>
-                      ) : null}
-                    </span>
-                    {region.qualities.length ? (
-                      <span className="text-rose-600">{formatList(region.qualities, 2)}</span>
-                    ) : (
-                      <span className="text-rose-400">Noch keine Art gewählt</span>
-                    )}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p className="text-rose-700">Noch keine Bereiche dokumentiert.</p>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
   const currentPbacForNotice = dailyDraft.bleeding.isBleeding ? pbacScore : dailyDraft.bleeding.pbacScore ?? 0;
   const showDizzinessNotice =
     activeDizziness && dailyDraft.dizzinessOpt?.present && currentPbacForNotice >= HEAVY_BLEED_PBAC;
@@ -7760,7 +7659,6 @@ export default function HomePage() {
                     </Button>
                   </div>
                   <div className="space-y-4">
-                    {renderPainSummaryPanel()}
                     <details
                       className="group rounded-lg border border-rose-100 bg-rose-50 text-rose-700 [&[open]>summary]:border-b [&[open]>summary]:bg-rose-100"
                       open={deepDyspareuniaCardOpen}
