@@ -97,6 +97,7 @@ export function validateDailyEntry(entry: DailyEntry): ValidationIssue[] {
     "Migräne",
     "Migräne mit Aura",
   ]);
+  const allowedPainTimeOfDay = new Set(["morgens", "mittags", "abends"]);
 
   if (Array.isArray(entry.painRegions) && entry.painRegions.length > 0) {
     entry.painRegions.forEach((region, idx) => {
@@ -129,6 +130,37 @@ export function validateDailyEntry(entry: DailyEntry): ValidationIssue[] {
               message: "Ungültige Schmerzqualität ausgewählt.",
             });
           }
+        });
+      }
+
+      const granularity = region.granularity ?? (region.timeOfDay?.length ? "dritteltag" : "tag");
+      if (granularity !== "tag" && granularity !== "dritteltag") {
+        issues.push({
+          path: `painRegions[${idx}].granularity`,
+          message: "Ungültige Granularität für Schmerzangabe.",
+        });
+      }
+
+      if (granularity === "dritteltag") {
+        if (!Array.isArray(region.timeOfDay) || region.timeOfDay.length === 0) {
+          issues.push({
+            path: `painRegions[${idx}].timeOfDay`,
+            message: "Bitte wähle mindestens einen Zeitraum (morgens/mittags/abends).",
+          });
+        } else {
+          region.timeOfDay.forEach((time, timeIndex) => {
+            if (!allowedPainTimeOfDay.has(time)) {
+              issues.push({
+                path: `painRegions[${idx}].timeOfDay[${timeIndex}]`,
+                message: "Ungültiger Zeitraum gewählt.",
+              });
+            }
+          });
+        }
+      } else if (Array.isArray(region.timeOfDay) && region.timeOfDay.length > 0) {
+        issues.push({
+          path: `painRegions[${idx}].granularity`,
+          message: "Zeitraum-Auswahl erfordert die Granularität 'dritteltag'.",
         });
       }
     });

@@ -4,6 +4,16 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
   const bleedingSource = (entry as Partial<DailyEntry>).bleeding;
   const hasValidBleeding = typeof bleedingSource?.isBleeding === "boolean";
   const needsPainRegionsNormalization = !Array.isArray(entry.painRegions);
+  const needsPainTimeNormalization = Array.isArray(entry.painRegions)
+    ? entry.painRegions.some((region) => {
+        if (!region || typeof region !== "object") {
+          return false;
+        }
+        const hasTimeArray = Array.isArray((region as { timeOfDay?: unknown }).timeOfDay);
+        const hasGranularity = (region as { granularity?: unknown }).granularity !== undefined;
+        return !hasTimeArray || !hasGranularity;
+      })
+    : false;
   const needsPainQualityNormalization = !Array.isArray(entry.painQuality);
   const needsPainMapIdsNormalization = !Array.isArray(entry.painMapRegionIds);
   const needsRescueMedsNormalization = !Array.isArray(entry.rescueMeds);
@@ -12,6 +22,7 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
   if (
     hasValidBleeding &&
     !needsPainRegionsNormalization &&
+    !needsPainTimeNormalization &&
     !needsPainQualityNormalization &&
     !needsPainMapIdsNormalization &&
     !needsRescueMedsNormalization &&
@@ -34,7 +45,28 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
     normalizedBleeding.flooding = bleedingSource.flooding;
   }
 
-  const painRegions = Array.isArray(entry.painRegions) ? entry.painRegions : [];
+  const painRegions = Array.isArray(entry.painRegions)
+    ? entry.painRegions.map((region) => {
+        if (!region || typeof region !== "object") {
+          return region;
+        }
+        const timeOfDay = Array.isArray(region.timeOfDay)
+          ? (region.timeOfDay.filter((time) => time === "morgens" || time === "mittags" || time === "abends") as
+              DailyEntry["painRegions"] extends Array<infer R>
+                ? R extends { timeOfDay?: infer T }
+                  ? T
+                  : never
+                : never)
+          : [];
+        const hasTimeOfDay = timeOfDay.length > 0;
+        const granularity = hasTimeOfDay ? "dritteltag" : region.granularity ?? "tag";
+        return {
+          ...region,
+          timeOfDay,
+          granularity,
+        };
+      })
+    : [];
   const painQuality = Array.isArray(entry.painQuality) ? entry.painQuality : [];
   const painMapRegionIds = Array.isArray(entry.painMapRegionIds) ? entry.painMapRegionIds : [];
   const legacyMeds = (entry as { meds?: { name: string; doseMg?: number; times?: string[] }[] }).meds;

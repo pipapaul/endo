@@ -6,6 +6,9 @@ export interface FeatureFlags {
   moduleDizziness?: boolean;
 }
 
+export type PainGranularity = "tag" | "dritteltag";
+export type PainTimeOfDay = "morgens" | "mittags" | "abends";
+
 export interface DailyEntry {
   date: string; // ISO YYYY-MM-DD
 
@@ -15,6 +18,8 @@ export interface DailyEntry {
     nrs: number;
     qualities: DailyEntry["painQuality"];
     time?: string;
+    timeOfDay?: PainTimeOfDay[];
+    granularity?: PainGranularity;
   }>;
 
   impactNRS?: number;
