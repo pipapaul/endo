@@ -356,10 +356,20 @@ type QuickPainEvent = {
 
 type PendingQuickPainAdd = QuickPainEvent;
 
+type PainShortcutTimelineSegment = {
+  maxIntensity: number;
+  eventCount: number;
+};
+
 const PAIN_SHORTCUT_SEGMENT_COUNT = 6;
 
-const computePainShortcutTimeline = (events: QuickPainEvent[]): number[] => {
-  const segments = Array(PAIN_SHORTCUT_SEGMENT_COUNT).fill(0);
+const computePainShortcutTimeline = (
+  events: QuickPainEvent[]
+): PainShortcutTimelineSegment[] => {
+  const segments: PainShortcutTimelineSegment[] = Array.from(
+    { length: PAIN_SHORTCUT_SEGMENT_COUNT },
+    () => ({ maxIntensity: 0, eventCount: 0 })
+  );
   events.forEach((event) => {
     const parsed = new Date(event.timestamp);
     if (Number.isNaN(parsed.getTime())) {
@@ -371,7 +381,11 @@ const computePainShortcutTimeline = (events: QuickPainEvent[]): number[] => {
       Math.max(0, Math.floor((hour / 24) * segments.length))
     );
     const clampedIntensity = Math.max(0, Math.min(10, Math.round(event.intensity)));
-    segments[index] = Math.max(segments[index], clampedIntensity);
+    const current = segments[index];
+    segments[index] = {
+      maxIntensity: Math.max(current.maxIntensity, clampedIntensity),
+      eventCount: current.eventCount + 1,
+    };
   });
   return segments;
 };
@@ -1410,7 +1424,7 @@ type CycleOverviewPoint = {
   isBleeding: boolean;
   ovulationPositive: boolean;
   ovulationPainIntensity: number | null;
-  painTimeline: number[] | null;
+  painTimeline: PainShortcutTimelineSegment[] | null;
 };
 
 type CycleOverviewData = {
@@ -1545,7 +1559,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
 
       const payload = props.payload[0].payload as CycleOverviewChartPoint;
       const timeline = Array.isArray(payload.painTimeline) ? payload.painTimeline : null;
-      const hasTimeline = timeline ? timeline.some((value) => value > 0) : false;
+      const hasTimeline = timeline ? timeline.some((segment) => segment.eventCount > 0) : false;
 
       return (
         <div className="rounded-lg border border-rose-100 bg-white p-3 text-xs text-rose-700 shadow-sm">
@@ -1558,16 +1572,27 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
             <div className="mt-2">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-rose-400">Tagesverlauf</p>
               <div className="mt-1 flex items-end gap-0.5">
-                {timeline.map((value, index) => {
-                  const height = 4 + (value / 10) * 14;
+                {timeline.map((segment, index) => {
+                  const height = 4 + (segment.maxIntensity / 10) * 14;
+                  const hasMultiple = segment.eventCount > 1;
                   return (
                     <span
                       key={`pain-tooltip-bar-${payload.date}-${index}`}
                       className={cn(
                         "w-1.5 rounded-full bg-rose-100",
-                        value > 0 ? "bg-rose-500" : "bg-rose-100"
+                        segment.eventCount > 0 ? "bg-rose-500" : "bg-rose-100"
                       )}
-                      style={{ height }}
+                      style={{
+                        height,
+                        backgroundImage: hasMultiple
+                          ? "repeating-linear-gradient(135deg, #fb7185, #fb7185 6px, #fecdd3 6px, #fecdd3 10px)"
+                          : undefined,
+                      }}
+                      title={
+                        segment.eventCount > 0
+                          ? `${segment.eventCount} Ereignis${segment.eventCount > 1 ? "se" : ""}`
+                          : undefined
+                      }
                     />
                   );
                 })}
@@ -2712,7 +2737,10 @@ export default function HomePage() {
   const [painQuickQuality, setPainQuickQuality] = useState<DailyEntry["painQuality"][number] | null>(null);
   const [painQuickIntensity, setPainQuickIntensity] = useState(5);
   const [pendingPainQuickAdd, setPendingPainQuickAdd] = useState<PendingQuickPainAdd | null>(null);
-  const [painShortcutEvents, setPainShortcutEvents] = useState<QuickPainEvent[]>([]);
+  const [painShortcutEvents, setPainShortcutEvents] = usePersistentState<QuickPainEvent[]>(
+    "endo.quickPainEvents.v1",
+    []
+  );
   const [rescueWizard, setRescueWizard] = useState<
     | { step: 1 | 2 | 3; name?: string; doseMg?: number; time?: string }
     | null
@@ -2780,7 +2808,9 @@ export default function HomePage() {
     [painShortcutEvents, today]
   );
 
-  const painShortcutTimelineByDate = useMemo<Partial<Record<string, number[]>>>(() => {
+  const painShortcutTimelineByDate = useMemo<
+    Partial<Record<string, PainShortcutTimelineSegment[]>>
+  >(() => {
     if (!painShortcutEvents.length) {
       return {};
     }
@@ -2791,7 +2821,7 @@ export default function HomePage() {
       }
       grouped[event.date].push(event);
     });
-    const timelines: Partial<Record<string, number[]>> = {};
+    const timelines: Partial<Record<string, PainShortcutTimelineSegment[]>> = {};
     Object.entries(grouped).forEach(([date, events]) => {
       timelines[date] = computePainShortcutTimeline(events);
     });
@@ -2801,6 +2831,11 @@ export default function HomePage() {
   const painShortcutTimeline = useMemo(
     () => computePainShortcutTimeline(todaysPainShortcutEvents),
     [todaysPainShortcutEvents]
+  );
+
+  const painShortcutEventsForDraftDate = useMemo(
+    () => painShortcutEvents.filter((event) => event.date === dailyDraft.date),
+    [dailyDraft.date, painShortcutEvents]
   );
 
   const latestPainShortcutEvent = todaysPainShortcutEvents.length
@@ -5751,42 +5786,6 @@ export default function HomePage() {
       selectDailyDate(date);
       return;
     }
-    setDailyDraft((prev) => {
-      if (prev.date !== date) {
-        return prev;
-      }
-      const current = prev.painRegions ?? [];
-      const nextRegions = [...current] as NonNullable<DailyEntry["painRegions"]>;
-      const existingIndex = nextRegions.findIndex((region) => region.regionId === regionId);
-      const existingRegion = existingIndex === -1 ? null : nextRegions[existingIndex];
-      let nextQualities = existingRegion?.qualities ? [...existingRegion.qualities] : ([] as DailyEntry["painQuality"]);
-      if (quality) {
-        const merged = new Set(nextQualities);
-        merged.add(quality);
-        let normalized = Array.from(merged) as DailyEntry["painQuality"];
-        if (regionId === HEAD_REGION_ID) {
-          normalized = sanitizeHeadRegionQualities(normalized);
-        } else {
-          normalized = normalized.filter((entry) => !MIGRAINE_QUALITY_SET.has(entry)) as DailyEntry["painQuality"];
-        }
-        nextQualities = normalized;
-      } else if (regionId !== HEAD_REGION_ID) {
-        nextQualities = nextQualities.filter((entry) => !MIGRAINE_QUALITY_SET.has(entry)) as DailyEntry["painQuality"];
-      }
-      const updatedRegion = {
-        ...(existingRegion ?? { regionId, nrs: intensity, qualities: [] as DailyEntry["painQuality"] }),
-        regionId,
-        nrs: intensity,
-        qualities: nextQualities,
-        time: timestamp,
-      } satisfies NonNullable<DailyEntry["painRegions"]>[number];
-      if (existingIndex === -1) {
-        nextRegions.push(updatedRegion);
-      } else {
-        nextRegions[existingIndex] = updatedRegion;
-      }
-      return buildDailyDraftWithPainRegions(prev, nextRegions);
-    });
     setPainShortcutEvents((prev) => [...prev, pendingPainQuickAdd]);
     setCategoryCompletion("pain", true);
     setPendingPainQuickAdd(null);
@@ -6489,6 +6488,22 @@ export default function HomePage() {
 
       const painRegions = entry.painRegions ?? [];
       const painLines: string[] = [];
+
+      const sortedPainShortcutEvents = painShortcutEventsForDraftDate
+        .slice()
+        .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+      if (sortedPainShortcutEvents.length) {
+        painLines.push("Akut-Einträge:");
+        sortedPainShortcutEvents.forEach((event) => {
+          const timeLabel = formatShortTimeLabel(event.timestamp);
+          const parts = [timeLabel, getRegionLabel(event.regionId), `${event.intensity}/10`];
+          if (event.quality) {
+            parts.push(event.quality);
+          }
+          painLines.push(parts.filter(Boolean).join(" · "));
+        });
+      }
+
       if (painRegions.length) {
         const regionLabels = painRegions.map((region) => getRegionLabel(region.regionId));
         painLines.push(`Bereiche: ${formatList(regionLabels, 3)}`);
@@ -6711,7 +6726,7 @@ export default function HomePage() {
 
       return summaries;
     },
-    [dailyDraft]
+    [dailyDraft, painShortcutEventsForDraftDate]
   );
 
   useLayoutEffect(() => {
@@ -7040,16 +7055,27 @@ export default function HomePage() {
                       </span>
                     </div>
                     <div className="flex h-6 items-end gap-0.5" aria-hidden>
-                      {painShortcutTimeline.map((value, index) => {
-                        const height = 4 + (value / 10) * 14;
+                      {painShortcutTimeline.map((segment, index) => {
+                        const height = 4 + (segment.maxIntensity / 10) * 14;
+                        const hasMultiple = segment.eventCount > 1;
                         return (
                           <span
                             key={`pain-inline-bar-${index}`}
                             className={cn(
                               "w-1.5 rounded-full bg-rose-100 transition",
-                              value > 0 ? "bg-rose-500 shadow-sm shadow-rose-200" : "bg-rose-100"
+                              segment.eventCount > 0 ? "bg-rose-500 shadow-sm shadow-rose-200" : "bg-rose-100"
                             )}
-                            style={{ height }}
+                            style={{
+                              height,
+                              backgroundImage: hasMultiple
+                                ? "repeating-linear-gradient(135deg, #fb7185, #fb7185 6px, #fecdd3 6px, #fecdd3 10px)"
+                                : undefined,
+                            }}
+                            title={
+                              segment.eventCount > 0
+                                ? `${segment.eventCount} Ereignis${segment.eventCount > 1 ? "se" : ""}`
+                                : undefined
+                            }
                           />
                         );
                       })}
