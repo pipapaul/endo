@@ -6092,7 +6092,8 @@ export default function HomePage() {
   }, []);
 
   const handlePainQuickConfirm = useCallback(() => {
-    if (!painQuickRegion || !painQuickQuality || painQuickTimesOfDay.length === 0) {
+    const requiresTimeSelection = painQuickContext === "module";
+    if (!painQuickRegion || !painQuickQuality || (requiresTimeSelection && painQuickTimesOfDay.length === 0)) {
       return;
     }
     const intensity = Math.max(0, Math.min(10, Math.round(painQuickIntensity)));
@@ -6143,16 +6144,18 @@ export default function HomePage() {
     const now = new Date();
     const timestamp = now.toISOString();
     const date = formatDate(now);
-    setPendingPainQuickAdd({
+    const nextEvent: PendingQuickPainAdd = {
       id: now.getTime(),
       date,
       regionId: painQuickRegion,
       quality: painQuickQuality,
       intensity,
       timestamp,
-      timeOfDay: painQuickTimesOfDay,
-      granularity: "dritteltag",
-    });
+      ...(painQuickTimesOfDay.length && requiresTimeSelection
+        ? { timeOfDay: painQuickTimesOfDay, granularity: "dritteltag" as const }
+        : {}),
+    };
+    setPendingPainQuickAdd(nextEvent);
     setPainQuickAddOpen(false);
     resetPainQuickAddState();
     manualDailySelectionRef.current = false;
@@ -6212,9 +6215,8 @@ export default function HomePage() {
     }
     const timeLabel =
       formatPainTimeOfDayList(latestPainShortcutEvent.timeOfDay) ??
-      (latestPainShortcutEvent.granularity === "tag"
-        ? "Ganzer Tag"
-        : formatShortTimeLabel(latestPainShortcutEvent.timestamp));
+      formatShortTimeLabel(latestPainShortcutEvent.timestamp) ??
+      (latestPainShortcutEvent.granularity === "tag" ? "Ganzer Tag" : null);
     const regionLabel = getRegionLabel(latestPainShortcutEvent.regionId);
     return timeLabel
       ? `Schmerz aktualisieren – ${regionLabel} ${timeLabel}`
@@ -6570,7 +6572,8 @@ export default function HomePage() {
         sortedPainShortcutEvents.forEach((event) => {
           const timeLabel =
             formatPainTimeOfDayList(event.timeOfDay) ??
-            (event.granularity === "tag" ? "Ganzer Tag" : formatShortTimeLabel(event.timestamp));
+            formatShortTimeLabel(event.timestamp) ??
+            (event.granularity === "tag" ? "Ganzer Tag" : null);
           const parts = [timeLabel, getRegionLabel(event.regionId), `${event.intensity}/10`];
           if (event.quality) {
             parts.push(event.quality);
@@ -10301,32 +10304,36 @@ export default function HomePage() {
             ) : null}
             {painQuickStep === 3 ? (
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">Zeitraum</p>
-                  <div className="grid grid-cols-3 gap-1.5 text-sm">
-                    {PAIN_TIMES_OF_DAY.map((time) => {
-                      const isSelected = painQuickTimesOfDay.includes(time);
-                      return (
-                        <button
-                          key={time}
-                          type="button"
-                          onClick={() => handlePainQuickTimeToggle(time)}
-                          className={cn(
-                            "rounded-xl border px-3 py-1.5 text-left transition",
-                            isSelected
-                              ? "border-rose-400 bg-white text-rose-800 shadow"
-                              : "border-transparent bg-rose-50 text-rose-600 hover:border-rose-200"
-                          )}
-                        >
-                          {PAIN_TIME_OF_DAY_LABEL[time]}
-                        </button>
-                      );
-                    })}
+                {painQuickContext === "module" ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">Zeitraum</p>
+                    <div className="grid grid-cols-3 gap-1.5 text-sm">
+                      {PAIN_TIMES_OF_DAY.map((time) => {
+                        const isSelected = painQuickTimesOfDay.includes(time);
+                        return (
+                          <button
+                            key={time}
+                            type="button"
+                            onClick={() => handlePainQuickTimeToggle(time)}
+                            className={cn(
+                              "rounded-xl border px-3 py-1.5 text-left transition",
+                              isSelected
+                                ? "border-rose-400 bg-white text-rose-800 shadow"
+                                : "border-transparent bg-rose-50 text-rose-600 hover:border-rose-200",
+                            )}
+                          >
+                            {PAIN_TIME_OF_DAY_LABEL[time]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {!painQuickTimesOfDay.length ? (
+                      <p className="text-[11px] text-rose-400">Bitte mindestens einen Zeitraum auswählen.</p>
+                    ) : null}
                   </div>
-                  {!painQuickTimesOfDay.length ? (
-                    <p className="text-[11px] text-rose-400">Bitte mindestens einen Zeitraum auswählen.</p>
-                  ) : null}
-                </div>
+                ) : (
+                  <p className="text-sm text-rose-600">Zeitpunkt wird automatisch mit Zeitstempel erfasst.</p>
+                )}
                 <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">Stärke</p>
                 <div className="flex items-center gap-3">
                   <div className="flex-1">
@@ -10349,7 +10356,7 @@ export default function HomePage() {
                   type="button"
                   className="w-full"
                   onClick={handlePainQuickConfirm}
-                  disabled={!painQuickRegion || !painQuickQuality || painQuickTimesOfDay.length === 0}
+                  disabled={!painQuickRegion || !painQuickQuality || (painQuickContext === "module" && painQuickTimesOfDay.length === 0)}
                 >
                   speichern
                 </Button>
