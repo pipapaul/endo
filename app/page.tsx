@@ -110,6 +110,36 @@ const SYMPTOM_TERMS: Record<SymptomKey, TermDescriptor> = {
 
 type TrendMetricKey = "pain" | "impact" | "symptomAverage" | "sleepQuality" | "steps";
 
+type AnalyticsSectionKey = "progress" | "tracking" | "correlations";
+
+type AnalyticsSectionOption = {
+  key: AnalyticsSectionKey;
+  label: string;
+  description: string;
+  icon: ComponentType<SVGProps<SVGSVGElement>>;
+};
+
+const ANALYTICS_SECTION_OPTIONS: AnalyticsSectionOption[] = [
+  {
+    key: "progress",
+    label: "Verlauf & Zyklus",
+    description: "Trends und Periodenvergleich",
+    icon: TrendingUp,
+  },
+  {
+    key: "tracking",
+    label: "Dokumentation",
+    description: "Medikation und Check-ins",
+    icon: Activity,
+  },
+  {
+    key: "correlations",
+    label: "Zusammenhänge",
+    description: "Korrelationen entdecken",
+    icon: Flame,
+  },
+];
+
 type PendingCheckInType = "daily" | "weekly" | "monthly";
 
 type PendingCheckIn = {
@@ -3313,6 +3343,7 @@ export default function HomePage() {
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [detailToolbarHeight, setDetailToolbarHeight] = useState<number>(DETAIL_TOOLBAR_FALLBACK_HEIGHT);
   const [activeView, setActiveView] = useState<"home" | "daily" | "weekly" | "monthly" | "analytics">("home");
+  const [analyticsActiveSection, setAnalyticsActiveSection] = useState<AnalyticsSectionKey>("progress");
   const [dailyActiveCategory, setDailyActiveCategory] = useState<DailyCategoryId>("overview");
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [persistWarning, setPersistWarning] = useState<string | null>(null);
@@ -9208,6 +9239,53 @@ export default function HomePage() {
         <TabsContent value="analytics" className="space-y-6">
           <SectionScopeContext.Provider value="analytics">
             <div className="space-y-6">
+              <div className="space-y-3 rounded-2xl border border-rose-100 bg-white/70 p-4 shadow-sm">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-rose-900">Bereich auswählen</p>
+                    <p className="text-xs text-rose-600">
+                      Wechsle zwischen den Auswertungsbereichen, um schneller zu den passenden Charts zu springen.
+                    </p>
+                  </div>
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-rose-500">Auswertungen</span>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {ANALYTICS_SECTION_OPTIONS.map((section) => {
+                    const Icon = section.icon;
+                    const active = analyticsActiveSection === section.key;
+                    return (
+                      <button
+                        key={section.key}
+                        type="button"
+                        onClick={() => setAnalyticsActiveSection(section.key)}
+                        className={cn(
+                          "flex h-full w-full items-start gap-3 rounded-xl border px-4 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400",
+                          active
+                            ? "border-rose-300 bg-white shadow-sm"
+                            : "border-rose-100 bg-white/70 hover:border-rose-200 hover:bg-white"
+                        )}
+                        aria-pressed={active}
+                      >
+                        <span
+                          className={cn(
+                            "mt-0.5 flex h-10 w-10 items-center justify-center rounded-full",
+                            active ? "bg-rose-100 text-rose-600" : "bg-rose-50 text-rose-500"
+                          )}
+                        >
+                          <Icon className="h-5 w-5" aria-hidden />
+                        </span>
+                        <span className="flex flex-col gap-0.5">
+                          <span className="text-sm font-semibold text-rose-900">{section.label}</span>
+                          <span className="text-xs text-rose-600">{section.description}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {analyticsActiveSection === "progress" ? (
+                <div className="space-y-6">
               <Section
                 title="Dein Fortschritt"
                 description="Trends aus deinem täglichen Check-in"
@@ -9389,11 +9467,11 @@ export default function HomePage() {
                         </ComposedChart>
                       </ResponsiveContainer>
                     </div>
-                    <p className="text-xs text-rose-600">
-                      PBAC-Werte und dokumentierte Blutungen werden nach Zyklustag gegenübergestellt; fehlende Tage bleiben leer.
-                    </p>
-                  </div>
-                ) : (
+                  <p className="text-xs text-rose-600">
+                    PBAC-Werte und dokumentierte Blutungen werden nach Zyklustag gegenübergestellt; fehlende Tage bleiben leer.
+                  </p>
+                </div>
+              ) : (
                   <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-4 text-sm text-rose-700 shadow-sm">
                     <p className="font-semibold text-rose-900">Noch keine Periode dokumentiert.</p>
                     <p className="mt-1 text-rose-700">
@@ -9402,6 +9480,11 @@ export default function HomePage() {
                   </div>
                 )}
               </Section>
+              </div>
+              ) : null}
+
+              {analyticsActiveSection === "tracking" ? (
+                <div className="space-y-6">
 
               <Section
                 title="Medikation der letzten 7 Tage"
@@ -9545,6 +9628,10 @@ export default function HomePage() {
                 </div>
               </Section>
 
+              </div>
+              ) : null}
+
+              {analyticsActiveSection === "correlations" ? (
               <Section
                 title="Zusammenhänge entdecken"
                 description="Lokal berechnete Korrelationen – deine Daten verlassen den Browser nicht"
@@ -10230,6 +10317,7 @@ export default function HomePage() {
                   medizinische Beratung.
                 </p>
               </Section>
+              ) : null}
             </div>
           </SectionScopeContext.Provider>
         </TabsContent>
