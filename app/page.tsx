@@ -1454,6 +1454,7 @@ type CycleOverviewPoint = {
   date: string;
   cycleDay: number | null;
   painNRS: number;
+  impactNRS: number | null;
   pbacScore: number | null;
   isBleeding: boolean;
   ovulationPositive: boolean;
@@ -1518,6 +1519,7 @@ type CycleOverviewChartPoint = CycleOverviewPoint & {
   bleedingValue: number;
   dateLabel: string;
   painValue: number;
+  impactValue: number | null;
   isCurrentDay: boolean;
 };
 
@@ -1585,6 +1587,9 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
       const painValue = Number.isFinite(point.painNRS)
         ? Math.max(0, Math.min(10, Number(point.painNRS)))
         : 0;
+      const impactValue = Number.isFinite(point.impactNRS)
+        ? Math.max(0, Math.min(10, Number(point.impactNRS)))
+        : null;
 
       return {
         ...point,
@@ -1592,6 +1597,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
         bleedingValue: bleeding.value,
         dateLabel: formatShortGermanDate(point.date),
         painValue,
+        impactValue,
         isCurrentDay: point.date === todayIso,
         painTimeline: point.painTimeline ?? null,
       };
@@ -1612,6 +1618,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
         <div className="rounded-lg border border-rose-100 bg-white p-3 text-xs text-rose-700 shadow-sm">
           <p className="font-semibold text-rose-900">{payload.dateLabel}</p>
           <p>Schmerz: {payload.painNRS}/10</p>
+          <p>Beeinträchtigung: {payload.impactNRS ?? "–"}/10</p>
           <p>Blutung: {payload.bleedingLabel}</p>
           {payload.pbacScore !== null ? <p>PBAC: {payload.pbacScore}</p> : null}
           {payload.ovulationPositive ? <p>Eisprung markiert</p> : null}
@@ -1690,6 +1697,15 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               strokeWidth={1}
               fillOpacity={1}
               name="Blutung"
+              isAnimationActive={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="impactValue"
+              stroke="#fcd34d"
+              strokeWidth={2}
+              dot={false}
+              name="Beeinträchtigung"
               isAnimationActive={false}
             />
             <Line
@@ -3467,6 +3483,7 @@ export default function HomePage() {
         date: entry.date,
         cycleDay: cycleDay ?? null,
         painNRS: entry.painNRS ?? 0,
+        impactNRS: entry.impactNRS ?? null,
         pbacScore: entry.bleeding?.pbacScore ?? null,
         isBleeding: entry.bleeding?.isBleeding ?? false,
         ovulationPositive: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
@@ -3489,6 +3506,7 @@ export default function HomePage() {
           date: iso,
           cycleDay: null,
           painNRS: 0,
+          impactNRS: null,
           pbacScore: null,
           isBleeding: false,
           ovulationPositive: false,
