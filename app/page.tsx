@@ -542,12 +542,8 @@ const clampScore = (value: number | undefined | null): number | null => {
   return Math.max(0, Math.min(10, Math.round(value)));
 };
 
-const computeMaxPainIntensity = (entry: DailyEntry): number | null => {
+const computeMaxPainIntensity = (entry: DailyEntry, extraPain?: number | null): number | null => {
   const intensities: number[] = [];
-  const impact = clampScore(entry.impactNRS);
-  if (impact !== null) {
-    intensities.push(impact);
-  }
   const generalPain = clampScore(entry.painNRS);
   if (generalPain !== null) {
     intensities.push(generalPain);
@@ -558,6 +554,10 @@ const computeMaxPainIntensity = (entry: DailyEntry): number | null => {
       intensities.push(regionScore);
     }
   });
+  const shortcutPain = clampScore(extraPain);
+  if (shortcutPain !== null) {
+    intensities.push(shortcutPain);
+  }
   if (!intensities.length) {
     return null;
   }
@@ -1455,6 +1455,7 @@ type CycleOverviewPoint = {
   date: string;
   cycleDay: number | null;
   painNRS: number;
+  impactNRS: number | null;
   pbacScore: number | null;
   isBleeding: boolean;
   ovulationPositive: boolean;
@@ -1519,6 +1520,7 @@ type CycleOverviewChartPoint = CycleOverviewPoint & {
   bleedingValue: number;
   dateLabel: string;
   painValue: number;
+  impactValue: number | null;
   isCurrentDay: boolean;
 };
 
@@ -1586,6 +1588,9 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
       const painValue = Number.isFinite(point.painNRS)
         ? Math.max(0, Math.min(10, Number(point.painNRS)))
         : 0;
+      const impactValue = Number.isFinite(point.impactNRS)
+        ? Math.max(0, Math.min(10, Number(point.impactNRS)))
+        : null;
 
       return {
         ...point,
@@ -1593,6 +1598,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
         bleedingValue: bleeding.value,
         dateLabel: formatShortGermanDate(point.date),
         painValue,
+        impactValue,
         isCurrentDay: point.date === todayIso,
         painTimeline: point.painTimeline ?? null,
       };
@@ -1613,6 +1619,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
         <div className="rounded-lg border border-rose-100 bg-white p-3 text-xs text-rose-700 shadow-sm">
           <p className="font-semibold text-rose-900">{payload.dateLabel}</p>
           <p>Schmerz: {payload.painNRS}/10</p>
+          <p>Beeinträchtigung: {payload.impactNRS ?? "–"}/10</p>
           <p>Blutung: {payload.bleedingLabel}</p>
           {payload.pbacScore !== null ? <p>PBAC: {payload.pbacScore}</p> : null}
           {payload.ovulationPositive ? <p>Eisprung markiert</p> : null}
@@ -1691,6 +1698,15 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               strokeWidth={1}
               fillOpacity={1}
               name="Blutung"
+              isAnimationActive={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="impactValue"
+              stroke="#fcd34d"
+              strokeWidth={2}
+              dot={false}
+              name="Beeinträchtigung"
               isAnimationActive={false}
             />
             <Line
@@ -2132,7 +2148,19 @@ function ModuleToggleRow({
   );
 }
 
-function NrsInput({ id, value, onChange }: { id: string; value: number; onChange: (value: number) => void }) {
+function NrsInput({
+  id,
+  value,
+  onChange,
+  minLabel = "0 Kein Schmerz",
+  maxLabel = "10 Stärkster Schmerz",
+}: {
+  id: string;
+  value: number;
+  onChange: (value: number) => void;
+  minLabel?: string;
+  maxLabel?: string;
+}) {
   const rangeDescriptionId = `${id}-nrs-range`;
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
@@ -2147,8 +2175,8 @@ function NrsInput({ id, value, onChange }: { id: string; value: number; onChange
           onValueChange={([next]) => onChange(Math.max(0, Math.min(10, Math.round(next))))}
         />
         <div id={rangeDescriptionId} className="flex justify-between text-xs text-rose-600">
-          <span>0 Kein Schmerz</span>
-          <span>10 Stärkster Schmerz</span>
+          <span>{minLabel}</span>
+          <span>{maxLabel}</span>
         </div>
       </div>
       <SliderValueDisplay value={value} className="sm:self-stretch" />
@@ -2368,12 +2396,6 @@ function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>
     clone.headacheOpt = derivedHeadache;
   } else if (clone.headacheOpt) {
     delete (clone as { headacheOpt?: DailyEntry["headacheOpt"] }).headacheOpt;
-  }
-
-  if (clone.impactNRS === undefined || clone.impactNRS === null) {
-    if (typeof clone.painNRS === "number") {
-      clone.impactNRS = clone.painNRS;
-    }
   }
 
   return applyAutomatedPainSymptoms(normalizeDailyEntry(clone));
@@ -2794,6 +2816,20 @@ export default function HomePage() {
     () => painShortcutEvents.map(normalizeQuickPainEvent),
     [painShortcutEvents]
   );
+  const painShortcutMaxByDate = useMemo(() => {
+    const maxByDate = new Map<string, number>();
+    normalizedPainShortcutEvents.forEach((event) => {
+      const intensity = clampScore(event.intensity);
+      if (intensity === null) {
+        return;
+      }
+      const current = maxByDate.get(event.date) ?? null;
+      if (current === null || intensity > current) {
+        maxByDate.set(event.date, intensity);
+      }
+    });
+    return maxByDate;
+  }, [normalizedPainShortcutEvents]);
   const [rescueWizard, setRescueWizard] = useState<
     | { step: 1 | 2 | 3; name?: string; doseMg?: number; time?: string }
     | null
@@ -2990,6 +3026,8 @@ export default function HomePage() {
     return now.getFullYear() === 2025 && now.getMonth() === 10 && now.getDate() === 10;
   };
   const [showBirthdayGreeting, setShowBirthdayGreeting] = useState(isBirthdayGreetingDay);
+  const [showDailyMigrationDialog, setShowDailyMigrationDialog] = useState(false);
+  const [dailyMigrationConfirmed, setDailyMigrationConfirmed] = useState(false);
   const [pendingCategoryConfirm, setPendingCategoryConfirm] =
     useState<TrackableDailyCategoryId | null>(null);
   const [pendingOverviewConfirm, setPendingOverviewConfirm] =
@@ -3016,20 +3054,73 @@ export default function HomePage() {
   const hasMemoryFallback = storageMetas.some((meta) => meta.driver === "memory");
   const storageUnavailable = storageMetas.some((meta) => meta.driver === "unavailable");
 
+  const runDailyMigration = useCallback(
+    (allowMigration: boolean) => {
+      setDailyEntries((entries) => {
+        let changed = false;
+        const normalized = entries.map((entry) => {
+          const next = normalizeDailyEntry(entry);
+          if (next !== entry) {
+            changed = true;
+          }
+          return next;
+        });
+
+        if (typeof window === "undefined" || !allowMigration) {
+          return changed ? normalized : entries;
+        }
+
+        const migrated = normalized.map((entry) => {
+          const maxPain = computeMaxPainIntensity(entry, painShortcutMaxByDate.get(entry.date) ?? null);
+          const nextPainNrs = maxPain ?? 0;
+          const existingImpact = typeof entry.impactNRS === "number" ? entry.impactNRS : null;
+          const rawImpact =
+            (entry as { impairment?: unknown }).impairment ??
+            (entry as { impact?: unknown }).impact ??
+            (entry as { impactNRS?: unknown }).impactNRS;
+          const recordedImpact = existingImpact ?? clampScore(typeof rawImpact === "number" ? rawImpact : null);
+
+          if (entry.painNRS === nextPainNrs && (recordedImpact === null || recordedImpact === entry.impactNRS)) {
+            return entry;
+          }
+
+          changed = true;
+          return {
+            ...entry,
+            painNRS: nextPainNrs,
+            impactNRS: recordedImpact ?? entry.impactNRS,
+          };
+        });
+
+        return changed ? migrated : entries;
+      });
+    },
+    [painShortcutMaxByDate, setDailyEntries]
+  );
+
   useEffect(() => {
     if (!dailyStorage.ready) return;
-    setDailyEntries((entries) => {
-      let changed = false;
-      const normalized = entries.map((entry) => {
-        const next = normalizeDailyEntry(entry);
-        if (next !== entry) {
-          changed = true;
-        }
-        return next;
-      });
-      return changed ? normalized : entries;
-    });
-  }, [dailyStorage.ready, setDailyEntries]);
+    if (typeof window === "undefined") return;
+
+    const migrationFlag = "endo.daily.migrations.v1.painNrsImpact";
+    const hasMigrated = window.localStorage.getItem(migrationFlag) === "done";
+
+    if (hasMigrated) {
+      setShowDailyMigrationDialog(false);
+      runDailyMigration(false);
+      return;
+    }
+
+    runDailyMigration(false);
+
+    if (!dailyMigrationConfirmed) {
+      setShowDailyMigrationDialog(true);
+      return;
+    }
+
+    runDailyMigration(true);
+    window.localStorage.setItem(migrationFlag, "done");
+  }, [dailyMigrationConfirmed, dailyStorage.ready, runDailyMigration]);
 
   useEffect(() => {
     if (!dailyDraftStorage.ready) return;
@@ -3375,7 +3466,15 @@ export default function HomePage() {
   }, [dailyDraft.date]);
 
   const annotatedDailyEntries = useMemo(() => {
-    const sorted = derivedDailyEntries.slice().sort((a, b) => a.date.localeCompare(b.date));
+    const entriesWithPain = derivedDailyEntries.map((entry) => {
+      const shortcutPain = painShortcutMaxByDate.get(entry.date) ?? null;
+      const maxPain = computeMaxPainIntensity(entry, shortcutPain);
+      if (maxPain === null || entry.painNRS === maxPain) {
+        return entry;
+      }
+      return { ...entry, painNRS: maxPain };
+    });
+    const sorted = entriesWithPain.slice().sort((a, b) => a.date.localeCompare(b.date));
     let cycleState = createInitialCycleComputationState();
     return sorted.map((entry) => {
       const bleeding = entry.bleeding ?? { isBleeding: false };
@@ -3398,7 +3497,7 @@ export default function HomePage() {
         symptomAverage,
       };
     });
-  }, [derivedDailyEntries]);
+  }, [derivedDailyEntries, painShortcutMaxByDate]);
 
   const selectedCycleDay = useMemo(() => {
     if (!dailyDraft.date) return null;
@@ -3440,6 +3539,7 @@ export default function HomePage() {
         date: entry.date,
         cycleDay: cycleDay ?? null,
         painNRS: entry.painNRS ?? 0,
+        impactNRS: entry.impactNRS ?? null,
         pbacScore: entry.bleeding?.pbacScore ?? null,
         isBleeding: entry.bleeding?.isBleeding ?? false,
         ovulationPositive: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
@@ -3462,6 +3562,7 @@ export default function HomePage() {
           date: iso,
           cycleDay: null,
           painNRS: 0,
+          impactNRS: null,
           pbacScore: null,
           isBleeding: false,
           ovulationPositive: false,
@@ -4393,10 +4494,6 @@ export default function HomePage() {
         (region.qualities ?? []).forEach((quality) => qualitiesSet.add(quality));
       });
       syncedDraft.painQuality = Array.from(qualitiesSet) as DailyEntry["painQuality"];
-    }
-
-    if (typeof syncedDraft.impactNRS === "number") {
-      syncedDraft.painNRS = syncedDraft.impactNRS;
     }
 
     const automatedDraft = applyAutomatedPainSymptoms(syncedDraft);
@@ -7088,6 +7185,33 @@ export default function HomePage() {
           </Button>
         </div>
       )}
+      {showDailyMigrationDialog ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-rose-950/40 px-4 py-6">
+          <div
+            className="w-full max-w-sm space-y-4 rounded-2xl bg-white p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Einmalige Datenaktualisierung"
+          >
+            <div className="space-y-2">
+              <h2 className="text-lg font-semibold text-rose-900">Einmalige Datenaktualisierung</h2>
+              <p className="text-sm text-rose-700">
+                Wir gleichen deine gespeicherten Tageswerte einmalig ab. Bitte bestätige die Ausführung mit „OK“.
+              </p>
+            </div>
+            <div className="flex justify-end">
+              <Button
+                onClick={() => {
+                  setDailyMigrationConfirmed(true);
+                  setShowDailyMigrationDialog(false);
+                }}
+              >
+                OK
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <SectionCompletionContext.Provider value={sectionCompletionContextValue}>
         {detailToolbar}
         <main
@@ -7830,6 +7954,8 @@ export default function HomePage() {
                                 impactNRS: Math.max(0, Math.min(10, Math.round(value))),
                               }));
                             }}
+                            minLabel="0 überhaupt nicht"
+                            maxLabel="10 extrem stark"
                           />
                         </div>
                       </TermField>
