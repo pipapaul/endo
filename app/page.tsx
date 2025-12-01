@@ -1454,11 +1454,13 @@ type CycleOverviewPoint = {
   date: string;
   cycleDay: number | null;
   painNRS: number;
+  impactNRS: number;
   pbacScore: number | null;
   isBleeding: boolean;
   ovulationPositive: boolean;
   ovulationPainIntensity: number | null;
   painTimeline: PainShortcutTimelineSegment[] | null;
+  acutePainEvents: QuickPainEvent[];
 };
 
 type CycleOverviewData = {
@@ -1518,6 +1520,7 @@ type CycleOverviewChartPoint = CycleOverviewPoint & {
   bleedingValue: number;
   dateLabel: string;
   painValue: number;
+  impactValue: number;
   isCurrentDay: boolean;
 };
 
@@ -1563,6 +1566,14 @@ const CycleStartDrop = ({ cx, cy }: DotProps) => {
   );
 };
 
+const AcutePainDot = ({ cx, cy }: DotProps) => {
+  if (typeof cx !== "number" || typeof cy !== "number") {
+    return null;
+  }
+
+  return <circle cx={cx} cy={cy} r={3} fill="#f97316" stroke="#ea580c" strokeWidth={1} />;
+};
+
 const OvulationMarkerDot = ({ cx, cy }: DotProps) => {
   if (typeof cx !== "number" || typeof cy !== "number") {
     return null;
@@ -1585,6 +1596,9 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
       const painValue = Number.isFinite(point.painNRS)
         ? Math.max(0, Math.min(10, Number(point.painNRS)))
         : 0;
+      const impactValue = Number.isFinite(point.impactNRS)
+        ? Math.max(0, Math.min(10, Number(point.impactNRS)))
+        : 0;
 
       return {
         ...point,
@@ -1592,11 +1606,25 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
         bleedingValue: bleeding.value,
         dateLabel: formatShortGermanDate(point.date),
         painValue,
+        impactValue,
         isCurrentDay: point.date === todayIso,
         painTimeline: point.painTimeline ?? null,
+        acutePainEvents: point.acutePainEvents ?? [],
       };
     });
   }, [data.points, todayIso]);
+
+  const acutePainScatter = useMemo(
+    () =>
+      chartPoints.flatMap((point) =>
+        point.acutePainEvents.map((event, index) => ({
+          date: point.date,
+          value: Math.max(0, Math.min(10, Math.round(event.intensity))),
+          id: `${point.date}-${event.id}-${index}`,
+        }))
+      ),
+    [chartPoints]
+  );
 
   const renderTooltip = useCallback(
     (props: TooltipProps<number, string>) => {
@@ -1700,6 +1728,22 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               dot={<PainDot />}
               activeDot={{ r: 5, stroke: "#be123c", fill: "#fff", strokeWidth: 2 }}
               name="Schmerz"
+              isAnimationActive={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="impactValue"
+              stroke="#a16207"
+              strokeWidth={2}
+              dot={false}
+              name="Beeinträchtigung"
+              isAnimationActive={false}
+            />
+            <Scatter
+              data={acutePainScatter}
+              dataKey="value"
+              name="Akutschmerz"
+              shape={AcutePainDot}
               isAnimationActive={false}
             />
           </ComposedChart>
@@ -3461,17 +3505,29 @@ export default function HomePage() {
     const startDate = new Date(todayDate);
     startDate.setDate(startDate.getDate() - (CYCLE_OVERVIEW_MAX_DAYS - 1));
 
+    const acutePainEventsByDate = normalizedPainShortcutEvents.reduce(
+      (map, event) => {
+        const events = map.get(event.date) ?? [];
+        events.push(event);
+        map.set(event.date, events);
+        return map;
+      },
+      new Map<string, QuickPainEvent[]>()
+    );
+
     const pointsByDate = new Map<string, CycleOverviewPoint>();
     annotatedDailyEntries.forEach(({ entry, cycleDay }) => {
       pointsByDate.set(entry.date, {
         date: entry.date,
         cycleDay: cycleDay ?? null,
         painNRS: entry.painNRS ?? 0,
+        impactNRS: entry.impactNRS ?? 0,
         pbacScore: entry.bleeding?.pbacScore ?? null,
         isBleeding: entry.bleeding?.isBleeding ?? false,
         ovulationPositive: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
         ovulationPainIntensity: entry.ovulationPain?.intensity ?? null,
         painTimeline: null,
+        acutePainEvents: acutePainEventsByDate.get(entry.date) ?? [],
       });
     });
 
@@ -3489,11 +3545,13 @@ export default function HomePage() {
           date: iso,
           cycleDay: null,
           painNRS: 0,
+          impactNRS: 0,
           pbacScore: null,
           isBleeding: false,
           ovulationPositive: false,
           ovulationPainIntensity: null,
           painTimeline: timeline,
+          acutePainEvents: acutePainEventsByDate.get(iso) ?? [],
         });
       }
     }
@@ -3502,7 +3560,7 @@ export default function HomePage() {
       startDate: formatDate(startDate),
       points,
     };
-  }, [annotatedDailyEntries, painShortcutTimelineByDate, today]);
+  }, [annotatedDailyEntries, painShortcutTimelineByDate, normalizedPainShortcutEvents, today]);
 
   const canGoToNextDay = useMemo(() => dailyDraft.date < today, [dailyDraft.date, today]);
 
