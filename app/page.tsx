@@ -3053,6 +3053,8 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!dailyStorage.ready) return;
+    const migrationFlag = "endo.daily.migrations.v1.painNrsImpact";
+    const hasMigrated = typeof window !== "undefined" && window.localStorage.getItem(migrationFlag) === "done";
     setDailyEntries((entries) => {
       let changed = false;
       const normalized = entries.map((entry) => {
@@ -3062,9 +3064,40 @@ export default function HomePage() {
         }
         return next;
       });
-      return changed ? normalized : entries;
+      if (typeof window === "undefined" || hasMigrated) {
+        return changed ? normalized : entries;
+      }
+
+      const migrated = normalized.map((entry) => {
+        const maxPain = computeMaxPainIntensity(entry, painShortcutMaxByDate.get(entry.date) ?? null);
+        const nextPainNrs = maxPain ?? 0;
+        const existingImpact = typeof entry.impactNRS === "number" ? entry.impactNRS : null;
+        const recordedImpact =
+          existingImpact ??
+          clampScore(
+            (entry as { impairment?: unknown }).impairment ??
+              (entry as { impact?: unknown }).impact ??
+              (entry as { impactNRS?: unknown }).impactNRS
+          );
+
+        if (entry.painNRS === nextPainNrs && (recordedImpact === null || recordedImpact === entry.impactNRS)) {
+          return entry;
+        }
+
+        changed = true;
+        return {
+          ...entry,
+          painNRS: nextPainNrs,
+          impactNRS: recordedImpact ?? entry.impactNRS,
+        };
+      });
+
+      return changed ? migrated : entries;
     });
-  }, [dailyStorage.ready, setDailyEntries]);
+    if (!hasMigrated && typeof window !== "undefined") {
+      window.localStorage.setItem(migrationFlag, "done");
+    }
+  }, [dailyStorage.ready, painShortcutMaxByDate, setDailyEntries]);
 
   useEffect(() => {
     if (!dailyDraftStorage.ready) return;
