@@ -3025,6 +3025,8 @@ export default function HomePage() {
     return now.getFullYear() === 2025 && now.getMonth() === 10 && now.getDate() === 10;
   };
   const [showBirthdayGreeting, setShowBirthdayGreeting] = useState(isBirthdayGreetingDay);
+  const [showDailyMigrationDialog, setShowDailyMigrationDialog] = useState(false);
+  const [dailyMigrationConfirmed, setDailyMigrationConfirmed] = useState(false);
   const [pendingCategoryConfirm, setPendingCategoryConfirm] =
     useState<TrackableDailyCategoryId | null>(null);
   const [pendingOverviewConfirm, setPendingOverviewConfirm] =
@@ -3051,20 +3053,73 @@ export default function HomePage() {
   const hasMemoryFallback = storageMetas.some((meta) => meta.driver === "memory");
   const storageUnavailable = storageMetas.some((meta) => meta.driver === "unavailable");
 
+  const runDailyMigration = useCallback(
+    (allowMigration: boolean) => {
+      setDailyEntries((entries) => {
+        let changed = false;
+        const normalized = entries.map((entry) => {
+          const next = normalizeDailyEntry(entry);
+          if (next !== entry) {
+            changed = true;
+          }
+          return next;
+        });
+
+        if (typeof window === "undefined" || !allowMigration) {
+          return changed ? normalized : entries;
+        }
+
+        const migrated = normalized.map((entry) => {
+          const maxPain = computeMaxPainIntensity(entry, painShortcutMaxByDate.get(entry.date) ?? null);
+          const nextPainNrs = maxPain ?? 0;
+          const existingImpact = typeof entry.impactNRS === "number" ? entry.impactNRS : null;
+          const rawImpact =
+            (entry as { impairment?: unknown }).impairment ??
+            (entry as { impact?: unknown }).impact ??
+            (entry as { impactNRS?: unknown }).impactNRS;
+          const recordedImpact = existingImpact ?? clampScore(typeof rawImpact === "number" ? rawImpact : null);
+
+          if (entry.painNRS === nextPainNrs && (recordedImpact === null || recordedImpact === entry.impactNRS)) {
+            return entry;
+          }
+
+          changed = true;
+          return {
+            ...entry,
+            painNRS: nextPainNrs,
+            impactNRS: recordedImpact ?? entry.impactNRS,
+          };
+        });
+
+        return changed ? migrated : entries;
+      });
+    },
+    [painShortcutMaxByDate, setDailyEntries]
+  );
+
   useEffect(() => {
     if (!dailyStorage.ready) return;
-    setDailyEntries((entries) => {
-      let changed = false;
-      const normalized = entries.map((entry) => {
-        const next = normalizeDailyEntry(entry);
-        if (next !== entry) {
-          changed = true;
-        }
-        return next;
-      });
-      return changed ? normalized : entries;
-    });
-  }, [dailyStorage.ready, setDailyEntries]);
+    if (typeof window === "undefined") return;
+
+    const migrationFlag = "endo.daily.migrations.v1.painNrsImpact";
+    const hasMigrated = window.localStorage.getItem(migrationFlag) === "done";
+
+    if (hasMigrated) {
+      setShowDailyMigrationDialog(false);
+      runDailyMigration(false);
+      return;
+    }
+
+    runDailyMigration(false);
+
+    if (!dailyMigrationConfirmed) {
+      setShowDailyMigrationDialog(true);
+      return;
+    }
+
+    runDailyMigration(true);
+    window.localStorage.setItem(migrationFlag, "done");
+  }, [dailyMigrationConfirmed, dailyStorage.ready, runDailyMigration]);
 
   useEffect(() => {
     if (!dailyDraftStorage.ready) return;
@@ -7131,6 +7186,33 @@ export default function HomePage() {
           </Button>
         </div>
       )}
+      {showDailyMigrationDialog ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-rose-950/40 px-4 py-6">
+          <div
+            className="w-full max-w-sm space-y-4 rounded-2xl bg-white p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Einmalige Datenaktualisierung"
+          >
+            <div className="space-y-2">
+              <h2 className="text-lg font-semibold text-rose-900">Einmalige Datenaktualisierung</h2>
+              <p className="text-sm text-rose-700">
+                Wir gleichen deine gespeicherten Tageswerte einmalig ab. Bitte bestätige die Ausführung mit „OK“.
+              </p>
+            </div>
+            <div className="flex justify-end">
+              <Button
+                onClick={() => {
+                  setDailyMigrationConfirmed(true);
+                  setShowDailyMigrationDialog(false);
+                }}
+              >
+                OK
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <SectionCompletionContext.Provider value={sectionCompletionContextValue}>
         {detailToolbar}
         <main
