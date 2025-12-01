@@ -541,12 +541,8 @@ const clampScore = (value: number | undefined | null): number | null => {
   return Math.max(0, Math.min(10, Math.round(value)));
 };
 
-const computeMaxPainIntensity = (entry: DailyEntry): number | null => {
+const computeMaxPainIntensity = (entry: DailyEntry, extraPain?: number | null): number | null => {
   const intensities: number[] = [];
-  const impact = clampScore(entry.impactNRS);
-  if (impact !== null) {
-    intensities.push(impact);
-  }
   const generalPain = clampScore(entry.painNRS);
   if (generalPain !== null) {
     intensities.push(generalPain);
@@ -557,6 +553,10 @@ const computeMaxPainIntensity = (entry: DailyEntry): number | null => {
       intensities.push(regionScore);
     }
   });
+  const shortcutPain = clampScore(extraPain);
+  if (shortcutPain !== null) {
+    intensities.push(shortcutPain);
+  }
   if (!intensities.length) {
     return null;
   }
@@ -2369,12 +2369,6 @@ function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>
     delete (clone as { headacheOpt?: DailyEntry["headacheOpt"] }).headacheOpt;
   }
 
-  if (clone.impactNRS === undefined || clone.impactNRS === null) {
-    if (typeof clone.painNRS === "number") {
-      clone.impactNRS = clone.painNRS;
-    }
-  }
-
   return applyAutomatedPainSymptoms(normalizeDailyEntry(clone));
 }
 
@@ -2793,6 +2787,20 @@ export default function HomePage() {
     () => painShortcutEvents.map(normalizeQuickPainEvent),
     [painShortcutEvents]
   );
+  const painShortcutMaxByDate = useMemo(() => {
+    const maxByDate = new Map<string, number>();
+    normalizedPainShortcutEvents.forEach((event) => {
+      const intensity = clampScore(event.intensity);
+      if (intensity === null) {
+        return;
+      }
+      const current = maxByDate.get(event.date) ?? null;
+      if (current === null || intensity > current) {
+        maxByDate.set(event.date, intensity);
+      }
+    });
+    return maxByDate;
+  }, [normalizedPainShortcutEvents]);
   const [rescueWizard, setRescueWizard] = useState<
     | { step: 1 | 2 | 3; name?: string; doseMg?: number; time?: string }
     | null
@@ -3374,7 +3382,15 @@ export default function HomePage() {
   }, [dailyDraft.date]);
 
   const annotatedDailyEntries = useMemo(() => {
-    const sorted = derivedDailyEntries.slice().sort((a, b) => a.date.localeCompare(b.date));
+    const entriesWithPain = derivedDailyEntries.map((entry) => {
+      const shortcutPain = painShortcutMaxByDate.get(entry.date) ?? null;
+      const maxPain = computeMaxPainIntensity(entry, shortcutPain);
+      if (maxPain === null || entry.painNRS === maxPain) {
+        return entry;
+      }
+      return { ...entry, painNRS: maxPain };
+    });
+    const sorted = entriesWithPain.slice().sort((a, b) => a.date.localeCompare(b.date));
     let cycleState = createInitialCycleComputationState();
     return sorted.map((entry) => {
       const bleeding = entry.bleeding ?? { isBleeding: false };
@@ -3397,7 +3413,7 @@ export default function HomePage() {
         symptomAverage,
       };
     });
-  }, [derivedDailyEntries]);
+  }, [derivedDailyEntries, painShortcutMaxByDate]);
 
   const selectedCycleDay = useMemo(() => {
     if (!dailyDraft.date) return null;
@@ -4392,10 +4408,6 @@ export default function HomePage() {
         (region.qualities ?? []).forEach((quality) => qualitiesSet.add(quality));
       });
       syncedDraft.painQuality = Array.from(qualitiesSet) as DailyEntry["painQuality"];
-    }
-
-    if (typeof syncedDraft.impactNRS === "number") {
-      syncedDraft.painNRS = syncedDraft.impactNRS;
     }
 
     const automatedDraft = applyAutomatedPainSymptoms(syncedDraft);
