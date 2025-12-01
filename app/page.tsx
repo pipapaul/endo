@@ -1566,9 +1566,11 @@ const CycleStartDrop = ({ cx, cy }: DotProps) => {
   );
 };
 
-const AcutePainDot = ({ cx, cy }: DotProps) => {
+const AcutePainDot = (props: unknown) => {
+  const { cx, cy } = (props ?? {}) as DotProps;
+
   if (typeof cx !== "number" || typeof cy !== "number") {
-    return null;
+    return <></>;
   }
 
   return <circle cx={cx} cy={cy} r={3} fill="#f97316" stroke="#ea580c" strokeWidth={1} />;
