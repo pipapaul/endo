@@ -2369,12 +2369,6 @@ function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>
     delete (clone as { headacheOpt?: DailyEntry["headacheOpt"] }).headacheOpt;
   }
 
-  if (clone.impactNRS === undefined || clone.impactNRS === null) {
-    if (typeof clone.painNRS === "number") {
-      clone.impactNRS = clone.painNRS;
-    }
-  }
-
   return applyAutomatedPainSymptoms(normalizeDailyEntry(clone));
 }
 
@@ -4392,10 +4386,6 @@ export default function HomePage() {
         (region.qualities ?? []).forEach((quality) => qualitiesSet.add(quality));
       });
       syncedDraft.painQuality = Array.from(qualitiesSet) as DailyEntry["painQuality"];
-    }
-
-    if (typeof syncedDraft.impactNRS === "number") {
-      syncedDraft.painNRS = syncedDraft.impactNRS;
     }
 
     const automatedDraft = applyAutomatedPainSymptoms(syncedDraft);
