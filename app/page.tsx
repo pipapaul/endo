@@ -5481,6 +5481,8 @@ export default function HomePage() {
       >();
 
       entries.forEach(({ entry, cycleDay }) => {
+        if (cycleDay == null) return;
+
         const pbacValue =
           typeof entry.bleeding?.pbacScore === "number"
             ? entry.bleeding.pbacScore
