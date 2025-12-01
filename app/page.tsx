@@ -108,7 +108,21 @@ const SYMPTOM_TERMS: Record<SymptomKey, TermDescriptor> = {
   bloating: TERMS.bloating,
 };
 
-type TrendMetricKey = "pain" | "impact" | "symptomAverage" | "sleepQuality" | "steps";
+type TrendMetricKey =
+  | "pain"
+  | "impact"
+  | "symptomAverage"
+  | "sleepQuality"
+  | "steps"
+  | "acutePain";
+
+type TrendMetricOption = {
+  key: TrendMetricKey;
+  label: string;
+  color: string;
+  type: "line" | "area" | "scatter";
+  yAxisId: "left" | "right";
+};
 
 type PendingCheckInType = "daily" | "weekly" | "monthly";
 
@@ -2587,6 +2601,7 @@ function AnalyticsTrendTooltip({ active, payload }: TooltipProps<number, string>
     date: string;
     cycleDay: number | null;
     pain: number | null;
+    acutePain: number | null;
     impact: number | null;
     symptomAverage: number | null;
     sleepQuality: number | null;
@@ -2597,6 +2612,9 @@ function AnalyticsTrendTooltip({ active, payload }: TooltipProps<number, string>
       <p className="font-semibold text-rose-800">{formatShortGermanDate(data.date)}</p>
       <p>Zyklustag: {data.cycleDay ?? "–"}</p>
       <p>Schmerz (NRS): {typeof data.pain === "number" ? data.pain.toFixed(1) : "–"}</p>
+      <p>
+        Akut-Schmerz: {typeof data.acutePain === "number" ? data.acutePain.toFixed(1) : "–"}
+      </p>
       <p>Beeinträchtigung: {typeof data.impact === "number" ? data.impact.toFixed(1) : "–"}</p>
       <p>Symptom-Schnitt: {typeof data.symptomAverage === "number" ? data.symptomAverage.toFixed(1) : "–"}</p>
       <p>{TERMS.sleep_quality.label}: {typeof data.sleepQuality === "number" ? data.sleepQuality.toFixed(1) : "–"}</p>
@@ -2964,6 +2982,7 @@ export default function HomePage() {
   const [analyticsRangeDays, setAnalyticsRangeDays] = useState<AnalyticsRangeOption>(30);
   const [visibleTrendMetrics, setVisibleTrendMetrics] = useState<TrendMetricKey[]>([
     "pain",
+    "acutePain",
     "impact",
     "symptomAverage",
     "sleepQuality",
@@ -4920,6 +4939,7 @@ export default function HomePage() {
     cycleDay: number | null;
     weekday: string;
     pain: number | null;
+    acutePain: number | null;
     impact: number | null;
     symptomAverage: number | null;
     sleepQuality: number | null;
@@ -4937,12 +4957,13 @@ export default function HomePage() {
       cycleDay: cycleDay ?? null,
       weekday,
       pain: typeof entry.painNRS === "number" ? entry.painNRS : null,
+      acutePain: painShortcutMaxByDate.get(entry.date) ?? null,
       impact: typeof entry.impactNRS === "number" ? entry.impactNRS : null,
       symptomAverage,
       sleepQuality: typeof entry.sleep?.quality === "number" ? entry.sleep.quality : null,
       steps: typeof entry.activity?.steps === "number" ? entry.activity.steps : null,
     }));
-  }, [annotatedDailyEntries, analyticsRangeStartIso]);
+  }, [annotatedDailyEntries, analyticsRangeStartIso, painShortcutMaxByDate]);
 
   const analyticsTrendMaxSteps = useMemo(() => {
     if (!analyticsTrendData.length) {
@@ -4961,43 +4982,50 @@ export default function HomePage() {
     return Math.max(rounded, 5000);
   }, [analyticsTrendData]);
 
-  const trendMetricOptions = useMemo(
+  const trendMetricOptions = useMemo<TrendMetricOption[]>(
     () =>
       [
         {
-          key: "pain" as const,
+          key: "pain",
           label: TERMS.nrs.label,
           color: "#f43f5e",
-          type: "line" as const,
-          yAxisId: "left" as const,
+          type: "line",
+          yAxisId: "left",
         },
         {
-          key: "impact" as const,
+          key: "acutePain",
+          label: "Akut-Schmerz",
+          color: "#b91c1c",
+          type: "scatter",
+          yAxisId: "left",
+        },
+        {
+          key: "impact",
           label: "Beeinträchtigung",
-          color: "#f97316",
-          type: "line" as const,
-          yAxisId: "left" as const,
+          color: "#b45309",
+          type: "line",
+          yAxisId: "left",
         },
         {
-          key: "symptomAverage" as const,
+          key: "symptomAverage",
           label: "Symptom-Schnitt",
           color: "#8b5cf6",
-          type: "line" as const,
-          yAxisId: "left" as const,
+          type: "line",
+          yAxisId: "left",
         },
         {
-          key: "sleepQuality" as const,
+          key: "sleepQuality",
           label: TERMS.sleep_quality.label,
           color: "#10b981",
-          type: "line" as const,
-          yAxisId: "left" as const,
+          type: "line",
+          yAxisId: "left",
         },
         {
-          key: "steps" as const,
+          key: "steps",
           label: "Schritte",
           color: "#0ea5e9",
-          type: "area" as const,
-          yAxisId: "right" as const,
+          type: "area",
+          yAxisId: "right",
         },
       ],
     []
@@ -9044,6 +9072,22 @@ export default function HomePage() {
                                   strokeWidth={2}
                                   connectNulls
                                   isAnimationActive={false}
+                                />
+                              );
+                            }
+                            if (metric.type === "scatter") {
+                              return (
+                                <Scatter
+                                  key={metric.key}
+                                  dataKey={metric.key}
+                                  yAxisId={metric.yAxisId}
+                                  name={metric.label}
+                                  fill={metric.color}
+                                  isAnimationActive={false}
+                                  legendType="circle"
+                                  shape={({ cx, cy }: { cx?: number; cy?: number }) => (
+                                    <circle cx={cx} cy={cy} r={3} fill={metric.color} />
+                                  )}
                                 />
                               );
                             }
