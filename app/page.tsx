@@ -1502,10 +1502,13 @@ const describeBleedingLevel = (point: CycleOverviewPoint) => {
     return { label: "keine Blutung", value: 0 };
   }
   const score = point.pbacScore ?? 0;
-  if (score >= 100) {
-    return { label: "starke Blutung", value: 9 };
+  if (score >= 41) {
+    return { label: "sehr starke Blutung", value: 9 };
   }
-  if (score >= 50) {
+  if (score >= 26) {
+    return { label: "starke Blutung", value: 8 };
+  }
+  if (score >= 10) {
     return { label: "mittlere Blutung", value: 7 };
   }
   if (score > 0) {
