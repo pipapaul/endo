@@ -1469,6 +1469,18 @@ type CycleOverviewData = {
 
 const CYCLE_OVERVIEW_MAX_DAYS = 30;
 
+type MenstruationComparisonPoint = {
+  cycleDay: number;
+  currentPBAC: number | null;
+  previousPBAC: number | null;
+  currentDate?: string;
+  previousDate?: string;
+  currentPain?: number | null;
+  previousPain?: number | null;
+  currentImpact?: number | null;
+  previousImpact?: number | null;
+};
+
 const formatShortGermanDate = (iso: string) => {
   const parsed = parseIsoDate(iso);
   if (!parsed) return iso;
@@ -1725,6 +1737,47 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
         </ResponsiveContainer>
       </div>
     </section>
+  );
+};
+
+const MenstruationComparisonTooltip = ({ active, payload }: TooltipProps<number, string>) => {
+  if (!active || !payload?.length) {
+    return null;
+  }
+
+  const data = payload[0].payload as MenstruationComparisonPoint;
+
+  const formatCycleLine = (
+    label: string,
+    pbac: number | null,
+    date?: string,
+    pain?: number | null,
+    impact?: number | null
+  ) => {
+    if (pbac === null) return null;
+    return (
+      <div className="space-y-0.5">
+        <p className="font-semibold text-rose-900">{label}</p>
+        <p>PBAC: {pbac}</p>
+        {typeof pain === "number" ? <p>Schmerz: {pain}/10</p> : null}
+        {typeof impact === "number" ? <p>Beeinträchtigung: {impact}/10</p> : null}
+        {date ? <p>Datum: {formatShortGermanDate(date)}</p> : null}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-2 rounded-lg border border-rose-100 bg-white p-3 text-xs text-rose-700 shadow-sm">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-rose-400">Zyklustag {data.cycleDay}</p>
+      {formatCycleLine("Aktueller Zyklus", data.currentPBAC, data.currentDate, data.currentPain, data.currentImpact)}
+      {formatCycleLine(
+        "Letzter Zyklus",
+        data.previousPBAC,
+        data.previousDate,
+        data.previousPain,
+        data.previousImpact
+      )}
+    </div>
   );
 };
 
@@ -5399,6 +5452,100 @@ export default function HomePage() {
       .filter(({ cycleDay, entry }) => cycleDay === 1 && entry.date <= today)
       .map(({ entry }) => entry.date);
   }, [annotatedDailyEntries, today]);
+
+  const menstruationComparison = useMemo(() => {
+    if (!cycleStartDates.length) {
+      return null;
+    }
+
+    const starts = [...cycleStartDates].sort();
+    const currentStart = starts[starts.length - 1];
+    const previousStart = starts.length > 1 ? starts[starts.length - 2] : null;
+
+    const buildSeries = (start: string, nextStart?: string) => {
+      const entries = annotatedDailyEntries.filter(({ entry, cycleDay }) => {
+        if (!cycleDay) return false;
+        if (entry.date < start) return false;
+        if (nextStart && entry.date >= nextStart) return false;
+        return true;
+      });
+
+      const byDay = new Map<
+        number,
+        {
+          pbac: number | null;
+          pain: number | null;
+          impact: number | null;
+          date: string;
+        }
+      >();
+
+      entries.forEach(({ entry, cycleDay }) => {
+        if (cycleDay == null) return;
+
+        const pbacValue =
+          typeof entry.bleeding?.pbacScore === "number"
+            ? entry.bleeding.pbacScore
+            : entry.bleeding?.isBleeding
+            ? 5
+            : null;
+
+        const existing = byDay.get(cycleDay);
+        if (!existing || (pbacValue ?? -1) > (existing.pbac ?? -1)) {
+          byDay.set(cycleDay, {
+            pbac: pbacValue,
+            pain: typeof entry.painNRS === "number" ? entry.painNRS : null,
+            impact: typeof entry.impactNRS === "number" ? entry.impactNRS : null,
+            date: entry.date,
+          });
+        }
+      });
+
+      return Array.from(byDay.entries())
+        .map(([cycleDay, values]) => ({ cycleDay, ...values }))
+        .sort((a, b) => a.cycleDay - b.cycleDay);
+    };
+
+    const currentSeries = buildSeries(currentStart);
+    const previousSeries = previousStart ? buildSeries(previousStart, currentStart) : [];
+
+    const currentMap = new Map(currentSeries.map((item) => [item.cycleDay, item]));
+    const previousMap = new Map(previousSeries.map((item) => [item.cycleDay, item]));
+
+    const days = new Set<number>();
+    currentSeries.forEach((item) => days.add(item.cycleDay));
+    previousSeries.forEach((item) => days.add(item.cycleDay));
+
+    const data: MenstruationComparisonPoint[] = Array.from(days)
+      .sort((a, b) => a - b)
+      .map((day) => {
+        const current = currentMap.get(day);
+        const previous = previousMap.get(day);
+
+        return {
+          cycleDay: day,
+          currentPBAC: current ? current.pbac ?? null : null,
+          previousPBAC: previous ? previous.pbac ?? null : null,
+          currentDate: current?.date,
+          previousDate: previous?.date,
+          currentPain: current?.pain ?? null,
+          previousPain: previous?.pain ?? null,
+          currentImpact: current?.impact ?? null,
+          previousImpact: previous?.impact ?? null,
+        };
+      });
+
+    const hasValues = data.some((item) => item.currentPBAC !== null || item.previousPBAC !== null);
+    if (!hasValues) {
+      return null;
+    }
+
+    return {
+      data,
+      currentStartDate: currentStart,
+      previousStartDate: previousStart,
+    };
+  }, [annotatedDailyEntries, cycleStartDates]);
 
   const completedCycleLengths = useMemo(() => {
     const lengths: number[] = [];
@@ -9174,6 +9321,86 @@ export default function HomePage() {
                     )}
                   </div>
                 </div>
+              </Section>
+
+              <Section
+                title="Menstruationsvergleich"
+                description="Aktuelle Periode im Vergleich zum letzten Zyklus (PBAC & Intensität)."
+                completionEnabled={false}
+              >
+                {menstruationComparison ? (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-rose-600">
+                      <span>
+                        Aktueller Zyklus ab {formatShortGermanDate(menstruationComparison.currentStartDate)}
+                      </span>
+                      {menstruationComparison.previousStartDate ? (
+                        <span className="flex items-center gap-1 rounded-full bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700">
+                          <PeriodIcon className="h-3.5 w-3.5" />
+                          Vergleich ab {formatShortGermanDate(menstruationComparison.previousStartDate)}
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700">
+                          <PeriodIcon className="h-3.5 w-3.5" />
+                          Noch kein vorheriger Zyklus dokumentiert
+                        </span>
+                      )}
+                    </div>
+                    <div className="h-64 w-full overflow-hidden rounded-2xl border border-rose-100 bg-white/80 p-3 shadow-sm">
+                      <ResponsiveContainer>
+                        <ComposedChart
+                          data={menstruationComparison.data}
+                          margin={{ top: 16, right: 24, left: 0, bottom: 0 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
+                          <XAxis
+                            dataKey="cycleDay"
+                            stroke="#fb7185"
+                            tick={{ fontSize: 12 }}
+                            label={{ value: "Zyklustag", position: "insideBottom", offset: -6, fill: "#fb7185" }}
+                          />
+                          <YAxis stroke="#fb7185" tick={{ fontSize: 12 }} allowDecimals={false} />
+                          <Tooltip content={<MenstruationComparisonTooltip />} />
+                          <Legend wrapperStyle={{ fontSize: 12 }} />
+                          <Area
+                            type="monotone"
+                            dataKey="currentPBAC"
+                            name="Aktueller Zyklus"
+                            stroke="#fb7185"
+                            fill="#fb7185"
+                            fillOpacity={0.16}
+                            strokeWidth={2}
+                            connectNulls
+                            isAnimationActive={false}
+                          />
+                          {menstruationComparison.previousStartDate ? (
+                            <Area
+                              type="monotone"
+                              dataKey="previousPBAC"
+                              name="Letzter Zyklus"
+                              stroke="#6366f1"
+                              fill="#6366f1"
+                              fillOpacity={0.16}
+                              strokeWidth={2}
+                              connectNulls
+                              isAnimationActive={false}
+                            />
+                          ) : null}
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <p className="text-xs text-rose-600">
+                      PBAC-Werte und dokumentierte Blutungen werden nach Zyklustag gegenübergestellt; fehlende Tage bleiben leer.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-4 text-sm text-rose-700 shadow-sm">
+                    <p className="font-semibold text-rose-900">Noch keine Periode dokumentiert.</p>
+                    <p className="mt-1 text-rose-700">
+                      Trage den Start deiner Periode ein, damit aktuelle und vergangene Zyklen miteinander verglichen werden können.
+                    </p>
+                  </div>
+                )}
               </Section>
 
               <Section
