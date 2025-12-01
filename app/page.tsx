@@ -2131,7 +2131,19 @@ function ModuleToggleRow({
   );
 }
 
-function NrsInput({ id, value, onChange }: { id: string; value: number; onChange: (value: number) => void }) {
+function NrsInput({
+  id,
+  value,
+  onChange,
+  minLabel = "0 Kein Schmerz",
+  maxLabel = "10 Stärkster Schmerz",
+}: {
+  id: string;
+  value: number;
+  onChange: (value: number) => void;
+  minLabel?: string;
+  maxLabel?: string;
+}) {
   const rangeDescriptionId = `${id}-nrs-range`;
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
@@ -2146,8 +2158,8 @@ function NrsInput({ id, value, onChange }: { id: string; value: number; onChange
           onValueChange={([next]) => onChange(Math.max(0, Math.min(10, Math.round(next))))}
         />
         <div id={rangeDescriptionId} className="flex justify-between text-xs text-rose-600">
-          <span>0 Kein Schmerz</span>
-          <span>10 Stärkster Schmerz</span>
+          <span>{minLabel}</span>
+          <span>{maxLabel}</span>
         </div>
       </div>
       <SliderValueDisplay value={value} className="sm:self-stretch" />
@@ -7843,6 +7855,8 @@ export default function HomePage() {
                                 impactNRS: Math.max(0, Math.min(10, Math.round(value))),
                               }));
                             }}
+                            minLabel="0 überhaupt nicht"
+                            maxLabel="10 extrem stark"
                           />
                         </div>
                       </TermField>
