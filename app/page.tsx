@@ -3072,13 +3072,11 @@ export default function HomePage() {
         const maxPain = computeMaxPainIntensity(entry, painShortcutMaxByDate.get(entry.date) ?? null);
         const nextPainNrs = maxPain ?? 0;
         const existingImpact = typeof entry.impactNRS === "number" ? entry.impactNRS : null;
-        const recordedImpact =
-          existingImpact ??
-          clampScore(
-            (entry as { impairment?: unknown }).impairment ??
-              (entry as { impact?: unknown }).impact ??
-              (entry as { impactNRS?: unknown }).impactNRS
-          );
+        const rawImpact =
+          (entry as { impairment?: unknown }).impairment ??
+          (entry as { impact?: unknown }).impact ??
+          (entry as { impactNRS?: unknown }).impactNRS;
+        const recordedImpact = existingImpact ?? clampScore(typeof rawImpact === "number" ? rawImpact : null);
 
         if (entry.painNRS === nextPainNrs && (recordedImpact === null || recordedImpact === entry.impactNRS)) {
           return entry;
