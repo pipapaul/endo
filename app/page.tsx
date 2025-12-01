@@ -1702,10 +1702,9 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
             <Line
               type="monotone"
               dataKey="impactValue"
-              stroke="#b45309"
+              stroke="#fcd34d"
               strokeWidth={2}
               dot={false}
-              connectNulls
               name="Beeinträchtigung"
               isAnimationActive={false}
             />
