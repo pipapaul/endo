@@ -4443,16 +4443,18 @@ export default function HomePage() {
     goToHome?: boolean;
     pbacCountsOverride?: PbacCounts;
     categoryCompletionOverride?: Partial<Record<Exclude<DailyCategoryId, "overview">, boolean>>;
+    forceBleeding?: boolean;
   }): boolean => {
     const resolvedPbacCounts = normalizePbacCounts(options?.pbacCountsOverride ?? pbacCounts);
-    const resolvedPbacScore = dailyDraft.bleeding.isBleeding
+    const resolvedIsBleeding = options?.forceBleeding ?? dailyDraft.bleeding.isBleeding;
+    const resolvedPbacScore = resolvedIsBleeding
       ? computePbacScore(resolvedPbacCounts, pbacFlooding)
       : pbacScore;
 
     const payload: DailyEntry = {
       ...dailyDraft,
       painQuality: dailyDraft.painQuality,
-      bleeding: dailyDraft.bleeding.isBleeding
+      bleeding: resolvedIsBleeding
         ? {
             isBleeding: true,
             pbacScore: resolvedPbacScore,
@@ -6105,6 +6107,7 @@ export default function HomePage() {
         goToHome: false,
         pbacCountsOverride: nextPbacCounts ?? undefined,
         categoryCompletionOverride: { bleeding: true },
+        forceBleeding: true,
       });
       if (bleedingQuickAddNoticeTimeoutRef.current) {
         window.clearTimeout(bleedingQuickAddNoticeTimeoutRef.current);
