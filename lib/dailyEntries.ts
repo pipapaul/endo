@@ -1,5 +1,64 @@
 import { arePbacCountsEqual, normalizePbacCounts } from "./pbac";
-import type { DailyEntry } from "./types";
+import type { DailyEntry, PainQuality, PainTimeOfDay, QuickPainEvent } from "./types";
+
+const PAIN_QUALITY_SET = new Set<PainQuality>([
+  "krampfend",
+  "stechend",
+  "brennend",
+  "dumpf",
+  "ziehend",
+  "anders",
+  "Migräne",
+  "Migräne mit Aura",
+]);
+
+const PAIN_TIME_OF_DAY_SET = new Set<PainTimeOfDay>(["morgens", "mittags", "abends"]);
+
+const clampScore = (value: number | undefined | null): number | null => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+  return Math.max(0, Math.min(10, Math.round(value)));
+};
+
+export function normalizeQuickPainEvent(event: QuickPainEvent): QuickPainEvent {
+  const timeOfDay = Array.isArray(event.timeOfDay)
+    ? (event.timeOfDay.filter((time): time is PainTimeOfDay => PAIN_TIME_OF_DAY_SET.has(time)) as PainTimeOfDay[])
+    : [];
+  const hasTimeOfDay = timeOfDay.length > 0;
+  const granularity = hasTimeOfDay ? "dritteltag" : event.granularity ?? "tag";
+  const quality = PAIN_QUALITY_SET.has(event.quality as PainQuality)
+    ? (event.quality as PainQuality)
+    : null;
+  const intensity = clampScore(event.intensity) ?? 0;
+
+  return {
+    ...event,
+    intensity,
+    quality,
+    timeOfDay,
+    granularity,
+  };
+}
+
+function normalizeQuickPainEvents(events: unknown): QuickPainEvent[] {
+  if (!Array.isArray(events)) {
+    return [];
+  }
+
+  const normalized = events
+    .map((event) => {
+      if (!event || typeof event !== "object") return null;
+      const casted = event as QuickPainEvent;
+      if (typeof casted.date !== "string" || typeof casted.timestamp !== "string" || typeof casted.id !== "number") {
+        return null;
+      }
+      return normalizeQuickPainEvent(casted);
+    })
+    .filter((event): event is QuickPainEvent => Boolean(event));
+
+  return normalized.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+}
 
 export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
   const bleedingSource = (entry as Partial<DailyEntry>).bleeding;
@@ -19,6 +78,7 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
   const needsPainMapIdsNormalization = !Array.isArray(entry.painMapRegionIds);
   const needsRescueMedsNormalization = !Array.isArray(entry.rescueMeds);
   const needsSymptomsNormalization = entry.symptoms === undefined;
+  const needsQuickPainEventsNormalization = !Array.isArray(entry.quickPainEvents);
   const normalizedPbacCounts = normalizePbacCounts(entry.pbacCounts);
   const needsPbacCountsNormalization =
     !entry.pbacCounts || !arePbacCountsEqual(entry.pbacCounts, normalizedPbacCounts);
@@ -31,6 +91,7 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
     !needsPainMapIdsNormalization &&
     !needsRescueMedsNormalization &&
     !needsSymptomsNormalization &&
+    !needsQuickPainEventsNormalization &&
     !needsPbacCountsNormalization
   ) {
     return entry;
@@ -81,6 +142,7 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
       ? legacyMeds.map((med) => ({ name: med.name, doseMg: med.doseMg, time: med.times?.[0] }))
       : [];
   const symptoms = entry.symptoms ?? {};
+  const quickPainEvents = normalizeQuickPainEvents(entry.quickPainEvents);
 
   return {
     ...entry,
@@ -88,6 +150,7 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
     painRegions,
     painQuality,
     painMapRegionIds,
+    quickPainEvents,
     rescueMeds,
     symptoms,
     pbacCounts: normalizedPbacCounts,
