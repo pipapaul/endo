@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { normalizeDailyEntry } from "./dailyEntries";
+import { createEmptyPbacCounts } from "./pbac";
 import type { DailyEntry } from "./types";
 
 describe("normalizeDailyEntry", () => {
@@ -30,6 +31,7 @@ describe("normalizeDailyEntry", () => {
       painMapRegionIds: [],
       painRegions: [],
       bleeding: { isBleeding: true, pbacScore: 12 },
+      pbacCounts: createEmptyPbacCounts(),
       symptoms: {},
       rescueMeds: [],
     };
@@ -37,5 +39,35 @@ describe("normalizeDailyEntry", () => {
     const normalized = normalizeDailyEntry(entry);
 
     expect(normalized).toBe(entry);
+  });
+
+  it("adds empty pbac counts when missing", () => {
+    const entry = normalizeDailyEntry({
+      date: "2024-03-01",
+      painNRS: 0,
+      painQuality: [],
+      painMapRegionIds: [],
+      bleeding: { isBleeding: false },
+    } as DailyEntry);
+
+    expect(entry.pbacCounts).toEqual(createEmptyPbacCounts());
+  });
+
+  it("normalizes provided pbac counts", () => {
+    const entry = normalizeDailyEntry({
+      date: "2024-03-02",
+      painNRS: 0,
+      painQuality: [],
+      painMapRegionIds: [],
+      bleeding: { isBleeding: true, pbacScore: 5 },
+      pbacCounts: { pad_light: 2, tampon_medium: 1, clot_large: 1 } as DailyEntry["pbacCounts"],
+    } as DailyEntry);
+
+    expect(entry.pbacCounts).toEqual({
+      ...createEmptyPbacCounts(),
+      pad_light: 2,
+      tampon_medium: 1,
+      clot_large: 1,
+    });
   });
 });
