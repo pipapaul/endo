@@ -109,6 +109,13 @@ function normalizeStep(progress: WeeklyDraft["progress"]): Step {
   return 1;
 }
 
+function clampScore(value: number | undefined): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+  return Math.max(0, Math.min(10, Math.round(value)));
+}
+
 type PromptListKey = "helped" | "worsened" | "nextWeekTry";
 
 const REVIEW_SECTIONS: Array<{ key: PromptListKey; title: string }> = [
@@ -130,10 +137,35 @@ function mapBleedingSeverity(pbacScore?: number): "light" | "medium" | "strong" 
   return "light";
 }
 
+function deriveMaxPain(entry: DailyEntry): number | undefined {
+  const values: number[] = [];
+
+  const overallPain = clampScore(entry.painNRS);
+  if (overallPain !== null) {
+    values.push(overallPain);
+  }
+
+  (entry.painRegions ?? []).forEach((region) => {
+    const score = clampScore(region?.nrs);
+    if (score !== null) {
+      values.push(score);
+    }
+  });
+
+  (entry.quickPainEvents ?? []).forEach((event) => {
+    const score = clampScore(event?.intensity);
+    if (score !== null) {
+      values.push(score);
+    }
+  });
+
+  return values.length ? Math.max(...values) : undefined;
+}
+
 function toAggregateDailyEntry(entry: DailyEntry): AggregateDailyEntry {
   return {
     dateISO: entry.date,
-    pain0to10: typeof entry.painNRS === "number" ? entry.painNRS : undefined,
+    pain0to10: deriveMaxPain(entry),
     bleeding: entry.bleeding.isBleeding ? mapBleedingSeverity(entry.bleeding.pbacScore) : "none",
     sleepQuality0to10: typeof entry.sleep?.quality === "number" ? entry.sleep.quality : undefined,
     medicationsChanged: undefined,
