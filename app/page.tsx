@@ -47,6 +47,7 @@ import {
   Plus,
   ShieldCheck,
   Smartphone,
+  Sparkles,
   TrendingUp,
   Upload,
   X,
@@ -163,10 +164,6 @@ type PendingCheckIn = {
   label: string;
   description: string;
 };
-
-type PendingOverviewConfirm =
-  | { action: "change-date"; targetDate: string; options?: { manual?: boolean } }
-  | { action: "go-home" };
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -3000,7 +2997,7 @@ export default function HomePage() {
         return { ...prev, [itemId]: clampedValue };
       });
     },
-    []
+    [setPbacCounts]
   );
   useEffect(() => {
     if (!dailyDraft.bleeding.isBleeding) {
@@ -3157,8 +3154,6 @@ export default function HomePage() {
   const [showBirthdayGreeting, setShowBirthdayGreeting] = useState(isBirthdayGreetingDay);
   const [pendingCategoryConfirm, setPendingCategoryConfirm] =
     useState<TrackableDailyCategoryId | null>(null);
-  const [pendingOverviewConfirm, setPendingOverviewConfirm] =
-    useState<PendingOverviewConfirm | null>(null);
   const heartGradientReactId = useId();
   const heartGradientId = useMemo(
     () => `heart-gradient-${heartGradientReactId.replace(/:/g, "")}`,
@@ -3844,24 +3839,9 @@ export default function HomePage() {
       if (targetDate === dailyDraft.date) {
         return;
       }
-      if (
-        activeView === "daily" &&
-        dailyActiveCategory === "overview" &&
-        isDailyDirty
-      ) {
-        setPendingOverviewConfirm({ action: "change-date", targetDate, options });
-        return;
-      }
       selectDailyDate(targetDate, options);
     },
-    [
-      activeView,
-      dailyActiveCategory,
-      dailyDraft.date,
-      isDailyDirty,
-      selectDailyDate,
-      setPendingOverviewConfirm,
-    ]
+    [dailyDraft.date, selectDailyDate]
   );
 
   const goToPreviousDay = useCallback(() => {
@@ -4439,7 +4419,7 @@ export default function HomePage() {
     [setDailyDraft]
   );
 
-  const handleDailySubmit = (options?: { goToHome?: boolean }): boolean => {
+  const buildDailyEntryPayload = useCallback(() => {
     const payload: DailyEntry = {
       ...dailyDraft,
       painQuality: dailyDraft.painQuality,
@@ -4561,32 +4541,69 @@ export default function HomePage() {
     const automatedDraft = applyAutomatedPainSymptoms(syncedDraft);
 
     const validationIssues = validateDailyEntry(automatedDraft);
-    setIssues(validationIssues);
-    if (validationIssues.length) {
-      setInfoMessage("Bitte prüfe die markierten Felder.");
-      return false;
-    }
+    return { automatedDraft, validationIssues };
+  }, [
+    activeDizziness,
+    activeHeadache,
+    activeUrinary,
+    dailyCategoryCompletion,
+    dailyDraft,
+    painQualityOther,
+    pbacCounts,
+    pbacScore,
+  ]);
 
-    setDailyEntries((prev) => {
-      const filtered = prev.filter((entry) => entry.date !== automatedDraft.date);
-      return [...filtered, automatedDraft].sort((a, b) => a.date.localeCompare(b.date));
-    });
+  const persistDailyEntry = useCallback(
+    (entry: DailyEntry, options?: { goToHome?: boolean; silent?: boolean }) => {
+      const normalizedEntry = normalizeDailyEntry(entry);
+      const normalizedLastSaved = normalizeDailyEntry(lastSavedDailySnapshot);
+      const hasChanges =
+        JSON.stringify(normalizedEntry) !== JSON.stringify(normalizedLastSaved);
+      if (!hasChanges) {
+        return true;
+      }
 
-    setInfoMessage(null);
-    setDailySaveNotice("Tagesdaten gespeichert.");
-    const nextDraft = automatedDraft;
-    setDailyDraft(nextDraft);
-    setLastSavedDailySnapshot(nextDraft);
-    setPainQualityOther("");
-    setNotesTagDraft("");
-    setSensorsVisible(false);
-    setExploratoryVisible(false);
-    setIssues([]);
-    if (options?.goToHome ?? true) {
-      setActiveView("home");
-    }
-    return true;
-  };
+      setDailyEntries((prev) => {
+        const filtered = prev.filter((existing) => existing.date !== entry.date);
+        return [...filtered, entry].sort((a, b) => a.date.localeCompare(b.date));
+      });
+
+      setDailyDraft((prev) => {
+        const normalizedPrev = normalizeDailyEntry(prev);
+        return JSON.stringify(normalizedPrev) === JSON.stringify(normalizedEntry) ? prev : entry;
+      });
+      setLastSavedDailySnapshot(entry);
+      setPainQualityOther("");
+      setNotesTagDraft("");
+      setSensorsVisible(false);
+      setExploratoryVisible(false);
+      setInfoMessage(null);
+      setDailySaveNotice(options?.silent ? "Änderungen automatisch gespeichert." : "Tagesdaten gespeichert.");
+      if (options?.goToHome) {
+        setActiveView("home");
+      }
+      return true;
+    },
+    [lastSavedDailySnapshot, setActiveView, setDailyDraft, setDailyEntries]
+  );
+
+  const synchronizeDailyEntry = useCallback(
+    (options?: { goToHome?: boolean; silent?: boolean }) => {
+      const { automatedDraft, validationIssues } = buildDailyEntryPayload();
+      setIssues(validationIssues);
+      if (validationIssues.length) {
+        setInfoMessage("Bitte prüfe die markierten Felder.");
+        return false;
+      }
+      return persistDailyEntry(automatedDraft, options);
+    },
+    [buildDailyEntryPayload, persistDailyEntry]
+  );
+
+  useEffect(() => {
+    if (!storageReady) return;
+    synchronizeDailyEntry({ goToHome: false, silent: true });
+  }, [storageReady, synchronizeDailyEntry]);
 
   const handleMonthlySubmit = () => {
     const payload: MonthlyEntry = { ...monthlyDraft };
@@ -6701,47 +6718,6 @@ export default function HomePage() {
     sectionCompletionContextValue,
   ]);
 
-  const applyPendingOverviewNavigation = (pending: PendingOverviewConfirm) => {
-    if (pending.action === "change-date") {
-      selectDailyDate(pending.targetDate, pending.options);
-      return;
-    }
-    setActiveView("home");
-  };
-
-  const handleOverviewConfirmCancel = () => {
-    setPendingOverviewConfirm(null);
-  };
-
-  const handleOverviewConfirmDiscard = () => {
-    setPendingOverviewConfirm((pending) => {
-      if (!pending) {
-        return null;
-      }
-      const restoredEntry =
-        typeof structuredClone === "function"
-          ? structuredClone(lastSavedDailySnapshot)
-          : (JSON.parse(JSON.stringify(lastSavedDailySnapshot)) as DailyEntry);
-      setDailyDraft(restoredEntry);
-      applyPendingOverviewNavigation(pending);
-      return null;
-    });
-  };
-
-  const handleOverviewConfirmSave = () => {
-    setPendingOverviewConfirm((pending) => {
-      if (!pending) {
-        return null;
-      }
-      const saved = handleDailySubmit({ goToHome: false });
-      if (!saved) {
-        return null;
-      }
-      applyPendingOverviewNavigation(pending);
-      return null;
-    });
-  };
-
   const pendingCategoryTitle = useMemo(() => {
     if (!pendingCategoryConfirm) {
       return null;
@@ -7271,10 +7247,6 @@ export default function HomePage() {
                         return;
                       }
                       setDailyActiveCategory("overview");
-                      return;
-                    }
-                    if (isDailyDirty) {
-                      setPendingOverviewConfirm({ action: "go-home" });
                       return;
                     }
                   }
@@ -7871,9 +7843,10 @@ export default function HomePage() {
                   Es werden nur Daten von den Bereichen gespeichert, die einen grünen Haken haben.
                 </p>
                 <div className="flex flex-wrap items-center gap-3">
-                  <Button type="button" onClick={() => handleDailySubmit()} disabled={!isDailyDirty}>
-                    Tagesdaten speichern
-                  </Button>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-amber-100 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
+                    <Sparkles className="h-4 w-4" aria-hidden />
+                    <span>Änderungen werden automatisch gespeichert.</span>
+                  </div>
                   {(draftStatus || dailySaveNotice) && (
                     <div className="flex items-center gap-2">
                       {draftStatus && (
@@ -7891,13 +7864,13 @@ export default function HomePage() {
                       )}
                     </div>
                   )}
-                  <div className="flex flex-wrap items-center gap-2">
-                    {[3, 6, 12].map((months) => (
-                      <Button key={months} type="button" variant="outline" onClick={() => handleReportDownload(months)}>
-                        {months} Monate PDF
-                      </Button>
-                    ))}
-                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {[3, 6, 12].map((months) => (
+                    <Button key={months} type="button" variant="outline" onClick={() => handleReportDownload(months)}>
+                      {months} Monate PDF
+                    </Button>
+                  ))}
                 </div>
               </div>
               <div className={cn("space-y-6", dailyActiveCategory === "pain" ? "" : "hidden")}> 
@@ -10923,36 +10896,6 @@ export default function HomePage() {
                 className="sm:w-auto"
               >
                 ausfallen lassen
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-      {pendingOverviewConfirm ? (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-rose-950/40 px-4 py-6">
-          <div
-            className="w-full max-w-sm space-y-4 rounded-2xl bg-white p-6 shadow-xl"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Änderungen speichern oder verwerfen"
-          >
-            <div className="space-y-2">
-              <h2 className="text-lg font-semibold text-rose-900">Änderungen übernehmen?</h2>
-              <p className="text-sm text-rose-700">
-                {pendingOverviewConfirm.action === "change-date"
-                  ? "Beim Wechsel des Tages würden ungespeicherte Änderungen verloren gehen. Möchtest du sie speichern oder verwerfen?"
-                  : "In der Tagesübersicht liegen ungespeicherte Änderungen vor. Möchtest du sie speichern oder verwerfen?"}
-              </p>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-              <Button variant="ghost" onClick={handleOverviewConfirmCancel} className="sm:w-auto">
-                Abbrechen
-              </Button>
-              <Button variant="outline" onClick={handleOverviewConfirmDiscard} className="sm:w-auto">
-                Verwerfen
-              </Button>
-              <Button onClick={handleOverviewConfirmSave} className="sm:w-auto">
-                Speichern
               </Button>
             </div>
           </div>
