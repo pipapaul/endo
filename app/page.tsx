@@ -2938,6 +2938,52 @@ export default function HomePage() {
   const [painQuickIntensity, setPainQuickIntensity] = useState(5);
   const [painQuickTimesOfDay, setPainQuickTimesOfDay] = useState<PainTimeOfDay[]>([]);
   const [pendingPainQuickAdd, setPendingPainQuickAdd] = useState<PendingQuickPainAdd | null>(null);
+  const hasPbacDraftData = useCallback((draft: DailyEntry) => {
+    const normalizedCounts = normalizePbacCounts(draft.pbacCounts);
+    const hasProductCounts = !arePbacCountsEqual(normalizedCounts, createEmptyPbacCounts());
+    const bleeding = draft.bleeding ?? { isBleeding: false };
+    const hasBleedingDetails =
+      Boolean(bleeding.isBleeding) ||
+      typeof bleeding.pbacScore === "number" ||
+      typeof bleeding.clots === "boolean" ||
+      typeof bleeding.flooding === "boolean";
+    return hasProductCounts || hasBleedingDetails;
+  }, []);
+  const persistPbacDraft = useCallback(
+    (draft: DailyEntry) => {
+      if (!hasPbacDraftData(draft)) {
+        return;
+      }
+      const normalizedCounts = normalizePbacCounts(draft.pbacCounts);
+      setDailyEntries((entries) => {
+        const nextEntries = [...entries];
+        const existingIndex = nextEntries.findIndex((entry) => entry.date === draft.date);
+        const baseEntry = existingIndex === -1 ? createEmptyDailyEntry(draft.date) : nextEntries[existingIndex];
+        const bleeding = baseEntry.bleeding ?? { isBleeding: false };
+        const mergedEntry = normalizeDailyEntry({
+          ...baseEntry,
+          bleeding: { ...bleeding, ...draft.bleeding },
+          pbacCounts: normalizedCounts,
+        });
+        const baseCounts = normalizePbacCounts(baseEntry.pbacCounts);
+        const bleedingChanged =
+          (bleeding.isBleeding ?? false) !== (mergedEntry.bleeding?.isBleeding ?? false) ||
+          bleeding.pbacScore !== mergedEntry.bleeding?.pbacScore ||
+          bleeding.clots !== mergedEntry.bleeding?.clots ||
+          bleeding.flooding !== mergedEntry.bleeding?.flooding;
+        if (!bleedingChanged && arePbacCountsEqual(baseCounts, mergedEntry.pbacCounts ?? baseCounts)) {
+          return entries;
+        }
+        if (existingIndex === -1) {
+          nextEntries.push(mergedEntry);
+        } else {
+          nextEntries[existingIndex] = mergedEntry;
+        }
+        return nextEntries;
+      });
+    },
+    [hasPbacDraftData, setDailyEntries]
+  );
   const updateQuickPainEventsForDate = useCallback(
     (date: string, updater: (events: QuickPainEvent[]) => QuickPainEvent[]) => {
       const normalizeEvents = (events: QuickPainEvent[]) =>
@@ -3350,6 +3396,9 @@ export default function HomePage() {
       if (options?.manual) {
         manualDailySelectionRef.current = true;
       }
+      if (dailyDraft.date !== targetDate) {
+        persistPbacDraft(dailyDraft);
+      }
       const existingEntry = derivedDailyEntries.find((entry) => entry.date === targetDate);
       let baseEntry = existingEntry ?? createEmptyDailyEntry(targetDate);
       if (!existingEntry) {
@@ -3374,7 +3423,7 @@ export default function HomePage() {
       setDailyDraft(clonedEntry);
       setLastSavedDailySnapshot(clonedEntry);
     },
-    [derivedDailyEntries, setDailyDraft, setLastSavedDailySnapshot]
+    [dailyDraft, derivedDailyEntries, persistPbacDraft, setDailyDraft, setLastSavedDailySnapshot]
   );
 
   useEffect(() => {
