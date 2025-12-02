@@ -2897,6 +2897,9 @@ export default function HomePage() {
   const [pbacCounts, setPbacCountsState] = useState<PbacCounts>(() =>
     normalizePbacCounts(defaultDailyDraft.pbacCounts)
   );
+  const [todayPbacCountsSnapshot, setTodayPbacCountsSnapshot] = useState<PbacCounts>(() =>
+    normalizePbacCounts(defaultDailyDraft.pbacCounts)
+  );
   const setPbacCounts = useCallback(
     (next: PbacCounts | ((prev: PbacCounts) => PbacCounts)) => {
       setPbacCountsState((prev) => {
@@ -2926,6 +2929,21 @@ export default function HomePage() {
       return { ...draft, pbacCounts: normalized };
     });
   }, [dailyDraft.pbacCounts, setDailyDraft]);
+  useEffect(() => {
+    if (dailyDraft.date !== today) {
+      return;
+    }
+    setTodayPbacCountsSnapshot(normalizePbacCounts(pbacCounts));
+  }, [dailyDraft.date, pbacCounts, today]);
+  useEffect(() => {
+    if (dailyDraft.date === today) {
+      return;
+    }
+    const todaysEntry = derivedDailyEntries.find((entry) => entry.date === today);
+    if (todaysEntry) {
+      setTodayPbacCountsSnapshot(normalizePbacCounts(todaysEntry.pbacCounts));
+    }
+  }, [dailyDraft.date, derivedDailyEntries, today]);
   const [activePbacCategory, setActivePbacCategory] = useState<PbacEntryCategory>("pad");
   const [bleedingQuickAddOpen, setBleedingQuickAddOpen] = useState(false);
   const [pendingBleedingQuickAdd, setPendingBleedingQuickAdd] = useState<PbacProductItemId | null>(null);
@@ -6460,18 +6478,15 @@ export default function HomePage() {
     setPendingBleedingQuickAdd(itemId);
     setBleedingQuickAddOpen(false);
   }, []);
+  const todaysPbacCounts = useMemo(
+    () => (dailyDraft.date === today ? pbacCounts : todayPbacCountsSnapshot),
+    [dailyDraft.date, pbacCounts, today, todayPbacCountsSnapshot]
+  );
   const bleedingShortcutProducts = useMemo(() => {
-    if (dailyDraft.date !== today) {
-      return {
-        dots: [] as PbacSaturation[],
-        summary: { light: 0, medium: 0, heavy: 0 } as Record<PbacSaturation, number>,
-        total: 0,
-      };
-    }
     const summary: Record<PbacSaturation, number> = { light: 0, medium: 0, heavy: 0 };
     const dots: PbacSaturation[] = [];
     PBAC_PRODUCT_ITEMS.forEach((item) => {
-      const count = pbacCounts[item.id] ?? 0;
+      const count = todaysPbacCounts[item.id] ?? 0;
       if (!count) {
         return;
       }
@@ -6481,7 +6496,7 @@ export default function HomePage() {
       }
     });
     return { dots, summary, total: dots.length };
-  }, [dailyDraft.date, pbacCounts, today]);
+  }, [todaysPbacCounts]);
   const periodShortcutAriaLabel = useMemo(() => {
     if (!bleedingShortcutProducts.total) {
       return "Periode: Produkt hinzufügen";
