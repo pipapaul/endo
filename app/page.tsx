@@ -3363,6 +3363,11 @@ export default function HomePage() {
     [dailyEntries, today]
   );
 
+  const shouldConfirmDailyNavigation = useCallback(
+    () => activeView === "daily" && dailyActiveCategory === "overview" && isDailyDirty,
+    [activeView, dailyActiveCategory, isDailyDirty]
+  );
+
   const selectDailyDate = useCallback(
     (targetDate: string, options?: { manual?: boolean }) => {
       if (options?.manual) {
@@ -3862,22 +3867,16 @@ export default function HomePage() {
       if (targetDate === dailyDraft.date) {
         return;
       }
-      if (
-        activeView === "daily" &&
-        dailyActiveCategory === "overview" &&
-        isDailyDirty
-      ) {
+      if (shouldConfirmDailyNavigation()) {
         setPendingOverviewConfirm({ action: "change-date", targetDate, options });
         return;
       }
       selectDailyDate(targetDate, options);
     },
     [
-      activeView,
-      dailyActiveCategory,
       dailyDraft.date,
-      isDailyDirty,
       selectDailyDate,
+      shouldConfirmDailyNavigation,
       setPendingOverviewConfirm,
     ]
   );
@@ -6060,6 +6059,12 @@ export default function HomePage() {
       return;
     }
     if (dailyDraft.date !== today) {
+      if (shouldConfirmDailyNavigation()) {
+        setPendingOverviewConfirm((pending) =>
+          pending ?? { action: "change-date", targetDate: today }
+        );
+        return;
+      }
       selectDailyDate(today);
       return;
     }
@@ -6116,12 +6121,14 @@ export default function HomePage() {
     bleedingQuickAddNoticeTimeoutRef,
     pendingBleedingQuickAdd,
     selectDailyDate,
+    setPendingOverviewConfirm,
     setDailyDraft,
     setPbacCounts,
     setBleedingQuickAddOpen,
     setPendingBleedingQuickAdd,
     setBleedingQuickAddNotice,
     setCategoryCompletion,
+    shouldConfirmDailyNavigation,
     today,
   ]);
 
@@ -6132,6 +6139,12 @@ export default function HomePage() {
     const normalized = normalizeQuickPainEvent(pendingPainQuickAdd);
     updateQuickPainEventsForDate(normalized.date, (events) => [...events, normalized]);
     if (dailyDraft.date !== normalized.date) {
+      if (shouldConfirmDailyNavigation()) {
+        setPendingOverviewConfirm((pending) =>
+          pending ?? { action: "change-date", targetDate: normalized.date }
+        );
+        return;
+      }
       selectDailyDate(normalized.date);
     }
     setCategoryCompletion("pain", true);
@@ -6139,10 +6152,12 @@ export default function HomePage() {
   }, [
     dailyDraft.date,
     pendingPainQuickAdd,
+    setPendingOverviewConfirm,
     selectDailyDate,
     setDailyDraft,
     updateQuickPainEventsForDate,
     setCategoryCompletion,
+    shouldConfirmDailyNavigation,
   ]);
 
   const categoryZeroStates = useMemo<
@@ -6726,6 +6741,8 @@ export default function HomePage() {
 
   const handleOverviewConfirmCancel = () => {
     setPendingOverviewConfirm(null);
+    setPendingBleedingQuickAdd(null);
+    setPendingPainQuickAdd(null);
   };
 
   const handleOverviewConfirmDiscard = () => {
