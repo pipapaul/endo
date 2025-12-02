@@ -3411,7 +3411,9 @@ export default function HomePage() {
   const [pendingDismissCheckIn, setPendingDismissCheckIn] = useState<PendingCheckIn | null>(null);
 
   const isDailyDirty = useMemo(
-    () => JSON.stringify(dailyDraft) !== JSON.stringify(lastSavedDailySnapshot),
+    () =>
+      JSON.stringify(normalizeDailyEntry(dailyDraft)) !==
+      JSON.stringify(normalizeDailyEntry(lastSavedDailySnapshot)),
     [dailyDraft, lastSavedDailySnapshot]
   );
 
