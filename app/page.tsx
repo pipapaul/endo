@@ -2894,6 +2894,10 @@ export default function HomePage() {
   const [dailyDraft, setDailyDraft, dailyDraftStorage] =
     usePersistentState<DailyEntry>("endo.draft.daily.v1", defaultDailyDraft);
   const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
+  const todayDraftEntry = useMemo(
+    () => (dailyDraft.date === today ? dailyDraft : derivedDailyEntries.find((entry) => entry.date === today)),
+    [dailyDraft, derivedDailyEntries, today]
+  );
   const [pbacCounts, setPbacCountsState] = useState<PbacCounts>(() =>
     normalizePbacCounts(defaultDailyDraft.pbacCounts)
   );
@@ -6461,17 +6465,11 @@ export default function HomePage() {
     setBleedingQuickAddOpen(false);
   }, []);
   const bleedingShortcutProducts = useMemo(() => {
-    if (dailyDraft.date !== today) {
-      return {
-        dots: [] as PbacSaturation[],
-        summary: { light: 0, medium: 0, heavy: 0 } as Record<PbacSaturation, number>,
-        total: 0,
-      };
-    }
+    const bleedingPbacCounts = normalizePbacCounts(todayDraftEntry?.pbacCounts);
     const summary: Record<PbacSaturation, number> = { light: 0, medium: 0, heavy: 0 };
     const dots: PbacSaturation[] = [];
     PBAC_PRODUCT_ITEMS.forEach((item) => {
-      const count = pbacCounts[item.id] ?? 0;
+      const count = bleedingPbacCounts[item.id] ?? 0;
       if (!count) {
         return;
       }
@@ -6481,7 +6479,7 @@ export default function HomePage() {
       }
     });
     return { dots, summary, total: dots.length };
-  }, [dailyDraft.date, pbacCounts, today]);
+  }, [today, todayDraftEntry]);
   const periodShortcutAriaLabel = useMemo(() => {
     if (!bleedingShortcutProducts.total) {
       return "Periode: Produkt hinzufügen";
