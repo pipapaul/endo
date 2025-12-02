@@ -93,6 +93,14 @@ import {
 } from "@/lib/weekly/reports";
 import { normalizeWpai, type WeeklyWpai } from "@/lib/weekly/wpai";
 import { isoWeekToDate } from "@/lib/isoWeek";
+import {
+  arePbacCountsEqual,
+  createEmptyPbacCounts,
+  PBAC_COUNT_KEYS,
+  normalizePbacCounts,
+  type PbacCountKey,
+  type PbacCounts,
+} from "@/lib/pbac";
 
 const DETAIL_TOOLBAR_FALLBACK_HEIGHT = 96;
 
@@ -747,6 +755,21 @@ const PbacTamponIcon = ({ saturation, ...props }: PbacIconProps) => {
   );
 };
 
+type PbacProductItem = {
+  id: PbacCountKey;
+  label: string;
+  score: number;
+  product: "pad" | "tampon";
+  saturation: PbacSaturation;
+  Icon: ComponentType<SVGProps<SVGSVGElement>>;
+};
+
+type PbacClotItem = {
+  id: Extract<PbacCountKey, "clot_small" | "clot_large">;
+  label: string;
+  score: number;
+};
+
 const PBAC_PRODUCT_ITEMS = [
   {
     id: "pad_light",
@@ -796,12 +819,12 @@ const PBAC_PRODUCT_ITEMS = [
     saturation: "heavy",
     Icon: (props: SVGProps<SVGSVGElement>) => <PbacTamponIcon saturation="heavy" {...props} />,
   },
-] as const;
+] satisfies readonly PbacProductItem[];
 
 const PBAC_CLOT_ITEMS = [
   { id: "clot_small", label: "Koagel <2 cm", score: 1 },
   { id: "clot_large", label: "Koagel ≥2 cm", score: 5 },
-] as const;
+] satisfies readonly PbacClotItem[];
 
 const PBAC_ITEMS = [...PBAC_PRODUCT_ITEMS, ...PBAC_CLOT_ITEMS] as const;
 const PBAC_MAX_PRODUCT_COUNT = 12;
@@ -849,9 +872,6 @@ const PBAC_ENTRY_CATEGORY_OPTIONS = [
 ] as const;
 
 type PbacEntryCategory = (typeof PBAC_ENTRY_CATEGORY_OPTIONS)[number]["id"];
-
-type PbacCounts = Record<(typeof PBAC_ITEMS)[number]["id"], number>;
-
 const PBAC_FLOODING_SCORE = 5;
 const HEAVY_BLEED_PBAC = 100;
 
@@ -892,11 +912,6 @@ const GAD7_ITEMS = [
 
 const SCALE_OPTIONS_0_4 = [0, 1, 2, 3, 4] as const;
 const SCALE_OPTIONS_0_3 = [0, 1, 2, 3] as const;
-
-const PBAC_DEFAULT_COUNTS = PBAC_ITEMS.reduce<PbacCounts>((acc, item) => {
-  acc[item.id] = 0;
-  return acc;
-}, {} as PbacCounts);
 
 type TrackableDailyCategoryId =
   | "pain"
@@ -963,6 +978,8 @@ const pruneDailyEntryByCompletion = (
   entry: DailyEntry,
   completion: Record<Exclude<DailyCategoryId, "overview">, boolean>
 ): DailyEntry => {
+  const normalizedPbacCounts = normalizePbacCounts(entry.pbacCounts);
+  const hasActiveBleeding = Boolean(entry.bleeding?.isBleeding);
   const next: DailyEntry = {
     ...entry,
     symptoms: { ...(entry.symptoms ?? {}) },
@@ -986,6 +1003,9 @@ const pruneDailyEntryByCompletion = (
 
   if (!completion.bleeding) {
     next.bleeding = { isBleeding: false };
+    next.pbacCounts = hasActiveBleeding ? normalizedPbacCounts : createEmptyPbacCounts();
+  } else {
+    next.pbacCounts = normalizedPbacCounts;
   }
 
   if (!completion.medication) {
@@ -1075,9 +1095,9 @@ const pickFeatureFlags = (
 };
 
 const sortPbacCounts = (counts: PbacCounts): PbacCounts => {
-  const sortedKeys = Object.keys(counts).sort();
-  return sortedKeys.reduce((acc, key) => {
-    acc[key as keyof PbacCounts] = counts[key as keyof PbacCounts];
+  const normalized = normalizePbacCounts(counts);
+  return PBAC_COUNT_KEYS.reduce((acc, key) => {
+    acc[key] = normalized[key];
     return acc;
   }, {} as PbacCounts);
 };
@@ -1473,6 +1493,8 @@ const restoreDailyCategorySnapshot = (
     });
   }
 
+  nextEntry.pbacCounts = nextPbacCounts;
+
   return {
     entry: nextEntry,
     featureFlags: nextFeatureFlags,
@@ -1849,6 +1871,7 @@ const createEmptyDailyEntry = (date: string): DailyEntry => ({
   painMapRegionIds: [],
 
   bleeding: { isBleeding: false },
+  pbacCounts: createEmptyPbacCounts(),
   symptoms: {},
   rescueMeds: [],
   ovulation: {},
@@ -2314,6 +2337,8 @@ function InlineNotice({ title, text }: { title: string; text: string }) {
 function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>): DailyEntry {
   const clone: DailyEntry = { ...entry };
   const extra = clone as unknown as Record<string, unknown>;
+
+  clone.pbacCounts = normalizePbacCounts(entry.pbacCounts);
 
   const importedBowelPain = (() => {
     const giSource = entry.gi as (DailyEntry["gi"] & { bowelPain?: number }) | undefined;
@@ -2880,7 +2905,38 @@ export default function HomePage() {
   const [dailyDraft, setDailyDraft, dailyDraftStorage] =
     usePersistentState<DailyEntry>("endo.draft.daily.v1", defaultDailyDraft);
   const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
-  const [pbacCounts, setPbacCounts] = useState<PbacCounts>({ ...PBAC_DEFAULT_COUNTS });
+  const [pbacCounts, setPbacCountsState] = useState<PbacCounts>(() =>
+    normalizePbacCounts(defaultDailyDraft.pbacCounts)
+  );
+  const setPbacCounts = useCallback(
+    (next: PbacCounts | ((prev: PbacCounts) => PbacCounts)) => {
+      setPbacCountsState((prev) => {
+        const resolved = typeof next === "function" ? (next as (prev: PbacCounts) => PbacCounts)(prev) : next;
+        const normalized = normalizePbacCounts(resolved);
+        const nextState = arePbacCountsEqual(prev, normalized) ? prev : normalized;
+        setDailyDraft((draft) => {
+          const draftCounts = normalizePbacCounts(draft.pbacCounts);
+          if (arePbacCountsEqual(draftCounts, normalized)) {
+            return draft;
+          }
+          return { ...draft, pbacCounts: normalized };
+        });
+        return nextState;
+      });
+    },
+    [setDailyDraft]
+  );
+  useEffect(() => {
+    const normalized = normalizePbacCounts(dailyDraft.pbacCounts);
+    setPbacCountsState((prev) => (arePbacCountsEqual(prev, normalized) ? prev : normalized));
+    setDailyDraft((draft) => {
+      const draftCounts = normalizePbacCounts(draft.pbacCounts);
+      if (arePbacCountsEqual(draftCounts, normalized)) {
+        return draft;
+      }
+      return { ...draft, pbacCounts: normalized };
+    });
+  }, [dailyDraft.pbacCounts, setDailyDraft]);
   const [activePbacCategory, setActivePbacCategory] = useState<PbacEntryCategory>("pad");
   const [bleedingQuickAddOpen, setBleedingQuickAddOpen] = useState(false);
   const [pendingBleedingQuickAdd, setPendingBleedingQuickAdd] = useState<PbacProductItemId | null>(null);
@@ -4476,6 +4532,7 @@ export default function HomePage() {
             flooding: dailyDraft.bleeding.flooding ?? false,
           }
         : { isBleeding: false },
+      pbacCounts: normalizePbacCounts(pbacCounts),
       rescueMeds: (dailyDraft.rescueMeds ?? [])
         .filter((med) => med.name.trim().length > 0)
         .map((med) => ({
@@ -6259,7 +6316,7 @@ export default function HomePage() {
       ...prev,
       bleeding: { isBleeding: false },
     }));
-    setPbacCounts({ ...PBAC_DEFAULT_COUNTS });
+    setPbacCounts(createEmptyPbacCounts());
     setCategoryCompletion("bleeding", true);
   }, [
     confirmQuickActionReset,
@@ -8326,7 +8383,7 @@ export default function HomePage() {
                             : { ...prev, bleeding: { isBleeding: false } }
                         );
                         if (!checked) {
-                          setPbacCounts({ ...PBAC_DEFAULT_COUNTS });
+                          setPbacCounts(createEmptyPbacCounts());
                         }
                       }}
                     />

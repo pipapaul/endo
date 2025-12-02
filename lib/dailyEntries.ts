@@ -1,3 +1,4 @@
+import { arePbacCountsEqual, normalizePbacCounts } from "./pbac";
 import type { DailyEntry } from "./types";
 
 export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
@@ -18,6 +19,9 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
   const needsPainMapIdsNormalization = !Array.isArray(entry.painMapRegionIds);
   const needsRescueMedsNormalization = !Array.isArray(entry.rescueMeds);
   const needsSymptomsNormalization = entry.symptoms === undefined;
+  const normalizedPbacCounts = normalizePbacCounts(entry.pbacCounts);
+  const needsPbacCountsNormalization =
+    !entry.pbacCounts || !arePbacCountsEqual(entry.pbacCounts, normalizedPbacCounts);
 
   if (
     hasValidBleeding &&
@@ -26,7 +30,8 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
     !needsPainQualityNormalization &&
     !needsPainMapIdsNormalization &&
     !needsRescueMedsNormalization &&
-    !needsSymptomsNormalization
+    !needsSymptomsNormalization &&
+    !needsPbacCountsNormalization
   ) {
     return entry;
   }
@@ -85,5 +90,6 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
     painMapRegionIds,
     rescueMeds,
     symptoms,
+    pbacCounts: normalizedPbacCounts,
   };
 }

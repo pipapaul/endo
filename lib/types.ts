@@ -1,3 +1,5 @@
+import type { PbacCounts } from "./pbac";
+
 export type ID = string;
 
 export interface FeatureFlags {
@@ -41,6 +43,7 @@ export interface DailyEntry {
     clots?: boolean;
     flooding?: boolean;
   };
+  pbacCounts?: PbacCounts;
   symptoms: {
     dysmenorrhea?: { present: boolean; score?: number };
     deepDyspareunia?: { present: boolean; score?: number };
