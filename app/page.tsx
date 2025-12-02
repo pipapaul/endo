@@ -52,8 +52,15 @@ import {
   X,
 } from "lucide-react";
 
-import { DailyEntry, FeatureFlags, MonthlyEntry, PainGranularity, PainTimeOfDay } from "@/lib/types";
-import { normalizeDailyEntry } from "@/lib/dailyEntries";
+import {
+  DailyEntry,
+  FeatureFlags,
+  MonthlyEntry,
+  PainGranularity,
+  PainTimeOfDay,
+  QuickPainEvent,
+} from "@/lib/types";
+import { normalizeDailyEntry, normalizeQuickPainEvent } from "@/lib/dailyEntries";
 import { TERMS } from "@/lib/terms";
 import type { ModuleTerms, TermDescriptor, TermKey } from "@/lib/terms";
 import { validateDailyEntry, validateMonthlyEntry, type ValidationIssue } from "@/lib/validation";
@@ -359,9 +366,7 @@ const deriveHeadacheFromPainRegions = (
   return next;
 };
 
-const collectPainRegionQualities = (
-  regions: NonNullable<DailyEntry["painRegions"]>
-): DailyEntry["painQuality"] => {
+const collectPainRegionQualities = (regions: NonNullable<DailyEntry["painRegions"]>): DailyEntry["painQuality"] => {
   const qualities = new Set<string>();
   regions.forEach((region) => {
     (region.qualities ?? []).forEach((quality) => qualities.add(quality));
@@ -385,17 +390,6 @@ const buildDailyDraftWithPainRegions = (
 
 type BodyRegion = { id: string; label: string };
 
-type QuickPainEvent = {
-  id: number;
-  date: string;
-  timestamp: string;
-  regionId: string;
-  intensity: number;
-  quality: DailyEntry["painQuality"][number] | null;
-  timeOfDay?: PainTimeOfDay[];
-  granularity?: PainGranularity;
-};
-
 type PendingQuickPainAdd = QuickPainEvent;
 
 type PainShortcutTimelineSegment = {
@@ -417,22 +411,6 @@ const formatPainTimeOfDayList = (timeOfDay?: PainTimeOfDay[]): string | null => 
     return null;
   }
   return timeOfDay.map((time) => PAIN_TIME_OF_DAY_LABEL[time] ?? time).join(" / ");
-};
-
-const normalizeQuickPainEvent = (event: QuickPainEvent): QuickPainEvent => {
-  let timeOfDay: PainTimeOfDay[] = [];
-  if (Array.isArray(event.timeOfDay)) {
-    const filtered = event.timeOfDay.filter((time): time is PainTimeOfDay => PAIN_TIME_OF_DAY_SET.has(time));
-    const isSameArray =
-      filtered.length === event.timeOfDay.length &&
-      filtered.every((value, index) => value === event.timeOfDay?.[index]);
-    timeOfDay = isSameArray ? (event.timeOfDay as PainTimeOfDay[]) : filtered;
-  }
-  const granularity: PainGranularity = timeOfDay.length ? "dritteltag" : event.granularity ?? "tag";
-  if (timeOfDay === event.timeOfDay && granularity === event.granularity) {
-    return event;
-  }
-  return { ...event, timeOfDay, granularity };
 };
 
 const computePainShortcutTimeline = (
@@ -461,6 +439,9 @@ const computePainShortcutTimeline = (
   });
   return segments;
 };
+
+const sortQuickPainEvents = (events: QuickPainEvent[]): QuickPainEvent[] =>
+  events.slice().sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
 type DailyCategoryId =
   | "overview"
@@ -589,6 +570,12 @@ const computeMaxPainIntensity = (entry: DailyEntry, extraPain?: number | null): 
     const regionScore = clampScore(region?.nrs);
     if (regionScore !== null) {
       intensities.push(regionScore);
+    }
+  });
+  (entry.quickPainEvents ?? []).forEach((event) => {
+    const eventScore = clampScore(event?.intensity);
+    if (eventScore !== null) {
+      intensities.push(eventScore);
     }
   });
   const shortcutPain = clampScore(extraPain);
@@ -991,6 +978,7 @@ const pruneDailyEntryByCompletion = (
     next.painQuality = [] as DailyEntry["painQuality"];
     next.painNRS = 0;
     next.impactNRS = 0;
+    next.quickPainEvents = [];
     delete (next as { ovulationPain?: DailyEntry["ovulationPain"] }).ovulationPain;
     delete (next.symptoms as Partial<DailyEntry["symptoms"]>).deepDyspareunia;
   }
@@ -1869,6 +1857,7 @@ const createEmptyDailyEntry = (date: string): DailyEntry => ({
   painNRS: 0,
   painQuality: [],
   painMapRegionIds: [],
+  quickPainEvents: [],
 
   bleeding: { isBleeding: false },
   pbacCounts: createEmptyPbacCounts(),
@@ -2949,28 +2938,48 @@ export default function HomePage() {
   const [painQuickIntensity, setPainQuickIntensity] = useState(5);
   const [painQuickTimesOfDay, setPainQuickTimesOfDay] = useState<PainTimeOfDay[]>([]);
   const [pendingPainQuickAdd, setPendingPainQuickAdd] = useState<PendingQuickPainAdd | null>(null);
-  const [painShortcutEvents, setPainShortcutEvents] = usePersistentState<QuickPainEvent[]>(
-    "endo.quickPainEvents.v1",
-    []
+  const updateQuickPainEventsForDate = useCallback(
+    (date: string, updater: (events: QuickPainEvent[]) => QuickPainEvent[]) => {
+      const normalizeEvents = (events: QuickPainEvent[]) =>
+        sortQuickPainEvents(events.map((event) => normalizeQuickPainEvent(event)));
+
+      setDailyEntries((entries) => {
+        const nextEntries = [...entries];
+        const existingIndex = nextEntries.findIndex((entry) => entry.date === date);
+        const baseEntry = existingIndex === -1 ? createEmptyDailyEntry(date) : nextEntries[existingIndex];
+        const nextEvents = normalizeEvents(updater(baseEntry.quickPainEvents ?? []));
+        const updatedEntry = normalizeDailyEntry({ ...baseEntry, quickPainEvents: nextEvents });
+        if (existingIndex === -1) {
+          nextEntries.push(updatedEntry);
+        } else {
+          nextEntries[existingIndex] = updatedEntry;
+        }
+        return nextEntries;
+      });
+
+      setDailyDraft((draft) => {
+        if (draft.date !== date) {
+          return draft;
+        }
+        const nextEvents = normalizeEvents(updater(draft.quickPainEvents ?? []));
+        return normalizeDailyEntry({ ...draft, quickPainEvents: nextEvents });
+      });
+    },
+    [setDailyDraft, setDailyEntries]
   );
-  const normalizedPainShortcutEvents = useMemo(
-    () => painShortcutEvents.map(normalizeQuickPainEvent),
-    [painShortcutEvents]
+  const quickPainEvents = useMemo(
+    () => derivedDailyEntries.flatMap((entry) => entry.quickPainEvents ?? []),
+    [derivedDailyEntries]
   );
-  const painShortcutMaxByDate = useMemo(() => {
-    const maxByDate = new Map<string, number>();
-    normalizedPainShortcutEvents.forEach((event) => {
-      const intensity = clampScore(event.intensity);
-      if (intensity === null) {
-        return;
-      }
-      const current = maxByDate.get(event.date) ?? null;
-      if (current === null || intensity > current) {
-        maxByDate.set(event.date, intensity);
-      }
+  const quickPainEventsByDate = useMemo(() => {
+    const grouped = new Map<string, QuickPainEvent[]>();
+    quickPainEvents.forEach((event) => {
+      const list = grouped.get(event.date) ?? [];
+      list.push(event);
+      grouped.set(event.date, sortQuickPainEvents(list));
     });
-    return maxByDate;
-  }, [normalizedPainShortcutEvents]);
+    return grouped;
+  }, [quickPainEvents]);
   const [rescueWizard, setRescueWizard] = useState<
     | { step: 1 | 2 | 3; name?: string; doseMg?: number; time?: string }
     | null
@@ -2981,14 +2990,6 @@ export default function HomePage() {
     [customRescueMeds]
   );
   const bleedingQuickAddNoticeTimeoutRef = useRef<number | null>(null);
-  useEffect(() => {
-    const hasChanges =
-      normalizedPainShortcutEvents.length !== painShortcutEvents.length ||
-      normalizedPainShortcutEvents.some((event, index) => event !== painShortcutEvents[index]);
-    if (hasChanges) {
-      setPainShortcutEvents(normalizedPainShortcutEvents);
-    }
-  }, [normalizedPainShortcutEvents, painShortcutEvents, setPainShortcutEvents]);
   const updatePbacCount = useCallback(
     (itemId: (typeof PBAC_ITEMS)[number]["id"], nextValue: number, max = PBAC_MAX_PRODUCT_COUNT) => {
       setPbacCounts((prev) => {
@@ -3042,29 +3043,19 @@ export default function HomePage() {
   }, []);
 
   const todaysPainShortcutEvents = useMemo(
-    () => normalizedPainShortcutEvents.filter((event) => event.date === today),
-    [normalizedPainShortcutEvents, today]
+    () => quickPainEventsByDate.get(today) ?? [],
+    [quickPainEventsByDate, today]
   );
 
   const painShortcutTimelineByDate = useMemo<
     Partial<Record<string, PainShortcutTimelineSegment[]>>
   >(() => {
-    if (!normalizedPainShortcutEvents.length) {
-      return {};
-    }
-    const grouped: Record<string, QuickPainEvent[]> = {};
-    normalizedPainShortcutEvents.forEach((event) => {
-      if (!grouped[event.date]) {
-        grouped[event.date] = [];
-      }
-      grouped[event.date].push(event);
-    });
     const timelines: Partial<Record<string, PainShortcutTimelineSegment[]>> = {};
-    Object.entries(grouped).forEach(([date, events]) => {
+    quickPainEventsByDate.forEach((events, date) => {
       timelines[date] = computePainShortcutTimeline(events);
     });
     return timelines;
-  }, [normalizedPainShortcutEvents]);
+  }, [quickPainEventsByDate]);
 
   const painShortcutTimeline = useMemo(
     () => computePainShortcutTimeline(todaysPainShortcutEvents),
@@ -3072,15 +3063,12 @@ export default function HomePage() {
   );
 
   const painShortcutEventsForDraftDate = useMemo(
-    () => normalizedPainShortcutEvents.filter((event) => event.date === dailyDraft.date),
-    [dailyDraft.date, normalizedPainShortcutEvents]
+    () => quickPainEventsByDate.get(dailyDraft.date) ?? [],
+    [dailyDraft.date, quickPainEventsByDate]
   );
 
   const sortedPainShortcutEvents = useMemo(
-    () =>
-      painShortcutEventsForDraftDate
-        .slice()
-        .sort((a, b) => a.timestamp.localeCompare(b.timestamp)),
+    () => sortQuickPainEvents(painShortcutEventsForDraftDate),
     [painShortcutEventsForDraftDate]
   );
 
@@ -3167,8 +3155,6 @@ export default function HomePage() {
     return now.getFullYear() === 2025 && now.getMonth() === 10 && now.getDate() === 10;
   };
   const [showBirthdayGreeting, setShowBirthdayGreeting] = useState(isBirthdayGreetingDay);
-  const [showDailyMigrationDialog, setShowDailyMigrationDialog] = useState(false);
-  const [dailyMigrationConfirmed, setDailyMigrationConfirmed] = useState(false);
   const [pendingCategoryConfirm, setPendingCategoryConfirm] =
     useState<TrackableDailyCategoryId | null>(null);
   const [pendingOverviewConfirm, setPendingOverviewConfirm] =
@@ -3194,74 +3180,6 @@ export default function HomePage() {
   const usesIndexedDb = storageMetas.every((meta) => meta.driver === "indexeddb");
   const hasMemoryFallback = storageMetas.some((meta) => meta.driver === "memory");
   const storageUnavailable = storageMetas.some((meta) => meta.driver === "unavailable");
-
-  const runDailyMigration = useCallback(
-    (allowMigration: boolean) => {
-      setDailyEntries((entries) => {
-        let changed = false;
-        const normalized = entries.map((entry) => {
-          const next = normalizeDailyEntry(entry);
-          if (next !== entry) {
-            changed = true;
-          }
-          return next;
-        });
-
-        if (typeof window === "undefined" || !allowMigration) {
-          return changed ? normalized : entries;
-        }
-
-        const migrated = normalized.map((entry) => {
-          const maxPain = computeMaxPainIntensity(entry, painShortcutMaxByDate.get(entry.date) ?? null);
-          const nextPainNrs = maxPain ?? 0;
-          const existingImpact = typeof entry.impactNRS === "number" ? entry.impactNRS : null;
-          const rawImpact =
-            (entry as { impairment?: unknown }).impairment ??
-            (entry as { impact?: unknown }).impact ??
-            (entry as { impactNRS?: unknown }).impactNRS;
-          const recordedImpact = existingImpact ?? clampScore(typeof rawImpact === "number" ? rawImpact : null);
-
-          if (entry.painNRS === nextPainNrs && (recordedImpact === null || recordedImpact === entry.impactNRS)) {
-            return entry;
-          }
-
-          changed = true;
-          return {
-            ...entry,
-            painNRS: nextPainNrs,
-            impactNRS: recordedImpact ?? entry.impactNRS,
-          };
-        });
-
-        return changed ? migrated : entries;
-      });
-    },
-    [painShortcutMaxByDate, setDailyEntries]
-  );
-
-  useEffect(() => {
-    if (!dailyStorage.ready) return;
-    if (typeof window === "undefined") return;
-
-    const migrationFlag = "endo.daily.migrations.v1.painNrsImpact";
-    const hasMigrated = window.localStorage.getItem(migrationFlag) === "done";
-
-    if (hasMigrated) {
-      setShowDailyMigrationDialog(false);
-      runDailyMigration(false);
-      return;
-    }
-
-    runDailyMigration(false);
-
-    if (!dailyMigrationConfirmed) {
-      setShowDailyMigrationDialog(true);
-      return;
-    }
-
-    runDailyMigration(true);
-    window.localStorage.setItem(migrationFlag, "done");
-  }, [dailyMigrationConfirmed, dailyStorage.ready, runDailyMigration]);
 
   useEffect(() => {
     if (!dailyDraftStorage.ready) return;
@@ -3609,8 +3527,7 @@ export default function HomePage() {
 
   const annotatedDailyEntries = useMemo(() => {
     const entriesWithPain = derivedDailyEntries.map((entry) => {
-      const shortcutPain = painShortcutMaxByDate.get(entry.date) ?? null;
-      const maxPain = computeMaxPainIntensity(entry, shortcutPain);
+      const maxPain = computeMaxPainIntensity(entry);
       if (maxPain === null || entry.painNRS === maxPain) {
         return entry;
       }
@@ -3639,7 +3556,7 @@ export default function HomePage() {
         symptomAverage,
       };
     });
-  }, [derivedDailyEntries, painShortcutMaxByDate]);
+  }, [derivedDailyEntries]);
 
   const selectedCycleDay = useMemo(() => {
     if (!dailyDraft.date) return null;
@@ -6192,12 +6109,11 @@ export default function HomePage() {
     if (!pendingPainQuickAdd) {
       return;
     }
-    const { date, regionId, intensity, quality, timestamp } = pendingPainQuickAdd;
-    if (dailyDraft.date !== date) {
-      selectDailyDate(date);
-      return;
+    const normalized = normalizeQuickPainEvent(pendingPainQuickAdd);
+    updateQuickPainEventsForDate(normalized.date, (events) => [...events, normalized]);
+    if (dailyDraft.date !== normalized.date) {
+      selectDailyDate(normalized.date);
     }
-    setPainShortcutEvents((prev) => [...prev, pendingPainQuickAdd]);
     setCategoryCompletion("pain", true);
     setPendingPainQuickAdd(null);
   }, [
@@ -6205,7 +6121,7 @@ export default function HomePage() {
     pendingPainQuickAdd,
     selectDailyDate,
     setDailyDraft,
-    setPainShortcutEvents,
+    updateQuickPainEventsForDate,
     setCategoryCompletion,
   ]);
 
@@ -6218,12 +6134,14 @@ export default function HomePage() {
         const painRegions = entry.painRegions ?? [];
         const painMapRegionIds = entry.painMapRegionIds ?? [];
         const painQuality = entry.painQuality ?? [];
+        const quickPainEvents = entry.quickPainEvents ?? [];
         const painNRS = typeof entry.painNRS === "number" ? entry.painNRS : 0;
         const impactNRS = typeof entry.impactNRS === "number" ? entry.impactNRS : 0;
         return (
           painRegions.length === 0 &&
           painMapRegionIds.length === 0 &&
           painQuality.length === 0 &&
+          quickPainEvents.length === 0 &&
           painNRS <= 0 &&
           impactNRS <= 0
         );
@@ -6282,6 +6200,7 @@ export default function HomePage() {
     if (!confirmQuickActionReset("pain")) {
       return;
     }
+    updateQuickPainEventsForDate(dailyDraft.date, () => []);
     setDailyDraft((prev) => ({
       ...prev,
       painRegions: [],
@@ -6291,7 +6210,7 @@ export default function HomePage() {
       impactNRS: 0,
     }));
     setCategoryCompletion("pain", true);
-  }, [confirmQuickActionReset, setCategoryCompletion, setDailyDraft]);
+  }, [confirmQuickActionReset, dailyDraft.date, setCategoryCompletion, setDailyDraft, updateQuickPainEventsForDate]);
 
   const handleQuickNoSymptoms = useCallback(() => {
     if (!confirmQuickActionReset("symptoms")) {
@@ -7424,33 +7343,6 @@ export default function HomePage() {
           </Button>
         </div>
       )}
-      {showDailyMigrationDialog ? (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-rose-950/40 px-4 py-6">
-          <div
-            className="w-full max-w-sm space-y-4 rounded-2xl bg-white p-6 shadow-xl"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Einmalige Datenaktualisierung"
-          >
-            <div className="space-y-2">
-              <h2 className="text-lg font-semibold text-rose-900">Einmalige Datenaktualisierung</h2>
-              <p className="text-sm text-rose-700">
-                Wir gleichen deine gespeicherten Tageswerte einmalig ab. Bitte bestätige die Ausführung mit „OK“.
-              </p>
-            </div>
-            <div className="flex justify-end">
-              <Button
-                onClick={() => {
-                  setDailyMigrationConfirmed(true);
-                  setShowDailyMigrationDialog(false);
-                }}
-              >
-                OK
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
       <SectionCompletionContext.Provider value={sectionCompletionContextValue}>
         {detailToolbar}
         <main
