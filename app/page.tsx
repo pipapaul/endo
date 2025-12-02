@@ -2010,47 +2010,7 @@ function Section({
           {aside ? <div className="flex-shrink-0 sm:self-start">{aside}</div> : null}
         </div>
       ) : null}
-      <div className="space-y-4">
-        {children}
-        {completionEnabled ? (
-          <div className="flex justify-end pt-2">
-            <div className="relative inline-flex">
-              {completionEnabled && showConfetti ? (
-                <div className="pointer-events-none absolute -inset-x-4 -inset-y-3 overflow-visible">
-                  {confettiPieces.map((piece, index) => (
-                    <span
-                      key={index}
-                      className="confetti-piece absolute h-3 w-3 rounded-sm"
-                      style={{
-                        left: piece.left,
-                        top: piece.top,
-                        backgroundColor: piece.color,
-                        animationDelay: `${piece.delay}ms`,
-                      }}
-                    />
-                  ))}
-                </div>
-              ) : null}
-              <Button
-                type="button"
-                variant="outline"
-                className={cn(isCompleted ? "cursor-default" : "")}
-                onClick={handleComplete}
-                disabled={isCompleted}
-              >
-                {isCompleted ? (
-                  <span className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4" />
-                    Erledigt
-                  </span>
-                ) : (
-                  "Fertig"
-                )}
-              </Button>
-            </div>
-          </div>
-        ) : null}
-      </div>
+      <div className="space-y-4">{children}</div>
     </section>
   );
 }
@@ -3000,7 +2960,7 @@ export default function HomePage() {
         return { ...prev, [itemId]: clampedValue };
       });
     },
-    []
+    [setPbacCounts]
   );
   useEffect(() => {
     if (!dailyDraft.bleeding.isBleeding) {
@@ -3063,8 +3023,8 @@ export default function HomePage() {
   );
 
   const painShortcutEventsForDraftDate = useMemo(
-    () => quickPainEventsByDate.get(dailyDraft.date) ?? [],
-    [dailyDraft.date, quickPainEventsByDate]
+    () => quickPainEventsByDate.get(today) ?? [],
+    [quickPainEventsByDate, today]
   );
 
   const sortedPainShortcutEvents = useMemo(
@@ -3976,6 +3936,7 @@ export default function HomePage() {
   const pbacFloodingToggleId = useId();
   const pbacFlooding = dailyDraft.bleeding.flooding ?? false;
   const pbacScore = useMemo(() => computePbacScore(pbacCounts, pbacFlooding), [pbacCounts, pbacFlooding]);
+  const hasPeriodProducts = useMemo(() => Object.values(pbacCounts).some((count) => count > 0), [pbacCounts]);
   const pbacProductSummary = useMemo(
     () =>
       PBAC_PRODUCT_ITEMS.map((item) => ({
@@ -3999,7 +3960,7 @@ export default function HomePage() {
   const showPbacSummaryInToolbar =
     activeView === "daily" &&
     dailyActiveCategory === "bleeding" &&
-    dailyDraft.bleeding.isBleeding;
+    (hasPeriodProducts || pbacFlooding || dailyDraft.bleeding.clots);
   const renderPbacSummaryPanel = () => (
     <div className="space-y-4 rounded-xl border border-rose-100 bg-rose-50/90 p-4 text-sm text-rose-700 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -4172,7 +4133,7 @@ export default function HomePage() {
       </div>
     );
   };
-  const currentPbacForNotice = dailyDraft.bleeding.isBleeding ? pbacScore : dailyDraft.bleeding.pbacScore ?? 0;
+  const currentPbacForNotice = pbacScore;
   const showDizzinessNotice =
     activeDizziness && dailyDraft.dizzinessOpt?.present && currentPbacForNotice >= HEAVY_BLEED_PBAC;
   const phqSeverity = monthlyDraft.mental?.phq9Severity ?? mapPhqSeverity(monthlyDraft.mental?.phq9);
@@ -4185,20 +4146,26 @@ export default function HomePage() {
   }, [dailySaveNotice]);
 
   useEffect(() => {
-    if (!dailyDraft.bleeding.isBleeding) {
-      return;
-    }
-
-    setDailyDraft((prev) => ({
-      ...prev,
-      bleeding: {
-        ...prev.bleeding,
-        pbacScore,
-        clots: prev.bleeding.clots ?? false,
-        flooding: prev.bleeding.flooding ?? false,
-      },
-    }));
-  }, [dailyDraft.bleeding.isBleeding, pbacScore, setDailyDraft]);
+    setDailyDraft((prev) => {
+      const normalizedCounts = normalizePbacCounts(prev.pbacCounts);
+      const hasProducts = Object.values(normalizedCounts).some((count) => count > 0);
+      const nextBleeding = hasProducts
+        ? {
+            isBleeding: true,
+            pbacScore,
+            clots: prev.bleeding.clots ?? false,
+            flooding: prev.bleeding.flooding ?? false,
+          }
+        : { isBleeding: false };
+      if (
+        JSON.stringify(prev.bleeding) === JSON.stringify(nextBleeding) &&
+        JSON.stringify(prev.pbacCounts) === JSON.stringify(normalizedCounts)
+      ) {
+        return prev;
+      }
+      return { ...prev, bleeding: nextBleeding, pbacCounts: normalizedCounts };
+    });
+  }, [pbacScore, setDailyDraft]);
 
   useEffect(() => {
     if (!bleedingQuickAddOpen) {
@@ -4439,154 +4406,212 @@ export default function HomePage() {
     [setDailyDraft]
   );
 
-  const handleDailySubmit = (options?: { goToHome?: boolean }): boolean => {
-    const payload: DailyEntry = {
-      ...dailyDraft,
-      painQuality: dailyDraft.painQuality,
-      bleeding: dailyDraft.bleeding.isBleeding
+  const prepareDailyEntryForSave = useCallback(
+    (entry: DailyEntry): DailyEntry => {
+      const normalizedCounts = normalizePbacCounts(entry.pbacCounts ?? pbacCounts);
+      const hasPeriodProducts = Object.values(normalizedCounts).some((count) => count > 0);
+      const bleedingFlooding = entry.bleeding?.flooding ?? false;
+      const bleedingPayload = hasPeriodProducts
         ? {
             isBleeding: true,
-            pbacScore,
-            clots: dailyDraft.bleeding.clots ?? false,
-            flooding: dailyDraft.bleeding.flooding ?? false,
+            pbacScore: computePbacScore(normalizedCounts, bleedingFlooding),
+            clots: entry.bleeding?.clots ?? false,
+            flooding: bleedingFlooding,
           }
-        : { isBleeding: false },
-      pbacCounts: normalizePbacCounts(pbacCounts),
-      rescueMeds: (dailyDraft.rescueMeds ?? [])
-        .filter((med) => med.name.trim().length > 0)
-        .map((med) => ({
-          name: med.name.trim(),
-          doseMg: typeof med.doseMg === "number" ? Math.max(0, Math.round(med.doseMg)) : undefined,
-          time: med.time?.trim(),
-        })),
-      notesTags: painQualityOther
-        ? Array.from(
-            new Set([...(dailyDraft.notesTags ?? []), `Schmerz anders: ${painQualityOther.trim()}`])
-          )
-        : dailyDraft.notesTags,
-    };
+        : { isBleeding: false };
 
-    if (payload.ovulationPain) {
-      const { side, intensity } = payload.ovulationPain;
-      if (!side) {
-        delete (payload as { ovulationPain?: DailyEntry["ovulationPain"] }).ovulationPain;
-      } else {
-        const normalized: NonNullable<DailyEntry["ovulationPain"]> = { side };
-        if (typeof intensity === "number") {
-          normalized.intensity = Math.max(0, Math.min(10, Math.round(intensity)));
+      const payload: DailyEntry = {
+        ...entry,
+        painQuality: entry.painQuality,
+        bleeding: bleedingPayload,
+        pbacCounts: normalizedCounts,
+        rescueMeds: (entry.rescueMeds ?? [])
+          .filter((med) => med.name.trim().length > 0)
+          .map((med) => ({
+            name: med.name.trim(),
+            doseMg: typeof med.doseMg === "number" ? Math.max(0, Math.round(med.doseMg)) : undefined,
+            time: med.time?.trim(),
+          })),
+        notesTags: painQualityOther
+          ? Array.from(new Set([...(entry.notesTags ?? []), `Schmerz anders: ${painQualityOther.trim()}`]))
+          : entry.notesTags,
+      };
+
+      if (payload.ovulationPain) {
+        const { side, intensity } = payload.ovulationPain;
+        if (!side) {
+          delete (payload as { ovulationPain?: DailyEntry["ovulationPain"] }).ovulationPain;
+        } else {
+          const normalized: NonNullable<DailyEntry["ovulationPain"]> = { side };
+          if (typeof intensity === "number") {
+            normalized.intensity = Math.max(0, Math.min(10, Math.round(intensity)));
+          }
+          payload.ovulationPain = normalized;
         }
-        payload.ovulationPain = normalized;
       }
-    }
 
-    if (!activeUrinary) {
-      delete (payload as { urinaryOpt?: DailyEntry["urinaryOpt"] }).urinaryOpt;
-    } else if (payload.urinaryOpt) {
-      const normalized: NonNullable<DailyEntry["urinaryOpt"]> = {};
-      if (typeof payload.urinaryOpt.present === "boolean") {
-        normalized.present = payload.urinaryOpt.present;
-      }
-      if (typeof payload.urinaryOpt.urgency === "number") {
-        normalized.urgency = Math.max(0, Math.min(10, Math.round(payload.urinaryOpt.urgency)));
-      }
-      if (typeof payload.urinaryOpt.leaksCount === "number") {
-        normalized.leaksCount = Math.max(0, Math.round(payload.urinaryOpt.leaksCount));
-      }
-      if (typeof payload.urinaryOpt.nocturia === "number") {
-        normalized.nocturia = Math.max(0, Math.round(payload.urinaryOpt.nocturia));
-      }
-      if (typeof payload.urinaryOpt.padsCount === "number") {
-        normalized.padsCount = Math.max(0, Math.round(payload.urinaryOpt.padsCount));
-      }
-      payload.urinaryOpt = Object.keys(normalized).length ? normalized : undefined;
-      if (!payload.urinaryOpt) {
+      if (!activeUrinary) {
         delete (payload as { urinaryOpt?: DailyEntry["urinaryOpt"] }).urinaryOpt;
+      } else if (payload.urinaryOpt) {
+        const normalized: NonNullable<DailyEntry["urinaryOpt"]> = {};
+        if (typeof payload.urinaryOpt.present === "boolean") {
+          normalized.present = payload.urinaryOpt.present;
+        }
+        if (typeof payload.urinaryOpt.urgency === "number") {
+          normalized.urgency = Math.max(0, Math.min(10, Math.round(payload.urinaryOpt.urgency)));
+        }
+        if (typeof payload.urinaryOpt.leaksCount === "number") {
+          normalized.leaksCount = Math.max(0, Math.round(payload.urinaryOpt.leaksCount));
+        }
+        if (typeof payload.urinaryOpt.nocturia === "number") {
+          normalized.nocturia = Math.max(0, Math.round(payload.urinaryOpt.nocturia));
+        }
+        if (typeof payload.urinaryOpt.padsCount === "number") {
+          normalized.padsCount = Math.max(0, Math.round(payload.urinaryOpt.padsCount));
+        }
+        payload.urinaryOpt = Object.keys(normalized).length ? normalized : undefined;
+        if (!payload.urinaryOpt) {
+          delete (payload as { urinaryOpt?: DailyEntry["urinaryOpt"] }).urinaryOpt;
+        }
       }
-    }
 
-    if (!activeHeadache) {
-      delete (payload as { headacheOpt?: DailyEntry["headacheOpt"] }).headacheOpt;
-    } else if (payload.headacheOpt) {
-      const normalized: NonNullable<DailyEntry["headacheOpt"]> = {
-        present: Boolean(payload.headacheOpt.present),
-      };
-      if (normalized.present && typeof payload.headacheOpt.nrs === "number") {
-        normalized.nrs = Math.max(0, Math.min(10, Math.round(payload.headacheOpt.nrs)));
+      if (!activeHeadache) {
+        delete (payload as { headacheOpt?: DailyEntry["headacheOpt"] }).headacheOpt;
+      } else if (payload.headacheOpt) {
+        const normalized: NonNullable<DailyEntry["headacheOpt"]> = {
+          present: Boolean(payload.headacheOpt.present),
+        };
+        if (normalized.present && typeof payload.headacheOpt.nrs === "number") {
+          normalized.nrs = Math.max(0, Math.min(10, Math.round(payload.headacheOpt.nrs)));
+        }
+        if (typeof payload.headacheOpt.aura === "boolean") {
+          normalized.aura = payload.headacheOpt.aura;
+        }
+        const meds = (payload.headacheOpt.meds ?? [])
+          .filter((med) => med.name.trim().length > 0)
+          .map((med) => ({
+            name: med.name.trim(),
+            doseMg: typeof med.doseMg === "number" ? Math.max(0, Math.round(med.doseMg)) : undefined,
+            time: med.time,
+          }));
+        if (meds.length) {
+          normalized.meds = meds;
+        }
+        payload.headacheOpt = normalized;
       }
-      if (typeof payload.headacheOpt.aura === "boolean") {
-        normalized.aura = payload.headacheOpt.aura;
+
+      if (!activeDizziness) {
+        delete (payload as { dizzinessOpt?: DailyEntry["dizzinessOpt"] }).dizzinessOpt;
+      } else if (payload.dizzinessOpt) {
+        const normalized: NonNullable<DailyEntry["dizzinessOpt"]> = {
+          present: Boolean(payload.dizzinessOpt.present),
+        };
+        if (normalized.present && typeof payload.dizzinessOpt.nrs === "number") {
+          normalized.nrs = Math.max(0, Math.min(10, Math.round(payload.dizzinessOpt.nrs)));
+        }
+        if (typeof payload.dizzinessOpt.orthostatic === "boolean") {
+          normalized.orthostatic = payload.dizzinessOpt.orthostatic;
+        }
+        payload.dizzinessOpt = normalized;
       }
-      const meds = (payload.headacheOpt.meds ?? [])
-        .filter((med) => med.name.trim().length > 0)
-        .map((med) => ({
-          name: med.name.trim(),
-          doseMg: typeof med.doseMg === "number" ? Math.max(0, Math.round(med.doseMg)) : undefined,
-          time: med.time,
-        }));
-      if (meds.length) {
-        normalized.meds = meds;
+
+      const prunedPayload = pruneDailyEntryByCompletion(payload, dailyCategoryCompletion);
+
+      const syncedDraft: DailyEntry = { ...prunedPayload };
+
+      if (Array.isArray(syncedDraft.painRegions)) {
+        syncedDraft.painMapRegionIds = syncedDraft.painRegions.map((region) => region.regionId);
+
+        const qualitiesSet = new Set<string>();
+        syncedDraft.painRegions.forEach((region) => {
+          (region.qualities ?? []).forEach((quality) => qualitiesSet.add(quality));
+        });
+        syncedDraft.painQuality = Array.from(qualitiesSet) as DailyEntry["painQuality"];
       }
-      payload.headacheOpt = normalized;
-    }
 
-    if (!activeDizziness) {
-      delete (payload as { dizzinessOpt?: DailyEntry["dizzinessOpt"] }).dizzinessOpt;
-    } else if (payload.dizzinessOpt) {
-      const normalized: NonNullable<DailyEntry["dizzinessOpt"]> = {
-        present: Boolean(payload.dizzinessOpt.present),
-      };
-      if (normalized.present && typeof payload.dizzinessOpt.nrs === "number") {
-        normalized.nrs = Math.max(0, Math.min(10, Math.round(payload.dizzinessOpt.nrs)));
-      }
-      if (typeof payload.dizzinessOpt.orthostatic === "boolean") {
-        normalized.orthostatic = payload.dizzinessOpt.orthostatic;
-      }
-      payload.dizzinessOpt = normalized;
-    }
+      return applyAutomatedPainSymptoms(normalizeDailyEntry(syncedDraft));
+    },
+    [
+      activeDizziness,
+      activeHeadache,
+      activeUrinary,
+      dailyCategoryCompletion,
+      painQualityOther,
+      pbacCounts,
+    ]
+  );
 
-    const prunedPayload = pruneDailyEntryByCompletion(payload, dailyCategoryCompletion);
-
-    const syncedDraft: DailyEntry = { ...prunedPayload };
-
-    if (Array.isArray(syncedDraft.painRegions)) {
-      syncedDraft.painMapRegionIds = syncedDraft.painRegions.map((region) => region.regionId);
-
-      const qualitiesSet = new Set<string>();
-      syncedDraft.painRegions.forEach((region) => {
-        (region.qualities ?? []).forEach((quality) => qualitiesSet.add(quality));
+  const persistDailyEntry = useCallback(
+    (entry: DailyEntry) => {
+      setDailyEntries((prev) => {
+        const existingIndex = prev.findIndex((current) => current.date === entry.date);
+        const serializedEntry = JSON.stringify(entry);
+        if (existingIndex !== -1 && JSON.stringify(prev[existingIndex]) === serializedEntry) {
+          return prev;
+        }
+        const nextEntries = [...prev];
+        if (existingIndex === -1) {
+          nextEntries.push(entry);
+        } else {
+          nextEntries[existingIndex] = entry;
+        }
+        return nextEntries.sort((a, b) => a.date.localeCompare(b.date));
       });
-      syncedDraft.painQuality = Array.from(qualitiesSet) as DailyEntry["painQuality"];
-    }
+      setLastSavedDailySnapshot(entry);
+      return entry;
+    },
+    [setDailyEntries]
+  );
 
-    const automatedDraft = applyAutomatedPainSymptoms(syncedDraft);
-
+  const handleDailySubmit = (options?: { goToHome?: boolean }): boolean => {
+    const automatedDraft = prepareDailyEntryForSave(dailyDraft);
     const validationIssues = validateDailyEntry(automatedDraft);
     setIssues(validationIssues);
-    if (validationIssues.length) {
-      setInfoMessage("Bitte prüfe die markierten Felder.");
-      return false;
-    }
-
-    setDailyEntries((prev) => {
-      const filtered = prev.filter((entry) => entry.date !== automatedDraft.date);
-      return [...filtered, automatedDraft].sort((a, b) => a.date.localeCompare(b.date));
-    });
-
+    persistDailyEntry(automatedDraft);
     setInfoMessage(null);
-    setDailySaveNotice("Tagesdaten gespeichert.");
+    setDailySaveNotice("Alle Änderungen werden automatisch gespeichert.");
     const nextDraft = automatedDraft;
     setDailyDraft(nextDraft);
-    setLastSavedDailySnapshot(nextDraft);
     setPainQualityOther("");
     setNotesTagDraft("");
     setSensorsVisible(false);
     setExploratoryVisible(false);
-    setIssues([]);
     if (options?.goToHome ?? true) {
       setActiveView("home");
     }
     return true;
   };
+
+  useEffect(() => {
+    const prepared = prepareDailyEntryForSave(dailyDraft);
+    const serializedPrepared = JSON.stringify(prepared);
+    const serializedDraft = JSON.stringify(dailyDraft);
+    if (serializedDraft !== serializedPrepared) {
+      setDailyDraft(prepared);
+      return;
+    }
+    const serializedSnapshot = JSON.stringify(lastSavedDailySnapshot);
+    if (serializedSnapshot !== serializedPrepared) {
+      persistDailyEntry(prepared);
+      setIssues(validateDailyEntry(prepared));
+      setInfoMessage(null);
+      setDailySaveNotice("Alle Änderungen werden automatisch gespeichert.");
+      return;
+    }
+    if (!dailySaveNotice) {
+      setDailySaveNotice("Alle Änderungen werden automatisch gespeichert.");
+    }
+  }, [
+    dailyDraft,
+    dailySaveNotice,
+    lastSavedDailySnapshot,
+    persistDailyEntry,
+    prepareDailyEntryForSave,
+    setDailyDraft,
+    setInfoMessage,
+    setIssues,
+    setDailySaveNotice,
+  ]);
 
   const handleMonthlySubmit = () => {
     const payload: MonthlyEntry = { ...monthlyDraft };
@@ -6190,19 +6215,19 @@ export default function HomePage() {
 
   const confirmQuickActionReset = useCallback(
     (categoryId: TrackableDailyCategoryId) => {
-      if (!dailyCategoryCompletion[categoryId]) {
+      if (categoryZeroStates[categoryId]) {
         return true;
       }
       return window.confirm("Sollen die eingegebenen Werte gelöscht und auf 0 gesetzt werden?");
     },
-    [dailyCategoryCompletion]
+    [categoryZeroStates]
   );
 
   const handleQuickNoPain = useCallback(() => {
     if (!confirmQuickActionReset("pain")) {
       return;
     }
-    updateQuickPainEventsForDate(dailyDraft.date, () => []);
+    updateQuickPainEventsForDate(today, () => []);
     setDailyDraft((prev) => ({
       ...prev,
       painRegions: [],
@@ -6212,7 +6237,7 @@ export default function HomePage() {
       impactNRS: 0,
     }));
     setCategoryCompletion("pain", true);
-  }, [confirmQuickActionReset, dailyDraft.date, setCategoryCompletion, setDailyDraft, updateQuickPainEventsForDate]);
+  }, [confirmQuickActionReset, setCategoryCompletion, setDailyDraft, today, updateQuickPainEventsForDate]);
 
   const handleQuickNoSymptoms = useCallback(() => {
     if (!confirmQuickActionReset("symptoms")) {
@@ -7558,9 +7583,9 @@ export default function HomePage() {
                         onClick={() => setStorageDetailsExpanded(false)}
                         className="text-[11px] font-semibold uppercase tracking-wide text-emerald-600 transition hover:text-emerald-700"
                       >
-                        Ausblenden
-                      </button>
-                    </div>
+                          Ausblenden
+                        </button>
+                      </div>
                   )}
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div className="flex flex-wrap items-center gap-3 text-sm text-rose-700">
@@ -7868,12 +7893,9 @@ export default function HomePage() {
                   </div>
                 </div>
                 <p className="text-xs text-rose-600">
-                  Es werden nur Daten von den Bereichen gespeichert, die einen grünen Haken haben.
+                  Änderungen werden sofort gespeichert. Bereiche ohne grünen Haken fließen nicht in Auswertungen ein.
                 </p>
                 <div className="flex flex-wrap items-center gap-3">
-                  <Button type="button" onClick={() => handleDailySubmit()} disabled={!isDailyDirty}>
-                    Tagesdaten speichern
-                  </Button>
                   {(draftStatus || dailySaveNotice) && (
                     <div className="flex items-center gap-2">
                       {draftStatus && (
@@ -8266,24 +8288,11 @@ export default function HomePage() {
                   title="Periode und Blutung"
                   onComplete={() => setDailyActiveCategory("overview")}
                 >
-                  <div className="flex flex-wrap items-center gap-3">
-                    <TermHeadline termKey="bleeding_active" />
-                    <Switch
-                      checked={dailyDraft.bleeding.isBleeding}
-                      onCheckedChange={(checked) => {
-                        setDailyDraft((prev) =>
-                          checked
-                            ? { ...prev, bleeding: { isBleeding: true, clots: false, flooding: false, pbacScore } }
-                            : { ...prev, bleeding: { isBleeding: false } }
-                        );
-                        if (!checked) {
-                          setPbacCounts(createEmptyPbacCounts());
-                        }
-                      }}
-                    />
+                  <div className="space-y-2 rounded-xl bg-rose-50/60 p-3 text-sm text-rose-800">
+                    <TermHeadline termKey="pbac" />
+                    <p>Blutung wird automatisch als aktiv gezählt, sobald Periodenprodukte eingetragen sind.</p>
                   </div>
-                  {dailyDraft.bleeding.isBleeding && (
-                    <div className="space-y-6">
+                  <div className="space-y-6">
                       {!showPbacSummaryInToolbar ? renderPbacSummaryPanel() : null}
                       <div className="space-y-4">
                         <div className="space-y-2">
@@ -8489,7 +8498,6 @@ export default function HomePage() {
                         {renderIssuesForPath("bleeding.flooding")}
                       </div>
                     </div>
-                  )}
                 </Section>
               </div>
 
