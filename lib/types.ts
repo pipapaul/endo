@@ -1,3 +1,5 @@
+import type { PbacCounts } from "./pbac";
+
 export type ID = string;
 
 export interface FeatureFlags {
@@ -8,6 +10,26 @@ export interface FeatureFlags {
 
 export type PainGranularity = "tag" | "dritteltag";
 export type PainTimeOfDay = "morgens" | "mittags" | "abends";
+export type PainQuality =
+  | "krampfend"
+  | "stechend"
+  | "brennend"
+  | "dumpf"
+  | "ziehend"
+  | "anders"
+  | "Migräne"
+  | "Migräne mit Aura";
+
+export type QuickPainEvent = {
+  id: number;
+  date: string;
+  timestamp: string;
+  regionId: ID;
+  intensity: number;
+  quality: PainQuality | null;
+  timeOfDay?: PainTimeOfDay[];
+  granularity?: PainGranularity;
+};
 
 export interface DailyEntry {
   date: string; // ISO YYYY-MM-DD
@@ -24,23 +46,16 @@ export interface DailyEntry {
 
   impactNRS?: number;
   painNRS: number; // 0–10
-  painQuality: (
-    | "krampfend"
-    | "stechend"
-    | "brennend"
-    | "dumpf"
-    | "ziehend"
-    | "anders"
-    | "Migräne"
-    | "Migräne mit Aura"
-  )[];
+  painQuality: PainQuality[];
   painMapRegionIds: ID[];
+  quickPainEvents?: QuickPainEvent[];
   bleeding: {
     isBleeding: boolean;
     pbacScore?: number; // >=0 when isBleeding
     clots?: boolean;
     flooding?: boolean;
   };
+  pbacCounts?: PbacCounts;
   symptoms: {
     dysmenorrhea?: { present: boolean; score?: number };
     deepDyspareunia?: { present: boolean; score?: number };
