@@ -4442,6 +4442,7 @@ export default function HomePage() {
   const handleDailySubmit = (options?: {
     goToHome?: boolean;
     pbacCountsOverride?: PbacCounts;
+    categoryCompletionOverride?: Partial<Record<Exclude<DailyCategoryId, "overview">, boolean>>;
   }): boolean => {
     const resolvedPbacCounts = normalizePbacCounts(options?.pbacCountsOverride ?? pbacCounts);
     const resolvedPbacScore = dailyDraft.bleeding.isBleeding
@@ -4552,7 +4553,11 @@ export default function HomePage() {
       payload.dizzinessOpt = normalized;
     }
 
-    const prunedPayload = pruneDailyEntryByCompletion(payload, dailyCategoryCompletion);
+    const completion = options?.categoryCompletionOverride
+      ? { ...dailyCategoryCompletion, ...options.categoryCompletionOverride }
+      : dailyCategoryCompletion;
+
+    const prunedPayload = pruneDailyEntryByCompletion(payload, completion);
 
     const syncedDraft: DailyEntry = { ...prunedPayload };
 
@@ -6096,7 +6101,11 @@ export default function HomePage() {
         Icon: selectedItem.Icon,
       });
       setCategoryCompletion("bleeding", true);
-      handleDailySubmit({ goToHome: false, pbacCountsOverride: nextPbacCounts ?? undefined });
+      handleDailySubmit({
+        goToHome: false,
+        pbacCountsOverride: nextPbacCounts ?? undefined,
+        categoryCompletionOverride: { bleeding: true },
+      });
       if (bleedingQuickAddNoticeTimeoutRef.current) {
         window.clearTimeout(bleedingQuickAddNoticeTimeoutRef.current);
       }
