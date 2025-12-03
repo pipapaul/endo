@@ -4026,9 +4026,7 @@ export default function HomePage() {
       payload.dizzinessOpt = normalized;
     }
 
-    const prunedPayload = pruneDailyEntryByCompletion(payload, dailyCategoryCompletion);
-
-    const syncedDraft: DailyEntry = { ...prunedPayload };
+    const syncedDraft: DailyEntry = { ...payload };
 
     if (Array.isArray(syncedDraft.painRegions)) {
       syncedDraft.painMapRegionIds = syncedDraft.painRegions.map((region) => region.regionId);
