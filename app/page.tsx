@@ -2707,6 +2707,46 @@ export default function HomePage() {
     setWeeklyReportsRevision((prev) => prev + 1);
   }, []);
 
+  const [issues, setIssues] = useState<ValidationIssue[]>([]);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [detailToolbarHeight, setDetailToolbarHeight] = useState<number>(DETAIL_TOOLBAR_FALLBACK_HEIGHT);
+  const [activeView, setActiveView] = useState<"home" | "daily" | "weekly" | "monthly" | "analytics">("home");
+  const [analyticsActiveSection, setAnalyticsActiveSection] = useState<AnalyticsSectionKey>("progress");
+  const [dailyActiveCategory, setDailyActiveCategory] = useState<DailyCategoryId>("overview");
+  const [persisted, setPersisted] = useState<boolean | null>(null);
+  const [persistWarning, setPersistWarning] = useState<string | null>(null);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [showInstallHint, setShowInstallHint] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [currentTime, setCurrentTime] = useState<Date>(() => new Date());
+  const [showCheckInPopup, setShowCheckInPopup] = useState(false);
+  const [pendingDismissCheckIn, setPendingDismissCheckIn] = useState<PendingCheckIn | null>(null);
+
+  const isDailyDirty = useMemo(
+    () =>
+      JSON.stringify(normalizeDailyEntry(dailyDraft)) !==
+      JSON.stringify(normalizeDailyEntry(lastSavedDailySnapshot)),
+    [dailyDraft, lastSavedDailySnapshot]
+  );
+
+  const hasEntryForSelectedDate = useMemo(
+    () => dailyEntries.some((entry) => entry.date === dailyDraft.date),
+    [dailyEntries, dailyDraft.date]
+  );
+
+  const hasDailyEntryForToday = useMemo(
+    () => dailyEntries.some((entry) => entry.date === today),
+    [dailyEntries, today]
+  );
+
+  const dailyScopeKey = dailyDraft.date ? `daily:${dailyDraft.date}` : null;
+
+  const { dailySectionCompletion, resolvedDailyScopeKey } = useDailySectionCompletion({
+    dailyScopeKey,
+    sectionCompletionState,
+    sectionCompletionStorage,
+  });
+
   const sectionCompletionContextValue = useMemo<SectionCompletionContextValue>(
     () => ({
       getCompletion: (scope, key) => {
@@ -2781,46 +2821,6 @@ export default function HomePage() {
       setSectionRegistry,
     ]
   );
-
-  const [issues, setIssues] = useState<ValidationIssue[]>([]);
-  const [infoMessage, setInfoMessage] = useState<string | null>(null);
-  const [detailToolbarHeight, setDetailToolbarHeight] = useState<number>(DETAIL_TOOLBAR_FALLBACK_HEIGHT);
-  const [activeView, setActiveView] = useState<"home" | "daily" | "weekly" | "monthly" | "analytics">("home");
-  const [analyticsActiveSection, setAnalyticsActiveSection] = useState<AnalyticsSectionKey>("progress");
-  const [dailyActiveCategory, setDailyActiveCategory] = useState<DailyCategoryId>("overview");
-  const [persisted, setPersisted] = useState<boolean | null>(null);
-  const [persistWarning, setPersistWarning] = useState<string | null>(null);
-  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [showInstallHint, setShowInstallHint] = useState(false);
-  const [isStandalone, setIsStandalone] = useState(false);
-  const [currentTime, setCurrentTime] = useState<Date>(() => new Date());
-  const [showCheckInPopup, setShowCheckInPopup] = useState(false);
-  const [pendingDismissCheckIn, setPendingDismissCheckIn] = useState<PendingCheckIn | null>(null);
-
-  const isDailyDirty = useMemo(
-    () =>
-      JSON.stringify(normalizeDailyEntry(dailyDraft)) !==
-      JSON.stringify(normalizeDailyEntry(lastSavedDailySnapshot)),
-    [dailyDraft, lastSavedDailySnapshot]
-  );
-
-  const hasEntryForSelectedDate = useMemo(
-    () => dailyEntries.some((entry) => entry.date === dailyDraft.date),
-    [dailyEntries, dailyDraft.date]
-  );
-
-  const hasDailyEntryForToday = useMemo(
-    () => dailyEntries.some((entry) => entry.date === today),
-    [dailyEntries, today]
-  );
-
-  const dailyScopeKey = dailyDraft.date ? `daily:${dailyDraft.date}` : null;
-
-  const { dailySectionCompletion, resolvedDailyScopeKey } = useDailySectionCompletion({
-    dailyScopeKey,
-    sectionCompletionState,
-    sectionCompletionStorage,
-  });
 
   const selectDailyDate = useCallback(
     (targetDate: string, options?: { manual?: boolean }) => {
@@ -3246,7 +3246,7 @@ export default function HomePage() {
       return "analytics";
     }
     return null;
-  }, [activeView, currentMonth, dailyDraft.date, monthlyDraft.month, weeklyScopeIsoWeek]);
+  }, [activeView, currentMonth, monthlyDraft.month, resolvedDailyScopeKey, weeklyScopeIsoWeek]);
 
   const activeScopeProgress = useMemo(() => {
     if (!activeScopeKey) {
