@@ -56,9 +56,16 @@ export function Section({
 }) {
   const scope = useContext(SectionScopeContext);
   const completionContext = useContext(SectionCompletionContext);
+  const completedFromContext = useMemo(() => {
+    if (!completionEnabled) return false;
+    if (!completionContext) return false;
+    if (scope === null || scope === undefined) return false;
+    return completionContext.getCompletion(scope, title);
+  }, [completionContext, completionEnabled, scope, title]);
+
   const cardRef = useRef<HTMLDivElement | null>(null);
   const timeoutRef = useRef<number | null>(null);
-  const [isCompleted, setIsCompleted] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(completedFromContext);
   const [showConfetti, setShowConfetti] = useState(false);
   const confettiPieces = useMemo(
     () =>
@@ -68,13 +75,6 @@ export function Section({
       })),
     []
   );
-
-  const completedFromContext = useMemo(() => {
-    if (!completionEnabled) return false;
-    if (!completionContext) return false;
-    if (scope === null || scope === undefined) return false;
-    return completionContext.getCompletion(scope, title);
-  }, [completionContext, completionEnabled, scope, title]);
 
   useEffect(() => {
     if (!completionEnabled) return;
