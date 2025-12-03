@@ -2830,10 +2830,15 @@ export default function HomePage() {
         typeof structuredClone === "function"
           ? structuredClone(baseEntry)
           : (JSON.parse(JSON.stringify(baseEntry)) as DailyEntry);
-      setDailyDraft(clonedEntry);
-      setLastSavedDailySnapshot(clonedEntry);
+      const normalizedPbacCounts = normalizePbacCounts(clonedEntry.pbacCounts);
+      setPbacCountsState((prev) =>
+        arePbacCountsEqual(prev, normalizedPbacCounts) ? prev : normalizedPbacCounts
+      );
+      const nextDraft = { ...clonedEntry, pbacCounts: normalizedPbacCounts };
+      setDailyDraft(nextDraft);
+      setLastSavedDailySnapshot(nextDraft);
     },
-    [derivedDailyEntries, setDailyDraft, setLastSavedDailySnapshot]
+    [derivedDailyEntries, setDailyDraft, setLastSavedDailySnapshot, setPbacCountsState]
   );
 
   useEffect(() => {
