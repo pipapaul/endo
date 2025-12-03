@@ -920,79 +920,6 @@ const createEmptyCategoryCompletion = (): Record<TrackableDailyCategoryId, boole
     return acc;
   }, {} as Record<TrackableDailyCategoryId, boolean>);
 
-const pruneDailyEntryByCompletion = (
-  entry: DailyEntry,
-  completion: Record<Exclude<DailyCategoryId, "overview">, boolean>
-): DailyEntry => {
-  const normalizedPbacCounts = normalizePbacCounts(entry.pbacCounts);
-  const hasActiveBleeding = Boolean(entry.bleeding?.isBleeding);
-  const next: DailyEntry = {
-    ...entry,
-    symptoms: { ...(entry.symptoms ?? {}) },
-  };
-
-  if (!completion.pain) {
-    next.painRegions = [];
-    next.painMapRegionIds = [];
-    next.painQuality = [] as DailyEntry["painQuality"];
-    next.painNRS = 0;
-    next.impactNRS = 0;
-    next.quickPainEvents = [];
-    delete (next as { ovulationPain?: DailyEntry["ovulationPain"] }).ovulationPain;
-    delete (next.symptoms as Partial<DailyEntry["symptoms"]>).deepDyspareunia;
-  }
-
-  if (!completion.symptoms) {
-    SYMPTOM_ITEMS.forEach((item) => {
-      delete (next.symptoms as Partial<DailyEntry["symptoms"]>)[item.key];
-    });
-  }
-
-  if (!completion.bleeding) {
-    next.bleeding = { isBleeding: false };
-    next.pbacCounts = hasActiveBleeding ? normalizedPbacCounts : createEmptyPbacCounts();
-  } else {
-    next.pbacCounts = normalizedPbacCounts;
-  }
-
-  if (!completion.medication) {
-    next.rescueMeds = [];
-  }
-
-  if (!completion.sleep) {
-    delete (next as { sleep?: DailyEntry["sleep"] }).sleep;
-  }
-
-  if (!completion.bowelBladder) {
-    delete (next.symptoms as Partial<DailyEntry["symptoms"]>).dyschezia;
-    delete (next.symptoms as Partial<DailyEntry["symptoms"]>).dysuria;
-    delete (next as { gi?: DailyEntry["gi"] }).gi;
-    delete (next as { urinary?: DailyEntry["urinary"] }).urinary;
-    delete (next as { urinaryOpt?: DailyEntry["urinaryOpt"] }).urinaryOpt;
-    delete (next as { dizzinessOpt?: DailyEntry["dizzinessOpt"] }).dizzinessOpt;
-  }
-
-  if (!completion.notes) {
-    delete (next as { notesTags?: DailyEntry["notesTags"] }).notesTags;
-    delete (next as { notesFree?: DailyEntry["notesFree"] }).notesFree;
-  }
-
-  if (!completion.optional) {
-    delete (next as { ovulation?: DailyEntry["ovulation"] }).ovulation;
-    delete (next as { activity?: DailyEntry["activity"] }).activity;
-    delete (next as { exploratory?: DailyEntry["exploratory"] }).exploratory;
-    delete (next as { headacheOpt?: DailyEntry["headacheOpt"] }).headacheOpt;
-  }
-
-  const cleanedSymptomsEntries = Object.entries(next.symptoms ?? {}).filter(([, value]) => value !== undefined);
-  next.symptoms = cleanedSymptomsEntries.reduce<DailyEntry["symptoms"]>((acc, [key, value]) => {
-    acc[key as keyof DailyEntry["symptoms"]] = value as DailyEntry["symptoms"][keyof DailyEntry["symptoms"]];
-    return acc;
-  }, {} as DailyEntry["symptoms"]);
-
-  return next;
-};
-
 type SymptomSnapshot = { present: boolean; score: number | null };
 
 type CategorySnapshot = {
@@ -1223,10 +1150,10 @@ const restoreDailyCategorySnapshot = (
           nextEntry = buildDailyDraftWithPainRegions(nextEntry, normalizedRegions);
         }
         if (data.painNRS !== undefined) {
-          nextEntry.painNRS = data.painNRS ?? 0;
+          nextEntry.painNRS = data.painNRS ?? null;
         }
         if (data.impactNRS !== undefined) {
-          nextEntry.impactNRS = data.impactNRS ?? undefined;
+          nextEntry.impactNRS = data.impactNRS ?? null;
         }
         nextEntry.headacheOpt = data.headacheOpt ? deepClone(data.headacheOpt) : undefined;
         nextEntry.ovulationPain = data.ovulationPain ? deepClone(data.ovulationPain) : undefined;
@@ -1452,7 +1379,7 @@ const restoreDailyCategorySnapshot = (
 type CycleOverviewPoint = {
   date: string;
   cycleDay: number | null;
-  painNRS: number;
+  painNRS: number | null;
   impactNRS: number | null;
   pbacScore: number | null;
   isBleeding: boolean;
@@ -1810,10 +1737,10 @@ const createEmptyDailyEntry = (date: string): DailyEntry => ({
 
   // Neu
   painRegions: [], // noch keine Regionen ausgewählt
-  impactNRS: 0, // empfundene Gesamtbeeinträchtigung heute
+  impactNRS: null, // empfundene Gesamtbeeinträchtigung heute
 
   // Alt (wird weiter gepflegt, damit Charts usw. funktionieren)
-  painNRS: 0,
+  painNRS: null,
   painQuality: [],
   painMapRegionIds: [],
   quickPainEvents: [],
@@ -3081,7 +3008,7 @@ export default function HomePage() {
       pointsByDate.set(entry.date, {
         date: entry.date,
         cycleDay: cycleDay ?? null,
-        painNRS: entry.painNRS ?? 0,
+        painNRS: entry.painNRS ?? null,
         impactNRS: entry.impactNRS ?? null,
         pbacScore: entry.bleeding?.pbacScore ?? null,
         isBleeding: entry.bleeding?.isBleeding ?? false,
@@ -3104,7 +3031,7 @@ export default function HomePage() {
         points.push({
           date: iso,
           cycleDay: null,
-          painNRS: 0,
+          painNRS: null,
           impactNRS: null,
           pbacScore: null,
           isBleeding: false,
@@ -4026,9 +3953,7 @@ export default function HomePage() {
       payload.dizzinessOpt = normalized;
     }
 
-    const prunedPayload = pruneDailyEntryByCompletion(payload, dailyCategoryCompletion);
-
-    const syncedDraft: DailyEntry = { ...prunedPayload };
+    const syncedDraft: DailyEntry = { ...payload };
 
     if (Array.isArray(syncedDraft.painRegions)) {
       syncedDraft.painMapRegionIds = syncedDraft.painRegions.map((region) => region.regionId);
