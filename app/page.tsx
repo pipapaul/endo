@@ -32,21 +32,27 @@ import {
 import type { DotProps, TooltipProps } from "recharts";
 import {
   AlertTriangle,
+  Activity,
   Calendar,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
   Download,
+  Flame,
   HardDrive,
   Home,
   Minus,
   Pill,
   Plus,
+  CheckCircle2,
   ShieldCheck,
   Smartphone,
   Upload,
+  TrendingUp,
   X,
 } from "lucide-react";
+import InfoTip from "@/components/InfoTip";
+import { Labeled } from "@/components/Labeled";
 
 import {
   DailyEntry,
@@ -56,7 +62,7 @@ import {
   PainTimeOfDay,
   QuickPainEvent,
 } from "@/lib/types";
-import { TERMS, type TermDescriptor } from "@/lib/terms";
+import { TERMS, type TermDescriptor, type TermKey } from "@/lib/terms";
 import { normalizeDailyEntry, normalizeQuickPainEvent } from "@/lib/dailyEntries";
 import { validateDailyEntry, validateMonthlyEntry, type ValidationIssue } from "@/lib/validation";
 import { Button } from "@/components/ui/button";
@@ -69,6 +75,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Checkbox from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 
 import { cn } from "@/lib/utils";
 import { touchLastActive } from "@/lib/persistence";
@@ -2452,7 +2459,7 @@ export default function HomePage() {
         return { ...prev, [itemId]: clampedValue };
       });
     },
-    []
+    [setPbacCounts]
   );
   useEffect(() => {
     if (!dailyDraft.bleeding.isBleeding) {
