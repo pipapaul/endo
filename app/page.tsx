@@ -6131,10 +6131,6 @@ export default function HomePage() {
       const wasDirty = Boolean(dailyCategoryDirtyState[categoryId]);
       if (completed) {
         if (currentString !== snapshotString && !wasDirty) {
-          const sectionTitle = dailyCategoryCompletionTitles[categoryId];
-          if (sectionTitle) {
-            sectionCompletionContextValue.setCompletion(resolvedDailyScopeKey, sectionTitle, false);
-          }
           dirtyUpdates.push([categoryId, true]);
         } else if (currentString === snapshotString && wasDirty) {
           dirtyUpdates.push([categoryId, false]);
