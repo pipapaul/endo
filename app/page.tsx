@@ -152,6 +152,7 @@ import {
   ScoreInput,
 } from "@/components/home/inputs";
 import { TermField, TermHeadline } from "@/components/home/terms";
+import { useDailySectionCompletion } from "@/lib/useDailySectionCompletion";
 
 const ALL_PAIN_QUALITIES: DailyEntry["painQuality"] = HEAD_PAIN_QUALITIES;
 
@@ -2711,6 +2712,9 @@ export default function HomePage() {
       getCompletion: (scope, key) => {
         if (scope === null || scope === undefined) return false;
         const scopeKey = String(scope);
+        if (scopeKey === resolvedDailyScopeKey) {
+          return Boolean(dailySectionCompletion[key]);
+        }
         return Boolean(sectionCompletionState[scopeKey]?.[key]);
       },
       setCompletion: (scope, key, completed) => {
@@ -2769,7 +2773,13 @@ export default function HomePage() {
         });
       },
     }),
-    [sectionCompletionState, setSectionCompletionState, setSectionRegistry]
+    [
+      dailySectionCompletion,
+      resolvedDailyScopeKey,
+      sectionCompletionState,
+      setSectionCompletionState,
+      setSectionRegistry,
+    ]
   );
 
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
@@ -2803,6 +2813,14 @@ export default function HomePage() {
     () => dailyEntries.some((entry) => entry.date === today),
     [dailyEntries, today]
   );
+
+  const dailyScopeKey = dailyDraft.date ? `daily:${dailyDraft.date}` : null;
+
+  const { dailySectionCompletion, resolvedDailyScopeKey } = useDailySectionCompletion({
+    dailyScopeKey,
+    sectionCompletionState,
+    sectionCompletionStorage,
+  });
 
   const selectDailyDate = useCallback(
     (targetDate: string, options?: { manual?: boolean }) => {
@@ -3215,7 +3233,7 @@ export default function HomePage() {
 
   const activeScopeKey = useMemo(() => {
     if (activeView === "daily") {
-      return dailyDraft.date ? `daily:${dailyDraft.date}` : null;
+      return resolvedDailyScopeKey;
     }
     if (activeView === "weekly") {
       return `weekly:${weeklyScopeIsoWeek}`;
@@ -5455,8 +5473,6 @@ export default function HomePage() {
     }
   }, [activeView]);
 
-  const dailyScopeKey = dailyDraft.date ? `daily:${dailyDraft.date}` : null;
-
   const dailyCategoryCompletionTitles: Partial<
     Record<Exclude<DailyCategoryId, "overview">, string>
   > = useMemo(
@@ -5471,11 +5487,6 @@ export default function HomePage() {
       optional: "Optionale Werte (Hilfsmittel nötig)",
     }),
     []
-  );
-
-  const dailySectionCompletion: Record<string, boolean> = useMemo(
-    () => (dailyScopeKey ? sectionCompletionState[dailyScopeKey] ?? {} : {}),
-    [dailyScopeKey, sectionCompletionState]
   );
 
   const dailyCategoryCompletion: Record<Exclude<DailyCategoryId, "overview">, boolean> = useMemo(
@@ -5493,12 +5504,12 @@ export default function HomePage() {
 
   const setCategoryCompletion = useCallback(
     (categoryId: TrackableDailyCategoryId, completed: boolean) => {
-      if (!dailyScopeKey) return;
+      if (!resolvedDailyScopeKey) return;
       const sectionTitle = dailyCategoryCompletionTitles[categoryId];
       if (!sectionTitle) return;
-      sectionCompletionContextValue.setCompletion(dailyScopeKey, sectionTitle, completed);
+      sectionCompletionContextValue.setCompletion(resolvedDailyScopeKey, sectionTitle, completed);
     },
-    [dailyCategoryCompletionTitles, dailyScopeKey, sectionCompletionContextValue]
+    [dailyCategoryCompletionTitles, resolvedDailyScopeKey, sectionCompletionContextValue]
   );
 
   useEffect(() => {
@@ -6037,17 +6048,17 @@ export default function HomePage() {
   );
 
   useEffect(() => {
-    if (previousDailyScopeRef.current === dailyScopeKey) {
+    if (previousDailyScopeRef.current === resolvedDailyScopeKey) {
       return;
     }
-    previousDailyScopeRef.current = dailyScopeKey;
+    previousDailyScopeRef.current = resolvedDailyScopeKey;
     setDailyCategorySnapshots({});
     setDailyCategoryDirtyState({});
     previousDailyCategoryCompletionRef.current = createEmptyCategoryCompletion();
-  }, [dailyScopeKey]);
+  }, [resolvedDailyScopeKey]);
 
   useEffect(() => {
-    if (!dailyScopeKey) {
+    if (!resolvedDailyScopeKey) {
       previousDailyCategoryCompletionRef.current = createEmptyCategoryCompletion();
       return;
     }
@@ -6094,10 +6105,10 @@ export default function HomePage() {
         return changed ? next : prev;
       });
     }
-  }, [dailyCategoryCompletion, dailyDraft, dailyScopeKey, featureFlags, pbacCounts]);
+  }, [dailyCategoryCompletion, dailyDraft, featureFlags, pbacCounts, resolvedDailyScopeKey]);
 
   useEffect(() => {
-    if (!dailyScopeKey) {
+    if (!resolvedDailyScopeKey) {
       return;
     }
     const dirtyUpdates: Array<[TrackableDailyCategoryId, boolean]> = [];
@@ -6122,7 +6133,7 @@ export default function HomePage() {
         if (currentString !== snapshotString && !wasDirty) {
           const sectionTitle = dailyCategoryCompletionTitles[categoryId];
           if (sectionTitle) {
-            sectionCompletionContextValue.setCompletion(dailyScopeKey, sectionTitle, false);
+            sectionCompletionContextValue.setCompletion(resolvedDailyScopeKey, sectionTitle, false);
           }
           dirtyUpdates.push([categoryId, true]);
         } else if (currentString === snapshotString && wasDirty) {
@@ -6159,9 +6170,9 @@ export default function HomePage() {
     dailyCategoryDirtyState,
     dailyCategorySnapshots,
     dailyDraft,
-    dailyScopeKey,
     featureFlags,
     pbacCounts,
+    resolvedDailyScopeKey,
     sectionCompletionContextValue,
   ]);
 
@@ -6236,10 +6247,10 @@ export default function HomePage() {
       delete next[categoryId];
       return next;
     });
-    if (dailyScopeKey) {
+    if (resolvedDailyScopeKey) {
       const sectionTitle = dailyCategoryCompletionTitles[categoryId];
       if (sectionTitle) {
-        sectionCompletionContextValue.setCompletion(dailyScopeKey, sectionTitle, true);
+        sectionCompletionContextValue.setCompletion(resolvedDailyScopeKey, sectionTitle, true);
       }
     }
     setPendingCategoryConfirm(null);
@@ -6247,7 +6258,7 @@ export default function HomePage() {
   }, [
     dailyCategoryCompletionTitles,
     dailyDraft,
-    dailyScopeKey,
+    resolvedDailyScopeKey,
     featureFlags,
     pbacCounts,
     pendingCategoryConfirm,
@@ -6273,10 +6284,10 @@ export default function HomePage() {
       setFeatureFlags(restored.featureFlags);
       setPbacCounts(restored.pbacCounts);
     }
-    if (dailyScopeKey) {
+    if (resolvedDailyScopeKey) {
       const sectionTitle = dailyCategoryCompletionTitles[categoryId];
       if (sectionTitle) {
-        sectionCompletionContextValue.setCompletion(dailyScopeKey, sectionTitle, true);
+        sectionCompletionContextValue.setCompletion(resolvedDailyScopeKey, sectionTitle, true);
       }
     }
     setDailyCategoryDirtyState((prev) => {
@@ -6293,7 +6304,7 @@ export default function HomePage() {
     dailyCategoryCompletionTitles,
     dailyCategorySnapshots,
     dailyDraft,
-    dailyScopeKey,
+    resolvedDailyScopeKey,
     featureFlags,
     pbacCounts,
     pendingCategoryConfirm,
@@ -7078,7 +7089,7 @@ export default function HomePage() {
             <div className="flex flex-col gap-6">
               <Tabs defaultValue="daily" value={currentDataView} className="w-full">
                 <TabsContent value="daily" className="space-y-6">
-                  <SectionScopeContext.Provider value={`daily:${dailyDraft.date}`}>
+                  <SectionScopeContext.Provider value={resolvedDailyScopeKey}>
           <Section
             title="Tagescheck-in"
             variant="plain"
