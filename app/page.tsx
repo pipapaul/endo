@@ -3921,19 +3921,30 @@ export default function HomePage() {
     [setDailyDraft]
   );
 
-  const handleDailySubmit = (options?: { goToHome?: boolean }): boolean => {
+  const handleDailySubmit = (options?: {
+    goToHome?: boolean;
+    pbacCountsOverride?: PbacCounts;
+    categoryCompletionOverride?: Partial<Record<Exclude<DailyCategoryId, "overview">, boolean>>;
+    forceBleeding?: boolean;
+  }): boolean => {
+    const resolvedPbacCounts = normalizePbacCounts(options?.pbacCountsOverride ?? pbacCounts);
+    const resolvedIsBleeding = options?.forceBleeding ?? dailyDraft.bleeding.isBleeding;
+    const resolvedPbacScore = resolvedIsBleeding
+      ? computePbacScore(resolvedPbacCounts, pbacFlooding)
+      : pbacScore;
+
     const payload: DailyEntry = {
       ...dailyDraft,
       painQuality: dailyDraft.painQuality,
-      bleeding: dailyDraft.bleeding.isBleeding
+      bleeding: resolvedIsBleeding
         ? {
             isBleeding: true,
-            pbacScore,
+            pbacScore: resolvedPbacScore,
             clots: dailyDraft.bleeding.clots ?? false,
             flooding: dailyDraft.bleeding.flooding ?? false,
           }
         : { isBleeding: false },
-      pbacCounts: normalizePbacCounts(pbacCounts),
+      pbacCounts: resolvedPbacCounts,
       rescueMeds: (dailyDraft.rescueMeds ?? [])
         .filter((med) => med.name.trim().length > 0)
         .map((med) => ({
@@ -4026,7 +4037,11 @@ export default function HomePage() {
       payload.dizzinessOpt = normalized;
     }
 
-    const prunedPayload = pruneDailyEntryByCompletion(payload, dailyCategoryCompletion);
+    const completion = options?.categoryCompletionOverride
+      ? { ...dailyCategoryCompletion, ...options.categoryCompletionOverride }
+      : dailyCategoryCompletion;
+
+    const prunedPayload = pruneDailyEntryByCompletion(payload, completion);
 
     const syncedDraft: DailyEntry = { ...prunedPayload };
 
@@ -5526,6 +5541,7 @@ export default function HomePage() {
       return;
     }
     setBleedingQuickAddOpen(false);
+    let nextPbacCounts: PbacCounts | null = null;
     setDailyDraft((prev) => {
       if (prev.date !== today) {
         return prev;
@@ -5549,7 +5565,9 @@ export default function HomePage() {
         return prev;
       }
       didAddProduct = true;
-      return { ...prev, [pendingBleedingQuickAdd]: nextValue };
+      const updated = { ...prev, [pendingBleedingQuickAdd]: nextValue };
+      nextPbacCounts = updated;
+      return updated;
     });
     if (didAddProduct) {
       setBleedingQuickAddNotice({
@@ -5560,6 +5578,12 @@ export default function HomePage() {
         Icon: selectedItem.Icon,
       });
       setCategoryCompletion("bleeding", true);
+      handleDailySubmit({
+        goToHome: false,
+        pbacCountsOverride: nextPbacCounts ?? undefined,
+        categoryCompletionOverride: { bleeding: true },
+        forceBleeding: true,
+      });
       if (bleedingQuickAddNoticeTimeoutRef.current) {
         window.clearTimeout(bleedingQuickAddNoticeTimeoutRef.current);
       }
@@ -5571,6 +5595,7 @@ export default function HomePage() {
   }, [
     dailyDraft.date,
     bleedingQuickAddNoticeTimeoutRef,
+    handleDailySubmit,
     pendingBleedingQuickAdd,
     selectDailyDate,
     setDailyDraft,
