@@ -314,8 +314,13 @@ const deriveHeadacheFromPainRegions = (
   if (!hasMigraine) return undefined;
   const next: NonNullable<DailyEntry["headacheOpt"]> = {
     present: true,
-    nrs: headRegion.nrs,
   };
+  if (typeof headRegion.nrs === "number") {
+    next.nrs = headRegion.nrs;
+  }
+  if (typeof next.nrs !== "number" && typeof previous?.nrs === "number") {
+    next.nrs = previous.nrs;
+  }
   if (qualities.includes(MIGRAINE_WITH_AURA_LABEL)) {
     next.aura = true;
   }
@@ -4137,7 +4142,12 @@ export default function HomePage() {
     lines.push(`Zeitraum: ${thresholdIso} bis ${today}`);
     lines.push(`Tagesdatensätze: ${dailyFiltered.length}`);
     if (dailyFiltered.length) {
-      const avgPain = dailyFiltered.reduce((sum, entry) => sum + entry.painNRS, 0) / dailyFiltered.length;
+      const painValues = dailyFiltered
+        .map((entry) => entry.painNRS)
+        .filter((value): value is number => typeof value === "number");
+      const avgPain = painValues.length
+        ? painValues.reduce((sum, value) => sum + value, 0) / painValues.length
+        : null;
       const maxPbac = dailyFiltered.reduce((max, entry) => {
         const bleeding = entry.bleeding ?? { isBleeding: false };
         return Math.max(max, bleeding.pbacScore ?? 0);
@@ -4161,7 +4171,9 @@ export default function HomePage() {
         .slice(0, 3)
         .map(([key, count]) => `${key}: ${count} Tage`)
         .join(", ");
-      lines.push(`Ø ${TERMS.nrs.label}: ${avgPain.toFixed(1)}`);
+      if (avgPain !== null) {
+        lines.push(`Ø ${TERMS.nrs.label}: ${avgPain.toFixed(1)}`);
+      }
       lines.push(`Max ${TERMS.pbac.label}: ${maxPbac}`);
       if (avgSleep !== null) {
         lines.push(`Ø ${TERMS.sleep_quality.label}: ${avgSleep.toFixed(1)}`);
@@ -4760,6 +4772,7 @@ export default function HomePage() {
       number,
       {
         painSum: number;
+        painCount: number;
         symptomSum: number;
         count: number;
         sleepSum: number;
@@ -4780,6 +4793,7 @@ export default function HomePage() {
         bucket.get(cycleDay) ??
         {
           painSum: 0,
+          painCount: 0,
           symptomSum: 0,
           count: 0,
           sleepSum: 0,
@@ -4792,7 +4806,10 @@ export default function HomePage() {
           dizzinessSum: 0,
           dizzinessCount: 0,
         };
-      current.painSum += entry.painNRS;
+      if (typeof entry.painNRS === "number") {
+        current.painSum += entry.painNRS;
+        current.painCount += 1;
+      }
       current.count += 1;
       if (typeof symptomAverage === "number") {
         current.symptomSum += symptomAverage;
@@ -4822,7 +4839,7 @@ export default function HomePage() {
       .sort((a, b) => a[0] - b[0])
       .map(([cycleDay, stats]) => ({
         cycleDay,
-        painAvg: Number((stats.painSum / stats.count).toFixed(1)),
+        painAvg: stats.painCount ? Number((stats.painSum / stats.painCount).toFixed(1)) : null,
         symptomAvg: stats.symptomSum ? Number((stats.symptomSum / stats.count).toFixed(1)) : null,
         sleepAvg: stats.sleepSum ? Number((stats.sleepSum / stats.count).toFixed(1)) : null,
         pbacAvg: stats.pbacCount ? Number((stats.pbacSum / stats.pbacCount).toFixed(1)) : null,
