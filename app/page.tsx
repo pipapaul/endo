@@ -35,22 +35,24 @@ import {
   Activity,
   Calendar,
   CalendarDays,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Flame,
   Download,
+  Flame,
   HardDrive,
   Home,
   Minus,
   Pill,
   Plus,
+  CheckCircle2,
   ShieldCheck,
   Smartphone,
-  TrendingUp,
   Upload,
+  TrendingUp,
   X,
 } from "lucide-react";
+import InfoTip from "@/components/InfoTip";
+import { Labeled } from "@/components/Labeled";
 
 import {
   DailyEntry,
@@ -60,12 +62,9 @@ import {
   PainTimeOfDay,
   QuickPainEvent,
 } from "@/lib/types";
+import { TERMS, type TermDescriptor, type TermKey } from "@/lib/terms";
 import { normalizeDailyEntry, normalizeQuickPainEvent } from "@/lib/dailyEntries";
-import { TERMS } from "@/lib/terms";
-import type { ModuleTerms, TermDescriptor, TermKey } from "@/lib/terms";
 import { validateDailyEntry, validateMonthlyEntry, type ValidationIssue } from "@/lib/validation";
-import InfoTip from "@/components/InfoTip";
-import { Labeled } from "@/components/Labeled";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -75,8 +74,8 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import Checkbox from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 
 import { cn } from "@/lib/utils";
 import { touchLastActive } from "@/lib/persistence";
@@ -99,7 +98,6 @@ import {
   type PromptAnswers,
 } from "@/lib/weekly/reports";
 import { normalizeWpai, type WeeklyWpai } from "@/lib/weekly/wpai";
-import { isoWeekToDate } from "@/lib/isoWeek";
 import {
   arePbacCountsEqual,
   createEmptyPbacCounts,
@@ -108,102 +106,56 @@ import {
   type PbacCountKey,
   type PbacCounts,
 } from "@/lib/pbac";
+import {
+  ANALYTICS_SECTION_OPTIONS,
+  BASE_PAIN_QUALITIES,
+  DETAIL_TOOLBAR_FALLBACK_HEIGHT,
+  HEAD_PAIN_QUALITIES,
+  MIGRAINE_LABEL,
+  MIGRAINE_PAIN_QUALITIES,
+  MIGRAINE_QUALITY_SET,
+  MIGRAINE_WITH_AURA_LABEL,
+  MODULE_TERMS,
+  PAIN_QUALITIES,
+  SYMPTOM_TERMS,
+  type AnalyticsSectionKey,
+  type AnalyticsSectionOption,
+  type BackupPayload,
+  type BeforeInstallPromptEvent,
+  type PendingCheckIn,
+  type PendingCheckInType,
+  type PendingOverviewConfirm,
+  type SymptomKey,
+  type TrendMetricKey,
+} from "@/lib/home/constants";
+import {
+  computePearson,
+  dateToIsoWeek,
+  formatIsoWeekCompactLabel,
+  monthToDate,
+  parseIsoWeekKey,
+} from "@/lib/home/analytics";
+import {
+  Section,
+  SectionCompletionContext,
+  SectionScopeContext,
+  type SectionCompletionContextValue,
+  type SectionCompletionState,
+  type SectionRegistryState,
+} from "@/components/home/Section";
+import {
+  InlineNotice,
+  ModuleToggleRow,
+  MultiSelectChips,
+  NrsInput,
+  NumberField,
+  ScoreInput,
+} from "@/components/home/inputs";
+import { TermField, TermHeadline } from "@/components/home/terms";
 
-const DETAIL_TOOLBAR_FALLBACK_HEIGHT = 96;
-
-type SymptomKey = keyof DailyEntry["symptoms"];
-
-const SYMPTOM_TERMS: Record<SymptomKey, TermDescriptor> = {
-  dysmenorrhea: TERMS.dysmenorrhea,
-  deepDyspareunia: TERMS.deepDyspareunia,
-  pelvicPainNonMenses: TERMS.pelvicPainNonMenses,
-  dyschezia: TERMS.dyschezia,
-  dysuria: TERMS.dysuria,
-  fatigue: TERMS.fatigue,
-  bloating: TERMS.bloating,
-};
-
-type TrendMetricKey = "pain" | "impact" | "symptomAverage" | "sleepQuality" | "steps";
-
-type AnalyticsSectionKey = "progress" | "tracking" | "correlations";
-
-type AnalyticsSectionOption = {
-  key: AnalyticsSectionKey;
-  label: string;
-  description: string;
-  icon: ComponentType<SVGProps<SVGSVGElement>>;
-};
-
-const ANALYTICS_SECTION_OPTIONS: AnalyticsSectionOption[] = [
-  {
-    key: "progress",
-    label: "Verlauf & Zyklus",
-    description: "Trends und Periodenvergleich",
-    icon: TrendingUp,
-  },
-  {
-    key: "tracking",
-    label: "Dokumentation",
-    description: "Medikation und Check-ins",
-    icon: Activity,
-  },
-  {
-    key: "correlations",
-    label: "Zusammenhänge",
-    description: "Korrelationen entdecken",
-    icon: Flame,
-  },
-];
-
-type PendingCheckInType = "daily" | "weekly" | "monthly";
-
-type PendingCheckIn = {
-  key: string;
-  type: PendingCheckInType;
-  label: string;
-  description: string;
-};
-
-type PendingOverviewConfirm =
-  | { action: "change-date"; targetDate: string; options?: { manual?: boolean } }
-  | { action: "go-home" };
-
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
-}
-
-type BackupPayload = {
-  version: number;
-  exportedAt: string;
-  dailyEntries: DailyEntry[];
-  weeklyReports: WeeklyReport[];
-  monthlyEntries: MonthlyEntry[];
-  featureFlags: FeatureFlags;
-};
-
-const BASE_PAIN_QUALITIES = [
-  "krampfend",
-  "stechend",
-  "brennend",
-  "dumpf",
-  "ziehend",
-  "anders",
-] as const;
-
-const MIGRAINE_PAIN_QUALITIES = ["Migräne", "Migräne mit Aura"] as const;
-
-const PAIN_QUALITIES: DailyEntry["painQuality"] = [...BASE_PAIN_QUALITIES] as DailyEntry["painQuality"];
-const HEAD_PAIN_QUALITIES: DailyEntry["painQuality"] = [
-  ...BASE_PAIN_QUALITIES,
-  ...MIGRAINE_PAIN_QUALITIES,
-] as DailyEntry["painQuality"];
 const ALL_PAIN_QUALITIES: DailyEntry["painQuality"] = HEAD_PAIN_QUALITIES;
 
 const HEAD_REGION_ID = "head";
-const MIGRAINE_LABEL = "Migräne";
-const MIGRAINE_WITH_AURA_LABEL = "Migräne mit Aura";
-const MIGRAINE_QUALITY_SET = new Set<string>(MIGRAINE_PAIN_QUALITIES);
 type OvulationPainSide = Exclude<NonNullable<DailyEntry["ovulationPain"]>["side"], undefined>;
 
 const STANDARD_RESCUE_MEDS = [
@@ -228,6 +180,12 @@ const OVULATION_PAIN_SIDE_LABELS: Record<OvulationPainSide, string> = {
   beidseitig: "Beidseitig",
   unsicher: "Unsicher",
 };
+
+const SYMPTOM_MODULE_TOGGLES: Array<{
+  key: keyof FeatureFlags;
+  label: string;
+  term: TermDescriptor;
+}> = [{ key: "moduleDizziness", label: "Schwindel", term: MODULE_TERMS.dizzinessOpt.present }];
 
 const createInitialCycleComputationState = () => ({
   cycleDay: null as number | null,
@@ -1873,456 +1831,6 @@ const createEmptyMonthlyEntry = (month: string): MonthlyEntry => ({
   promis: {},
 });
 
-const SectionScopeContext = createContext<string | number | null>(null);
-
-type SectionCompletionState = Record<string, Record<string, boolean>>;
-type SectionRegistryState = Record<string, Record<string, true>>;
-
-type SectionCompletionContextValue = {
-  getCompletion: (scope: string | number | null, key: string) => boolean;
-  setCompletion: (scope: string | number | null, key: string, completed: boolean) => void;
-  registerSection: (scope: string | number | null, key: string) => void;
-  unregisterSection: (scope: string | number | null, key: string) => void;
-};
-
-const SectionCompletionContext = createContext<SectionCompletionContextValue | null>(null);
-
-function Section({
-  title,
-  description,
-  aside,
-  children,
-  completionEnabled = true,
-  variant = "card",
-  onComplete,
-  hideHeader = false,
-}: {
-  title: string;
-  description?: string;
-  aside?: ReactNode;
-  children: ReactNode;
-  completionEnabled?: boolean;
-  variant?: "card" | "plain";
-  onComplete?: () => void;
-  hideHeader?: boolean;
-}) {
-  const scope = useContext(SectionScopeContext);
-  const completionContext = useContext(SectionCompletionContext);
-  const cardRef = useRef<HTMLDivElement | null>(null);
-  const timeoutRef = useRef<number | null>(null);
-  const [isCompleted, setIsCompleted] = useState(false);
-  const [showConfetti, setShowConfetti] = useState(false);
-  const confettiPieces = useMemo(
-    () =>
-      CONFETTI_PIECES.map((piece, index) => ({
-        ...piece,
-        color: CONFETTI_COLORS[index % CONFETTI_COLORS.length],
-      })),
-    []
-  );
-
-  const completedFromContext = useMemo(() => {
-    if (!completionEnabled) return false;
-    if (!completionContext) return false;
-    if (scope === null || scope === undefined) return false;
-    return completionContext.getCompletion(scope, title);
-  }, [completionContext, completionEnabled, scope, title]);
-
-  useEffect(() => {
-    if (!completionEnabled) return;
-    if (!completionContext) return;
-    if (scope === null || scope === undefined) return;
-    completionContext.registerSection(scope, title);
-    return () => {
-      completionContext.unregisterSection(scope, title);
-    };
-  }, [completionContext, completionEnabled, scope, title]);
-
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current !== null) {
-        window.clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const cancelTimeout = () => {
-      if (timeoutRef.current !== null) {
-        window.clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-    };
-
-    if (!completionEnabled) {
-      cancelTimeout();
-      setIsCompleted(false);
-      setShowConfetti(false);
-      return;
-    }
-
-    if (!completedFromContext) {
-      cancelTimeout();
-      setIsCompleted(false);
-      setShowConfetti(false);
-      return;
-    }
-
-    setIsCompleted(true);
-  }, [completedFromContext, completionEnabled]);
-
-  const handleComplete = () => {
-    if (!completionEnabled || isCompleted || showConfetti) return;
-    setIsCompleted(true);
-    if (completionContext && scope !== null && scope !== undefined) {
-      completionContext.setCompletion(scope, title, true);
-    }
-    setShowConfetti(true);
-    timeoutRef.current = window.setTimeout(() => {
-      setShowConfetti(false);
-      if (onComplete) {
-        onComplete();
-      }
-      timeoutRef.current = null;
-    }, 400);
-  };
-
-  return (
-    <section
-      ref={cardRef}
-      data-section-card
-      data-section-completed={isCompleted ? "true" : "false"}
-      className={cn(
-        "relative",
-        variant === "card"
-          ? "space-y-4 rounded-2xl border border-rose-100 bg-white p-4 shadow-sm transition-colors sm:p-6"
-          : "space-y-4 sm:space-y-5",
-        variant === "card" && isCompleted ? "border-amber-200 shadow-md" : null
-      )}
-    >
-      {!hideHeader ? (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-1">
-            <h2 className="text-base font-semibold text-rose-900">{title}</h2>
-            {description && <p className="text-sm text-rose-600">{description}</p>}
-          </div>
-          {aside ? <div className="flex-shrink-0 sm:self-start">{aside}</div> : null}
-        </div>
-      ) : null}
-      <div className="space-y-4">
-        {children}
-        {completionEnabled ? (
-          <div className="flex justify-end pt-2">
-            <div className="relative inline-flex">
-              {completionEnabled && showConfetti ? (
-                <div className="pointer-events-none absolute -inset-x-4 -inset-y-3 overflow-visible">
-                  {confettiPieces.map((piece, index) => (
-                    <span
-                      key={index}
-                      className="confetti-piece absolute h-3 w-3 rounded-sm"
-                      style={{
-                        left: piece.left,
-                        top: piece.top,
-                        backgroundColor: piece.color,
-                        animationDelay: `${piece.delay}ms`,
-                      }}
-                    />
-                  ))}
-                </div>
-              ) : null}
-              <Button
-                type="button"
-                variant="outline"
-                className={cn(isCompleted ? "cursor-default" : "")}
-                onClick={handleComplete}
-                disabled={isCompleted}
-              >
-                {isCompleted ? (
-                  <span className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4" />
-                    Erledigt
-                  </span>
-                ) : (
-                  "Fertig"
-                )}
-              </Button>
-            </div>
-          </div>
-        ) : null}
-      </div>
-    </section>
-  );
-}
-
-function TermField({ termKey, htmlFor, children }: { termKey: TermKey; htmlFor?: string; children: ReactNode }) {
-  const term: TermDescriptor = TERMS[termKey];
-  const meta = term.optional ? (
-    <Badge className="bg-amber-100 text-amber-800">
-      {term.deviceNeeded ? `Optional (Hilfsmittel nötig: ${term.deviceNeeded})` : "Optional"}
-    </Badge>
-  ) : null;
-  return (
-    <Labeled label={term.label} tech={term.tech} help={term.help} htmlFor={htmlFor} meta={meta}>
-      {children}
-    </Labeled>
-  );
-}
-
-function TermHeadline({ termKey }: { termKey: TermKey }) {
-  const term: TermDescriptor = TERMS[termKey];
-  return (
-    <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-rose-900">
-      <span>{term.label}</span>
-      {term.optional ? (
-        <Badge className="bg-amber-100 text-amber-800">
-          {term.deviceNeeded ? `Optional (Hilfsmittel nötig: ${term.deviceNeeded})` : "Optional"}
-        </Badge>
-      ) : null}
-      {term.help ? <InfoTip tech={term.tech ?? term.label} help={term.help} /> : null}
-    </div>
-  );
-}
-
-function ScoreInput({
-  id,
-  label,
-  termKey,
-  tech,
-  help,
-  value,
-  onChange,
-  min = 0,
-  max = 10,
-  step = 1,
-  disabled = false,
-}: {
-  id: string;
-  label: string;
-  termKey?: TermKey;
-  tech?: string;
-  help?: string;
-  value: number;
-  onChange: (value: number) => void;
-  min?: number;
-  max?: number;
-  step?: number;
-  disabled?: boolean;
-}) {
-  const rangeDescriptionId = `${id}-range-hint`;
-  const content = (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
-      <div className="flex flex-1 flex-col gap-1">
-        <Slider
-          value={[value]}
-          min={min}
-          max={max}
-          step={step}
-          onValueChange={([v]) => {
-            if (!disabled) {
-              onChange(v);
-            }
-          }}
-          id={id}
-          aria-describedby={rangeDescriptionId}
-          disabled={disabled}
-        />
-        <div
-          id={rangeDescriptionId}
-          className="flex justify-between text-xs text-rose-600"
-        >
-          <span>{min}</span>
-          <span>{max}</span>
-        </div>
-      </div>
-      <SliderValueDisplay value={value} className="sm:self-stretch" />
-    </div>
-  );
-  if (termKey) {
-    return (
-      <TermField termKey={termKey} htmlFor={id}>
-        {content}
-      </TermField>
-    );
-  }
-  return (
-    <Labeled label={label} tech={tech} help={help} htmlFor={id}>
-      {content}
-    </Labeled>
-  );
-}
-
-function MultiSelectChips({
-  options,
-  value,
-  onToggle,
-}: {
-  options: { value: string; label: string }[];
-  value: string[];
-  onToggle: (next: string[]) => void;
-}) {
-  const toggle = (option: string) => {
-    const set = new Set(value);
-    if (set.has(option)) {
-      set.delete(option);
-    } else {
-      set.add(option);
-    }
-    onToggle(Array.from(set));
-  };
-  return (
-    <div className="flex flex-wrap gap-2">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          onClick={() => toggle(option.value)}
-          aria-pressed={value.includes(option.value)}
-          className={cn(
-            "rounded-full border px-3 py-1 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2",
-            value.includes(option.value)
-              ? "border-rose-500 bg-rose-500 text-white shadow-sm"
-              : "border-rose-200 bg-white text-rose-700 hover:border-rose-400 hover:bg-rose-50"
-          )}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-const MODULE_TERMS: ModuleTerms = {
-  urinaryOpt: TERMS.urinaryOpt,
-  headacheOpt: TERMS.headacheOpt,
-  dizzinessOpt: TERMS.dizzinessOpt,
-};
-
-const CONFETTI_COLORS = ["#fb7185", "#f97316", "#facc15", "#4ade80", "#38bdf8"] as const;
-
-const CONFETTI_VERTICAL_POSITIONS = ["20%", "50%", "80%"] as const;
-
-const CONFETTI_PIECES = Array.from({ length: 8 }, (_, index) => ({
-  left: `${5 + index * 12}%`,
-  top: CONFETTI_VERTICAL_POSITIONS[index % CONFETTI_VERTICAL_POSITIONS.length],
-  delay: index * 30,
-}));
-
-const SYMPTOM_MODULE_TOGGLES: Array<{
-  key: keyof FeatureFlags;
-  label: string;
-  term: TermDescriptor;
-}> = [{ key: "moduleDizziness", label: "Schwindel", term: MODULE_TERMS.dizzinessOpt.present }];
-
-function ModuleToggleRow({
-  label,
-  tech,
-  help,
-  checked,
-  onCheckedChange,
-  className,
-}: {
-  label: string;
-  tech?: string;
-  help: string;
-  checked: boolean;
-  onCheckedChange: (value: boolean) => void;
-  className?: string;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex flex-col gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4 sm:flex-row sm:items-center sm:justify-between",
-        className,
-      )}
-    >
-      <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-rose-900">
-        <span>{label}</span>
-        <InfoTip tech={tech ?? label} help={help} />
-      </div>
-      <Switch checked={checked} onCheckedChange={onCheckedChange} />
-    </div>
-  );
-}
-
-function NrsInput({
-  id,
-  value,
-  onChange,
-  minLabel = "0 Kein Schmerz",
-  maxLabel = "10 Stärkster Schmerz",
-}: {
-  id: string;
-  value: number;
-  onChange: (value: number) => void;
-  minLabel?: string;
-  maxLabel?: string;
-}) {
-  const rangeDescriptionId = `${id}-nrs-range`;
-  return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
-      <div className="flex flex-1 flex-col gap-1">
-        <Slider
-          id={id}
-          value={[value]}
-          min={0}
-          max={10}
-          step={1}
-          aria-describedby={rangeDescriptionId}
-          onValueChange={([next]) => onChange(Math.max(0, Math.min(10, Math.round(next))))}
-        />
-        <div id={rangeDescriptionId} className="flex justify-between text-xs text-rose-600">
-          <span>{minLabel}</span>
-          <span>{maxLabel}</span>
-        </div>
-      </div>
-      <SliderValueDisplay value={value} className="sm:self-stretch" />
-    </div>
-  );
-}
-
-function NumberField({
-  id,
-  value,
-  min = 0,
-  onChange,
-}: {
-  id: string;
-  value: number | undefined;
-  min?: number;
-  onChange: (value: number | undefined) => void;
-}) {
-  return (
-    <Input
-      id={id}
-      type="number"
-      min={min}
-      value={value ?? ""}
-      onChange={(event) => {
-        if (event.target.value === "") {
-          onChange(undefined);
-          return;
-        }
-        const parsed = Number(event.target.value);
-        if (Number.isNaN(parsed)) {
-          onChange(undefined);
-          return;
-        }
-        onChange(Math.max(min, Math.round(parsed)));
-      }}
-    />
-  );
-}
-
-function InlineNotice({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="rounded-md border-l-4 border-amber-400 bg-amber-50 p-3 text-sm text-amber-800">
-      <p className="font-semibold text-amber-900">{title}</p>
-      <p className="mt-1 text-amber-700">{text}</p>
-    </div>
-  );
-}
-
 function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>): DailyEntry {
   const clone: DailyEntry = { ...entry };
   const extra = clone as unknown as Record<string, unknown>;
@@ -2819,55 +2327,6 @@ function createPdfDocument(title: string, lines: string[]) {
   return `${header}${body}${xref}${trailer}`;
 }
 
-function dateToIsoWeek(date: Date) {
-  const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNr = target.getUTCDay() || 7;
-  target.setUTCDate(target.getUTCDate() + 4 - dayNr);
-  const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
-  const weekNumber = Math.ceil(((target.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-  return `${target.getUTCFullYear()}-W${String(weekNumber).padStart(2, "0")}`;
-}
-
-function monthToDate(month: string) {
-  const match = month.match(/^(\d{4})-(\d{2})$/);
-  if (!match) return null;
-  return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1));
-}
-
-function parseIsoWeekKey(isoWeek: string): { year: number; week: number } | null {
-  const match = isoWeek.match(/^(\d{4})-W(\d{2})$/);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const week = Number(match[2]);
-  if (!Number.isFinite(year) || !Number.isFinite(week)) return null;
-  return { year, week };
-}
-
-function formatIsoWeekCompactLabel(isoWeek: string | null): string | null {
-  if (!isoWeek) return null;
-  const parts = parseIsoWeekKey(isoWeek);
-  if (!parts) return null;
-  const start = isoWeekToDate(parts.year, parts.week);
-  const end = new Date(start);
-  end.setUTCDate(end.getUTCDate() + 6);
-  const startLabel = start.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
-  const endLabel = end.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" });
-  return `KW ${String(parts.week).padStart(2, "0")} · ${startLabel}–${endLabel}`;
-}
-
-function computePearson(pairs: { x: number; y: number }[]) {
-  if (pairs.length < 2) return null;
-  const n = pairs.length;
-  const sumX = pairs.reduce((sum, pair) => sum + pair.x, 0);
-  const sumY = pairs.reduce((sum, pair) => sum + pair.y, 0);
-  const sumX2 = pairs.reduce((sum, pair) => sum + pair.x * pair.x, 0);
-  const sumY2 = pairs.reduce((sum, pair) => sum + pair.y * pair.y, 0);
-  const sumXY = pairs.reduce((sum, pair) => sum + pair.x * pair.y, 0);
-  const numerator = n * sumXY - sumX * sumY;
-  const denominator = Math.sqrt((n * sumX2 - sumX ** 2) * (n * sumY2 - sumY ** 2));
-  if (!denominator) return null;
-  return numerator / denominator;
-}
 export default function HomePage() {
   const today = formatDate(new Date());
   const defaultDailyDraft = useMemo(() => createEmptyDailyEntry(today), [today]);
@@ -3000,7 +2459,7 @@ export default function HomePage() {
         return { ...prev, [itemId]: clampedValue };
       });
     },
-    []
+    [setPbacCounts]
   );
   useEffect(() => {
     if (!dailyDraft.bleeding.isBleeding) {
