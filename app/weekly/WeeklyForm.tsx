@@ -109,7 +109,7 @@ function normalizeStep(progress: WeeklyDraft["progress"]): Step {
   return 1;
 }
 
-function clampScore(value: number | undefined): number | null {
+function clampScore(value: number | null | undefined): number | null {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return null;
   }
