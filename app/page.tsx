@@ -4406,6 +4406,52 @@ export default function HomePage() {
     [setDailyDraft]
   );
 
+  const dailyScopeKey = dailyDraft.date ? `daily:${dailyDraft.date}` : null;
+
+  const dailyCategoryCompletionTitles: Partial<
+    Record<Exclude<DailyCategoryId, "overview">, string>
+  > = useMemo(
+    () => ({
+      pain: "Schmerzen",
+      symptoms: "Typische Endometriose-Symptome",
+      bleeding: "Periode und Blutung",
+      medication: TERMS.meds.label,
+      sleep: "Schlaf",
+      bowelBladder: "Darm & Blase",
+      notes: "Notizen & Tags",
+      optional: "Optionale Werte (Hilfsmittel nötig)",
+    }),
+    []
+  );
+
+  const dailySectionCompletion: Record<string, boolean> = useMemo(
+    () => (dailyScopeKey ? sectionCompletionState[dailyScopeKey] ?? {} : {}),
+    [dailyScopeKey, sectionCompletionState]
+  );
+
+  const dailyCategoryCompletion: Record<Exclude<DailyCategoryId, "overview">, boolean> = useMemo(
+    () =>
+      DAILY_CATEGORY_KEYS.reduce(
+        (acc, categoryId) => {
+          const sectionTitle = dailyCategoryCompletionTitles[categoryId];
+          acc[categoryId] = sectionTitle ? Boolean(dailySectionCompletion[sectionTitle]) : false;
+          return acc;
+        },
+        {} as Record<Exclude<DailyCategoryId, "overview">, boolean>
+      ),
+    [dailyCategoryCompletionTitles, dailySectionCompletion]
+  );
+
+  const setCategoryCompletion = useCallback(
+    (categoryId: TrackableDailyCategoryId, completed: boolean) => {
+      if (!dailyScopeKey) return;
+      const sectionTitle = dailyCategoryCompletionTitles[categoryId];
+      if (!sectionTitle) return;
+      sectionCompletionContextValue.setCompletion(dailyScopeKey, sectionTitle, completed);
+    },
+    [dailyCategoryCompletionTitles, dailyScopeKey, sectionCompletionContextValue]
+  );
+
   const prepareDailyEntryForSave = useCallback(
     (entry: DailyEntry): DailyEntry => {
       const normalizedCounts = normalizePbacCounts(entry.pbacCounts ?? pbacCounts);
@@ -6015,52 +6061,6 @@ export default function HomePage() {
       setDailyActiveCategory("overview");
     }
   }, [activeView]);
-
-  const dailyScopeKey = dailyDraft.date ? `daily:${dailyDraft.date}` : null;
-
-  const dailyCategoryCompletionTitles: Partial<
-    Record<Exclude<DailyCategoryId, "overview">, string>
-  > = useMemo(
-    () => ({
-      pain: "Schmerzen",
-      symptoms: "Typische Endometriose-Symptome",
-      bleeding: "Periode und Blutung",
-      medication: TERMS.meds.label,
-      sleep: "Schlaf",
-      bowelBladder: "Darm & Blase",
-      notes: "Notizen & Tags",
-      optional: "Optionale Werte (Hilfsmittel nötig)",
-    }),
-    []
-  );
-
-  const dailySectionCompletion: Record<string, boolean> = useMemo(
-    () => (dailyScopeKey ? sectionCompletionState[dailyScopeKey] ?? {} : {}),
-    [dailyScopeKey, sectionCompletionState]
-  );
-
-  const dailyCategoryCompletion: Record<Exclude<DailyCategoryId, "overview">, boolean> = useMemo(
-    () =>
-      DAILY_CATEGORY_KEYS.reduce(
-        (acc, categoryId) => {
-          const sectionTitle = dailyCategoryCompletionTitles[categoryId];
-          acc[categoryId] = sectionTitle ? Boolean(dailySectionCompletion[sectionTitle]) : false;
-          return acc;
-        },
-        {} as Record<Exclude<DailyCategoryId, "overview">, boolean>
-      ),
-    [dailyCategoryCompletionTitles, dailySectionCompletion]
-  );
-
-  const setCategoryCompletion = useCallback(
-    (categoryId: TrackableDailyCategoryId, completed: boolean) => {
-      if (!dailyScopeKey) return;
-      const sectionTitle = dailyCategoryCompletionTitles[categoryId];
-      if (!sectionTitle) return;
-      sectionCompletionContextValue.setCompletion(dailyScopeKey, sectionTitle, completed);
-    },
-    [dailyCategoryCompletionTitles, dailyScopeKey, sectionCompletionContextValue]
-  );
 
   useEffect(() => {
     if (!pendingBleedingQuickAdd) {
