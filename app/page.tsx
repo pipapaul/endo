@@ -349,7 +349,7 @@ const buildDailyDraftWithPainRegions = (
 
 type BodyRegion = { id: string; label: string };
 
-type PendingQuickPainAdd = QuickPainEvent;
+type PendingQuickPainAdd = QuickPainEvent & { source: "daily" | "shortcut" };
 
 type PainShortcutTimelineSegment = {
   maxIntensity: number;
@@ -5588,7 +5588,10 @@ export default function HomePage() {
     }
     const normalized = normalizeQuickPainEvent(pendingPainQuickAdd);
     updateQuickPainEventsForDate(normalized.date, (events) => [...events, normalized]);
-    if (dailyDraft.date !== normalized.date) {
+    if (
+      pendingPainQuickAdd.source === "daily" &&
+      dailyDraft.date !== normalized.date
+    ) {
       selectDailyDate(normalized.date);
     }
     setCategoryCompletion("pain", true);
@@ -5901,7 +5904,9 @@ export default function HomePage() {
 
     const now = new Date();
     const timestamp = now.toISOString();
-    const date = formatDate(now);
+    const isShortcutContext = painQuickContext === "shortcut";
+    const date = isShortcutContext ? formatDate(now) : dailyDraft.date;
+    const source: PendingQuickPainAdd["source"] = isShortcutContext ? "shortcut" : "daily";
     const nextEvent: PendingQuickPainAdd = {
       id: now.getTime(),
       date,
@@ -5909,6 +5914,7 @@ export default function HomePage() {
       quality: painQuickQuality,
       intensity,
       timestamp,
+      source,
       ...(painQuickTimesOfDay.length && requiresTimeSelection
         ? { timeOfDay: painQuickTimesOfDay, granularity: "dritteltag" as const }
         : {}),
@@ -5916,9 +5922,8 @@ export default function HomePage() {
     setPendingPainQuickAdd(nextEvent);
     setPainQuickAddOpen(false);
     resetPainQuickAddState();
-    manualDailySelectionRef.current = false;
-    selectDailyDate(date);
   }, [
+    dailyDraft.date,
     painQuickContext,
     painQuickIntensity,
     painQuickQuality,
@@ -5927,7 +5932,6 @@ export default function HomePage() {
     setCategoryCompletion,
     setDailyDraft,
     resetPainQuickAddState,
-    selectDailyDate,
     setPendingPainQuickAdd,
   ]);
 
