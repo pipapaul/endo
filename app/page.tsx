@@ -1144,16 +1144,16 @@ const restoreDailyCategorySnapshot = (
         if (data.painRegions) {
           const normalizedRegions = data.painRegions.map((region) => ({
             regionId: region.regionId,
-            nrs: typeof region.nrs === "number" ? region.nrs : 0,
+            nrs: typeof region.nrs === "number" ? region.nrs : null,
             qualities: [...(region.qualities ?? [])],
           })) as NonNullable<DailyEntry["painRegions"]>;
           nextEntry = buildDailyDraftWithPainRegions(nextEntry, normalizedRegions);
         }
         if (data.painNRS !== undefined) {
-          nextEntry.painNRS = data.painNRS ?? 0;
+          nextEntry.painNRS = data.painNRS ?? null;
         }
         if (data.impactNRS !== undefined) {
-          nextEntry.impactNRS = data.impactNRS ?? undefined;
+          nextEntry.impactNRS = data.impactNRS ?? null;
         }
         nextEntry.headacheOpt = data.headacheOpt ? deepClone(data.headacheOpt) : undefined;
         nextEntry.ovulationPain = data.ovulationPain ? deepClone(data.ovulationPain) : undefined;
@@ -1379,7 +1379,7 @@ const restoreDailyCategorySnapshot = (
 type CycleOverviewPoint = {
   date: string;
   cycleDay: number | null;
-  painNRS: number;
+  painNRS: number | null;
   impactNRS: number | null;
   pbacScore: number | null;
   isBleeding: boolean;
@@ -1737,10 +1737,10 @@ const createEmptyDailyEntry = (date: string): DailyEntry => ({
 
   // Neu
   painRegions: [], // noch keine Regionen ausgewählt
-  impactNRS: 0, // empfundene Gesamtbeeinträchtigung heute
+  impactNRS: null, // empfundene Gesamtbeeinträchtigung heute
 
   // Alt (wird weiter gepflegt, damit Charts usw. funktionieren)
-  painNRS: 0,
+  painNRS: null,
   painQuality: [],
   painMapRegionIds: [],
   quickPainEvents: [],
@@ -1891,7 +1891,7 @@ function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>
       )
       .map((region) => {
         const normalizedNrs =
-          typeof region.nrs === "number" ? Math.max(0, Math.min(10, Math.round(region.nrs))) : 0;
+          typeof region.nrs === "number" ? Math.max(0, Math.min(10, Math.round(region.nrs))) : null;
         const normalizedQualities = Array.isArray(region.qualities)
           ? (region.qualities.filter((quality): quality is DailyEntry["painQuality"][number] =>
               allowedQualities.has(quality)
@@ -1913,7 +1913,7 @@ function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>
         ) as DailyEntry["painQuality"])
       : ([] as DailyEntry["painQuality"]);
     const normalizedNrs =
-      typeof clone.painNRS === "number" ? Math.max(0, Math.min(10, Math.round(clone.painNRS))) : 0;
+      typeof clone.painNRS === "number" ? Math.max(0, Math.min(10, Math.round(clone.painNRS))) : null;
 
     clone.painRegions = regions.map((regionId) => ({
       regionId,
@@ -3008,7 +3008,7 @@ export default function HomePage() {
       pointsByDate.set(entry.date, {
         date: entry.date,
         cycleDay: cycleDay ?? null,
-        painNRS: entry.painNRS ?? 0,
+        painNRS: entry.painNRS ?? null,
         impactNRS: entry.impactNRS ?? null,
         pbacScore: entry.bleeding?.pbacScore ?? null,
         isBleeding: entry.bleeding?.isBleeding ?? false,
@@ -3031,7 +3031,7 @@ export default function HomePage() {
         points.push({
           date: iso,
           cycleDay: null,
-          painNRS: 0,
+          painNRS: null,
           impactNRS: null,
           pbacScore: null,
           isBleeding: false,

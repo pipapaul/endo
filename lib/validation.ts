@@ -65,10 +65,11 @@ export interface ValidationIssue {
   message: string;
 }
 
-const intRange = (value: number | undefined, min: number, max: number) =>
+const intRange = (value: number | undefined | null, min: number, max: number) =>
   typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
 
-const nonNegative = (value: number | undefined) => typeof value === "number" && value >= 0;
+const nonNegative = (value: number | undefined | null) =>
+  typeof value === "number" && value >= 0;
 
 export function validateDailyEntry(entry: DailyEntry): ValidationIssue[] {
   const issues: ValidationIssue[] = [];

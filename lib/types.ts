@@ -37,15 +37,15 @@ export interface DailyEntry {
   // Neu:
   painRegions?: Array<{
     regionId: ID;
-    nrs: number;
+    nrs: number | null;
     qualities: DailyEntry["painQuality"];
     time?: string;
     timeOfDay?: PainTimeOfDay[];
     granularity?: PainGranularity;
   }>;
 
-  impactNRS?: number;
-  painNRS: number; // 0–10
+  impactNRS?: number | null;
+  painNRS: number | null; // 0–10
   painQuality: PainQuality[];
   painMapRegionIds: ID[];
   quickPainEvents?: QuickPainEvent[];
