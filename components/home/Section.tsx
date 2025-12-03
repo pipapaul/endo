@@ -103,21 +103,13 @@ export function Section({
       }
     };
 
-    if (!completionEnabled) {
-      cancelTimeout();
-      setIsCompleted(false);
-      setShowConfetti(false);
-      return;
-    }
+    const shouldBeCompleted = Boolean(completionEnabled && completedFromContext);
+    setIsCompleted(shouldBeCompleted);
 
-    if (!completedFromContext) {
+    if (!shouldBeCompleted) {
       cancelTimeout();
-      setIsCompleted(false);
       setShowConfetti(false);
-      return;
     }
-
-    setIsCompleted(true);
   }, [completedFromContext, completionEnabled]);
 
   const handleComplete = () => {
