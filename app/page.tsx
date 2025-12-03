@@ -938,6 +938,27 @@ const deepClone = <T,>(value: T): T => {
   return JSON.parse(JSON.stringify(value)) as T;
 };
 
+const equalWithNullUndefined = (a: unknown, b: unknown): boolean => {
+  if (a === b) return true;
+  if (a == null && b == null) return true;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    return a.every((value, index) => equalWithNullUndefined(value, b[index]));
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return false;
+  }
+  if (typeof a !== "object" || typeof b !== "object" || !a || !b) {
+    return false;
+  }
+  const aObj = a as Record<string, unknown>;
+  const bObj = b as Record<string, unknown>;
+  const aKeys = Object.keys(aObj);
+  const bKeys = Object.keys(bObj);
+  if (aKeys.length !== bKeys.length) return false;
+  return aKeys.every((key) => bKeys.includes(key) && equalWithNullUndefined(aObj[key], bObj[key]));
+};
+
 const normalizeSymptom = (value?: { present?: boolean; score?: number }): SymptomSnapshot => ({
   present: Boolean(value?.present),
   score: typeof value?.score === "number" ? value.score : null,
@@ -2651,8 +2672,10 @@ export default function HomePage() {
 
   const isDailyDirty = useMemo(
     () =>
-      JSON.stringify(normalizeDailyEntry(dailyDraft)) !==
-      JSON.stringify(normalizeDailyEntry(lastSavedDailySnapshot)),
+      !equalWithNullUndefined(
+        normalizeDailyEntry(dailyDraft),
+        normalizeDailyEntry(lastSavedDailySnapshot)
+      ),
     [dailyDraft, lastSavedDailySnapshot]
   );
 
@@ -3625,11 +3648,11 @@ export default function HomePage() {
   useEffect(() => {
     const existingEntry = derivedDailyEntries.find((entry) => entry.date === dailyDraft.date);
     if (!existingEntry) return;
-    const serializedExisting = JSON.stringify(existingEntry);
-    if (serializedExisting === JSON.stringify(lastSavedDailySnapshot)) {
+    const normalizedExisting = normalizeDailyEntry(existingEntry);
+    if (equalWithNullUndefined(normalizedExisting, normalizeDailyEntry(lastSavedDailySnapshot))) {
       return;
     }
-    if (serializedExisting === JSON.stringify(dailyDraft)) {
+    if (equalWithNullUndefined(normalizedExisting, normalizeDailyEntry(dailyDraft))) {
       setLastSavedDailySnapshot(existingEntry);
     }
   }, [dailyDraft, derivedDailyEntries, lastSavedDailySnapshot]);
@@ -6055,17 +6078,18 @@ export default function HomePage() {
       if (!currentSnapshot) {
         return;
       }
-      const currentString = JSON.stringify(currentSnapshot);
+      const storedSnapshot = JSON.parse(snapshotString) as CategorySnapshot;
+      const snapshotsEqual = equalWithNullUndefined(storedSnapshot, currentSnapshot);
       const completed = dailyCategoryCompletion[categoryId] ?? false;
       const wasDirty = Boolean(dailyCategoryDirtyState[categoryId]);
       if (completed) {
-        if (currentString !== snapshotString && !wasDirty) {
+        if (!snapshotsEqual && !wasDirty) {
           dirtyUpdates.push([categoryId, true]);
-        } else if (currentString === snapshotString && wasDirty) {
+        } else if (snapshotsEqual && wasDirty) {
           dirtyUpdates.push([categoryId, false]);
         }
       } else {
-        const isDirty = currentString !== snapshotString;
+        const isDirty = !snapshotsEqual;
         if (isDirty !== wasDirty) {
           dirtyUpdates.push([categoryId, isDirty]);
         }
