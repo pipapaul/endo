@@ -21,6 +21,16 @@ const clampScore = (value: number | undefined | null): number | null => {
   return Math.max(0, Math.min(10, Math.round(value)));
 };
 
+export function hasBleedingForEntry(entry: DailyEntry): boolean {
+  const counts = normalizePbacCounts(entry.pbacCounts);
+
+  const hasProducts = Object.values(counts).some((value) => value > 0);
+
+  const legacyFlag = entry.bleeding?.isBleeding === true;
+
+  return hasProducts || legacyFlag;
+}
+
 export function normalizeQuickPainEvent(event: QuickPainEvent): QuickPainEvent {
   const timeOfDay = Array.isArray(event.timeOfDay)
     ? (event.timeOfDay.filter((time): time is PainTimeOfDay => PAIN_TIME_OF_DAY_SET.has(time)) as PainTimeOfDay[])
@@ -82,6 +92,8 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
   const normalizedPbacCounts = normalizePbacCounts(entry.pbacCounts);
   const needsPbacCountsNormalization =
     !entry.pbacCounts || !arePbacCountsEqual(entry.pbacCounts, normalizedPbacCounts);
+  const derivedBleedingActive = hasBleedingForEntry({ ...entry, pbacCounts: normalizedPbacCounts });
+  const needsBleedingNormalization = entry.bleeding?.isBleeding !== derivedBleedingActive;
 
   if (
     hasValidBleeding &&
@@ -92,13 +104,14 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
     !needsRescueMedsNormalization &&
     !needsSymptomsNormalization &&
     !needsQuickPainEventsNormalization &&
-    !needsPbacCountsNormalization
+    !needsPbacCountsNormalization &&
+    !needsBleedingNormalization
   ) {
     return entry;
   }
 
   const normalizedBleeding: DailyEntry["bleeding"] = {
-    isBleeding: Boolean(bleedingSource?.isBleeding),
+    isBleeding: derivedBleedingActive,
   };
 
   if (typeof bleedingSource?.pbacScore === "number" && Number.isFinite(bleedingSource.pbacScore)) {

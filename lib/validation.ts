@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { hasBleedingForEntry } from "./dailyEntries";
 import { DailyEntry, MonthlyEntry, WeeklyEntry } from "./types";
 
 const zInt01 = z.number().int().min(0).max(10);
@@ -202,7 +203,9 @@ export function validateDailyEntry(entry: DailyEntry): ValidationIssue[] {
     }
   }
 
-  if (entry.bleeding.isBleeding) {
+  const bleedingActive = hasBleedingForEntry(entry);
+
+  if (bleedingActive) {
     if (!nonNegative(entry.bleeding.pbacScore)) {
       issues.push({
         path: "bleeding.pbacScore",
