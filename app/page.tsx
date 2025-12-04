@@ -5461,16 +5461,6 @@ export default function HomePage() {
     [dailyCategoryCompletionTitles, dailySectionCompletion]
   );
 
-  const setCategoryCompletion = useCallback(
-    (categoryId: TrackableDailyCategoryId, completed: boolean) => {
-      if (!resolvedDailyScopeKey) return;
-      const sectionTitle = dailyCategoryCompletionTitles[categoryId];
-      if (!sectionTitle) return;
-      sectionCompletionContextValue.setCompletion(resolvedDailyScopeKey, sectionTitle, completed);
-    },
-    [dailyCategoryCompletionTitles, resolvedDailyScopeKey, sectionCompletionContextValue]
-  );
-
   useEffect(() => {
     if (!pendingBleedingQuickAdd) {
       return;
@@ -5503,7 +5493,6 @@ export default function HomePage() {
         score: selectedItem.score,
         Icon: selectedItem.Icon,
       });
-      setCategoryCompletion("bleeding", true);
       if (bleedingQuickAddNoticeTimeoutRef.current) {
         window.clearTimeout(bleedingQuickAddNoticeTimeoutRef.current);
       }
@@ -5522,7 +5511,6 @@ export default function HomePage() {
     setBleedingQuickAddOpen,
     setPendingBleedingQuickAdd,
     setBleedingQuickAddNotice,
-    setCategoryCompletion,
     today,
   ]);
 
@@ -5538,7 +5526,6 @@ export default function HomePage() {
     ) {
       selectDailyDate(normalized.date);
     }
-    setCategoryCompletion("pain", true);
     setPendingPainQuickAdd(null);
   }, [
     dailyDraft.date,
@@ -5546,7 +5533,6 @@ export default function HomePage() {
     selectDailyDate,
     setDailyDraft,
     updateQuickPainEventsForDate,
-    setCategoryCompletion,
   ]);
 
   const categoryZeroStates = useMemo<
@@ -5628,8 +5614,7 @@ export default function HomePage() {
       painNRS: 0,
       impactNRS: 0,
     }));
-    setCategoryCompletion("pain", true);
-  }, [confirmQuickActionReset, dailyDraft.date, setCategoryCompletion, setDailyDraft, updateQuickPainEventsForDate]);
+  }, [confirmQuickActionReset, dailyDraft.date, setDailyDraft, updateQuickPainEventsForDate]);
 
   const handleQuickNoSymptoms = useCallback(() => {
     if (!confirmQuickActionReset("symptoms")) {
@@ -5643,8 +5628,7 @@ export default function HomePage() {
       });
       return { ...prev, symptoms: cleared };
     });
-    setCategoryCompletion("symptoms", true);
-  }, [confirmQuickActionReset, setCategoryCompletion, setDailyDraft]);
+  }, [confirmQuickActionReset, setDailyDraft]);
 
   const handleQuickNoBleeding = useCallback(() => {
     if (!confirmQuickActionReset("bleeding")) {
@@ -5659,13 +5643,7 @@ export default function HomePage() {
         flooding: false,
       },
     }));
-    setCategoryCompletion("bleeding", true);
-  }, [
-    confirmQuickActionReset,
-    setCategoryCompletion,
-    setDailyDraft,
-    setPbacCounts,
-  ]);
+  }, [confirmQuickActionReset, setDailyDraft, setPbacCounts]);
 
   const handleQuickNoMedication = useCallback(() => {
     if (!confirmQuickActionReset("medication")) {
@@ -5675,8 +5653,7 @@ export default function HomePage() {
       ...prev,
       rescueMeds: [],
     }));
-    setCategoryCompletion("medication", true);
-  }, [confirmQuickActionReset, setCategoryCompletion, setDailyDraft]);
+  }, [confirmQuickActionReset, setDailyDraft]);
 
   const startRescueWizard = useCallback(() => {
     setRescueWizard({ step: 1 });
@@ -5717,10 +5694,9 @@ export default function HomePage() {
         ...prev,
         rescueMeds: [...(prev.rescueMeds ?? []), nextDose],
       }));
-      setCategoryCompletion("medication", true);
       return null;
     });
-  }, [setCategoryCompletion, setDailyDraft]);
+  }, [setDailyDraft]);
 
   const handleCustomRescueSubmit = useCallback(() => {
     const trimmed = customRescueName.trim();
@@ -5842,7 +5818,6 @@ export default function HomePage() {
         const nextDraft = buildDailyDraftWithPainRegions(prev, nextRegions);
         return nextDraft;
       });
-      setCategoryCompletion("pain", true);
       setPainQuickAddOpen(false);
       resetPainQuickAddState();
       return;
@@ -5875,7 +5850,6 @@ export default function HomePage() {
     painQuickQualities,
     painQuickRegion,
     painQuickTimesOfDay,
-    setCategoryCompletion,
     setDailyDraft,
     resetPainQuickAddState,
     setPendingPainQuickAdd,
@@ -6194,22 +6168,13 @@ export default function HomePage() {
       delete next[categoryId];
       return next;
     });
-    if (resolvedDailyScopeKey) {
-      const sectionTitle = dailyCategoryCompletionTitles[categoryId];
-      if (sectionTitle) {
-        sectionCompletionContextValue.setCompletion(resolvedDailyScopeKey, sectionTitle, true);
-      }
-    }
     setPendingCategoryConfirm(null);
     setDailyActiveCategory("overview");
   }, [
-    dailyCategoryCompletionTitles,
     dailyDraft,
-    resolvedDailyScopeKey,
     featureFlags,
     pbacCounts,
     pendingCategoryConfirm,
-    sectionCompletionContextValue,
   ]);
 
   const handleCategoryConfirmDiscard = useCallback(() => {
@@ -6231,12 +6196,6 @@ export default function HomePage() {
       setFeatureFlags(restored.featureFlags);
       setPbacCounts(restored.pbacCounts);
     }
-    if (resolvedDailyScopeKey) {
-      const sectionTitle = dailyCategoryCompletionTitles[categoryId];
-      if (sectionTitle) {
-        sectionCompletionContextValue.setCompletion(resolvedDailyScopeKey, sectionTitle, true);
-      }
-    }
     setDailyCategoryDirtyState((prev) => {
       if (!prev[categoryId]) {
         return prev;
@@ -6248,17 +6207,14 @@ export default function HomePage() {
     setPendingCategoryConfirm(null);
     setDailyActiveCategory("overview");
   }, [
-    dailyCategoryCompletionTitles,
     dailyCategorySnapshots,
     dailyDraft,
-    resolvedDailyScopeKey,
     featureFlags,
     pbacCounts,
     pendingCategoryConfirm,
     setDailyDraft,
     setFeatureFlags,
     setPbacCounts,
-    sectionCompletionContextValue,
   ]);
 
   const dailyCategorySummaries = useMemo(
