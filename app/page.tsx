@@ -1469,20 +1469,20 @@ const describeBleedingLevel = (point: CycleOverviewPoint) => {
   if (!point.isBleeding) {
     return { label: "keine Blutung", value: 0 };
   }
-  const score = point.pbacScore ?? 0;
+  const score = typeof point.pbacScore === "number" ? point.pbacScore : 5;
   if (score >= 41) {
-    return { label: "sehr starke Blutung", value: 9 };
+    return { label: "sehr starke Blutung", value: score };
   }
   if (score >= 26) {
-    return { label: "starke Blutung", value: 8 };
+    return { label: "starke Blutung", value: score };
   }
   if (score >= 10) {
-    return { label: "mittlere Blutung", value: 7 };
+    return { label: "mittlere Blutung", value: score };
   }
   if (score > 0) {
-    return { label: "leichte Blutung", value: 5 };
+    return { label: "leichte Blutung", value: score };
   }
-  return { label: "Blutung ohne PBAC", value: 3 };
+  return { label: "Blutung ohne PBAC", value: 0 };
 };
 
 type CycleOverviewChartPoint = CycleOverviewPoint & {
@@ -1655,7 +1655,8 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               }
               minTickGap={6}
             />
-            <YAxis domain={[0, 10]} hide />
+            <YAxis yAxisId="pbac" domain={[0, 120]} hide />
+            <YAxis yAxisId="painImpact" domain={[0, 10]} hide />
             <Tooltip
               cursor={{ stroke: "#fb7185", strokeOpacity: 0.2, strokeWidth: 1 }}
               content={renderTooltip}
@@ -1663,6 +1664,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
             <Area
               type="monotone"
               dataKey="bleedingValue"
+              yAxisId="pbac"
               fill={`url(#${bleedingGradientId})`}
               stroke="#fb7185"
               strokeWidth={1}
@@ -1673,6 +1675,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
             <Line
               type="monotone"
               dataKey="impactValue"
+              yAxisId="painImpact"
               stroke="#fcd34d"
               strokeWidth={2}
               dot={false}
@@ -1682,6 +1685,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
             <Line
               type="monotone"
               dataKey="painValue"
+              yAxisId="painImpact"
               stroke="#be123c"
               strokeWidth={2}
               dot={<PainDot />}
