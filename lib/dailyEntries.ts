@@ -1,6 +1,17 @@
 import { arePbacCountsEqual, normalizePbacCounts } from "./pbac";
 import type { DailyEntry, PainQuality, PainTimeOfDay, QuickPainEvent } from "./types";
 
+type DailyCategoryCompletion = Partial<{
+  pain: boolean;
+  symptoms: boolean;
+  bleeding: boolean;
+  medication: boolean;
+  sleep: boolean;
+  bowelBladder: boolean;
+  notes: boolean;
+  optional: boolean;
+}>;
+
 const PAIN_QUALITY_SET = new Set<PainQuality>([
   "krampfend",
   "stechend",
@@ -175,4 +186,64 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
     symptoms,
     pbacCounts: normalizedPbacCounts,
   };
+}
+
+export function pruneDailyEntryByCompletion(
+  entry: DailyEntry,
+  completion: DailyCategoryCompletion
+): DailyEntry {
+  const normalized = normalizeDailyEntry(entry);
+  const next: DailyEntry = { ...normalized };
+
+  if (!completion.pain) {
+    next.painRegions = [];
+    next.painMapRegionIds = [];
+    next.painQuality = [];
+    next.painNRS = 0;
+    next.impactNRS = 0;
+    next.quickPainEvents = normalized.quickPainEvents ?? [];
+  }
+
+  if (!completion.symptoms) {
+    next.symptoms = {};
+  }
+
+  if (!completion.bleeding) {
+    next.bleeding = { isBleeding: false };
+    next.pbacCounts = normalized.pbacCounts;
+  }
+
+  if (!completion.medication) {
+    next.rescueMeds = [];
+  }
+
+  if (!completion.sleep) {
+    delete next.sleep;
+  }
+
+  if (!completion.bowelBladder) {
+    next.symptoms = { ...(next.symptoms ?? {}) };
+    delete next.symptoms.dyschezia;
+    delete next.symptoms.dysuria;
+    delete next.gi;
+    delete next.urinary;
+    delete next.urinaryOpt;
+  }
+
+  if (!completion.notes) {
+    next.notesTags = [];
+    delete next.notesFree;
+  }
+
+  if (!completion.optional) {
+    delete next.activity;
+    delete next.exploratory;
+    delete next.ovulation;
+    delete next.ovulationPain;
+    delete next.urinaryOpt;
+    delete next.headacheOpt;
+    delete next.dizzinessOpt;
+  }
+
+  return next;
 }
