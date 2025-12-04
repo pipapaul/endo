@@ -2309,20 +2309,35 @@ export default function HomePage() {
     usePersistentState<string[]>("endo.dismissedCheckIns.v1", []);
   const [customRescueMeds, setCustomRescueMeds, _customRescueMedsStorage] =
     usePersistentState<string[]>("endo.rescueMeds.v1", []);
-  const derivedDailyEntries = useMemo(
-    () => dailyEntries.map((entry) => applyAutomatedPainSymptoms(normalizeDailyEntry(entry))),
-    [dailyEntries]
-  );
-  const [sectionCompletionState, setSectionCompletionState, sectionCompletionStorage] =
-    usePersistentState<SectionCompletionState>("endo.sectionCompletion.v1", {});
-  const [sectionRegistry, setSectionRegistry] = useState<SectionRegistryState>({});
-
   const [dailyDraft, setDailyDraft, dailyDraftStorage] =
     usePersistentState<DailyEntry>("endo.draft.daily.v1", defaultDailyDraft);
   const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
   const [pbacCounts, setPbacCountsState] = useState<PbacCounts>(() =>
     normalizePbacCounts(defaultDailyDraft.pbacCounts)
   );
+  const derivedDailyEntries = useMemo(
+    () => dailyEntries.map((entry) => applyAutomatedPainSymptoms(normalizeDailyEntry(entry))),
+    [dailyEntries]
+  );
+  const dailyEntriesForGraphs = useMemo(() => {
+    if (dailyDraft.date !== today) {
+      return derivedDailyEntries;
+    }
+
+    const normalizedDraft = applyAutomatedPainSymptoms(normalizeDailyEntry(dailyDraft));
+    const existingIndex = derivedDailyEntries.findIndex((entry) => entry.date === today);
+
+    if (existingIndex === -1) {
+      return [...derivedDailyEntries, normalizedDraft];
+    }
+
+    const next = [...derivedDailyEntries];
+    next[existingIndex] = normalizedDraft;
+    return next;
+  }, [dailyDraft, derivedDailyEntries, today]);
+  const [sectionCompletionState, setSectionCompletionState, sectionCompletionStorage] =
+    usePersistentState<SectionCompletionState>("endo.sectionCompletion.v1", {});
+  const [sectionRegistry, setSectionRegistry] = useState<SectionRegistryState>({});
   const setPbacCounts = useCallback(
     (next: PbacCounts | ((prev: PbacCounts) => PbacCounts)) => {
       setPbacCountsState((prev) => {
@@ -2947,7 +2962,7 @@ export default function HomePage() {
   }, [dailyDraft.date]);
 
   const annotatedDailyEntries = useMemo(() => {
-    const entriesWithPain = derivedDailyEntries.map((entry) => {
+    const entriesWithPain = dailyEntriesForGraphs.map((entry) => {
       const maxPain = computeMaxPainIntensity(entry);
       if (maxPain === null || entry.painNRS === maxPain) {
         return entry;
@@ -2980,7 +2995,7 @@ export default function HomePage() {
         symptomAverage,
       };
     });
-  }, [derivedDailyEntries]);
+  }, [dailyEntriesForGraphs]);
 
   const selectedCycleDay = useMemo(() => {
     if (!dailyDraft.date) return null;
