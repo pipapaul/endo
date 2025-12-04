@@ -2310,20 +2310,35 @@ export default function HomePage() {
     usePersistentState<string[]>("endo.dismissedCheckIns.v1", []);
   const [customRescueMeds, setCustomRescueMeds, _customRescueMedsStorage] =
     usePersistentState<string[]>("endo.rescueMeds.v1", []);
-  const derivedDailyEntries = useMemo(
-    () => dailyEntries.map((entry) => applyAutomatedPainSymptoms(normalizeDailyEntry(entry))),
-    [dailyEntries]
-  );
-  const [sectionCompletionState, setSectionCompletionState, sectionCompletionStorage] =
-    usePersistentState<SectionCompletionState>("endo.sectionCompletion.v1", {});
-  const [sectionRegistry, setSectionRegistry] = useState<SectionRegistryState>({});
-
   const [dailyDraft, setDailyDraft, dailyDraftStorage] =
     usePersistentState<DailyEntry>("endo.draft.daily.v1", defaultDailyDraft);
   const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
   const [pbacCounts, setPbacCountsState] = useState<PbacCounts>(() =>
     normalizePbacCounts(defaultDailyDraft.pbacCounts)
   );
+  const derivedDailyEntries = useMemo(
+    () => dailyEntries.map((entry) => applyAutomatedPainSymptoms(normalizeDailyEntry(entry))),
+    [dailyEntries]
+  );
+  const dailyEntriesForGraphs = useMemo(() => {
+    if (dailyDraft.date !== today) {
+      return derivedDailyEntries;
+    }
+
+    const normalizedDraft = applyAutomatedPainSymptoms(normalizeDailyEntry(dailyDraft));
+    const existingIndex = derivedDailyEntries.findIndex((entry) => entry.date === today);
+
+    if (existingIndex === -1) {
+      return [...derivedDailyEntries, normalizedDraft];
+    }
+
+    const next = [...derivedDailyEntries];
+    next[existingIndex] = normalizedDraft;
+    return next;
+  }, [dailyDraft, derivedDailyEntries, today]);
+  const [sectionCompletionState, setSectionCompletionState, sectionCompletionStorage] =
+    usePersistentState<SectionCompletionState>("endo.sectionCompletion.v1", {});
+  const [sectionRegistry, setSectionRegistry] = useState<SectionRegistryState>({});
   const setPbacCounts = useCallback(
     (next: PbacCounts | ((prev: PbacCounts) => PbacCounts)) => {
       setPbacCountsState((prev) => {
@@ -2948,7 +2963,7 @@ export default function HomePage() {
   }, [dailyDraft.date]);
 
   const annotatedDailyEntries = useMemo(() => {
-    const entriesWithPain = derivedDailyEntries.map((entry) => {
+    const entriesWithPain = dailyEntriesForGraphs.map((entry) => {
       const maxPain = computeMaxPainIntensity(entry);
       if (maxPain === null || entry.painNRS === maxPain) {
         return entry;
@@ -2981,7 +2996,7 @@ export default function HomePage() {
         symptomAverage,
       };
     });
-  }, [derivedDailyEntries]);
+  }, [dailyEntriesForGraphs]);
 
   const selectedCycleDay = useMemo(() => {
     if (!dailyDraft.date) return null;
@@ -5447,16 +5462,6 @@ export default function HomePage() {
     [dailyCategoryCompletionTitles, dailySectionCompletion]
   );
 
-  const setCategoryCompletion = useCallback(
-    (categoryId: TrackableDailyCategoryId, completed: boolean) => {
-      if (!resolvedDailyScopeKey) return;
-      const sectionTitle = dailyCategoryCompletionTitles[categoryId];
-      if (!sectionTitle) return;
-      sectionCompletionContextValue.setCompletion(resolvedDailyScopeKey, sectionTitle, completed);
-    },
-    [dailyCategoryCompletionTitles, resolvedDailyScopeKey, sectionCompletionContextValue]
-  );
-
   useEffect(() => {
     if (!pendingBleedingQuickAdd) {
       return;
@@ -5489,7 +5494,6 @@ export default function HomePage() {
         score: selectedItem.score,
         Icon: selectedItem.Icon,
       });
-      setCategoryCompletion("bleeding", true);
       if (bleedingQuickAddNoticeTimeoutRef.current) {
         window.clearTimeout(bleedingQuickAddNoticeTimeoutRef.current);
       }
@@ -5508,7 +5512,6 @@ export default function HomePage() {
     setBleedingQuickAddOpen,
     setPendingBleedingQuickAdd,
     setBleedingQuickAddNotice,
-    setCategoryCompletion,
     today,
   ]);
 
@@ -5524,7 +5527,6 @@ export default function HomePage() {
     ) {
       selectDailyDate(normalized.date);
     }
-    setCategoryCompletion("pain", true);
     setPendingPainQuickAdd(null);
   }, [
     dailyDraft.date,
@@ -5532,7 +5534,6 @@ export default function HomePage() {
     selectDailyDate,
     setDailyDraft,
     updateQuickPainEventsForDate,
-    setCategoryCompletion,
   ]);
 
   const categoryZeroStates = useMemo<
@@ -5614,8 +5615,7 @@ export default function HomePage() {
       painNRS: 0,
       impactNRS: 0,
     }));
-    setCategoryCompletion("pain", true);
-  }, [confirmQuickActionReset, dailyDraft.date, setCategoryCompletion, setDailyDraft, updateQuickPainEventsForDate]);
+  }, [confirmQuickActionReset, dailyDraft.date, setDailyDraft, updateQuickPainEventsForDate]);
 
   const handleQuickNoSymptoms = useCallback(() => {
     if (!confirmQuickActionReset("symptoms")) {
@@ -5629,8 +5629,7 @@ export default function HomePage() {
       });
       return { ...prev, symptoms: cleared };
     });
-    setCategoryCompletion("symptoms", true);
-  }, [confirmQuickActionReset, setCategoryCompletion, setDailyDraft]);
+  }, [confirmQuickActionReset, setDailyDraft]);
 
   const handleQuickNoBleeding = useCallback(() => {
     if (!confirmQuickActionReset("bleeding")) {
@@ -5645,13 +5644,7 @@ export default function HomePage() {
         flooding: false,
       },
     }));
-    setCategoryCompletion("bleeding", true);
-  }, [
-    confirmQuickActionReset,
-    setCategoryCompletion,
-    setDailyDraft,
-    setPbacCounts,
-  ]);
+  }, [confirmQuickActionReset, setDailyDraft, setPbacCounts]);
 
   const handleQuickNoMedication = useCallback(() => {
     if (!confirmQuickActionReset("medication")) {
@@ -5661,8 +5654,7 @@ export default function HomePage() {
       ...prev,
       rescueMeds: [],
     }));
-    setCategoryCompletion("medication", true);
-  }, [confirmQuickActionReset, setCategoryCompletion, setDailyDraft]);
+  }, [confirmQuickActionReset, setDailyDraft]);
 
   const startRescueWizard = useCallback(() => {
     setRescueWizard({ step: 1 });
@@ -5703,10 +5695,9 @@ export default function HomePage() {
         ...prev,
         rescueMeds: [...(prev.rescueMeds ?? []), nextDose],
       }));
-      setCategoryCompletion("medication", true);
       return null;
     });
-  }, [setCategoryCompletion, setDailyDraft]);
+  }, [setDailyDraft]);
 
   const handleCustomRescueSubmit = useCallback(() => {
     const trimmed = customRescueName.trim();
@@ -5828,7 +5819,6 @@ export default function HomePage() {
         const nextDraft = buildDailyDraftWithPainRegions(prev, nextRegions);
         return nextDraft;
       });
-      setCategoryCompletion("pain", true);
       setPainQuickAddOpen(false);
       resetPainQuickAddState();
       return;
@@ -5861,7 +5851,6 @@ export default function HomePage() {
     painQuickQualities,
     painQuickRegion,
     painQuickTimesOfDay,
-    setCategoryCompletion,
     setDailyDraft,
     resetPainQuickAddState,
     setPendingPainQuickAdd,
@@ -5992,6 +5981,86 @@ export default function HomePage() {
     setDailyCategoryDirtyState({});
     previousDailyCategoryCompletionRef.current = createEmptyCategoryCompletion();
   }, [resolvedDailyScopeKey]);
+
+  useEffect(() => {
+    if (!resolvedDailyScopeKey) {
+      return;
+    }
+
+    setDailyCategorySnapshots((prev) => {
+      let changed = false;
+      const next = { ...prev } as Partial<Record<TrackableDailyCategoryId, string>>;
+
+      TRACKED_DAILY_CATEGORY_IDS.forEach((categoryId) => {
+        if (next[categoryId]) {
+          return;
+        }
+        const snapshot = extractDailyCategorySnapshot(dailyDraft, categoryId, featureFlags, pbacCounts);
+        if (snapshot) {
+          next[categoryId] = JSON.stringify(snapshot);
+          changed = true;
+        }
+      });
+
+      return changed ? next : prev;
+    });
+  }, [dailyDraft, featureFlags, pbacCounts, resolvedDailyScopeKey]);
+
+  useEffect(() => {
+    if (!resolvedDailyScopeKey) {
+      return;
+    }
+
+    let markedCompleted = false;
+
+    TRACKED_DAILY_CATEGORY_IDS.forEach((categoryId) => {
+      if (dailyCategoryCompletion[categoryId]) {
+        return;
+      }
+
+      const snapshotString = dailyCategorySnapshots[categoryId];
+      if (!snapshotString) {
+        return;
+      }
+
+      const currentSnapshot = extractDailyCategorySnapshot(
+        dailyDraft,
+        categoryId,
+        featureFlags,
+        pbacCounts
+      );
+
+      if (!currentSnapshot) {
+        return;
+      }
+
+      const baselineSnapshot = JSON.parse(snapshotString) as CategorySnapshot;
+
+      if (equalWithNullUndefined(baselineSnapshot, currentSnapshot)) {
+        return;
+      }
+
+      const completionTitle = dailyCategoryCompletionTitles[categoryId];
+      if (completionTitle) {
+        sectionCompletionContextValue.setCompletion(resolvedDailyScopeKey, completionTitle, true);
+        markedCompleted = true;
+      }
+    });
+
+    if (markedCompleted) {
+      setDailyActiveCategory("overview");
+    }
+  }, [
+    dailyCategoryCompletion,
+    dailyCategoryCompletionTitles,
+    dailyCategorySnapshots,
+    dailyDraft,
+    featureFlags,
+    pbacCounts,
+    resolvedDailyScopeKey,
+    sectionCompletionContextValue,
+    setDailyActiveCategory,
+  ]);
 
   useEffect(() => {
     if (!resolvedDailyScopeKey) {
@@ -6180,22 +6249,13 @@ export default function HomePage() {
       delete next[categoryId];
       return next;
     });
-    if (resolvedDailyScopeKey) {
-      const sectionTitle = dailyCategoryCompletionTitles[categoryId];
-      if (sectionTitle) {
-        sectionCompletionContextValue.setCompletion(resolvedDailyScopeKey, sectionTitle, true);
-      }
-    }
     setPendingCategoryConfirm(null);
     setDailyActiveCategory("overview");
   }, [
-    dailyCategoryCompletionTitles,
     dailyDraft,
-    resolvedDailyScopeKey,
     featureFlags,
     pbacCounts,
     pendingCategoryConfirm,
-    sectionCompletionContextValue,
   ]);
 
   const handleCategoryConfirmDiscard = useCallback(() => {
@@ -6217,12 +6277,6 @@ export default function HomePage() {
       setFeatureFlags(restored.featureFlags);
       setPbacCounts(restored.pbacCounts);
     }
-    if (resolvedDailyScopeKey) {
-      const sectionTitle = dailyCategoryCompletionTitles[categoryId];
-      if (sectionTitle) {
-        sectionCompletionContextValue.setCompletion(resolvedDailyScopeKey, sectionTitle, true);
-      }
-    }
     setDailyCategoryDirtyState((prev) => {
       if (!prev[categoryId]) {
         return prev;
@@ -6234,17 +6288,14 @@ export default function HomePage() {
     setPendingCategoryConfirm(null);
     setDailyActiveCategory("overview");
   }, [
-    dailyCategoryCompletionTitles,
     dailyCategorySnapshots,
     dailyDraft,
-    resolvedDailyScopeKey,
     featureFlags,
     pbacCounts,
     pendingCategoryConfirm,
     setDailyDraft,
     setFeatureFlags,
     setPbacCounts,
-    sectionCompletionContextValue,
   ]);
 
   const dailyCategorySummaries = useMemo(
@@ -7159,12 +7210,6 @@ export default function HomePage() {
                                 <p className="mt-1 text-xs text-rose-600">{category.description}</p>
                               </div>
                               <div className="flex items-center gap-2">
-                                {isCompleted ? (
-                                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-                                    <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                                    <span className="sr-only">Bereits abgeschlossen</span>
-                                  </span>
-                                ) : null}
                                 <ChevronRight className="h-4 w-4 text-rose-400 transition group-hover:text-rose-500" aria-hidden="true" />
                               </div>
                             </div>
@@ -7278,7 +7323,7 @@ export default function HomePage() {
                   </div>
                 </div>
                 <p className="text-xs text-rose-600">
-                  Es werden nur Daten von den Bereichen gespeichert, die einen grünen Haken haben.
+                  Es werden nur Daten von den gelb markierten Bereichen gespeichert.
                 </p>
                 <div className="flex flex-wrap items-center gap-3">
                   <Button type="button" onClick={() => handleDailySubmit()} disabled={!isDailyDirty}>
@@ -7314,7 +7359,6 @@ export default function HomePage() {
                 <Section
                   title="Schmerzen"
                   description="Schmerzen hinzufügen, Intensität und Art je Region festhalten und Auswirkungen dokumentieren"
-                  onComplete={() => setDailyActiveCategory("overview")}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-100 bg-white/80 p-3 text-sm text-rose-800">
                     <p className="text-sm text-rose-700">
@@ -7511,7 +7555,6 @@ export default function HomePage() {
                 <Section
                   title="Typische Endometriose-Symptome"
                   description="Je Symptom: Ja/Nein plus Stärke auf der 0–10 Skala"
-                  onComplete={() => setDailyActiveCategory("overview")}
                 >
                   <div className="grid gap-4">
                     {SYMPTOM_ITEMS.map((item) => {
@@ -7674,7 +7717,6 @@ export default function HomePage() {
               <div className={cn("space-y-6", dailyActiveCategory === "bleeding" ? "" : "hidden")}>
                 <Section
                   title="Periode und Blutung"
-                  onComplete={() => setDailyActiveCategory("overview")}
                 >
                     <div className="space-y-6">
                       <div className="space-y-2">
@@ -7904,7 +7946,6 @@ export default function HomePage() {
                 <Section
                   title={TERMS.meds.label}
                   description="Akut-/Rescue-Medikation des Tages erfassen"
-                  onComplete={() => setDailyActiveCategory("overview")}
                 >
                   <div className="grid gap-4">
                     <TermHeadline termKey="meds" />
@@ -8057,7 +8098,6 @@ export default function HomePage() {
                 <Section
                   title="Schlaf"
                   description="Kurzabfrage ohne Hilfsmittel"
-                  onComplete={() => setDailyActiveCategory("overview")}
                 >
                   <div className="grid gap-4 md:grid-cols-3">
                     <TermField termKey="sleep_hours" htmlFor="sleep-hours">
@@ -8122,7 +8162,6 @@ export default function HomePage() {
                 <Section
                   title="Darm & Blase"
                   description="Situativ erfassbar"
-                  onComplete={() => setDailyActiveCategory("overview")}
                 >
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="grid gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
@@ -8393,7 +8432,6 @@ export default function HomePage() {
                 <Section
                   title="Notizen & Tags"
                   description="Freitext oder wiederkehrende Muster markieren"
-                  onComplete={() => setDailyActiveCategory("overview")}
                 >
                   <div className="grid gap-3">
                     <TermField termKey="notesTags" htmlFor="notes-tag-input">
@@ -8442,7 +8480,6 @@ export default function HomePage() {
                       aria-label="Hilfsmittel-Optionen"
                     />
                   }
-                  onComplete={() => setDailyActiveCategory("overview")}
                 >
                   <Button type="button" variant="secondary" onClick={() => setSensorsVisible((prev) => !prev)}>
                     {optionalSensorsLabel}
