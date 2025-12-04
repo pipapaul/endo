@@ -3871,19 +3871,27 @@ export default function HomePage() {
     [setDailyDraft]
   );
 
-  const handleDailySubmit = (options?: { goToHome?: boolean }): boolean => {
+  const handleDailySubmit = (options?: {
+    goToHome?: boolean;
+    pbacCountsOverride?: PbacCounts;
+    pbacFloodingOverride?: boolean;
+  }): boolean => {
+    const pbacCountsForSubmit = options?.pbacCountsOverride ?? pbacCounts;
+    const pbacFloodingForSubmit = options?.pbacFloodingOverride ?? pbacFlooding;
+    const pbacScoreForSubmit = computePbacScore(pbacCountsForSubmit, pbacFloodingForSubmit);
+
     const payload: DailyEntry = {
       ...dailyDraft,
       painQuality: dailyDraft.painQuality,
       bleeding: dailyDraft.bleeding.isBleeding
         ? {
             isBleeding: true,
-            pbacScore,
+            pbacScore: pbacScoreForSubmit,
             clots: dailyDraft.bleeding.clots ?? false,
             flooding: dailyDraft.bleeding.flooding ?? false,
           }
         : { isBleeding: false },
-      pbacCounts: normalizePbacCounts(pbacCounts),
+      pbacCounts: normalizePbacCounts(pbacCountsForSubmit),
       rescueMeds: (dailyDraft.rescueMeds ?? [])
         .filter((med) => med.name.trim().length > 0)
         .map((med) => ({
@@ -5474,6 +5482,7 @@ export default function HomePage() {
       return;
     }
     setBleedingQuickAddOpen(false);
+    let nextPbacCounts: PbacCounts | null = null;
     setDailyDraft((prev) => {
       if (prev.date !== today) {
         return prev;
@@ -5497,7 +5506,8 @@ export default function HomePage() {
         return prev;
       }
       didAddProduct = true;
-      return { ...prev, [pendingBleedingQuickAdd]: nextValue };
+      nextPbacCounts = { ...prev, [pendingBleedingQuickAdd]: nextValue };
+      return nextPbacCounts;
     });
     if (didAddProduct) {
       setBleedingQuickAddNotice({
@@ -5514,6 +5524,21 @@ export default function HomePage() {
       bleedingQuickAddNoticeTimeoutRef.current = window.setTimeout(() => {
         setBleedingQuickAddNotice(null);
       }, 2400);
+      const persistDailyDraft = () => {
+        const saved = handleDailySubmit({
+          goToHome: false,
+          pbacCountsOverride: nextPbacCounts ?? pbacCounts,
+          pbacFloodingOverride: pbacFlooding,
+        });
+        if (saved) {
+          setDailySaveNotice("Tagesdaten gespeichert.");
+        }
+      };
+      if (typeof queueMicrotask === "function") {
+        queueMicrotask(persistDailyDraft);
+      } else {
+        window.setTimeout(persistDailyDraft, 0);
+      }
     }
     setPendingBleedingQuickAdd(null);
   }, [
@@ -5527,6 +5552,10 @@ export default function HomePage() {
     setPendingBleedingQuickAdd,
     setBleedingQuickAddNotice,
     setCategoryCompletion,
+    setDailySaveNotice,
+    handleDailySubmit,
+    pbacCounts,
+    pbacFlooding,
     today,
   ]);
 
