@@ -3871,20 +3871,30 @@ export default function HomePage() {
     [setDailyDraft]
   );
 
-  const handleDailySubmit = (options?: { goToHome?: boolean }): boolean => {
+  const handleDailySubmit = (options?: {
+    goToHome?: boolean;
+    draftOverride?: DailyEntry;
+    pbacCountsOverride?: PbacCounts;
+  }): boolean => {
+    const draftForSave = options?.draftOverride ?? dailyDraft;
+    const countsForSave = options?.pbacCountsOverride ?? pbacCounts;
+    const normalizedCounts = normalizePbacCounts(countsForSave);
+    const pbacFloodingForSave = draftForSave.bleeding.flooding ?? false;
+    const pbacScoreForSave = computePbacScore(normalizedCounts, pbacFloodingForSave);
+
     const payload: DailyEntry = {
-      ...dailyDraft,
-      painQuality: dailyDraft.painQuality,
-      bleeding: dailyDraft.bleeding.isBleeding
+      ...draftForSave,
+      painQuality: draftForSave.painQuality,
+      bleeding: draftForSave.bleeding.isBleeding
         ? {
             isBleeding: true,
-            pbacScore,
-            clots: dailyDraft.bleeding.clots ?? false,
-            flooding: dailyDraft.bleeding.flooding ?? false,
+            pbacScore: pbacScoreForSave,
+            clots: draftForSave.bleeding.clots ?? false,
+            flooding: draftForSave.bleeding.flooding ?? false,
           }
         : { isBleeding: false },
-      pbacCounts: normalizePbacCounts(pbacCounts),
-      rescueMeds: (dailyDraft.rescueMeds ?? [])
+      pbacCounts: normalizedCounts,
+      rescueMeds: (draftForSave.rescueMeds ?? [])
         .filter((med) => med.name.trim().length > 0)
         .map((med) => ({
           name: med.name.trim(),
@@ -3893,9 +3903,9 @@ export default function HomePage() {
         })),
       notesTags: painQualityOther
         ? Array.from(
-            new Set([...(dailyDraft.notesTags ?? []), `Schmerz anders: ${painQualityOther.trim()}`])
+            new Set([...(draftForSave.notesTags ?? []), `Schmerz anders: ${painQualityOther.trim()}`])
           )
-        : dailyDraft.notesTags,
+        : draftForSave.notesTags,
     };
 
     if (payload.ovulationPain) {
@@ -5474,12 +5484,13 @@ export default function HomePage() {
       return;
     }
     setBleedingQuickAddOpen(false);
+    let nextDraft: DailyEntry | null = null;
     setDailyDraft((prev) => {
       if (prev.date !== today) {
         return prev;
       }
       const previousBleeding = prev.bleeding ?? { isBleeding: false };
-      return {
+      const updatedDraft: DailyEntry = {
         ...prev,
         bleeding: {
           isBleeding: true,
@@ -5488,16 +5499,22 @@ export default function HomePage() {
           pbacScore: previousBleeding.pbacScore,
         },
       };
+      nextDraft = updatedDraft;
+      return updatedDraft;
     });
     let didAddProduct = false;
+    let nextPbacCounts: PbacCounts | null = null;
     setPbacCounts((prev) => {
       const current = prev[pendingBleedingQuickAdd] ?? 0;
       const nextValue = Math.min(PBAC_MAX_PRODUCT_COUNT, current + 1);
       if (current === nextValue) {
+        nextPbacCounts = prev;
         return prev;
       }
       didAddProduct = true;
-      return { ...prev, [pendingBleedingQuickAdd]: nextValue };
+      const updatedCounts = { ...prev, [pendingBleedingQuickAdd]: nextValue };
+      nextPbacCounts = updatedCounts;
+      return updatedCounts;
     });
     if (didAddProduct) {
       setBleedingQuickAddNotice({
@@ -5508,6 +5525,11 @@ export default function HomePage() {
         Icon: selectedItem.Icon,
       });
       setCategoryCompletion("bleeding", true);
+      handleDailySubmit({
+        goToHome: false,
+        draftOverride: nextDraft ?? dailyDraft,
+        pbacCountsOverride: nextPbacCounts ?? pbacCounts,
+      });
       if (bleedingQuickAddNoticeTimeoutRef.current) {
         window.clearTimeout(bleedingQuickAddNoticeTimeoutRef.current);
       }
@@ -5527,6 +5549,9 @@ export default function HomePage() {
     setPendingBleedingQuickAdd,
     setBleedingQuickAddNotice,
     setCategoryCompletion,
+    handleDailySubmit,
+    pbacCounts,
+    dailyDraft,
     today,
   ]);
 
