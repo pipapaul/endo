@@ -2431,24 +2431,6 @@ export default function HomePage() {
   }, [draftHasBleeding]);
 
   useEffect(() => {
-    setDailyDraft((prev) => {
-      const prevCounts = normalizePbacCounts(prev.pbacCounts);
-      const derivedBleeding = hasBleedingForEntry({ ...prev, pbacCounts: prevCounts });
-      if (prev.bleeding?.isBleeding === derivedBleeding) {
-        return prev;
-      }
-      const previousBleeding = prev.bleeding ?? { isBleeding: false };
-      return {
-        ...prev,
-        bleeding: {
-          ...previousBleeding,
-          isBleeding: derivedBleeding,
-        },
-      };
-    });
-  }, [pbacCounts, setDailyDraft]);
-
-  useEffect(() => {
     const updateNow = () => setCurrentTime(new Date());
     updateNow();
     const interval = window.setInterval(updateNow, 60_000);
@@ -2786,21 +2768,6 @@ export default function HomePage() {
       }
       const existingEntry = derivedDailyEntries.find((entry) => entry.date === targetDate);
       let baseEntry = existingEntry ?? createEmptyDailyEntry(targetDate);
-      if (!existingEntry) {
-        const parsedTarget = parseIsoDate(targetDate);
-        if (parsedTarget) {
-          const previousDate = new Date(parsedTarget);
-          previousDate.setDate(previousDate.getDate() - 1);
-          const previousIso = formatDate(previousDate);
-          const previousEntry = derivedDailyEntries.find((entry) => entry.date === previousIso);
-          if (previousEntry) {
-            baseEntry = {
-              ...baseEntry,
-              bleeding: { isBleeding: hasBleedingForEntry(previousEntry) },
-            };
-          }
-        }
-      }
       const clonedEntry =
         typeof structuredClone === "function"
           ? structuredClone(baseEntry)
@@ -3883,18 +3850,18 @@ export default function HomePage() {
 
   const handleDailySubmit = (options?: { goToHome?: boolean }): boolean => {
     const normalizedPbacCounts = normalizePbacCounts(pbacCounts);
-    const bleedingActive = Object.values(normalizedPbacCounts).some((value) => value > 0);
+    const bleedingActive = hasBleedingForEntry({ ...dailyDraft, pbacCounts: normalizedPbacCounts });
     const payload: DailyEntry = {
       ...dailyDraft,
       painQuality: dailyDraft.painQuality,
       bleeding: bleedingActive
-        ? {
-            isBleeding: true,
-            pbacScore,
-            clots: dailyDraft.bleeding.clots ?? false,
-            flooding: dailyDraft.bleeding.flooding ?? false,
-          }
-        : { isBleeding: false },
+          ? {
+              isBleeding: true,
+              pbacScore,
+              clots: dailyDraft.bleeding.clots ?? false,
+              flooding: dailyDraft.bleeding.flooding ?? false,
+            }
+        : { isBleeding: false, clots: false, flooding: false },
       pbacCounts: normalizedPbacCounts,
       rescueMeds: (dailyDraft.rescueMeds ?? [])
         .filter((med) => med.name.trim().length > 0)
@@ -5487,21 +5454,6 @@ export default function HomePage() {
       return;
     }
     setBleedingQuickAddOpen(false);
-    setDailyDraft((prev) => {
-      if (prev.date !== today) {
-        return prev;
-      }
-      const previousBleeding = prev.bleeding ?? { isBleeding: false };
-      return {
-        ...prev,
-        bleeding: {
-          isBleeding: true,
-          clots: previousBleeding.clots ?? false,
-          flooding: previousBleeding.flooding ?? false,
-          pbacScore: previousBleeding.pbacScore,
-        },
-      };
-    });
     let didAddProduct = false;
     setPbacCounts((prev) => {
       const current = prev[pendingBleedingQuickAdd] ?? 0;
@@ -5667,11 +5619,15 @@ export default function HomePage() {
     if (!confirmQuickActionReset("bleeding")) {
       return;
     }
+    setPbacCounts(createEmptyPbacCounts());
     setDailyDraft((prev) => ({
       ...prev,
-      bleeding: { isBleeding: false },
+      bleeding: {
+        isBleeding: false,
+        clots: false,
+        flooding: false,
+      },
     }));
-    setPbacCounts(createEmptyPbacCounts());
     setCategoryCompletion("bleeding", true);
   }, [
     confirmQuickActionReset,
