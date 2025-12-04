@@ -11,6 +11,7 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 
+import { hasBleedingForEntry } from "@/lib/dailyEntries";
 import type { DailyEntry } from "@/lib/types";
 import { formatIsoWeek, getIsoWeekCalendarDates } from "@/lib/isoWeek";
 import { Label } from "@/components/ui/label";
@@ -164,10 +165,11 @@ function deriveMaxPain(entry: DailyEntry): number | undefined {
 }
 
 function toAggregateDailyEntry(entry: DailyEntry): AggregateDailyEntry {
+  const bleedingActive = hasBleedingForEntry(entry);
   return {
     dateISO: entry.date,
     pain0to10: deriveMaxPain(entry),
-    bleeding: entry.bleeding.isBleeding ? mapBleedingSeverity(entry.bleeding.pbacScore) : "none",
+    bleeding: bleedingActive ? mapBleedingSeverity(entry.bleeding.pbacScore) : "none",
     sleepQuality0to10: typeof entry.sleep?.quality === "number" ? entry.sleep.quality : undefined,
     medicationsChanged: undefined,
   };

@@ -1,6 +1,17 @@
 import { arePbacCountsEqual, normalizePbacCounts } from "./pbac";
 import type { DailyEntry, PainQuality, PainTimeOfDay, QuickPainEvent } from "./types";
 
+type DailyCategoryCompletion = Partial<{
+  pain: boolean;
+  symptoms: boolean;
+  bleeding: boolean;
+  medication: boolean;
+  sleep: boolean;
+  bowelBladder: boolean;
+  notes: boolean;
+  optional: boolean;
+}>;
+
 const PAIN_QUALITY_SET = new Set<PainQuality>([
   "krampfend",
   "stechend",
@@ -21,21 +32,38 @@ const clampScore = (value: number | undefined | null): number | null => {
   return Math.max(0, Math.min(10, Math.round(value)));
 };
 
+export function hasBleedingForEntry(entry: DailyEntry): boolean {
+  const counts = normalizePbacCounts(entry.pbacCounts);
+
+  const hasProducts = Object.values(counts).some((value) => value > 0);
+
+  const legacyFlag = entry.bleeding?.isBleeding === true;
+
+  return hasProducts || legacyFlag;
+}
+
 export function normalizeQuickPainEvent(event: QuickPainEvent): QuickPainEvent {
   const timeOfDay = Array.isArray(event.timeOfDay)
     ? (event.timeOfDay.filter((time): time is PainTimeOfDay => PAIN_TIME_OF_DAY_SET.has(time)) as PainTimeOfDay[])
     : [];
   const hasTimeOfDay = timeOfDay.length > 0;
   const granularity = hasTimeOfDay ? "dritteltag" : event.granularity ?? "tag";
-  const quality = PAIN_QUALITY_SET.has(event.quality as PainQuality)
-    ? (event.quality as PainQuality)
-    : null;
+  const rawQualities = Array.isArray(event.qualities)
+    ? event.qualities
+    : event.quality
+      ? [event.quality]
+      : [];
+  const qualities = Array.from(
+    new Set(
+      rawQualities.filter((quality): quality is PainQuality => PAIN_QUALITY_SET.has(quality as PainQuality))
+    )
+  );
   const intensity = clampScore(event.intensity) ?? 0;
 
   return {
     ...event,
     intensity,
-    quality,
+    qualities,
     timeOfDay,
     granularity,
   };
@@ -82,6 +110,8 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
   const normalizedPbacCounts = normalizePbacCounts(entry.pbacCounts);
   const needsPbacCountsNormalization =
     !entry.pbacCounts || !arePbacCountsEqual(entry.pbacCounts, normalizedPbacCounts);
+  const derivedBleedingActive = hasBleedingForEntry({ ...entry, pbacCounts: normalizedPbacCounts });
+  const needsBleedingNormalization = entry.bleeding?.isBleeding !== derivedBleedingActive;
 
   if (
     hasValidBleeding &&
@@ -92,13 +122,14 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
     !needsRescueMedsNormalization &&
     !needsSymptomsNormalization &&
     !needsQuickPainEventsNormalization &&
-    !needsPbacCountsNormalization
+    !needsPbacCountsNormalization &&
+    !needsBleedingNormalization
   ) {
     return entry;
   }
 
   const normalizedBleeding: DailyEntry["bleeding"] = {
-    isBleeding: Boolean(bleedingSource?.isBleeding),
+    isBleeding: derivedBleedingActive,
   };
 
   if (typeof bleedingSource?.pbacScore === "number" && Number.isFinite(bleedingSource.pbacScore)) {
@@ -155,4 +186,64 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
     symptoms,
     pbacCounts: normalizedPbacCounts,
   };
+}
+
+export function pruneDailyEntryByCompletion(
+  entry: DailyEntry,
+  completion: DailyCategoryCompletion
+): DailyEntry {
+  const normalized = normalizeDailyEntry(entry);
+  const next: DailyEntry = { ...normalized };
+
+  if (!completion.pain) {
+    next.painRegions = [];
+    next.painMapRegionIds = [];
+    next.painQuality = [];
+    next.painNRS = 0;
+    next.impactNRS = 0;
+    next.quickPainEvents = normalized.quickPainEvents ?? [];
+  }
+
+  if (!completion.symptoms) {
+    next.symptoms = {};
+  }
+
+  if (!completion.bleeding) {
+    next.bleeding = { isBleeding: false };
+    next.pbacCounts = normalized.pbacCounts;
+  }
+
+  if (!completion.medication) {
+    next.rescueMeds = [];
+  }
+
+  if (!completion.sleep) {
+    delete next.sleep;
+  }
+
+  if (!completion.bowelBladder) {
+    next.symptoms = { ...(next.symptoms ?? {}) };
+    delete next.symptoms.dyschezia;
+    delete next.symptoms.dysuria;
+    delete next.gi;
+    delete next.urinary;
+    delete next.urinaryOpt;
+  }
+
+  if (!completion.notes) {
+    next.notesTags = [];
+    delete next.notesFree;
+  }
+
+  if (!completion.optional) {
+    delete next.activity;
+    delete next.exploratory;
+    delete next.ovulation;
+    delete next.ovulationPain;
+    delete next.urinaryOpt;
+    delete next.headacheOpt;
+    delete next.dizzinessOpt;
+  }
+
+  return next;
 }
