@@ -2313,6 +2313,22 @@ export default function HomePage() {
     () => dailyEntries.map((entry) => applyAutomatedPainSymptoms(normalizeDailyEntry(entry))),
     [dailyEntries]
   );
+  const dailyEntriesForGraphs = useMemo(() => {
+    if (dailyDraft.date !== today) {
+      return derivedDailyEntries;
+    }
+
+    const normalizedDraft = applyAutomatedPainSymptoms(normalizeDailyEntry(dailyDraft));
+    const existingIndex = derivedDailyEntries.findIndex((entry) => entry.date === today);
+
+    if (existingIndex === -1) {
+      return [...derivedDailyEntries, normalizedDraft];
+    }
+
+    const next = [...derivedDailyEntries];
+    next[existingIndex] = normalizedDraft;
+    return next;
+  }, [dailyDraft, derivedDailyEntries, today]);
   const [sectionCompletionState, setSectionCompletionState, sectionCompletionStorage] =
     usePersistentState<SectionCompletionState>("endo.sectionCompletion.v1", {});
   const [sectionRegistry, setSectionRegistry] = useState<SectionRegistryState>({});
@@ -2947,7 +2963,7 @@ export default function HomePage() {
   }, [dailyDraft.date]);
 
   const annotatedDailyEntries = useMemo(() => {
-    const entriesWithPain = derivedDailyEntries.map((entry) => {
+    const entriesWithPain = dailyEntriesForGraphs.map((entry) => {
       const maxPain = computeMaxPainIntensity(entry);
       if (maxPain === null || entry.painNRS === maxPain) {
         return entry;
@@ -2980,7 +2996,7 @@ export default function HomePage() {
         symptomAverage,
       };
     });
-  }, [derivedDailyEntries]);
+  }, [dailyEntriesForGraphs]);
 
   const selectedCycleDay = useMemo(() => {
     if (!dailyDraft.date) return null;
