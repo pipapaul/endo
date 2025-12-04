@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -87,6 +87,13 @@ function DailyCompletionHarness() {
     <div>
       <button type="button" onClick={() => setScope("daily:2024-01-01")}>Wechsel zu Tag 1</button>
       <button type="button" onClick={() => setScope("daily:2024-01-02")}>Wechsel zu Tag 2</button>
+      <button
+        type="button"
+        disabled={!resolvedDailyScopeKey}
+        onClick={() => sectionCompletionValue.setCompletion(resolvedDailyScopeKey, "Tagesabschnitt", true)}
+      >
+        Tag abschließen
+      </button>
       <SectionCompletionContext.Provider value={sectionCompletionValue}>
         <SectionScopeContext.Provider value={resolvedDailyScopeKey}>
           <Section title="Tagesabschnitt">
@@ -103,21 +110,27 @@ describe("daily section completions", () => {
     const user = userEvent.setup();
     render(<DailyCompletionHarness />);
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Fertig" })).toBeEnabled());
+    const completeButton = await screen.findByRole("button", { name: "Tag abschließen" });
+    const section = screen.getByText("Tagesabschnitt").closest("section");
 
-    await user.click(screen.getByRole("button", { name: "Fertig" }));
-    expect(screen.getByRole("button", { name: /Erledigt/ })).toBeDisabled();
+    expect(section).not.toBeNull();
+
+    expect(section).toHaveAttribute("data-section-completed", "false");
+
+    await user.click(completeButton);
+    expect(section).toHaveAttribute("data-section-completed", "true");
 
     await user.click(screen.getByRole("button", { name: "Wechsel zu Tag 2" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Fertig" })).toBeEnabled());
-    await user.click(screen.getByRole("button", { name: "Fertig" }));
-    expect(screen.getByRole("button", { name: /Erledigt/ })).toBeDisabled();
+    expect(section).toHaveAttribute("data-section-completed", "false");
+
+    await user.click(completeButton);
+    expect(section).toHaveAttribute("data-section-completed", "true");
 
     await user.click(screen.getByRole("button", { name: "Wechsel zu Tag 1" }));
-    expect(screen.getByRole("button", { name: /Erledigt/ })).toBeDisabled();
+    expect(section).toHaveAttribute("data-section-completed", "true");
 
     await user.click(screen.getByRole("button", { name: "Wechsel zu Tag 2" }));
-    expect(screen.getByRole("button", { name: /Erledigt/ })).toBeDisabled();
+    expect(section).toHaveAttribute("data-section-completed", "true");
   });
 });
 

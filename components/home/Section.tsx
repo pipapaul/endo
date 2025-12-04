@@ -1,26 +1,8 @@
 "use client";
 
-import { CheckCircle2 } from "lucide-react";
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import * as React from "react";
 
 import { cn } from "@/lib/utils";
-import { Button } from "../ui/button";
-
-export const CONFETTI_COLORS = ["#fb7185", "#f97316", "#facc15", "#4ade80", "#38bdf8"] as const;
-const CONFETTI_VERTICAL_POSITIONS = ["20%", "50%", "80%"] as const;
-const CONFETTI_PIECES = Array.from({ length: 8 }, (_, index) => ({
-  top: CONFETTI_VERTICAL_POSITIONS[index % CONFETTI_VERTICAL_POSITIONS.length],
-  left: `${10 + index * 10}%`,
-  delay: index * 80,
-}));
 
 export type SectionCompletionState = Record<string, Record<string, boolean>>;
 export type SectionRegistryState = Record<string, Record<string, true>>;
@@ -32,8 +14,8 @@ export type SectionCompletionContextValue = {
   unregisterSection: (scope: string | number | null, key: string) => void;
 };
 
-export const SectionScopeContext = createContext<string | number | null>(null);
-export const SectionCompletionContext = createContext<SectionCompletionContextValue | null>(null);
+export const SectionScopeContext = React.createContext<string | number | null>(null);
+export const SectionCompletionContext = React.createContext<SectionCompletionContextValue | null>(null);
 
 export function Section({
   title,
@@ -42,41 +24,28 @@ export function Section({
   children,
   completionEnabled = true,
   variant = "card",
-  onComplete,
   hideHeader = false,
 }: {
   title: string;
   description?: string;
-  aside?: ReactNode;
-  children: ReactNode;
+  aside?: React.ReactNode;
+  children: React.ReactNode;
   completionEnabled?: boolean;
   variant?: "card" | "plain";
-  onComplete?: () => void;
   hideHeader?: boolean;
 }) {
-  const scope = useContext(SectionScopeContext);
-  const completionContext = useContext(SectionCompletionContext);
-  const cardRef = useRef<HTMLDivElement | null>(null);
-  const timeoutRef = useRef<number | null>(null);
-  const [isCompleted, setIsCompleted] = useState(false);
-  const [showConfetti, setShowConfetti] = useState(false);
-  const confettiPieces = useMemo(
-    () =>
-      CONFETTI_PIECES.map((piece, index) => ({
-        ...piece,
-        color: CONFETTI_COLORS[index % CONFETTI_COLORS.length],
-      })),
-    []
-  );
+  const scope = React.useContext(SectionScopeContext);
+  const completionContext = React.useContext(SectionCompletionContext);
+  const [isCompleted, setIsCompleted] = React.useState(false);
 
-  const completedFromContext = useMemo(() => {
+  const completedFromContext = React.useMemo(() => {
     if (!completionEnabled) return false;
     if (!completionContext) return false;
     if (scope === null || scope === undefined) return false;
     return completionContext.getCompletion(scope, title);
   }, [completionContext, completionEnabled, scope, title]);
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (!completionEnabled) return;
     if (!completionContext) return;
     if (scope === null || scope === undefined) return;
@@ -86,59 +55,22 @@ export function Section({
     };
   }, [completionContext, completionEnabled, scope, title]);
 
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current !== null) {
-        window.clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const cancelTimeout = () => {
-      if (timeoutRef.current !== null) {
-        window.clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-    };
-
+  React.useEffect(() => {
     if (!completionEnabled) {
-      cancelTimeout();
       setIsCompleted(false);
-      setShowConfetti(false);
       return;
     }
 
     if (!completedFromContext) {
-      cancelTimeout();
       setIsCompleted(false);
-      setShowConfetti(false);
       return;
     }
 
     setIsCompleted(true);
   }, [completedFromContext, completionEnabled]);
 
-  const handleComplete = () => {
-    if (!completionEnabled || isCompleted || showConfetti) return;
-    setIsCompleted(true);
-    if (completionContext && scope !== null && scope !== undefined) {
-      completionContext.setCompletion(scope, title, true);
-    }
-    setShowConfetti(true);
-    timeoutRef.current = window.setTimeout(() => {
-      setShowConfetti(false);
-      if (onComplete) {
-        onComplete();
-      }
-      timeoutRef.current = null;
-    }, 400);
-  };
-
   return (
     <section
-      ref={cardRef}
       data-section-card
       data-section-completed={isCompleted ? "true" : "false"}
       className={cn(
@@ -160,44 +92,6 @@ export function Section({
       ) : null}
       <div className="space-y-4">
         {children}
-        {completionEnabled ? (
-          <div className="flex justify-end pt-2">
-            <div className="relative inline-flex">
-              {completionEnabled && showConfetti ? (
-                <div className="pointer-events-none absolute -inset-x-4 -inset-y-3 overflow-visible">
-                  {confettiPieces.map((piece, index) => (
-                    <span
-                      key={index}
-                      className="confetti-piece absolute h-3 w-3 rounded-sm"
-                      style={{
-                        left: piece.left,
-                        top: piece.top,
-                        backgroundColor: piece.color,
-                        animationDelay: `${piece.delay}ms`,
-                      }}
-                    />
-                  ))}
-                </div>
-              ) : null}
-              <Button
-                type="button"
-                variant="outline"
-                className={cn(isCompleted ? "cursor-default" : "")}
-                onClick={handleComplete}
-                disabled={isCompleted}
-              >
-                {isCompleted ? (
-                  <span className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4" />
-                    Erledigt
-                  </span>
-                ) : (
-                  "Fertig"
-                )}
-              </Button>
-            </div>
-          </div>
-        ) : null}
       </div>
     </section>
   );
