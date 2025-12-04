@@ -1459,8 +1459,13 @@ const describeQuickPainEvent = (event: QuickPainEvent) => {
     (event.granularity === "tag" ? "Ganzer Tag" : null);
 
   const parts = [timeLabel, getRegionLabel(event.regionId), `${event.intensity}/10`];
-  if (event.quality) {
-    parts.push(event.quality);
+  const qualityLabel = event.qualities?.length
+    ? formatList(event.qualities, 2)
+    : event.quality
+      ? event.quality
+      : null;
+  if (qualityLabel) {
+    parts.push(qualityLabel);
   }
   return parts.filter(Boolean).join(" · ");
 };
@@ -2360,7 +2365,7 @@ export default function HomePage() {
   const [painQuickContext, setPainQuickContext] = useState<"shortcut" | "module">("shortcut");
   const [painQuickStep, setPainQuickStep] = useState<1 | 2 | 3>(1);
   const [painQuickRegion, setPainQuickRegion] = useState<string | null>(null);
-  const [painQuickQuality, setPainQuickQuality] = useState<DailyEntry["painQuality"][number] | null>(null);
+  const [painQuickQualities, setPainQuickQualities] = useState<DailyEntry["painQuality"]>([]);
   const [painQuickIntensity, setPainQuickIntensity] = useState(5);
   const [painQuickTimesOfDay, setPainQuickTimesOfDay] = useState<PainTimeOfDay[]>([]);
   const [pendingPainQuickAdd, setPendingPainQuickAdd] = useState<PendingQuickPainAdd | null>(null);
@@ -2483,6 +2488,10 @@ export default function HomePage() {
   const quickPainRegionLabel = useMemo(
     () => (painQuickRegion ? getRegionLabel(painQuickRegion) : null),
     [painQuickRegion]
+  );
+  const quickPainQualityLabel = useMemo(
+    () => (painQuickQualities.length ? formatList(painQuickQualities, 3) : null),
+    [painQuickQualities]
   );
   const painQuickTimeLabel = useMemo(
     () => formatPainTimeOfDayList(painQuickTimesOfDay),
@@ -3526,6 +3535,9 @@ export default function HomePage() {
                     formatPainTimeOfDayList(event.timeOfDay) ??
                     formatShortTimeLabel(event.timestamp) ??
                     (event.granularity === "tag" ? "Ganzer Tag" : null);
+                  const qualityLabel = event.qualities?.length
+                    ? formatList(event.qualities, 2)
+                    : event.quality;
                   return (
                     <span
                       key={event.id}
@@ -3538,7 +3550,7 @@ export default function HomePage() {
                       ) : null}
                       <span className="text-rose-700">{getRegionLabel(event.regionId)}</span>
                       <span className="text-rose-500">{event.intensity}/10</span>
-                      {event.quality ? <span className="text-rose-500">{event.quality}</span> : null}
+                      {qualityLabel ? <span className="text-rose-500">{qualityLabel}</span> : null}
                     </span>
                   );
                 })}
@@ -5721,20 +5733,23 @@ export default function HomePage() {
   const resetPainQuickAddState = useCallback(() => {
     setPainQuickStep(1);
     setPainQuickRegion(null);
-    setPainQuickQuality(null);
+    setPainQuickQualities([]);
     setPainQuickIntensity(5);
     setPainQuickTimesOfDay([]);
   }, []);
 
   const handlePainQuickRegionSelect = useCallback((regionId: string) => {
     setPainQuickRegion(regionId);
-    setPainQuickQuality(null);
+    setPainQuickQualities([]);
     setPainQuickStep(2);
   }, []);
 
   const handlePainQuickQualitySelect = useCallback((quality: DailyEntry["painQuality"][number]) => {
-    setPainQuickQuality(quality);
-    setPainQuickStep(3);
+    setPainQuickQualities((prev) => {
+      const hasQuality = prev.includes(quality);
+      const next = hasQuality ? prev.filter((item) => item !== quality) : [...prev, quality];
+      return next;
+    });
   }, []);
 
   const handlePainQuickTimeToggle = useCallback((time: PainTimeOfDay) => {
@@ -5770,7 +5785,7 @@ export default function HomePage() {
 
   const handlePainQuickConfirm = useCallback(() => {
     const requiresTimeSelection = painQuickContext === "module";
-    if (!painQuickRegion || !painQuickQuality || (requiresTimeSelection && painQuickTimesOfDay.length === 0)) {
+    if (!painQuickRegion || !painQuickQualities.length || (requiresTimeSelection && painQuickTimesOfDay.length === 0)) {
       return;
     }
     const intensity = Math.max(0, Math.min(10, Math.round(painQuickIntensity)));
@@ -5781,7 +5796,7 @@ export default function HomePage() {
         const existingIndex = nextRegions.findIndex((region) => region.regionId === painQuickRegion);
         const existingRegion = existingIndex === -1 ? null : nextRegions[existingIndex];
         const mergedQualities = new Set(existingRegion?.qualities ?? []);
-        mergedQualities.add(painQuickQuality);
+        painQuickQualities.forEach((quality) => mergedQualities.add(quality));
         let normalized = Array.from(mergedQualities) as DailyEntry["painQuality"];
         if (painQuickRegion === HEAD_REGION_ID) {
           normalized = sanitizeHeadRegionQualities(normalized);
@@ -5827,7 +5842,7 @@ export default function HomePage() {
       id: now.getTime(),
       date,
       regionId: painQuickRegion,
-      quality: painQuickQuality,
+      qualities: painQuickQualities,
       intensity,
       timestamp,
       source,
@@ -5842,7 +5857,7 @@ export default function HomePage() {
     dailyDraft.date,
     painQuickContext,
     painQuickIntensity,
-    painQuickQuality,
+    painQuickQualities,
     painQuickRegion,
     painQuickTimesOfDay,
     setCategoryCompletion,
@@ -7193,6 +7208,9 @@ export default function HomePage() {
                                           formatPainTimeOfDayList(event.timeOfDay) ??
                                           formatShortTimeLabel(event.timestamp) ??
                                           (event.granularity === "tag" ? "Ganzer Tag" : null);
+                                        const qualityLabel = event.qualities?.length
+                                          ? formatList(event.qualities, 2)
+                                          : event.quality;
                                         return (
                                           <span
                                             key={event.id}
@@ -7205,7 +7223,7 @@ export default function HomePage() {
                                             ) : null}
                                             <span className="text-amber-800">{getRegionLabel(event.regionId)}</span>
                                             <span className="text-amber-600">{event.intensity}/10</span>
-                                            {event.quality ? <span className="text-amber-600">{event.quality}</span> : null}
+                                            {qualityLabel ? <span className="text-amber-600">{qualityLabel}</span> : null}
                                           </span>
                                         );
                                       })
@@ -10099,13 +10117,18 @@ export default function HomePage() {
                 />
               ))}
             </div>
-            {(quickPainRegionLabel || painQuickQuality || painQuickTimeLabel) && (
+            {(quickPainRegionLabel || quickPainQualityLabel || painQuickTimeLabel) && (
               <div className="flex flex-wrap gap-2 text-xs text-rose-500">
                 {quickPainRegionLabel ? (
                   <span className="rounded-full bg-rose-50 px-2 py-0.5 text-rose-600">{quickPainRegionLabel}</span>
                 ) : null}
-                {painQuickQuality ? (
-                  <span className="rounded-full bg-rose-50 px-2 py-0.5 text-rose-600">{painQuickQuality}</span>
+                {painQuickQualities.map((quality) => (
+                  <span key={quality} className="rounded-full bg-rose-50 px-2 py-0.5 text-rose-600">
+                    {quality}
+                  </span>
+                ))}
+                {!painQuickQualities.length && quickPainQualityLabel ? (
+                  <span className="rounded-full bg-rose-50 px-2 py-0.5 text-rose-600">{quickPainQualityLabel}</span>
                 ) : null}
                 {painQuickTimeLabel ? (
                   <span className="rounded-full bg-rose-50 px-2 py-0.5 text-rose-600">{painQuickTimeLabel}</span>
@@ -10151,7 +10174,7 @@ export default function HomePage() {
                 <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">Art</p>
                 <div className="grid grid-cols-2 gap-1.5 text-sm">
                   {quickPainQualityOptions.map((quality) => {
-                    const isSelected = painQuickQuality === quality;
+                    const isSelected = painQuickQualities.includes(quality);
                     return (
                       <button
                         key={quality}
@@ -10168,6 +10191,16 @@ export default function HomePage() {
                       </button>
                     );
                   })}
+                </div>
+                <div className="text-right">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setPainQuickStep(3)}
+                    disabled={!painQuickQualities.length}
+                  >
+                    weiter
+                  </Button>
                 </div>
               </div>
             ) : null}
@@ -10225,7 +10258,7 @@ export default function HomePage() {
                   type="button"
                   className="w-full"
                   onClick={handlePainQuickConfirm}
-                  disabled={!painQuickRegion || !painQuickQuality || (painQuickContext === "module" && painQuickTimesOfDay.length === 0)}
+                  disabled={!painQuickRegion || !painQuickQualities.length || (painQuickContext === "module" && painQuickTimesOfDay.length === 0)}
                 >
                   speichern
                 </Button>

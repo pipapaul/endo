@@ -37,15 +37,22 @@ export function normalizeQuickPainEvent(event: QuickPainEvent): QuickPainEvent {
     : [];
   const hasTimeOfDay = timeOfDay.length > 0;
   const granularity = hasTimeOfDay ? "dritteltag" : event.granularity ?? "tag";
-  const quality = PAIN_QUALITY_SET.has(event.quality as PainQuality)
-    ? (event.quality as PainQuality)
-    : null;
+  const rawQualities = Array.isArray(event.qualities)
+    ? event.qualities
+    : event.quality
+      ? [event.quality]
+      : [];
+  const qualities = Array.from(
+    new Set(
+      rawQualities.filter((quality): quality is PainQuality => PAIN_QUALITY_SET.has(quality as PainQuality))
+    )
+  );
   const intensity = clampScore(event.intensity) ?? 0;
 
   return {
     ...event,
     intensity,
-    quality,
+    qualities,
     timeOfDay,
     granularity,
   };
