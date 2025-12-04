@@ -2309,6 +2309,12 @@ export default function HomePage() {
     usePersistentState<string[]>("endo.dismissedCheckIns.v1", []);
   const [customRescueMeds, setCustomRescueMeds, _customRescueMedsStorage] =
     usePersistentState<string[]>("endo.rescueMeds.v1", []);
+  const [dailyDraft, setDailyDraft, dailyDraftStorage] =
+    usePersistentState<DailyEntry>("endo.draft.daily.v1", defaultDailyDraft);
+  const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
+  const [pbacCounts, setPbacCountsState] = useState<PbacCounts>(() =>
+    normalizePbacCounts(defaultDailyDraft.pbacCounts)
+  );
   const derivedDailyEntries = useMemo(
     () => dailyEntries.map((entry) => applyAutomatedPainSymptoms(normalizeDailyEntry(entry))),
     [dailyEntries]
@@ -2332,13 +2338,6 @@ export default function HomePage() {
   const [sectionCompletionState, setSectionCompletionState, sectionCompletionStorage] =
     usePersistentState<SectionCompletionState>("endo.sectionCompletion.v1", {});
   const [sectionRegistry, setSectionRegistry] = useState<SectionRegistryState>({});
-
-  const [dailyDraft, setDailyDraft, dailyDraftStorage] =
-    usePersistentState<DailyEntry>("endo.draft.daily.v1", defaultDailyDraft);
-  const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
-  const [pbacCounts, setPbacCountsState] = useState<PbacCounts>(() =>
-    normalizePbacCounts(defaultDailyDraft.pbacCounts)
-  );
   const setPbacCounts = useCallback(
     (next: PbacCounts | ((prev: PbacCounts) => PbacCounts)) => {
       setPbacCountsState((prev) => {
