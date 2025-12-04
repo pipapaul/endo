@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeDailyEntry } from "./dailyEntries";
+import { hasBleedingForEntry, normalizeDailyEntry } from "./dailyEntries";
 import { createEmptyPbacCounts } from "./pbac";
 import type { DailyEntry } from "./types";
 
@@ -34,6 +34,7 @@ describe("normalizeDailyEntry", () => {
       pbacCounts: createEmptyPbacCounts(),
       symptoms: {},
       rescueMeds: [],
+      quickPainEvents: [],
     };
 
     const normalized = normalizeDailyEntry(entry);
@@ -69,5 +70,46 @@ describe("normalizeDailyEntry", () => {
       tampon_medium: 1,
       clot_large: 1,
     });
+  });
+});
+
+describe("hasBleedingForEntry", () => {
+  it("detects bleeding when pbac counts are present", () => {
+    const entry = normalizeDailyEntry({
+      date: "2024-04-01",
+      painNRS: 0,
+      painQuality: [],
+      painMapRegionIds: [],
+      bleeding: { isBleeding: false },
+      pbacCounts: { ...createEmptyPbacCounts(), pad_light: 1 },
+    } as DailyEntry);
+
+    expect(hasBleedingForEntry(entry)).toBe(true);
+  });
+
+  it("honors legacy bleeding flag even without pbac counts", () => {
+    const entry = normalizeDailyEntry({
+      date: "2024-04-02",
+      painNRS: 0,
+      painQuality: [],
+      painMapRegionIds: [],
+      bleeding: { isBleeding: true },
+      pbacCounts: createEmptyPbacCounts(),
+    } as DailyEntry);
+
+    expect(hasBleedingForEntry(entry)).toBe(true);
+  });
+
+  it("returns false when no bleeding data is present", () => {
+    const entry = normalizeDailyEntry({
+      date: "2024-04-03",
+      painNRS: 0,
+      painQuality: [],
+      painMapRegionIds: [],
+      bleeding: { isBleeding: false },
+      pbacCounts: createEmptyPbacCounts(),
+    } as DailyEntry);
+
+    expect(hasBleedingForEntry(entry)).toBe(false);
   });
 });
