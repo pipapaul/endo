@@ -26,7 +26,11 @@ export type QuickPainEvent = {
   timestamp: string;
   regionId: ID;
   intensity: number;
-  quality: PainQuality | null;
+  qualities: PainQuality[];
+  /**
+   * @deprecated Nur für Alt-Daten. Bitte stattdessen "qualities" verwenden.
+   */
+  quality?: PainQuality | null;
   timeOfDay?: PainTimeOfDay[];
   granularity?: PainGranularity;
 };
