@@ -2347,6 +2347,7 @@ export default function HomePage() {
     () => hasBleedingForEntry({ ...dailyDraft, pbacCounts }),
     [dailyDraft, pbacCounts]
   );
+  const bleedingActive = hasBleedingForEntry(dailyDraft);
   const [activePbacCategory, setActivePbacCategory] = useState<PbacEntryCategory>("pad");
   const [bleedingQuickAddOpen, setBleedingQuickAddOpen] = useState(false);
   const [pendingBleedingQuickAdd, setPendingBleedingQuickAdd] = useState<PbacProductItemId | null>(null);
@@ -3882,7 +3883,7 @@ export default function HomePage() {
 
   const handleDailySubmit = (options?: { goToHome?: boolean }): boolean => {
     const normalizedPbacCounts = normalizePbacCounts(pbacCounts);
-    const bleedingActive = hasBleedingForEntry({ ...dailyDraft, pbacCounts: normalizedPbacCounts });
+    const bleedingActive = Object.values(normalizedPbacCounts).some((value) => value > 0);
     const payload: DailyEntry = {
       ...dailyDraft,
       painQuality: dailyDraft.painQuality,
@@ -7698,22 +7699,30 @@ export default function HomePage() {
                   title="Periode und Blutung"
                   onComplete={() => setDailyActiveCategory("overview")}
                 >
-                  <div className="space-y-6">
-                    <div className="space-y-2">
-                      <TermHeadline termKey="bleeding_active" />
-                      <p className="text-sm text-rose-700">
-                        Dokumentiere deine Periode über Periodenprodukte, Koagel und Flooding. Der PBAC-Score wird
-                        automatisch berechnet.
-                      </p>
-                    </div>
-                    {!showPbacSummaryInToolbar ? renderPbacSummaryPanel() : null}
-                    <div className="space-y-4">
+                    <div className="space-y-6">
                       <div className="space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Auswahl</p>
-                        <p className="text-sm text-rose-700">Wähle, was du dokumentieren möchtest.</p>
+                        <TermHeadline termKey="bleeding_active" />
+                        <p className="text-sm text-rose-700">
+                          Dokumentiere deine Periode über Periodenprodukte, Koagel und Flooding. Der PBAC-Score wird
+                          automatisch berechnet.
+                        </p>
                       </div>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        {PBAC_ENTRY_CATEGORY_OPTIONS.map((option) => {
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">Periode heute</span>
+                        {bleedingActive ? (
+                          <span className="text-sm">eingetragen</span>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">noch keine Blutung erfasst</span>
+                        )}
+                      </div>
+                      {!showPbacSummaryInToolbar ? renderPbacSummaryPanel() : null}
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Auswahl</p>
+                          <p className="text-sm text-rose-700">Wähle, was du dokumentieren möchtest.</p>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {PBAC_ENTRY_CATEGORY_OPTIONS.map((option) => {
                           const isActive = activePbacCategory === option.id;
                           const panelId = `pbac-${option.id}-panel`;
                           const categoryProducts =
