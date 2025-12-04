@@ -125,7 +125,11 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
     !needsPbacCountsNormalization &&
     !needsBleedingNormalization
   ) {
-    return entry;
+    return {
+      ...entry,
+      painNRS: typeof entry.painNRS === "number" ? entry.painNRS : null,
+      impactNRS: typeof entry.impactNRS === "number" ? entry.impactNRS : null,
+    };
   }
 
   const normalizedBleeding: DailyEntry["bleeding"] = {
@@ -177,6 +181,8 @@ export function normalizeDailyEntry(entry: DailyEntry): DailyEntry {
 
   return {
     ...entry,
+    painNRS: typeof entry.painNRS === "number" ? entry.painNRS : null,
+    impactNRS: typeof entry.impactNRS === "number" ? entry.impactNRS : null,
     bleeding: normalizedBleeding,
     painRegions,
     painQuality,

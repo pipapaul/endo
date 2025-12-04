@@ -1180,10 +1180,10 @@ const restoreDailyCategorySnapshot = (
           nextEntry = buildDailyDraftWithPainRegions(nextEntry, normalizedRegions);
         }
         if (data.painNRS !== undefined) {
-          nextEntry.painNRS = data.painNRS ?? 0;
+          nextEntry.painNRS = data.painNRS ?? null;
         }
         if (data.impactNRS !== undefined) {
-          nextEntry.impactNRS = data.impactNRS ?? undefined;
+          nextEntry.impactNRS = data.impactNRS ?? null;
         }
         nextEntry.headacheOpt = data.headacheOpt ? deepClone(data.headacheOpt) : undefined;
         nextEntry.ovulationPain = data.ovulationPain ? deepClone(data.ovulationPain) : undefined;
@@ -1409,7 +1409,7 @@ const restoreDailyCategorySnapshot = (
 type CycleOverviewPoint = {
   date: string;
   cycleDay: number | null;
-  painNRS: number;
+  painNRS: number | null;
   impactNRS: number | null;
   pbacScore: number | null;
   isBleeding: boolean;
@@ -1776,10 +1776,10 @@ const createEmptyDailyEntry = (date: string): DailyEntry => ({
 
   // Neu
   painRegions: [], // noch keine Regionen ausgewählt
-  impactNRS: 0, // empfundene Gesamtbeeinträchtigung heute
+  impactNRS: null, // empfundene Gesamtbeeinträchtigung heute
 
   // Alt (wird weiter gepflegt, damit Charts usw. funktionieren)
-  painNRS: 0,
+  painNRS: null,
   painQuality: [],
   painMapRegionIds: [],
   quickPainEvents: [],
@@ -3036,7 +3036,7 @@ export default function HomePage() {
       pointsByDate.set(entry.date, {
         date: entry.date,
         cycleDay: cycleDay ?? null,
-        painNRS: entry.painNRS ?? 0,
+        painNRS: entry.painNRS ?? null,
         impactNRS: entry.impactNRS ?? null,
         pbacScore: entry.bleeding?.pbacScore ?? null,
         isBleeding: hasBleedingForEntry(entry),
@@ -3059,7 +3059,7 @@ export default function HomePage() {
         points.push({
           date: iso,
           cycleDay: null,
-          painNRS: 0,
+          painNRS: null,
           impactNRS: null,
           pbacScore: null,
           isBleeding: false,
