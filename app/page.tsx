@@ -888,6 +888,17 @@ const TRACKED_DAILY_CATEGORY_IDS: TrackableDailyCategoryId[] = [
   "optional",
 ];
 
+const DAILY_WIZARD_STEPS: Array<{ id: TrackableDailyCategoryId; title: string }> = [
+  { id: "pain", title: "Schmerzen" },
+  { id: "symptoms", title: "Symptome" },
+  { id: "bleeding", title: "Periode & Blutung" },
+  { id: "medication", title: "Medikation" },
+  { id: "sleep", title: "Schlaf" },
+  { id: "bowelBladder", title: "Darm & Blase" },
+  { id: "notes", title: "Notizen & Tags" },
+  { id: "optional", title: "Optionale Werte" },
+];
+
 const PAIN_FREE_MESSAGES = [
   "Juhu, schmerzfrei",
   "Hurra, heute keine Schmerzen",
@@ -927,6 +938,86 @@ const createEmptyCategoryCompletion = (): Record<TrackableDailyCategoryId, boole
     acc[categoryId] = false;
     return acc;
   }, {} as Record<TrackableDailyCategoryId, boolean>);
+
+const hasPainData = (draft: DailyEntry): boolean => {
+  const painRegions = draft.painRegions ?? [];
+  const painMapRegionIds = draft.painMapRegionIds ?? [];
+  const painQuality = draft.painQuality ?? [];
+  const quickPainEvents = draft.quickPainEvents ?? [];
+  const painNRS = typeof draft.painNRS === "number" ? draft.painNRS : 0;
+  const impactNRS = typeof draft.impactNRS === "number" ? draft.impactNRS : 0;
+  return (
+    painRegions.length > 0 ||
+    painMapRegionIds.length > 0 ||
+    painQuality.length > 0 ||
+    quickPainEvents.length > 0 ||
+    painNRS > 0 ||
+    impactNRS > 0
+  );
+};
+
+const hasSymptomsData = (draft: DailyEntry): boolean => {
+  const symptomEntries = Object.entries(draft.symptoms ?? {}) as Array<[
+    SymptomKey,
+    { present?: boolean }
+  ]>;
+  const dizzinessPresent = Boolean(draft.dizzinessOpt?.present);
+  if (dizzinessPresent) return true;
+  if (!symptomEntries.length) return false;
+  return symptomEntries.some(([, value]) => Boolean(value?.present));
+};
+
+const hasBleedingData = (draft: DailyEntry, pbacCounts: PbacCounts): boolean => {
+  const normalizedCounts = normalizePbacCounts(pbacCounts);
+  if (Object.values(normalizedCounts).some((count) => count > 0)) {
+    return true;
+  }
+  return hasBleedingForEntry({ ...draft, pbacCounts });
+};
+
+const hasMedicationData = (draft: DailyEntry): boolean => {
+  const meds = draft.rescueMeds ?? [];
+  return meds.length > 0;
+};
+
+const hasSleepData = (draft: DailyEntry): boolean => {
+  const hours = draft.sleep?.hours;
+  const quality = draft.sleep?.quality;
+  const awakenings = draft.sleep?.awakenings;
+  return Boolean(hours || quality || awakenings);
+};
+
+const hasBowelBladderData = (draft: DailyEntry): boolean => {
+  const gi = draft.gi;
+  const urinary = draft.urinary;
+  const urinaryOpt = draft.urinaryOpt;
+  return Boolean(
+    (gi?.bristolType || gi?.pain || gi?.notes) ??
+      urinary?.freqPerDay ||
+      urinary?.urgency ||
+      urinaryOpt?.present ||
+      urinaryOpt?.leaksCount ||
+      urinaryOpt?.padsCount
+  );
+};
+
+const hasNotesData = (draft: DailyEntry): boolean => {
+  const tags = draft.notesTags ?? [];
+  const notes = draft.notesFree ?? "";
+  return tags.length > 0 || Boolean(notes.trim());
+};
+
+const hasOptionalData = (draft: DailyEntry): boolean => {
+  return Boolean(
+    draft.ovulation ||
+      draft.ovulationPain ||
+      draft.activity ||
+      draft.exploratory ||
+      draft.cervicalMucus ||
+      draft.exercise ||
+      draft.impactNRS
+  );
+};
 
 type SymptomSnapshot = { present: boolean; score: number | null };
 
@@ -2686,6 +2777,11 @@ export default function HomePage() {
   const [currentTime, setCurrentTime] = useState<Date>(() => new Date());
   const [showCheckInPopup, setShowCheckInPopup] = useState(false);
   const [pendingDismissCheckIn, setPendingDismissCheckIn] = useState<PendingCheckIn | null>(null);
+  const [wizardActive, setWizardActive] = useState(false);
+  const [wizardStepIndex, setWizardStepIndex] = useState(0);
+  const [wizardConfirmedByCategory, setWizardConfirmedByCategory] = useState<
+    Record<TrackableDailyCategoryId, boolean>
+  >(createEmptyCategoryCompletion());
 
   const isDailyDirty = useMemo(
     () =>
@@ -2701,10 +2797,20 @@ export default function HomePage() {
     [dailyEntries, dailyDraft.date]
   );
 
+  const savedEntryForSelectedDate = useMemo(
+    () => derivedDailyEntries.find((entry) => entry.date === dailyDraft.date),
+    [derivedDailyEntries, dailyDraft.date]
+  );
+
   const hasDailyEntryForToday = useMemo(
     () => dailyEntries.some((entry) => entry.date === today),
     [dailyEntries, today]
   );
+
+  useEffect(() => {
+    setWizardStepIndex(0);
+    setWizardConfirmedByCategory(createEmptyCategoryCompletion());
+  }, [dailyDraft.date]);
 
   const dailyScopeKey = dailyDraft.date ? `daily:${dailyDraft.date}` : null;
 
@@ -5432,6 +5538,45 @@ export default function HomePage() {
     }
   }, [activeView]);
 
+  const dailyCategoryHasData: Record<TrackableDailyCategoryId, boolean> = useMemo(
+    () => ({
+      pain: hasPainData(dailyDraft),
+      symptoms: hasSymptomsData(dailyDraft),
+      bleeding: hasBleedingData(dailyDraft, pbacCounts),
+      medication: hasMedicationData(dailyDraft),
+      sleep: hasSleepData(dailyDraft),
+      bowelBladder: hasBowelBladderData(dailyDraft),
+      notes: hasNotesData(dailyDraft),
+      optional: hasOptionalData(dailyDraft),
+    }),
+    [dailyDraft, pbacCounts]
+  );
+  const draftHasAnyCategoryData = useMemo(
+    () => Object.values(dailyCategoryHasData).some(Boolean),
+    [dailyCategoryHasData]
+  );
+
+  const wizardCurrentStep = DAILY_WIZARD_STEPS[wizardStepIndex] ?? DAILY_WIZARD_STEPS[0];
+  const goToWizardStep = useCallback(
+    (index: number) => {
+      const clampedIndex = Math.max(0, Math.min(DAILY_WIZARD_STEPS.length - 1, index));
+      setWizardStepIndex(clampedIndex);
+      setDailyActiveCategory(DAILY_WIZARD_STEPS[clampedIndex].id);
+    },
+    [setDailyActiveCategory]
+  );
+  useEffect(() => {
+    if (!wizardActive) return;
+    const stepIndex = DAILY_WIZARD_STEPS.findIndex((step) => step.id === dailyActiveCategory);
+    if (stepIndex >= 0 && stepIndex !== wizardStepIndex) {
+      setWizardStepIndex(stepIndex);
+    }
+  }, [dailyActiveCategory, wizardActive, wizardStepIndex]);
+  const handleWizardConfirm = useCallback(() => {
+    const stepId = wizardCurrentStep.id;
+    setWizardConfirmedByCategory((prev) => ({ ...prev, [stepId]: true }));
+  }, [wizardCurrentStep.id]);
+
   const dailyCategoryCompletionTitles: Partial<
     Record<Exclude<DailyCategoryId, "overview">, string>
   > = useMemo(
@@ -5450,15 +5595,11 @@ export default function HomePage() {
 
   const dailyCategoryCompletion: Record<Exclude<DailyCategoryId, "overview">, boolean> = useMemo(
     () =>
-      DAILY_CATEGORY_KEYS.reduce(
-        (acc, categoryId) => {
-          const sectionTitle = dailyCategoryCompletionTitles[categoryId];
-          acc[categoryId] = sectionTitle ? Boolean(dailySectionCompletion[sectionTitle]) : false;
-          return acc;
-        },
-        {} as Record<Exclude<DailyCategoryId, "overview">, boolean>
-      ),
-    [dailyCategoryCompletionTitles, dailySectionCompletion]
+      DAILY_CATEGORY_KEYS.reduce((acc, categoryId) => {
+        acc[categoryId] = dailyCategoryHasData[categoryId as TrackableDailyCategoryId] ?? false;
+        return acc;
+      }, {} as Record<Exclude<DailyCategoryId, "overview">, boolean>),
+    [dailyCategoryHasData]
   );
 
   useEffect(() => {
@@ -6299,7 +6440,9 @@ export default function HomePage() {
 
   const dailyCategorySummaries = useMemo(
     () => {
-      const entry = dailyDraft;
+      const entry = draftHasAnyCategoryData || isDailyDirty
+        ? dailyDraft
+        : savedEntryForSelectedDate ?? dailyDraft;
       const summaries: Partial<Record<Exclude<DailyCategoryId, "overview">, string[]>> = {};
 
       const painRegions = entry.painRegions ?? [];
@@ -6535,7 +6678,13 @@ export default function HomePage() {
 
       return summaries;
     },
-    [dailyDraft, sortedPainShortcutEvents]
+    [
+      dailyDraft,
+      draftHasAnyCategoryData,
+      isDailyDirty,
+      savedEntryForSelectedDate,
+      sortedPainShortcutEvents,
+    ]
   );
 
   useLayoutEffect(() => {
@@ -7167,32 +7316,111 @@ export default function HomePage() {
                     {renderIssuesForPath("date")}
                   </div>
                 </div>
+                {wizardActive ? (
+                  <div className="sticky top-2 z-10 space-y-2 rounded-xl border border-rose-100 bg-white/90 p-3 shadow">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Wizard Übersicht</p>
+                        <p className="text-sm font-semibold text-rose-800">{selectedDateLabel ?? dailyDraft.date}</p>
+                      </div>
+                      <div className="flex gap-2 text-xs">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 font-medium text-amber-700">
+                          <span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden />
+                          hat Daten
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 font-medium text-emerald-700">
+                          <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
+                          bestätigt
+                        </span>
+                      </div>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-4">
+                      {DAILY_WIZARD_STEPS.map((step) => {
+                        const hasData = dailyCategoryCompletion[step.id] ?? false;
+                        const isConfirmed = wizardConfirmedByCategory[step.id] ?? false;
+                        const summaryLines = dailyCategorySummaries[step.id] ?? [];
+                        const statusClass = isConfirmed
+                          ? "border-emerald-200 bg-emerald-50"
+                          : hasData
+                            ? "border-amber-200 bg-amber-50"
+                            : "border-rose-50";
+                        return (
+                          <button
+                            key={step.id}
+                            type="button"
+                            onClick={() => {
+                              setWizardStepIndex(DAILY_WIZARD_STEPS.findIndex((s) => s.id === step.id));
+                              setDailyActiveCategory(step.id);
+                            }}
+                            className={cn(
+                              "flex flex-col gap-1 rounded-lg border px-3 py-2 text-left text-sm shadow-sm transition hover:border-rose-200",
+                              statusClass,
+                              dailyActiveCategory === step.id ? "ring-2 ring-rose-200" : ""
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-semibold text-rose-800">{step.title}</span>
+                              <span
+                                className={cn(
+                                  "h-2 w-2 rounded-full",
+                                  isConfirmed ? "bg-emerald-500" : hasData ? "bg-amber-500" : "bg-slate-200"
+                                )}
+                                aria-hidden
+                              />
+                            </div>
+                            <p className="text-xs text-rose-600 line-clamp-2">
+                              {summaryLines.length ? summaryLines.join(" · ") : "Noch keine Angaben"}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="space-y-3">
                   <p className="text-sm font-semibold text-rose-800">Kategorien</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant={wizardActive ? "secondary" : "outline"}
+                      onClick={() => {
+                        setWizardActive((prev) => !prev);
+                        setDailyActiveCategory(wizardActive ? "overview" : DAILY_WIZARD_STEPS[0].id);
+                        setWizardStepIndex(0);
+                      }}
+                    >
+                      {wizardActive ? "Wizard verlassen" : "Wizard starten"}
+                    </Button>
+                  </div>
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     {dailyCategoryButtons.map((category) => {
-                      const isCompleted = dailyCategoryCompletion[category.id] ?? false;
+                      const hasData = dailyCategoryCompletion[category.id] ?? false;
+                      const isConfirmed = wizardConfirmedByCategory[category.id as TrackableDailyCategoryId] ?? false;
                       const summaryLines = dailyCategorySummaries[category.id] ?? [];
                       const Icon = category.icon;
                       const isTrackableCategory = isTrackedDailyCategory(category.id);
                       const quickActionDisabled =
-                        isCompleted &&
+                        hasData &&
                         isTrackableCategory &&
                         (categoryZeroStates[category.id as TrackableDailyCategoryId] ?? false);
                       const iconWrapperClasses = cn(
                         "flex h-12 w-12 flex-none items-center justify-center rounded-full border transition",
-                        isCompleted
-                          ? "border-amber-200 bg-amber-100 text-amber-600"
-                          : "border-rose-100 bg-rose-50 text-rose-400 group-hover:border-rose-200 group-hover:bg-rose-100 group-hover:text-rose-500"
+                        isConfirmed
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-600"
+                          : hasData
+                            ? "border-amber-200 bg-amber-100 text-amber-600"
+                            : "border-rose-100 bg-rose-50 text-rose-400 group-hover:border-rose-200 group-hover:bg-rose-100 group-hover:text-rose-500"
                       );
                       return (
                         <div
                           key={category.id}
                           className={cn(
                             "group rounded-2xl border p-4 shadow-sm transition hover:shadow-md",
-                            isCompleted
-                              ? "border-amber-200 bg-amber-50 hover:border-amber-300"
-                              : "border-rose-100 bg-white/80 hover:border-rose-200"
+                            isConfirmed
+                              ? "border-emerald-200 bg-emerald-50 hover:border-emerald-300"
+                              : hasData
+                                ? "border-amber-200 bg-amber-50 hover:border-amber-300"
+                                : "border-rose-100 bg-white/80 hover:border-rose-200"
                           )}
                         >
                           <button
@@ -7326,6 +7554,36 @@ export default function HomePage() {
                 <p className="text-xs text-rose-600">
                   Es werden nur Daten von den gelb markierten Bereichen gespeichert.
                 </p>
+                {wizardActive ? (
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-100 bg-white/80 p-3 text-sm text-rose-800 shadow-sm">
+                    <div className="space-y-1">
+                      <p className="text-xs uppercase tracking-wide text-rose-500">Wizard Navigation</p>
+                      <p className="text-sm font-semibold text-rose-900">
+                        Schritt {wizardStepIndex + 1} von {DAILY_WIZARD_STEPS.length}: {wizardCurrentStep.title}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => goToWizardStep(wizardStepIndex - 1)}
+                        disabled={wizardStepIndex === 0}
+                      >
+                        Zurück
+                      </Button>
+                      <Button type="button" variant="secondary" onClick={handleWizardConfirm}>
+                        Fertig für dieses Modul
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => goToWizardStep(wizardStepIndex + 1)}
+                        disabled={wizardStepIndex >= DAILY_WIZARD_STEPS.length - 1}
+                      >
+                        Weiter
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="flex flex-wrap items-center gap-3">
                   <Button type="button" onClick={() => handleDailySubmit()} disabled={!isDailyDirty}>
                     Tagesdaten speichern
@@ -7356,11 +7614,46 @@ export default function HomePage() {
                   </div>
                 </div>
               </div>
-              <div className={cn("space-y-6", dailyActiveCategory === "pain" ? "" : "hidden")}> 
+              <div className={cn("space-y-6", dailyActiveCategory === "pain" ? "" : "hidden")}>
                 <Section
                   title="Schmerzen"
                   description="Schmerzen hinzufügen, Intensität und Art je Region festhalten und Auswirkungen dokumentieren"
                 >
+                  {wizardActive ? (
+                    <div className="rounded-lg border border-rose-100 bg-rose-50 p-3 text-sm text-rose-800">
+                      <p className="font-semibold">Bisher erfasst:</p>
+                      <p className="text-rose-700">
+                        {sortedPainShortcutEvents.length
+                          ? sortedPainShortcutEvents.map((event) => describeQuickPainEvent(event)).join(" · ")
+                          : "Noch keine Akut-Schmerzen"}
+                      </p>
+                      <p className="mt-2">Gab es weitere Schmerzen?</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setPainQuickContext("module");
+                            setPainQuickAddOpen(true);
+                          }}
+                        >
+                          Schnell-Schmerz hinzufügen
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          disabled={sortedPainShortcutEvents.length === 0}
+                          onClick={() =>
+                            updateQuickPainEventsForDate(dailyDraft.date, (events) => events.slice(0, -1))
+                          }
+                        >
+                          Letzten Eintrag entfernen
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-100 bg-white/80 p-3 text-sm text-rose-800">
                     <p className="text-sm text-rose-700">
                       Füge neue Schmerz-Einträge mit drei schnellen Schritten hinzu.
@@ -7719,6 +8012,40 @@ export default function HomePage() {
                 <Section
                   title="Periode und Blutung"
                 >
+                  {wizardActive ? (
+                    <div className="rounded-lg border border-rose-100 bg-rose-50 p-3 text-sm text-rose-800">
+                      <p className="font-semibold">Bereits eingetragen:</p>
+                      <p className="text-rose-700">
+                        {(() => {
+                          const items = PBAC_PRODUCT_ITEMS.filter((item) => (pbacCounts[item.id] ?? 0) > 0);
+                          if (!items.length) return "Noch keine Produkte";
+                          return items
+                            .map((item) => `${pbacCounts[item.id] ?? 0}× ${item.label}`)
+                            .join(" · ");
+                        })()}
+                      </p>
+                      <p className="mt-1 text-xs text-rose-600">PBAC: {dailyDraft.bleeding?.pbacScore ?? 0}</p>
+                      <p className="mt-2">Noch weitere Produkte hinzufügen?</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Button type="button" size="sm" variant="outline" onClick={() => setBleedingQuickAddOpen(true)}>
+                          Produkt hinzufügen
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          disabled={Object.values(pbacCounts).every((count) => count === 0)}
+                          onClick={() => {
+                            const existingId = PBAC_PRODUCT_ITEMS.find((item) => (pbacCounts[item.id] ?? 0) > 0)?.id;
+                            if (!existingId) return;
+                            updatePbacCount(existingId, (pbacCounts[existingId] ?? 0) - 1);
+                          }}
+                        >
+                          Eintrag entfernen
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
                     <div className="space-y-6">
                       <div className="space-y-2">
                         <TermHeadline termKey="bleeding_active" />
