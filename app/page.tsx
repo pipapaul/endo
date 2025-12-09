@@ -992,11 +992,13 @@ const hasBowelBladderData = (draft: DailyEntry): boolean => {
   const urinary = draft.urinary;
   const urinaryOpt = draft.urinaryOpt;
   return Boolean(
-    (gi?.bristolType || gi?.pain || gi?.notes) ??
+    gi?.bristolType ||
       urinary?.freqPerDay ||
       urinary?.urgency ||
+      urinaryOpt?.urgency ||
       urinaryOpt?.present ||
       urinaryOpt?.leaksCount ||
+      urinaryOpt?.nocturia ||
       urinaryOpt?.padsCount
   );
 };
@@ -1009,13 +1011,7 @@ const hasNotesData = (draft: DailyEntry): boolean => {
 
 const hasOptionalData = (draft: DailyEntry): boolean => {
   return Boolean(
-    draft.ovulation ||
-      draft.ovulationPain ||
-      draft.activity ||
-      draft.exploratory ||
-      draft.cervicalMucus ||
-      draft.exercise ||
-      draft.impactNRS
+    draft.ovulation || draft.ovulationPain || draft.activity || draft.exploratory
   );
 };
 
@@ -7466,7 +7462,7 @@ export default function HomePage() {
                               ))}
                             </div>
                           ) : null}
-                          {isCompleted ? (
+                          {hasData ? (
                             category.id === "pain" ? (
                               <div className="mt-4 space-y-3 rounded-lg border border-amber-200 bg-amber-50/80 p-3 text-xs text-amber-900">
                                 <div className="space-y-2">
