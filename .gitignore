@@ -4,4 +4,4 @@ out/
 .DS_Store
 .env
 tsconfig.tsbuildinfo
-
+*.log
