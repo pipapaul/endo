@@ -6215,6 +6215,7 @@ export default function HomePage() {
         return null;
       }
       applyPendingOverviewNavigation(pending);
+      setActiveView("home");
       return null;
     });
   };
