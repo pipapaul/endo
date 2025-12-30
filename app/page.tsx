@@ -7174,8 +7174,12 @@ export default function HomePage() {
                     {renderIssuesForPath("date")}
                   </div>
                 </div>
-                <div className="space-y-3">
-                  <p className="text-sm font-semibold text-rose-800">Kategorien</p>
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <div className="h-px flex-1 bg-gradient-to-r from-rose-200 to-transparent" />
+                    <h3 className="text-sm font-semibold uppercase tracking-wide text-rose-600">Kategorien</h3>
+                    <div className="h-px flex-1 bg-gradient-to-l from-rose-200 to-transparent" />
+                  </div>
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     {dailyCategoryButtons.map((category) => {
                       const isCompleted = dailyCategoryCompletion[category.id] ?? false;
@@ -7378,15 +7382,18 @@ export default function HomePage() {
                   </div>
                   <div className="space-y-4">
                     <details
-                      className="group rounded-lg border border-rose-100 bg-rose-50 text-rose-700 [&[open]>summary]:border-b [&[open]>summary]:bg-rose-100"
+                      className="group overflow-hidden rounded-xl border border-rose-200 bg-white shadow-sm transition-shadow hover:shadow-md [&[open]]:shadow-md"
                       open={deepDyspareuniaCardOpen}
                       onToggle={(event) => setDeepDyspareuniaCardOpen(event.currentTarget.open)}
                     >
-                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-rose-800 [&::-webkit-details-marker]:hidden">
-                          <span>{TERMS.deepDyspareunia.label}</span>
-                          <span className="text-xs font-normal text-rose-500">{deepDyspareuniaSummary}</span>
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-gradient-to-r from-rose-50 to-rose-100/50 px-4 py-3 text-sm font-semibold text-rose-900 transition-colors hover:from-rose-100/80 hover:to-rose-100/60 [&::-webkit-details-marker]:hidden">
+                          <div className="flex items-center gap-2">
+                            <ChevronRight className="h-4 w-4 text-rose-400 transition-transform group-open:rotate-90" />
+                            <span>{TERMS.deepDyspareunia.label}</span>
+                          </div>
+                          <span className="rounded-full bg-white/80 px-2 py-0.5 text-xs font-medium text-rose-600 shadow-sm">{deepDyspareuniaSummary}</span>
                         </summary>
-                        <div className="space-y-3 border-t border-rose-100 bg-white px-3 py-3 text-rose-700">
+                        <div className="space-y-4 border-t border-rose-100 bg-white px-4 py-4 text-rose-700">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <TermHeadline termKey="deepDyspareunia" />
                             <div className="flex items-center gap-2">
@@ -7437,15 +7444,18 @@ export default function HomePage() {
                       </details>
 
                       <details
-                        className="group rounded-lg border border-rose-100 bg-rose-50 text-rose-700 [&[open]>summary]:border-b [&[open]>summary]:bg-rose-100"
+                        className="group overflow-hidden rounded-xl border border-rose-200 bg-white shadow-sm transition-shadow hover:shadow-md [&[open]]:shadow-md"
                         open={ovulationPainCardOpen}
                         onToggle={(event) => setOvulationPainCardOpen(event.currentTarget.open)}
                       >
-                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-rose-800 [&::-webkit-details-marker]:hidden">
-                          <span>{TERMS.ovulationPain.label}</span>
-                          <span className="text-xs font-normal text-rose-500">{ovulationPainSummary}</span>
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-gradient-to-r from-rose-50 to-rose-100/50 px-4 py-3 text-sm font-semibold text-rose-900 transition-colors hover:from-rose-100/80 hover:to-rose-100/60 [&::-webkit-details-marker]:hidden">
+                          <div className="flex items-center gap-2">
+                            <ChevronRight className="h-4 w-4 text-rose-400 transition-transform group-open:rotate-90" />
+                            <span>{TERMS.ovulationPain.label}</span>
+                          </div>
+                          <span className="rounded-full bg-white/80 px-2 py-0.5 text-xs font-medium text-rose-600 shadow-sm">{ovulationPainSummary}</span>
                         </summary>
-                        <div className="space-y-3 border-t border-rose-100 bg-white px-3 py-3 text-rose-700">
+                        <div className="space-y-4 border-t border-rose-100 bg-white px-4 py-4 text-rose-700">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <TermHeadline termKey="ovulationPain" />
                             {dailyDraft.ovulationPain ? (
