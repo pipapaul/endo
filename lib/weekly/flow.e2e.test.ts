@@ -27,6 +27,7 @@ describe("weekly reporting flow", () => {
       worsened: ["Stress"],
       nextWeekTry: ["Yoga"],
       freeText: "Ruhige Woche",
+      wpai: { absenteeismPct: 0, presenteeismPct: 0, overallPct: 0 },
     };
 
     const draft = {

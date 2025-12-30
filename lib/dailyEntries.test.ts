@@ -53,6 +53,7 @@ describe("normalizeDailyEntry", () => {
       painQuality: [],
       painMapRegionIds: [],
       bleeding: { isBleeding: false },
+      symptoms: {},
     } as DailyEntry);
 
     expect(entry.pbacCounts).toEqual(createEmptyPbacCounts());
@@ -66,6 +67,7 @@ describe("normalizeDailyEntry", () => {
       painMapRegionIds: [],
       bleeding: { isBleeding: true, pbacScore: 5 },
       pbacCounts: { pad_light: 2, tampon_medium: 1, clot_large: 1 } as DailyEntry["pbacCounts"],
+      symptoms: {},
     } as DailyEntry);
 
     expect(entry.pbacCounts).toEqual({
@@ -86,6 +88,7 @@ describe("hasBleedingForEntry", () => {
       painMapRegionIds: [],
       bleeding: { isBleeding: false },
       pbacCounts: { ...createEmptyPbacCounts(), pad_light: 1 },
+      symptoms: {},
     } as DailyEntry);
 
     expect(hasBleedingForEntry(entry)).toBe(true);
@@ -99,6 +102,7 @@ describe("hasBleedingForEntry", () => {
       painMapRegionIds: [],
       bleeding: { isBleeding: true },
       pbacCounts: createEmptyPbacCounts(),
+      symptoms: {},
     } as DailyEntry);
 
     expect(hasBleedingForEntry(entry)).toBe(true);
@@ -112,6 +116,7 @@ describe("hasBleedingForEntry", () => {
       painMapRegionIds: [],
       bleeding: { isBleeding: false },
       pbacCounts: createEmptyPbacCounts(),
+      symptoms: {},
     } as DailyEntry);
 
     expect(hasBleedingForEntry(entry)).toBe(false);
