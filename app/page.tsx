@@ -2368,6 +2368,21 @@ export default function HomePage() {
       return { ...draft, pbacCounts: normalized };
     });
   }, [dailyDraft.pbacCounts, setDailyDraft]);
+
+  // Warn user about unsaved changes when leaving the page
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (dailyDraftStorage.isSaving || dailyStorage.isSaving || monthlyStorage.isSaving) {
+        event.preventDefault();
+        // Modern browsers require returnValue to be set
+        event.returnValue = "";
+        return "";
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [dailyDraftStorage.isSaving, dailyStorage.isSaving, monthlyStorage.isSaving]);
   const draftHasBleeding = useMemo(
     () => hasBleedingForEntry({ ...dailyDraft, pbacCounts }),
     [dailyDraft, pbacCounts]

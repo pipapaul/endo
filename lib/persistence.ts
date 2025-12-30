@@ -100,11 +100,36 @@ export async function setItem<T>(key: string, value: T): Promise<StorageDriver> 
   try {
     await withStore("readwrite", (store) => store.put(value, key));
     memoryStore.delete(key);
+    // Try to sync any other pending memory store items to IndexedDB
+    syncMemoryStoreToIndexedDB();
     return "indexeddb";
   } catch (error) {
     console.warn("IndexedDB setItem fehlgeschlagen", error);
     memoryStore.set(key, value);
     return "memory";
+  }
+}
+
+let syncInProgress = false;
+
+async function syncMemoryStoreToIndexedDB(): Promise<void> {
+  if (syncInProgress || memoryStore.size === 0) {
+    return;
+  }
+  syncInProgress = true;
+  try {
+    const entries = Array.from(memoryStore.entries());
+    for (const [key, value] of entries) {
+      try {
+        await withStore("readwrite", (store) => store.put(value, key));
+        memoryStore.delete(key);
+      } catch {
+        // If sync fails for this item, keep it in memory and continue
+        break;
+      }
+    }
+  } finally {
+    syncInProgress = false;
   }
 }
 

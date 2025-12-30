@@ -8,6 +8,7 @@ export interface SliderProps extends Omit<React.InputHTMLAttributes<HTMLInputEle
   max?: number;
   step?: number;
   onValueChange?: (value: number[]) => void;
+  "aria-label"?: string;
 }
 
 export function Slider({
@@ -35,6 +36,9 @@ export function Slider({
       min={min}
       max={max}
       step={step}
+      aria-valuemin={min}
+      aria-valuemax={max}
+      aria-valuenow={clamped}
       onChange={(event) => onValueChange?.([Number(event.target.value)])}
       disabled={disabled}
       className={cn(

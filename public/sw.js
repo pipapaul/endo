@@ -1,5 +1,14 @@
-const CACHE_NAME = "endo-app-shell-v1";
-const APP_SHELL = ["/", "/manifest.webmanifest", "/favicon.svg", "/icon-192.png", "/icon-512.png", "/icon-512-maskable.png"];
+const CACHE_NAME = "endo-app-shell-v2";
+const APP_SHELL = [
+  "/",
+  "/weekly/",
+  "/weekly/danke/",
+  "/manifest.webmanifest",
+  "/favicon.svg",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/icon-512-maskable.png",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

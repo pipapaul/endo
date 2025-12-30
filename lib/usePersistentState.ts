@@ -88,10 +88,12 @@ export function usePersistentState<T>(key: string, defaultValue: T) {
     if (typeof window === "undefined") return;
     let cancelled = false;
     let attempts = 0;
+    // Capture value at schedule time to avoid race conditions
+    const valueToSave = value;
 
     const persist = () => {
       attempts += 1;
-      setItem(key, valueRef.current)
+      setItem(key, valueToSave)
         .then((currentDriver) => {
           if (cancelled) return;
           setDriver(currentDriver);

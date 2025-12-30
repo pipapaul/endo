@@ -83,9 +83,10 @@ function WeeklyThankYouContent(): JSX.Element {
         }
         if (isoWeekKey) {
           const match = reports.find((entry) => entry.isoWeekKey === isoWeekKey);
-          setReport(match ?? reports[0]);
+          setReport(match ?? null);
           return;
         }
+        // Only fall back to latest report if no specific week was requested
         setReport(reports[0]);
       } catch (error) {
         console.error("Wochenbericht konnte nicht geladen werden", error);

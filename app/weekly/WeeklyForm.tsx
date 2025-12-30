@@ -357,20 +357,37 @@ export default function WeeklyForm(props: { year: number; week: number }): JSX.E
   );
 
   const handleSubmit = useCallback(async () => {
-    if (!weeklyStats) return;
-
     setIsSubmitting(true);
     setSubmitError(null);
+
+    // Combine notes from step 1 with freeText from step 2
+    const combinedFreeText = [state.notes, reviewAnswers.freeText]
+      .map((text) => text.trim())
+      .filter(Boolean)
+      .join("\n\n");
+
+    // Create empty stats if none exist (user had no daily entries for this week)
+    const statsToSave: WeeklyStats = weeklyStats ?? {
+      isoWeekKey: state.isoWeek,
+      startISO: state.calendarDays[0] ?? "",
+      endISO: state.calendarDays[state.calendarDays.length - 1] ?? "",
+      avgPain: null,
+      maxPain: null,
+      badDaysCount: 0,
+      bleedingDaysCount: 0,
+      sparkline: [],
+      notes: { medicationChange: false, sleepBelowUsual: false },
+    };
 
     try {
       await storeWeeklyReport({
         isoWeekKey: state.isoWeek,
-        stats: weeklyStats,
+        stats: statsToSave,
         answers: {
           helped: [...reviewAnswers.helped],
           worsened: [...reviewAnswers.worsened],
           nextWeekTry: [...reviewAnswers.nextWeekTry],
-          freeText: reviewAnswers.freeText,
+          freeText: combinedFreeText,
           wpai: { ...reviewAnswers.wpai },
         },
         submittedAt: Date.now(),
@@ -383,7 +400,7 @@ export default function WeeklyForm(props: { year: number; week: number }): JSX.E
     } finally {
       setIsSubmitting(false);
     }
-  }, [reviewAnswers, router, state.isoWeek, state.week, state.year, weeklyStats]);
+  }, [reviewAnswers, router, state.calendarDays, state.isoWeek, state.notes, state.week, state.year, weeklyStats]);
 
   const weekRangeLabel = useMemo(() => {
     if (!state.calendarDays.length) return "";
@@ -392,7 +409,8 @@ export default function WeeklyForm(props: { year: number; week: number }): JSX.E
     return `${first} – ${last}`;
   }, [state.calendarDays]);
 
-  const canSubmit = Boolean(weeklyStats && weeklyDraft.confirmedSummary);
+  // Allow submission if: data exists and is confirmed, OR no data exists (nothing to confirm)
+  const canSubmit = weeklyStats ? weeklyDraft.confirmedSummary : true;
 
   let stepContent: JSX.Element;
 
