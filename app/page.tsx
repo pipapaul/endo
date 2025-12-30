@@ -29,7 +29,7 @@ import {
   Area,
   ComposedChart,
 } from "recharts";
-import type { DotProps, TooltipProps } from "recharts";
+import type { DotProps, TooltipProps, TooltipContentProps } from "recharts";
 import {
   AlertTriangle,
   Activity,
@@ -1582,7 +1582,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
   }, [data.points, todayIso]);
 
   const renderTooltip = useCallback(
-    (props: TooltipProps<number, string>) => {
+    (props: TooltipContentProps<number, string>) => {
       if (!props.active || !props.payload?.length) {
         return null;
       }
@@ -1706,7 +1706,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
   );
 };
 
-const MenstruationComparisonTooltip = ({ active, payload }: TooltipProps<number, string>) => {
+const MenstruationComparisonTooltip = ({ active, payload }: TooltipContentProps<number, string>) => {
   if (!active || !payload?.length) {
     return null;
   }
@@ -2173,7 +2173,7 @@ function severityLabel(level: SeverityLevel) {
   return level.charAt(0).toUpperCase() + level.slice(1);
 }
 
-function AnalyticsTrendTooltip({ active, payload }: TooltipProps<number, string>) {
+function AnalyticsTrendTooltip({ active, payload }: TooltipContentProps<number, string>) {
   if (!active || !payload?.length) return null;
   const data = payload[0].payload as {
     date: string;
@@ -2197,7 +2197,7 @@ function AnalyticsTrendTooltip({ active, payload }: TooltipProps<number, string>
   );
 }
 
-function CheckInHistoryTooltip({ active, payload }: TooltipProps<number, string>) {
+function CheckInHistoryTooltip({ active, payload }: TooltipContentProps<number, string>) {
   if (!active || !payload?.length) return null;
   const data = payload[0].payload as {
     date: string;
@@ -2215,7 +2215,7 @@ function CheckInHistoryTooltip({ active, payload }: TooltipProps<number, string>
   );
 }
 
-function CorrelationTooltip({ active, payload }: TooltipProps<number, string>) {
+function CorrelationTooltip({ active, payload }: TooltipContentProps<number, string>) {
   if (!active || !payload?.length) return null;
   const { payload: point, name } = payload[0] as {
     payload: { x: number; y: number; date: string; yLabel?: string; xLabel?: string };
@@ -8742,7 +8742,7 @@ export default function HomePage() {
                             allowDecimals={false}
                             hide={!visibleTrendMetrics.includes("steps")}
                           />
-                          <Tooltip content={<AnalyticsTrendTooltip />} />
+                          <Tooltip content={AnalyticsTrendTooltip} />
                           <Legend wrapperStyle={{ fontSize: 12 }} />
                           {trendMetricOptions.map((metric) => {
                             if (!visibleTrendMetrics.includes(metric.key)) return null;
@@ -8826,7 +8826,7 @@ export default function HomePage() {
                             label={{ value: "Zyklustag", position: "insideBottom", offset: -6, fill: "#fb7185" }}
                           />
                           <YAxis stroke="#fb7185" tick={{ fontSize: 12 }} allowDecimals={false} />
-                          <Tooltip content={<MenstruationComparisonTooltip />} />
+                          <Tooltip content={MenstruationComparisonTooltip} />
                           <Legend wrapperStyle={{ fontSize: 12 }} />
                           <Area
                             type="monotone"
@@ -8982,7 +8982,7 @@ export default function HomePage() {
                             tickFormatter={(value: number) => (value >= 1 ? "Ja" : "Nein")}
                           />
                           <YAxis yAxisId="pain" domain={[0, 10]} stroke="#1d4ed8" tick={{ fontSize: 12 }} />
-                          <Tooltip content={<CheckInHistoryTooltip />} />
+                          <Tooltip content={CheckInHistoryTooltip} />
                           <Legend wrapperStyle={{ fontSize: 12 }} />
                           <Bar
                             yAxisId="checkIn"
@@ -9056,7 +9056,7 @@ export default function HomePage() {
                               stroke="#fb7185"
                               tick={{ fontSize: 12 }}
                             />
-                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
                             <Scatter data={correlations.sleep.points} fill="#10b981" name="Schlafqualität" />
                           </ScatterChart>
@@ -9108,7 +9108,7 @@ export default function HomePage() {
                               stroke="#fb7185"
                               tick={{ fontSize: 12 }}
                             />
-                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
                             {correlations.medicationPain.points.length >= 2 ? (
                               <Scatter data={correlations.medicationPain.points} fill="#0ea5e9" name="Schmerz (NRS)" />
@@ -9159,7 +9159,7 @@ export default function HomePage() {
                               stroke="#fb7185"
                               tick={{ fontSize: 12 }}
                             />
-                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
                             <Scatter data={correlations.pbacPain.points} fill="#f97316" name="PBAC-Score" />
                           </ScatterChart>
@@ -9202,7 +9202,7 @@ export default function HomePage() {
                               stroke="#fb7185"
                               tick={{ fontSize: 12 }}
                             />
-                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
                             <Scatter data={correlations.steps.points} fill="#6366f1" name="Schritte" />
                           </ScatterChart>
@@ -9244,7 +9244,7 @@ export default function HomePage() {
                               stroke="#fb7185"
                               tick={{ fontSize: 12 }}
                             />
-                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
                             <Scatter data={correlations.pbacImpact.points} fill="#f59e0b" name="PBAC-Score" />
                           </ScatterChart>
@@ -9288,7 +9288,7 @@ export default function HomePage() {
                               stroke="#fb7185"
                               tick={{ fontSize: 12 }}
                             />
-                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
                             <Scatter data={correlations.clotsPain.points} fill="#0ea5e9" name="Koagel" />
                           </ScatterChart>
@@ -9332,7 +9332,7 @@ export default function HomePage() {
                               stroke="#fb7185"
                               tick={{ fontSize: 12 }}
                             />
-                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
                             <Scatter data={correlations.clotsImpact.points} fill="#22c55e" name="Koagel" />
                           </ScatterChart>
@@ -9376,7 +9376,7 @@ export default function HomePage() {
                               stroke="#fb7185"
                               tick={{ fontSize: 12 }}
                             />
-                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
                             <Scatter data={correlations.floodingPain.points} fill="#a855f7" name="Flooding" />
                           </ScatterChart>
@@ -9420,7 +9420,7 @@ export default function HomePage() {
                               stroke="#fb7185"
                               tick={{ fontSize: 12 }}
                             />
-                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
                             <Scatter data={correlations.floodingImpact.points} fill="#ec4899" name="Flooding" />
                           </ScatterChart>
@@ -9462,7 +9462,7 @@ export default function HomePage() {
                               stroke="#fb7185"
                               tick={{ fontSize: 12 }}
                             />
-                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
                             <Scatter data={correlations.ovulationPain.points} fill="#7c3aed" name="Ovulationsschmerz" />
                           </ScatterChart>
@@ -9505,7 +9505,7 @@ export default function HomePage() {
                               stroke="#fb7185"
                               tick={{ fontSize: 12 }}
                             />
-                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
                             <Scatter
                               data={correlations.ovulationPainRegions.points}
@@ -9553,7 +9553,7 @@ export default function HomePage() {
                               stroke="#fb7185"
                               tick={{ fontSize: 12 }}
                             />
-                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
                             <Scatter data={correlations.ovulationLH.points} fill="#22d3ee" name="LH-Test" />
                           </ScatterChart>
@@ -9598,7 +9598,7 @@ export default function HomePage() {
                               stroke="#fb7185"
                               tick={{ fontSize: 12 }}
                             />
-                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
                             <Scatter data={correlations.ovulationLHRegions.points} fill="#84cc16" name="LH-Test" />
                           </ScatterChart>
@@ -9640,7 +9640,7 @@ export default function HomePage() {
                               stroke="#fb7185"
                               tick={{ fontSize: 12 }}
                             />
-                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
                             <Scatter data={correlations.ovulationBBT.points} fill="#fb7185" name="Basaltemperatur" />
                           </ScatterChart>
@@ -9683,7 +9683,7 @@ export default function HomePage() {
                               stroke="#fb7185"
                               tick={{ fontSize: 12 }}
                             />
-                            <Tooltip content={<CorrelationTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
                             <Scatter
                               data={correlations.ovulationBBTRegions.points}

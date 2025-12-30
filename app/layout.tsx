@@ -1,11 +1,10 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "EndoTrack",
   description: "Minimalistische Endometriose-Tracking App",
   manifest: "/manifest.webmanifest",
-  themeColor: "#f43f5e",
   icons: {
     icon: "/favicon.svg",
     apple: "/apple-touch-icon.png",
@@ -15,6 +14,10 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "EndoTrack",
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#f43f5e",
 };
 
 export default function RootLayout({
