@@ -4003,7 +4003,8 @@ export default function HomePage() {
     const validationIssues = validateDailyEntry(automatedDraft);
     setIssues(validationIssues);
     if (validationIssues.length) {
-      setInfoMessage("Bitte prüfe die markierten Felder.");
+      const debugMsg = validationIssues.map(i => `${i.path}: ${i.message}`).join("; ");
+      setInfoMessage(`DEBUG: ${debugMsg}`);
       return false;
     }
 
