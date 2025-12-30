@@ -6010,8 +6010,6 @@ export default function HomePage() {
       return;
     }
 
-    let markedCompleted = false;
-
     TRACKED_DAILY_CATEGORY_IDS.forEach((categoryId) => {
       if (dailyCategoryCompletion[categoryId]) {
         return;
@@ -6042,13 +6040,8 @@ export default function HomePage() {
       const completionTitle = dailyCategoryCompletionTitles[categoryId];
       if (completionTitle) {
         sectionCompletionContextValue.setCompletion(resolvedDailyScopeKey, completionTitle, true);
-        markedCompleted = true;
       }
     });
-
-    if (markedCompleted) {
-      setDailyActiveCategory("overview");
-    }
   }, [
     dailyCategoryCompletion,
     dailyCategoryCompletionTitles,
@@ -6058,7 +6051,6 @@ export default function HomePage() {
     pbacCounts,
     resolvedDailyScopeKey,
     sectionCompletionContextValue,
-    setDailyActiveCategory,
   ]);
 
   useEffect(() => {
