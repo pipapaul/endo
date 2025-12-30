@@ -76,7 +76,7 @@ export function SelectTrigger({ className, ...props }: React.ButtonHTMLAttribute
       type="button"
       onClick={() => context.setOpen(!context.open)}
       className={cn(
-        "flex w-full items-center justify-between rounded-lg border border-rose-100 bg-white px-3 py-2 text-sm shadow-sm",
+        "flex w-full items-center justify-between rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm shadow-sm transition hover:border-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300",
         className
       )}
       {...props}
@@ -93,7 +93,7 @@ export function SelectValue({ placeholder, className, ...props }: SelectValuePro
   if (!context) throw new Error("SelectValue must be used within Select");
   const label = context.getLabel(context.value);
   return (
-    <span className={cn("text-left", !label && "text-zinc-400", className)} {...props}>
+    <span className={cn("text-left", !label && "text-rose-400", className)} {...props}>
       {label ?? placeholder ?? ""}
     </span>
   );
@@ -106,7 +106,7 @@ export function SelectContent({ className, ...props }: React.HTMLAttributes<HTML
   return (
     <div
       className={cn(
-        "absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-rose-100 bg-white py-1 shadow-lg",
+        "absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-rose-200 bg-white py-1 shadow-lg",
         className
       )}
       {...props}

@@ -76,7 +76,7 @@ export function Section({
       className={cn(
         "relative",
         variant === "card"
-          ? "rounded-2xl border border-rose-100 bg-white shadow-sm transition-colors overflow-hidden"
+          ? "rounded-2xl border border-rose-200 bg-white shadow-sm transition-colors overflow-hidden"
           : "space-y-4 sm:space-y-5",
         variant === "card" && isCompleted ? "border-amber-200 shadow-md" : null
       )}
@@ -86,14 +86,14 @@ export function Section({
           className={cn(
             "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between",
             variant === "card"
-              ? "border-b border-rose-100 bg-gradient-to-b from-rose-50/80 to-rose-50/40 px-4 py-3 sm:px-6 sm:py-4"
+              ? "border-b border-rose-200 bg-gradient-to-b from-rose-100/80 to-rose-50/50 px-4 py-3 sm:px-6 sm:py-4"
               : ""
           )}
         >
           <div className="space-y-0.5">
             <h2 className="text-base font-semibold text-rose-900">{title}</h2>
             {description && (
-              <p className="text-sm text-rose-600/80">{description}</p>
+              <p className="text-sm text-rose-700">{description}</p>
             )}
           </div>
           {aside ? <div className="flex-shrink-0 sm:self-start">{aside}</div> : null}

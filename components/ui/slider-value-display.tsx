@@ -24,7 +24,7 @@ export function SliderValueDisplay({
       role="status"
       aria-live="polite"
     >
-      {label ? <span className="text-xs font-medium text-rose-500/80">{label}</span> : null}
+      {label ? <span className="text-xs font-medium text-rose-600">{label}</span> : null}
       <span
         className={cn(
           "flex items-baseline gap-1 text-3xl font-semibold leading-none tracking-tight",
@@ -32,7 +32,7 @@ export function SliderValueDisplay({
         )}
       >
         {value}
-        {unit ? <span className="text-sm font-medium text-rose-500">{unit}</span> : null}
+        {unit ? <span className="text-sm font-medium text-rose-600">{unit}</span> : null}
       </span>
     </div>
   );

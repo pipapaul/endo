@@ -69,7 +69,7 @@ export function TabsTrigger({ value, className, ...props }: TabsTriggerProps) {
       type="button"
       onClick={() => context.setValue(value)}
       className={cn(
-        "inline-flex w-full items-center justify-center rounded-md px-3 py-2 transition",
+        "inline-flex w-full items-center justify-center rounded-md px-3 py-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 focus-visible:ring-offset-2",
         isActive ? "bg-white text-rose-700 shadow" : "text-rose-700/70 hover:text-rose-700",
         className
       )}

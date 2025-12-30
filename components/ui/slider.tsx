@@ -42,7 +42,7 @@ export function Slider({
       onChange={(event) => onValueChange?.([Number(event.target.value)])}
       disabled={disabled}
       className={cn(
-        "endo-slider h-2 w-full cursor-pointer appearance-none rounded-full bg-transparent transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-rose-200/70 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-80",
+        "endo-slider h-2 w-full cursor-pointer appearance-none rounded-full bg-transparent transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-80",
         className,
       )}
       style={{

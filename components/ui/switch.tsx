@@ -16,7 +16,7 @@ export const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
         onClick={() => onCheckedChange?.(!checked)}
         ref={ref}
         className={cn(
-          "relative inline-flex h-6 w-11 items-center rounded-full border border-rose-200 transition",
+          "relative inline-flex h-6 w-11 items-center rounded-full border border-rose-200 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 focus-visible:ring-offset-2",
           checked ? "bg-rose-500" : "bg-white",
           className
         )}

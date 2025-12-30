@@ -58,7 +58,7 @@ export function ScoreInput({
         />
         <div
           id={rangeDescriptionId}
-          className="flex justify-between text-xs text-rose-600"
+          className="flex justify-between text-xs font-medium text-rose-700"
         >
           <span>{min}</span>
           <span>{max}</span>
@@ -108,7 +108,7 @@ export function MultiSelectChips({
           onClick={() => toggle(option.value)}
           aria-pressed={value.includes(option.value)}
           className={cn(
-            "rounded-full border px-3 py-1 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2",
+            "rounded-full border px-3 py-1 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 focus-visible:ring-offset-2",
             value.includes(option.value)
               ? "border-rose-500 bg-rose-500 text-white shadow-sm"
               : "border-rose-200 bg-white text-rose-700 hover:border-rose-400 hover:bg-rose-50"
@@ -139,7 +139,7 @@ export function ModuleToggleRow({
   return (
     <div
       className={cn(
-        "flex flex-col gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4 sm:flex-row sm:items-center sm:justify-between",
+        "flex flex-col gap-3 rounded-lg border border-rose-200 bg-rose-50/80 p-4 sm:flex-row sm:items-center sm:justify-between",
         className,
       )}
     >
@@ -178,7 +178,7 @@ export function NrsInput({
           aria-describedby={rangeDescriptionId}
           onValueChange={([next]) => onChange(Math.max(0, Math.min(10, Math.round(next))))}
         />
-        <div id={rangeDescriptionId} className="flex justify-between text-xs text-rose-600">
+        <div id={rangeDescriptionId} className="flex justify-between text-xs font-medium text-rose-700">
           <span>{minLabel}</span>
           <span>{maxLabel}</span>
         </div>

@@ -7203,7 +7203,7 @@ export default function HomePage() {
                             "group rounded-2xl border p-4 shadow-sm transition hover:shadow-md",
                             isCompleted
                               ? "border-amber-200 bg-amber-50 hover:border-amber-300"
-                              : "border-rose-100 bg-white/80 hover:border-rose-200"
+                              : "border-rose-200 bg-white hover:border-rose-300"
                           )}
                         >
                           <button
@@ -7219,10 +7219,10 @@ export default function HomePage() {
                             <div className="flex flex-1 items-start justify-between gap-3">
                               <div className="flex-1">
                                 <p className="text-sm font-semibold text-rose-900">{category.title}</p>
-                                <p className="mt-1 text-xs text-rose-600">{category.description}</p>
+                                <p className="mt-1 text-xs text-rose-700">{category.description}</p>
                               </div>
                               <div className="flex items-center gap-2">
-                                <ChevronRight className="h-4 w-4 text-rose-400 transition group-hover:text-rose-500" aria-hidden="true" />
+                                <ChevronRight className="h-4 w-4 text-rose-500 transition group-hover:text-rose-600" aria-hidden="true" />
                               </div>
                             </div>
                           </button>
@@ -7234,7 +7234,7 @@ export default function HomePage() {
                                   type="button"
                                   variant="ghost"
                                   size="sm"
-                                  className="rounded-full border border-rose-100 bg-rose-50/80 text-xs font-medium text-rose-700 shadow-none transition hover:border-rose-200 hover:bg-rose-100"
+                                  className="rounded-full border border-rose-200 bg-rose-50 text-xs font-medium text-rose-800 shadow-none transition hover:border-rose-300 hover:bg-rose-100"
                                   disabled={quickActionDisabled}
                                   onClick={(event) => {
                                     event.stopPropagation();
@@ -7386,14 +7386,14 @@ export default function HomePage() {
                       open={deepDyspareuniaCardOpen}
                       onToggle={(event) => setDeepDyspareuniaCardOpen(event.currentTarget.open)}
                     >
-                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-gradient-to-r from-rose-50 to-rose-100/50 px-4 py-3 text-sm font-semibold text-rose-900 transition-colors hover:from-rose-100/80 hover:to-rose-100/60 [&::-webkit-details-marker]:hidden">
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-gradient-to-r from-rose-100/80 to-rose-50/60 px-4 py-3 text-sm font-semibold text-rose-900 transition-colors hover:from-rose-100 hover:to-rose-100/80 [&::-webkit-details-marker]:hidden">
                           <div className="flex items-center gap-2">
-                            <ChevronRight className="h-4 w-4 text-rose-400 transition-transform group-open:rotate-90" />
+                            <ChevronRight className="h-4 w-4 text-rose-500 transition-transform group-open:rotate-90" />
                             <span>{TERMS.deepDyspareunia.label}</span>
                           </div>
                           <span className="rounded-full bg-white/80 px-2 py-0.5 text-xs font-medium text-rose-600 shadow-sm">{deepDyspareuniaSummary}</span>
                         </summary>
-                        <div className="space-y-4 border-t border-rose-100 bg-white px-4 py-4 text-rose-700">
+                        <div className="space-y-4 border-t border-rose-200 bg-white px-4 py-4 text-rose-800">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <TermHeadline termKey="deepDyspareunia" />
                             <div className="flex items-center gap-2">
@@ -7448,14 +7448,14 @@ export default function HomePage() {
                         open={ovulationPainCardOpen}
                         onToggle={(event) => setOvulationPainCardOpen(event.currentTarget.open)}
                       >
-                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-gradient-to-r from-rose-50 to-rose-100/50 px-4 py-3 text-sm font-semibold text-rose-900 transition-colors hover:from-rose-100/80 hover:to-rose-100/60 [&::-webkit-details-marker]:hidden">
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-gradient-to-r from-rose-100/80 to-rose-50/60 px-4 py-3 text-sm font-semibold text-rose-900 transition-colors hover:from-rose-100 hover:to-rose-100/80 [&::-webkit-details-marker]:hidden">
                           <div className="flex items-center gap-2">
-                            <ChevronRight className="h-4 w-4 text-rose-400 transition-transform group-open:rotate-90" />
+                            <ChevronRight className="h-4 w-4 text-rose-500 transition-transform group-open:rotate-90" />
                             <span>{TERMS.ovulationPain.label}</span>
                           </div>
                           <span className="rounded-full bg-white/80 px-2 py-0.5 text-xs font-medium text-rose-600 shadow-sm">{ovulationPainSummary}</span>
                         </summary>
-                        <div className="space-y-4 border-t border-rose-100 bg-white px-4 py-4 text-rose-700">
+                        <div className="space-y-4 border-t border-rose-200 bg-white px-4 py-4 text-rose-800">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <TermHeadline termKey="ovulationPain" />
                             {dailyDraft.ovulationPain ? (
