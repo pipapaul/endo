@@ -3892,7 +3892,7 @@ export default function HomePage() {
               clots: dailyDraft.bleeding.clots ?? false,
               flooding: dailyDraft.bleeding.flooding ?? false,
             }
-        : { isBleeding: false, clots: false, flooding: false },
+        : { isBleeding: false },
       pbacCounts: normalizedPbacCounts,
       rescueMeds: (dailyDraft.rescueMeds ?? [])
         .filter((med) => med.name.trim().length > 0)
@@ -4003,8 +4003,7 @@ export default function HomePage() {
     const validationIssues = validateDailyEntry(automatedDraft);
     setIssues(validationIssues);
     if (validationIssues.length) {
-      const debugMsg = validationIssues.map(i => `${i.path}: ${i.message}`).join("; ");
-      setInfoMessage(`DEBUG: ${debugMsg}`);
+      setInfoMessage("Bitte prüfe die markierten Felder.");
       return false;
     }
 
