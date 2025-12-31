@@ -24,10 +24,11 @@ import {
   BarChart,
   Bar,
   Cell,
-  ScatterChart,
-  Scatter,
   Area,
   ComposedChart,
+  ScatterChart,
+  Scatter,
+  ReferenceLine,
 } from "recharts";
 import type { DotProps, TooltipProps, TooltipContentProps } from "recharts";
 import {
@@ -134,7 +135,6 @@ import {
   type TrendMetricKey,
 } from "@/lib/home/constants";
 import {
-  computePearson,
   dateToIsoWeek,
   formatIsoWeekCompactLabel,
   monthToDate,
@@ -2211,22 +2211,6 @@ function CheckInHistoryTooltip({ active, payload }: TooltipContentProps<number, 
       <p>Check-in: {data.checkIn ? "erledigt" : "ausgelassen"}</p>
       <p>Schmerz (NRS): {typeof data.pain === "number" ? data.pain.toFixed(1) : "–"}</p>
       <p>{TERMS.sleep_quality.label}: {typeof data.sleepQuality === "number" ? data.sleepQuality.toFixed(1) : "–"}</p>
-    </div>
-  );
-}
-
-function CorrelationTooltip({ active, payload }: TooltipContentProps<number, string>) {
-  if (!active || !payload?.length) return null;
-  const { payload: point, name } = payload[0] as {
-    payload: { x: number; y: number; date: string; yLabel?: string; xLabel?: string };
-    name?: string;
-  };
-  return (
-    <div className="rounded-lg border border-rose-200 bg-white p-3 text-xs text-rose-700 shadow-sm">
-      <p className="font-semibold text-rose-800">{formatShortGermanDate(point.date)}</p>
-      <p>{name}</p>
-      <p>{point.yLabel ?? "Schmerz (NRS)"}: {point.y.toFixed(1)}</p>
-      <p>Wert: {(point.xLabel ?? point.x.toLocaleString("de-DE")) as string}</p>
     </div>
   );
 }
@@ -5109,203 +5093,139 @@ export default function HomePage() {
     return { label: "Wie der Durchschnitt", className: "bg-amber-100 text-amber-700" };
   }, [annotatedDailyEntries, cycleOverlay, hasDailyEntryForToday, today]);
 
-  const correlations = useMemo(() => {
-    const buildCorrelation = (
-      points: Array<{ x: number | null; y: number | null; date: string; xLabel?: string; yLabel?: string }>
-    ) => {
-      const filtered = points.filter(
-        (point): point is { x: number; y: number; date: string; xLabel?: string; yLabel?: string } =>
-          point.x !== null && point.y !== null
-      );
-      const pairs = filtered.map(({ x, y }) => ({ x, y }));
-      return { r: computePearson(pairs), n: pairs.length, points: filtered };
-    };
+  // Correlation data: Cycle comparison strips (last 6 cycles)
+  const cycleStrips = useMemo(() => {
+    if (cycleStartDates.length === 0) return null;
 
-    const bleedingDays = derivedDailyEntries.filter((entry) => hasBleedingForEntry(entry));
+    const MAX_CYCLES = 6;
+    const MAX_DAYS = 10;
+    const starts = [...cycleStartDates].sort().slice(-MAX_CYCLES);
 
-    const sleepDetailed = annotatedDailyEntries
-      .map(({ entry }) => ({
-        x: typeof entry.sleep?.quality === "number" ? entry.sleep.quality : null,
-        y: typeof entry.painNRS === "number" ? entry.painNRS : null,
-        date: entry.date,
-      }))
-      .filter((point): point is { x: number; y: number; date: string } => point.x !== null && point.y !== null);
-    const stepsDetailed = derivedDailyEntries
-      .map((entry) => ({
-        x: typeof entry.activity?.steps === "number" ? entry.activity.steps : null,
-        y: typeof entry.painNRS === "number" ? entry.painNRS : null,
-        date: entry.date,
-      }))
-      .filter((point): point is { x: number; y: number; date: string } => point.x !== null && point.y !== null);
-    const medicationPoints = derivedDailyEntries.map((entry) => {
-      const rescueDoses = (entry.rescueMeds ?? []).filter((med) => med.name.trim().length > 0).length;
-      const medicationScore = rescueDoses;
-      const medicationLabel = rescueDoses
-        ? `${rescueDoses} Rescue-Dose${rescueDoses > 1 ? "n" : ""}`
-        : "Keine Rescue-Medikation";
-      return {
-        x: medicationScore,
-        xLabel: medicationLabel,
+    const cycles: Array<{
+      startDate: string;
+      days: Array<{
+        cycleDay: number;
+        pain: number | null;
+        pbac: number | null;
+        isBleeding: boolean;
+      }>;
+    }> = [];
+
+    starts.forEach((startDate, idx) => {
+      const nextStart = starts[idx + 1];
+      const entries = annotatedDailyEntries.filter(({ entry, cycleDay }) => {
+        if (!cycleDay || cycleDay > MAX_DAYS) return false;
+        if (entry.date < startDate) return false;
+        if (nextStart && entry.date >= nextStart) return false;
+        return true;
+      });
+
+      const days = entries.map(({ entry, cycleDay }) => ({
+        cycleDay: cycleDay!,
         pain: typeof entry.painNRS === "number" ? entry.painNRS : null,
-        impact: typeof entry.impactNRS === "number" ? entry.impactNRS : null,
-        date: entry.date,
-      };
-    });
-    const sleepPairs = sleepDetailed.map(({ x, y }) => ({ x, y }));
-    const stepsPairs = stepsDetailed.map(({ x, y }) => ({ x, y }));
-    const ovulationPainPoints = derivedDailyEntries.map((entry) => ({
-      x: typeof entry.ovulationPain?.intensity === "number" ? entry.ovulationPain.intensity : null,
-      y: typeof entry.painNRS === "number" ? entry.painNRS : null,
-      date: entry.date,
-      xLabel: typeof entry.ovulationPain?.intensity === "number" ? undefined : "Keine Angabe",
-      yLabel: "Schmerz (NRS)",
-    }));
-    const ovulationPainRegions = derivedDailyEntries.map((entry) => ({
-      x: typeof entry.ovulationPain?.intensity === "number" ? entry.ovulationPain.intensity : null,
-      y: (entry.painRegions ?? []).length,
-      date: entry.date,
-      xLabel: typeof entry.ovulationPain?.intensity === "number" ? undefined : "Keine Angabe",
-      yLabel: "Betroffene Regionen",
-    }));
-    const lhPain = derivedDailyEntries.map((entry) => {
-      const lhPositive = entry.ovulation?.lhPositive;
-      const x = lhPositive === true ? 1 : lhPositive === false ? 0 : null;
-      return {
-        x,
-        xLabel: lhPositive === true ? "Positiv" : lhPositive === false ? "Negativ" : undefined,
-        y: typeof entry.painNRS === "number" ? entry.painNRS : null,
-        date: entry.date,
-        yLabel: "Schmerz (NRS)",
-      };
-    });
-    const lhRegions = derivedDailyEntries.map((entry) => {
-      const lhPositive = entry.ovulation?.lhPositive;
-      const x = lhPositive === true ? 1 : lhPositive === false ? 0 : null;
-      return {
-        x,
-        xLabel: lhPositive === true ? "Positiv" : lhPositive === false ? "Negativ" : undefined,
-        y: (entry.painRegions ?? []).length,
-        date: entry.date,
-        yLabel: "Betroffene Regionen",
-      };
-    });
-    const bbtPain = derivedDailyEntries.map((entry) => ({
-      x: typeof entry.ovulation?.bbtCelsius === "number" ? entry.ovulation.bbtCelsius : null,
-      y: typeof entry.painNRS === "number" ? entry.painNRS : null,
-      date: entry.date,
-      yLabel: "Schmerz (NRS)",
-    }));
-    const bbtRegions = derivedDailyEntries.map((entry) => ({
-      x: typeof entry.ovulation?.bbtCelsius === "number" ? entry.ovulation.bbtCelsius : null,
-      y: (entry.painRegions ?? []).length,
-      date: entry.date,
-      yLabel: "Betroffene Regionen",
-    }));
-    return {
-      sleep: { r: computePearson(sleepPairs), n: sleepPairs.length, points: sleepDetailed },
-      steps: { r: computePearson(stepsPairs), n: stepsPairs.length, points: stepsDetailed },
-      pbacPain: buildCorrelation(
-        bleedingDays.map((entry) => ({
-          x: typeof entry.bleeding?.pbacScore === "number" ? entry.bleeding.pbacScore : null,
-          y: typeof entry.painNRS === "number" ? entry.painNRS : null,
-          date: entry.date,
-          yLabel: "Schmerz (NRS)",
-        }))
-      ),
-      pbacImpact: buildCorrelation(
-        bleedingDays.map((entry) => ({
-          x: typeof entry.bleeding?.pbacScore === "number" ? entry.bleeding.pbacScore : null,
-          y: typeof entry.impactNRS === "number" ? entry.impactNRS : null,
-          date: entry.date,
-          yLabel: "Beeinträchtigung (NRS)",
-        }))
-      ),
-      clotsPain: buildCorrelation(
-        bleedingDays.map((entry) => {
-          const clots = entry.bleeding?.clots;
-          const x = clots === true ? 1 : clots === false ? 0 : null;
-          return {
-            x,
-            xLabel: clots === true ? "Ja" : clots === false ? "Nein" : undefined,
-            y: typeof entry.painNRS === "number" ? entry.painNRS : null,
-            date: entry.date,
-            yLabel: "Schmerz (NRS)",
-          };
-        })
-      ),
-      clotsImpact: buildCorrelation(
-        bleedingDays.map((entry) => {
-          const clots = entry.bleeding?.clots;
-          const x = clots === true ? 1 : clots === false ? 0 : null;
-          return {
-            x,
-            xLabel: clots === true ? "Ja" : clots === false ? "Nein" : undefined,
-            y: typeof entry.impactNRS === "number" ? entry.impactNRS : null,
-            date: entry.date,
-            yLabel: "Beeinträchtigung (NRS)",
-          };
-        })
-      ),
-      floodingPain: buildCorrelation(
-        bleedingDays.map((entry) => {
-          const flooding = entry.bleeding?.flooding;
-          const x = flooding === true ? 1 : flooding === false ? 0 : null;
-          return {
-            x,
-            xLabel: flooding === true ? "Ja" : flooding === false ? "Nein" : undefined,
-            y: typeof entry.painNRS === "number" ? entry.painNRS : null,
-            date: entry.date,
-            yLabel: "Schmerz (NRS)",
-          };
-        })
-      ),
-      floodingImpact: buildCorrelation(
-        bleedingDays.map((entry) => {
-          const flooding = entry.bleeding?.flooding;
-          const x = flooding === true ? 1 : flooding === false ? 0 : null;
-          return {
-            x,
-            xLabel: flooding === true ? "Ja" : flooding === false ? "Nein" : undefined,
-            y: typeof entry.impactNRS === "number" ? entry.impactNRS : null,
-            date: entry.date,
-            yLabel: "Beeinträchtigung (NRS)",
-          };
-        })
-      ),
-      ovulationPain: buildCorrelation(ovulationPainPoints),
-      ovulationPainRegions: buildCorrelation(ovulationPainRegions),
-      ovulationLH: buildCorrelation(lhPain),
-      ovulationLHRegions: buildCorrelation(lhRegions),
-      ovulationBBT: buildCorrelation(bbtPain),
-      ovulationBBTRegions: buildCorrelation(bbtRegions),
-      medicationPain: buildCorrelation(
-        medicationPoints.map((point) => ({
-          x: point.x,
-          y: point.pain,
-          date: point.date,
-          xLabel: point.xLabel,
-          yLabel: "Schmerz (NRS)",
-        }))
-      ),
-      medicationImpact: buildCorrelation(
-        medicationPoints.map((point) => ({
-          x: point.x,
-          y: point.impact,
-          date: point.date,
-          xLabel: point.xLabel,
-          yLabel: "Beeinträchtigung (NRS)",
-        }))
-      ),
-    };
-  }, [annotatedDailyEntries, derivedDailyEntries]);
+        pbac: typeof entry.bleeding?.pbacScore === "number" ? entry.bleeding.pbacScore : null,
+        isBleeding: hasBleedingForEntry(entry),
+      }));
 
-  const correlationStepsMax = useMemo(() => {
-    if (!correlations.steps.points.length) {
-      return 10000;
+      cycles.push({ startDate, days });
+    });
+
+    return cycles.length > 0 ? cycles : null;
+  }, [annotatedDailyEntries, cycleStartDates]);
+
+  // Correlation data: Day-of-period average pain
+  const dayOfPeriodPain = useMemo(() => {
+    const MAX_DAYS = 7;
+    const dayStats = new Map<number, { painSum: number; count: number }>();
+
+    annotatedDailyEntries.forEach(({ entry, cycleDay }) => {
+      if (!cycleDay || cycleDay > MAX_DAYS) return;
+      if (!hasBleedingForEntry(entry)) return;
+      if (typeof entry.painNRS !== "number") return;
+
+      const current = dayStats.get(cycleDay) ?? { painSum: 0, count: 0 };
+      current.painSum += entry.painNRS;
+      current.count += 1;
+      dayStats.set(cycleDay, current);
+    });
+
+    const data = Array.from(dayStats.entries())
+      .map(([day, stats]) => ({
+        day,
+        label: `Tag ${day}`,
+        avgPain: Number((stats.painSum / stats.count).toFixed(1)),
+        count: stats.count,
+      }))
+      .sort((a, b) => a.day - b.day);
+
+    return data.length >= 2 ? data : null;
+  }, [annotatedDailyEntries]);
+
+  // Correlation data: Pain vs PBAC scatter with trend
+  const painBleedingScatter = useMemo(() => {
+    const points: Array<{ x: number; y: number; date: string }> = [];
+
+    derivedDailyEntries.forEach((entry) => {
+      if (!hasBleedingForEntry(entry)) return;
+      const pbac = entry.bleeding?.pbacScore;
+      const pain = entry.painNRS;
+      if (typeof pbac !== "number" || typeof pain !== "number") return;
+      points.push({ x: pbac, y: pain, date: entry.date });
+    });
+
+    if (points.length < 3) return null;
+
+    // Compute linear regression for trend line
+    const n = points.length;
+    const sumX = points.reduce((acc, p) => acc + p.x, 0);
+    const sumY = points.reduce((acc, p) => acc + p.y, 0);
+    const sumXY = points.reduce((acc, p) => acc + p.x * p.y, 0);
+    const sumX2 = points.reduce((acc, p) => acc + p.x * p.x, 0);
+
+    const denominator = n * sumX2 - sumX * sumX;
+    let slope = 0;
+    let intercept = sumY / n;
+
+    if (denominator !== 0) {
+      slope = (n * sumXY - sumX * sumY) / denominator;
+      intercept = (sumY - slope * sumX) / n;
     }
-    const max = correlations.steps.points.reduce((highest, point) => (point.x > highest ? point.x : highest), 0);
-    return Math.max(2000, Math.ceil(max / 1000) * 1000);
-  }, [correlations.steps.points]);
+
+    // Compute Pearson correlation
+    const meanX = sumX / n;
+    const meanY = sumY / n;
+    const diffX = points.map((p) => p.x - meanX);
+    const diffY = points.map((p) => p.y - meanY);
+    const sumDiffXY = diffX.reduce((acc, dx, i) => acc + dx * diffY[i], 0);
+    const sumDiffX2 = diffX.reduce((acc, dx) => acc + dx * dx, 0);
+    const sumDiffY2 = diffY.reduce((acc, dy) => acc + dy * dy, 0);
+    const r = sumDiffX2 > 0 && sumDiffY2 > 0 ? sumDiffXY / Math.sqrt(sumDiffX2 * sumDiffY2) : 0;
+
+    const minX = Math.min(...points.map((p) => p.x));
+    const maxX = Math.max(...points.map((p) => p.x));
+
+    const interpretation =
+      Math.abs(r) >= 0.5
+        ? r > 0
+          ? "Starker Zusammenhang"
+          : "Starker negativer Zusammenhang"
+        : Math.abs(r) >= 0.3
+          ? r > 0
+            ? "Moderater Zusammenhang"
+            : "Moderater negativer Zusammenhang"
+          : "Kein klarer Zusammenhang";
+
+    return {
+      points,
+      r: Number(r.toFixed(2)),
+      n: points.length,
+      interpretation,
+      trendLine: {
+        start: { x: minX, y: slope * minX + intercept },
+        end: { x: maxX, y: slope * maxX + intercept },
+      },
+    };
+  }, [derivedDailyEntries]);
 
   const backupPayload = useMemo<BackupPayload>(
     () => ({
@@ -9045,691 +8965,267 @@ export default function HomePage() {
               ) : null}
 
               {analyticsActiveSection === "correlations" ? (
-              <Section
-                title="Zusammenhänge entdecken"
-                description="Lokal berechnete Korrelationen – deine Daten verlassen den Browser nicht"
-                completionEnabled={false}
-              >
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-rose-800">Schlafqualität &amp; Schmerz</h4>
-                      <span className="text-xs text-rose-500">
-                        r = {correlations.sleep.r !== null ? correlations.sleep.r.toFixed(2) : "–"} (n={
-                          correlations.sleep.n
-                        })
-                      </span>
-                    </div>
-                    <div className="h-56 w-full">
-                      {correlations.sleep.points.length >= 2 ? (
-                        <ResponsiveContainer>
-                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
-                            <XAxis
-                              type="number"
-                              dataKey="x"
-                              name={TERMS.sleep_quality.label}
-                              domain={[0, 10]}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <YAxis
-                              type="number"
-                              dataKey="y"
-                              name="Schmerz (NRS)"
-                              domain={[0, 10]}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
-                            <Legend wrapperStyle={{ fontSize: 12 }} />
-                            <Scatter data={correlations.sleep.points} fill="#10b981" name="Schlafqualität" />
-                          </ScatterChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
-                          Für die Korrelation werden mindestens zwei Schlafwerte benötigt.
+                <div className="space-y-6">
+                  <Section
+                    title="Schmerz & Blutung"
+                    description="Zusammenhänge zwischen Schmerzintensität und Blutungsstärke"
+                    completionEnabled={false}
+                  >
+                    <div className="space-y-6">
+                      {/* Day-of-Period Pain Pattern */}
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-100">
+                            <span className="text-sm font-bold text-rose-600">1</span>
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-semibold text-rose-800">Schmerz nach Periodentag</h4>
+                            <p className="text-xs text-rose-500">Durchschnittlicher Schmerz pro Tag der Blutung</p>
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
-                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                      <h4 className="text-sm font-semibold text-rose-800">Medikation &amp; Schmerz/Belastung</h4>
-                      <div className="flex flex-col text-xs text-rose-500 sm:flex-row sm:gap-3">
-                        <span>
-                          Schmerz r = {" "}
-                          {correlations.medicationPain.r !== null
-                            ? correlations.medicationPain.r.toFixed(2)
-                            : "–"} (n={correlations.medicationPain.n})
-                        </span>
-                        <span>
-                          Beeinträchtigung r = {" "}
-                          {correlations.medicationImpact.r !== null
-                            ? correlations.medicationImpact.r.toFixed(2)
-                            : "–"} (n={correlations.medicationImpact.n})
-                        </span>
+                        {dayOfPeriodPain ? (
+                          <div className="rounded-xl border border-rose-100 bg-white/80 p-4">
+                            <div className="h-48 w-full">
+                              <ResponsiveContainer>
+                                <BarChart data={dayOfPeriodPain} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" vertical={false} />
+                                  <XAxis
+                                    dataKey="label"
+                                    stroke="#fb7185"
+                                    tick={{ fontSize: 11 }}
+                                    axisLine={false}
+                                    tickLine={false}
+                                  />
+                                  <YAxis
+                                    domain={[0, 10]}
+                                    stroke="#fb7185"
+                                    tick={{ fontSize: 11 }}
+                                    axisLine={false}
+                                    tickLine={false}
+                                    width={32}
+                                  />
+                                  <Tooltip
+                                    content={({ active, payload }) => {
+                                      if (!active || !payload?.length) return null;
+                                      const data = payload[0].payload as { label: string; avgPain: number; count: number };
+                                      return (
+                                        <div className="rounded-lg border border-rose-200 bg-white p-2 text-xs shadow-sm">
+                                          <p className="font-semibold text-rose-800">{data.label}</p>
+                                          <p className="text-rose-600">Ø Schmerz: {data.avgPain}</p>
+                                          <p className="text-rose-500">Datenpunkte: {data.count}</p>
+                                        </div>
+                                      );
+                                    }}
+                                  />
+                                  <Bar dataKey="avgPain" fill="#fb7185" radius={[4, 4, 0, 0]} maxBarSize={40}>
+                                    {dayOfPeriodPain.map((entry, index) => (
+                                      <Cell
+                                        key={`cell-${index}`}
+                                        fill={entry.avgPain >= 7 ? "#e11d48" : entry.avgPain >= 4 ? "#fb7185" : "#fda4af"}
+                                      />
+                                    ))}
+                                  </Bar>
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+                            <p className="mt-2 text-center text-xs text-rose-500">
+                              Höchster Schmerz: Tag {dayOfPeriodPain.reduce((max, d) => (d.avgPain > max.avgPain ? d : max)).day}
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="rounded-xl border border-dashed border-rose-200 bg-rose-50/40 p-4 text-center text-xs text-rose-600">
+                            Trage Schmerz an mindestens 2 Blutungstagen ein, um das Muster zu sehen.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Pain vs PBAC Scatter */}
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-100">
+                            <span className="text-sm font-bold text-rose-600">2</span>
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-semibold text-rose-800">PBAC-Score & Schmerz</h4>
+                            <p className="text-xs text-rose-500">Zusammenhang zwischen Blutungsstärke und Schmerz</p>
+                          </div>
+                        </div>
+                        {painBleedingScatter ? (
+                          <div className="rounded-xl border border-rose-100 bg-white/80 p-4">
+                            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                              <span
+                                className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                                  Math.abs(painBleedingScatter.r) >= 0.5
+                                    ? "bg-emerald-100 text-emerald-700"
+                                    : Math.abs(painBleedingScatter.r) >= 0.3
+                                      ? "bg-amber-100 text-amber-700"
+                                      : "bg-slate-100 text-slate-600"
+                                }`}
+                              >
+                                {painBleedingScatter.interpretation}
+                              </span>
+                              <span className="text-xs text-rose-500">
+                                r = {painBleedingScatter.r} (n={painBleedingScatter.n})
+                              </span>
+                            </div>
+                            <div className="h-52 w-full">
+                              <ResponsiveContainer>
+                                <ScatterChart margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
+                                  <XAxis
+                                    type="number"
+                                    dataKey="x"
+                                    name="PBAC"
+                                    stroke="#fb7185"
+                                    tick={{ fontSize: 11 }}
+                                    axisLine={false}
+                                    label={{ value: "PBAC", position: "bottom", offset: -4, fontSize: 10, fill: "#fb7185" }}
+                                  />
+                                  <YAxis
+                                    type="number"
+                                    dataKey="y"
+                                    name="Schmerz"
+                                    domain={[0, 10]}
+                                    stroke="#fb7185"
+                                    tick={{ fontSize: 11 }}
+                                    axisLine={false}
+                                    width={32}
+                                    label={{
+                                      value: "NRS",
+                                      angle: -90,
+                                      position: "insideLeft",
+                                      offset: 16,
+                                      fontSize: 10,
+                                      fill: "#fb7185",
+                                    }}
+                                  />
+                                  <Tooltip
+                                    content={({ active, payload }) => {
+                                      if (!active || !payload?.length) return null;
+                                      const point = payload[0].payload as { x: number; y: number; date: string };
+                                      return (
+                                        <div className="rounded-lg border border-rose-200 bg-white p-2 text-xs shadow-sm">
+                                          <p className="font-semibold text-rose-800">{formatShortGermanDate(point.date)}</p>
+                                          <p className="text-rose-600">PBAC: {point.x}</p>
+                                          <p className="text-rose-600">Schmerz: {point.y}</p>
+                                        </div>
+                                      );
+                                    }}
+                                  />
+                                  <Scatter data={painBleedingScatter.points} fill="#fb7185" fillOpacity={0.7} />
+                                  <ReferenceLine
+                                    segment={[
+                                      painBleedingScatter.trendLine.start,
+                                      painBleedingScatter.trendLine.end,
+                                    ]}
+                                    stroke="#e11d48"
+                                    strokeWidth={2}
+                                    strokeDasharray="4 4"
+                                  />
+                                </ScatterChart>
+                              </ResponsiveContainer>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="rounded-xl border border-dashed border-rose-200 bg-rose-50/40 p-4 text-center text-xs text-rose-600">
+                            Trage PBAC-Werte und Schmerz an mindestens 3 Blutungstagen ein.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Cycle Comparison Strips */}
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-100">
+                            <span className="text-sm font-bold text-rose-600">3</span>
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-semibold text-rose-800">Zyklusvergleich</h4>
+                            <p className="text-xs text-rose-500">Schmerz- und Blutungsmuster der letzten Perioden</p>
+                          </div>
+                        </div>
+                        {cycleStrips ? (
+                          <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
+                            <div className="mb-3 flex items-center justify-between text-[10px] text-rose-400">
+                              <span>Start</span>
+                              <div className="flex gap-3">
+                                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((d) => (
+                                  <span key={d} className="w-5 text-center">
+                                    {d}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                            {cycleStrips.map((cycle) => (
+                              <div key={cycle.startDate} className="flex items-center gap-2">
+                                <span className="w-16 shrink-0 text-[10px] text-rose-500">
+                                  {formatShortGermanDate(cycle.startDate)}
+                                </span>
+                                <div className="flex gap-1">
+                                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((dayNum) => {
+                                    const dayData = cycle.days.find((d) => d.cycleDay === dayNum);
+                                    if (!dayData) {
+                                      return (
+                                        <div
+                                          key={dayNum}
+                                          className="h-6 w-5 rounded border border-dashed border-rose-100 bg-rose-50/30"
+                                          title={`Tag ${dayNum}: Keine Daten`}
+                                        />
+                                      );
+                                    }
+                                    const painLevel = dayData.pain ?? 0;
+                                    const bgColor =
+                                      painLevel >= 7
+                                        ? "bg-rose-600"
+                                        : painLevel >= 5
+                                          ? "bg-rose-400"
+                                          : painLevel >= 3
+                                            ? "bg-rose-300"
+                                            : painLevel > 0
+                                              ? "bg-rose-200"
+                                              : "bg-rose-100";
+                                    const ringColor = dayData.isBleeding ? "ring-2 ring-rose-500 ring-offset-1" : "";
+                                    return (
+                                      <div
+                                        key={dayNum}
+                                        className={`h-6 w-5 rounded ${bgColor} ${ringColor}`}
+                                        title={`Tag ${dayNum}: Schmerz ${dayData.pain ?? "–"}, PBAC ${dayData.pbac ?? "–"}`}
+                                      />
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                            <div className="mt-3 flex flex-wrap items-center justify-center gap-3 text-[10px] text-rose-500">
+                              <span className="flex items-center gap-1">
+                                <span className="h-3 w-3 rounded bg-rose-100" /> 0–2
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <span className="h-3 w-3 rounded bg-rose-300" /> 3–4
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <span className="h-3 w-3 rounded bg-rose-400" /> 5–6
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <span className="h-3 w-3 rounded bg-rose-600" /> 7–10
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <span className="h-3 w-3 rounded bg-rose-200 ring-2 ring-rose-500 ring-offset-1" /> Blutung
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="rounded-xl border border-dashed border-rose-200 bg-rose-50/40 p-4 text-center text-xs text-rose-600">
+                            Dokumentiere mindestens eine Periode, um den Vergleich zu sehen.
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <div className="h-56 w-full">
-                      {correlations.medicationPain.points.length >= 2 || correlations.medicationImpact.points.length >= 2 ? (
-                        <ResponsiveContainer>
-                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
-                            <XAxis
-                              type="number"
-                              dataKey="x"
-                              name="Medikation/Rescue"
-                              domain={[0, "dataMax"]}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                              tickFormatter={(value: number) => value.toLocaleString("de-DE")}
-                            />
-                            <YAxis
-                              type="number"
-                              dataKey="y"
-                              name="Schmerz-/Beeinträchtigung (NRS)"
-                              domain={[0, 10]}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
-                            <Legend wrapperStyle={{ fontSize: 12 }} />
-                            {correlations.medicationPain.points.length >= 2 ? (
-                              <Scatter data={correlations.medicationPain.points} fill="#0ea5e9" name="Schmerz (NRS)" />
-                            ) : null}
-                            {correlations.medicationImpact.points.length >= 2 ? (
-                              <Scatter
-                                data={correlations.medicationImpact.points}
-                                fill="#f97316"
-                                name="Beeinträchtigung (NRS)"
-                              />
-                            ) : null}
-                          </ScatterChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
-                          Dokumentiere Medikation oder Rescue-Dosen sowie Schmerz bzw. Beeinträchtigung, um diese Beziehung zu sehen.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-rose-800">PBAC-Score &amp; Schmerz</h4>
-                      <span className="text-xs text-rose-500">
-                        r = {correlations.pbacPain.r !== null ? correlations.pbacPain.r.toFixed(2) : "–"} (n={
-                          correlations.pbacPain.n
-                        })
-                      </span>
-                    </div>
-                    <div className="h-56 w-full">
-                      {correlations.pbacPain.points.length >= 2 ? (
-                        <ResponsiveContainer>
-                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
-                            <XAxis
-                              type="number"
-                              dataKey="x"
-                              name="PBAC-Score"
-                              domain={[0, "dataMax"]}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <YAxis
-                              type="number"
-                              dataKey="y"
-                              name="Schmerz (NRS)"
-                              domain={[0, 10]}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
-                            <Legend wrapperStyle={{ fontSize: 12 }} />
-                            <Scatter data={correlations.pbacPain.points} fill="#f97316" name="PBAC-Score" />
-                          </ScatterChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
-                          Trage PBAC-Werte an Blutungstagen ein, um den Zusammenhang zu sehen.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-rose-800">Schritte &amp; Schmerz</h4>
-                      <span className="text-xs text-rose-500">
-                        r = {correlations.steps.r !== null ? correlations.steps.r.toFixed(2) : "–"} (n={
-                          correlations.steps.n
-                        })
-                      </span>
-                    </div>
-                    <div className="h-56 w-full">
-                      {correlations.steps.points.length >= 2 ? (
-                        <ResponsiveContainer>
-                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
-                            <XAxis
-                              type="number"
-                              dataKey="x"
-                              name="Schritte"
-                              stroke="#fb7185"
-                              domain={[0, correlationStepsMax]}
-                              tick={{ fontSize: 12 }}
-                              tickFormatter={(value: number) => value.toLocaleString("de-DE")}
-                            />
-                            <YAxis
-                              type="number"
-                              dataKey="y"
-                              name="Schmerz (NRS)"
-                              domain={[0, 10]}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
-                            <Legend wrapperStyle={{ fontSize: 12 }} />
-                            <Scatter data={correlations.steps.points} fill="#6366f1" name="Schritte" />
-                          </ScatterChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
-                          Erfasse Schritte, um mögliche Zusammenhänge zu sehen.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-rose-800">PBAC-Score &amp; Beeinträchtigung</h4>
-                      <span className="text-xs text-rose-500">
-                        r = {correlations.pbacImpact.r !== null ? correlations.pbacImpact.r.toFixed(2) : "–"} (n={
-                          correlations.pbacImpact.n
-                        })
-                      </span>
-                    </div>
-                    <div className="h-56 w-full">
-                      {correlations.pbacImpact.points.length >= 2 ? (
-                        <ResponsiveContainer>
-                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
-                            <XAxis
-                              type="number"
-                              dataKey="x"
-                              name="PBAC-Score"
-                              domain={[0, "dataMax"]}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <YAxis
-                              type="number"
-                              dataKey="y"
-                              name="Beeinträchtigung (NRS)"
-                              domain={[0, 10]}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
-                            <Legend wrapperStyle={{ fontSize: 12 }} />
-                            <Scatter data={correlations.pbacImpact.points} fill="#f59e0b" name="PBAC-Score" />
-                          </ScatterChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
-                          Dokumentiere PBAC und Beeinträchtigung an Blutungstagen, um diese Korrelation zu sehen.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-rose-800">Koagel &amp; Schmerz</h4>
-                      <span className="text-xs text-rose-500">
-                        r = {correlations.clotsPain.r !== null ? correlations.clotsPain.r.toFixed(2) : "–"} (n={
-                          correlations.clotsPain.n
-                        })
-                      </span>
-                    </div>
-                    <div className="h-56 w-full">
-                      {correlations.clotsPain.points.length >= 2 ? (
-                        <ResponsiveContainer>
-                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
-                            <XAxis
-                              type="number"
-                              dataKey="x"
-                              name="Koagel"
-                              domain={[-0.1, 1.1]}
-                              ticks={[0, 1]}
-                              tickFormatter={(value: number) => (value >= 1 ? "Ja" : "Nein")}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <YAxis
-                              type="number"
-                              dataKey="y"
-                              name="Schmerz (NRS)"
-                              domain={[0, 10]}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
-                            <Legend wrapperStyle={{ fontSize: 12 }} />
-                            <Scatter data={correlations.clotsPain.points} fill="#0ea5e9" name="Koagel" />
-                          </ScatterChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
-                          Erfasse Koagel an Blutungstagen, um den Zusammenhang zu erkennen.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-rose-800">Koagel &amp; Beeinträchtigung</h4>
-                      <span className="text-xs text-rose-500">
-                        r = {correlations.clotsImpact.r !== null ? correlations.clotsImpact.r.toFixed(2) : "–"} (n={
-                          correlations.clotsImpact.n
-                        })
-                      </span>
-                    </div>
-                    <div className="h-56 w-full">
-                      {correlations.clotsImpact.points.length >= 2 ? (
-                        <ResponsiveContainer>
-                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
-                            <XAxis
-                              type="number"
-                              dataKey="x"
-                              name="Koagel"
-                              domain={[-0.1, 1.1]}
-                              ticks={[0, 1]}
-                              tickFormatter={(value: number) => (value >= 1 ? "Ja" : "Nein")}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <YAxis
-                              type="number"
-                              dataKey="y"
-                              name="Beeinträchtigung (NRS)"
-                              domain={[0, 10]}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
-                            <Legend wrapperStyle={{ fontSize: 12 }} />
-                            <Scatter data={correlations.clotsImpact.points} fill="#22c55e" name="Koagel" />
-                          </ScatterChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
-                          Erfasse Koagel und Beeinträchtigung, um die Korrelation zu berechnen.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-rose-800">Flooding &amp; Schmerz</h4>
-                      <span className="text-xs text-rose-500">
-                        r = {correlations.floodingPain.r !== null ? correlations.floodingPain.r.toFixed(2) : "–"} (n={
-                          correlations.floodingPain.n
-                        })
-                      </span>
-                    </div>
-                    <div className="h-56 w-full">
-                      {correlations.floodingPain.points.length >= 2 ? (
-                        <ResponsiveContainer>
-                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
-                            <XAxis
-                              type="number"
-                              dataKey="x"
-                              name="Flooding"
-                              domain={[-0.1, 1.1]}
-                              ticks={[0, 1]}
-                              tickFormatter={(value: number) => (value >= 1 ? "Ja" : "Nein")}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <YAxis
-                              type="number"
-                              dataKey="y"
-                              name="Schmerz (NRS)"
-                              domain={[0, 10]}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
-                            <Legend wrapperStyle={{ fontSize: 12 }} />
-                            <Scatter data={correlations.floodingPain.points} fill="#a855f7" name="Flooding" />
-                          </ScatterChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
-                          Erfasse Flooding während der Blutung, um die Auswertung zu sehen.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-rose-800">Flooding &amp; Beeinträchtigung</h4>
-                      <span className="text-xs text-rose-500">
-                        r = {correlations.floodingImpact.r !== null ? correlations.floodingImpact.r.toFixed(2) : "–"} (n={
-                          correlations.floodingImpact.n
-                        })
-                      </span>
-                    </div>
-                    <div className="h-56 w-full">
-                      {correlations.floodingImpact.points.length >= 2 ? (
-                        <ResponsiveContainer>
-                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
-                            <XAxis
-                              type="number"
-                              dataKey="x"
-                              name="Flooding"
-                              domain={[-0.1, 1.1]}
-                              ticks={[0, 1]}
-                              tickFormatter={(value: number) => (value >= 1 ? "Ja" : "Nein")}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <YAxis
-                              type="number"
-                              dataKey="y"
-                              name="Beeinträchtigung (NRS)"
-                              domain={[0, 10]}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
-                            <Legend wrapperStyle={{ fontSize: 12 }} />
-                            <Scatter data={correlations.floodingImpact.points} fill="#ec4899" name="Flooding" />
-                          </ScatterChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
-                          Erfasse Flooding und Beeinträchtigung an Blutungstagen, um diese Beziehung zu sehen.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-rose-800">Ovulationsschmerz &amp; Schmerz</h4>
-                      <span className="text-xs text-rose-500">
-                        r = {correlations.ovulationPain.r !== null ? correlations.ovulationPain.r.toFixed(2) : "–"} (n={
-                          correlations.ovulationPain.n
-                        })
-                      </span>
-                    </div>
-                    <div className="h-56 w-full">
-                      {correlations.ovulationPain.points.length >= 2 ? (
-                        <ResponsiveContainer>
-                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
-                            <XAxis
-                              type="number"
-                              dataKey="x"
-                              name={TERMS.ovulationPain.label}
-                              domain={[0, 10]}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <YAxis
-                              type="number"
-                              dataKey="y"
-                              name="Schmerz (NRS)"
-                              domain={[0, 10]}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
-                            <Legend wrapperStyle={{ fontSize: 12 }} />
-                            <Scatter data={correlations.ovulationPain.points} fill="#7c3aed" name="Ovulationsschmerz" />
-                          </ScatterChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
-                          Trage Intensität des Mittelschmerzes ein, um den Zusammenhang zu sehen.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-rose-800">Ovulationsschmerz &amp; Regionen</h4>
-                      <span className="text-xs text-rose-500">
-                        r = {correlations.ovulationPainRegions.r !== null
-                          ? correlations.ovulationPainRegions.r.toFixed(2)
-                          : "–"} (n={correlations.ovulationPainRegions.n})
-                      </span>
-                    </div>
-                    <div className="h-56 w-full">
-                      {correlations.ovulationPainRegions.points.length >= 2 ? (
-                        <ResponsiveContainer>
-                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
-                            <XAxis
-                              type="number"
-                              dataKey="x"
-                              name={TERMS.ovulationPain.label}
-                              domain={[0, 10]}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <YAxis
-                              type="number"
-                              dataKey="y"
-                              name="Betroffene Regionen"
-                              domain={[0, "dataMax"]}
-                              allowDecimals={false}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
-                            <Legend wrapperStyle={{ fontSize: 12 }} />
-                            <Scatter
-                              data={correlations.ovulationPainRegions.points}
-                              fill="#0ea5e9"
-                              name="Ovulationsschmerz"
-                            />
-                          </ScatterChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
-                          Dokumentiere Regionen und Mittelschmerz, um diese Grafik zu sehen.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-rose-800">LH-Positivität &amp; Schmerz</h4>
-                      <span className="text-xs text-rose-500">
-                        r = {correlations.ovulationLH.r !== null ? correlations.ovulationLH.r.toFixed(2) : "–"} (n={
-                          correlations.ovulationLH.n
-                        })
-                      </span>
-                    </div>
-                    <div className="h-56 w-full">
-                      {correlations.ovulationLH.points.length >= 2 ? (
-                        <ResponsiveContainer>
-                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
-                            <XAxis
-                              type="number"
-                              dataKey="x"
-                              name="LH-Test"
-                              domain={[-0.1, 1.1]}
-                              ticks={[0, 1]}
-                              tickFormatter={(value: number) => (value >= 1 ? "Positiv" : "Negativ")}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <YAxis
-                              type="number"
-                              dataKey="y"
-                              name="Schmerz (NRS)"
-                              domain={[0, 10]}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
-                            <Legend wrapperStyle={{ fontSize: 12 }} />
-                            <Scatter data={correlations.ovulationLH.points} fill="#22d3ee" name="LH-Test" />
-                          </ScatterChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
-                          Markiere positive und negative LH-Tests, um den Zusammenhang zu sehen.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-rose-800">LH-Positivität &amp; Regionen</h4>
-                      <span className="text-xs text-rose-500">
-                        r = {correlations.ovulationLHRegions.r !== null
-                          ? correlations.ovulationLHRegions.r.toFixed(2)
-                          : "–"} (n={correlations.ovulationLHRegions.n})
-                      </span>
-                    </div>
-                    <div className="h-56 w-full">
-                      {correlations.ovulationLHRegions.points.length >= 2 ? (
-                        <ResponsiveContainer>
-                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
-                            <XAxis
-                              type="number"
-                              dataKey="x"
-                              name="LH-Test"
-                              domain={[-0.1, 1.1]}
-                              ticks={[0, 1]}
-                              tickFormatter={(value: number) => (value >= 1 ? "Positiv" : "Negativ")}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <YAxis
-                              type="number"
-                              dataKey="y"
-                              name="Betroffene Regionen"
-                              domain={[0, "dataMax"]}
-                              allowDecimals={false}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
-                            <Legend wrapperStyle={{ fontSize: 12 }} />
-                            <Scatter data={correlations.ovulationLHRegions.points} fill="#84cc16" name="LH-Test" />
-                          </ScatterChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
-                          Kombiniere LH-Tests mit betroffenen Regionen, um diese Grafik zu befüllen.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-rose-800">Basaltemperatur &amp; Schmerz</h4>
-                      <span className="text-xs text-rose-500">
-                        r = {correlations.ovulationBBT.r !== null ? correlations.ovulationBBT.r.toFixed(2) : "–"} (n={
-                          correlations.ovulationBBT.n
-                        })
-                      </span>
-                    </div>
-                    <div className="h-56 w-full">
-                      {correlations.ovulationBBT.points.length >= 2 ? (
-                        <ResponsiveContainer>
-                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
-                            <XAxis
-                              type="number"
-                              dataKey="x"
-                              name="Basaltemperatur"
-                              domain={[34, 38]}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <YAxis
-                              type="number"
-                              dataKey="y"
-                              name="Schmerz (NRS)"
-                              domain={[0, 10]}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
-                            <Legend wrapperStyle={{ fontSize: 12 }} />
-                            <Scatter data={correlations.ovulationBBT.points} fill="#fb7185" name="Basaltemperatur" />
-                          </ScatterChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
-                          Erfasse deine BBT, um sie mit Schmerzen zu vergleichen.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-2 rounded-xl border border-rose-100 bg-white/80 p-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-rose-800">Basaltemperatur &amp; Regionen</h4>
-                      <span className="text-xs text-rose-500">
-                        r = {correlations.ovulationBBTRegions.r !== null
-                          ? correlations.ovulationBBTRegions.r.toFixed(2)
-                          : "–"} (n={correlations.ovulationBBTRegions.n})
-                      </span>
-                    </div>
-                    <div className="h-56 w-full">
-                      {correlations.ovulationBBTRegions.points.length >= 2 ? (
-                        <ResponsiveContainer>
-                          <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" />
-                            <XAxis
-                              type="number"
-                              dataKey="x"
-                              name="Basaltemperatur"
-                              domain={[34, 38]}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <YAxis
-                              type="number"
-                              dataKey="y"
-                              name="Betroffene Regionen"
-                              domain={[0, "dataMax"]}
-                              allowDecimals={false}
-                              stroke="#fb7185"
-                              tick={{ fontSize: 12 }}
-                            />
-                            <Tooltip content={CorrelationTooltip} cursor={{ strokeDasharray: "3 3" }} />
-                            <Legend wrapperStyle={{ fontSize: 12 }} />
-                            <Scatter
-                              data={correlations.ovulationBBTRegions.points}
-                              fill="#f472b6"
-                              name="Basaltemperatur"
-                            />
-                          </ScatterChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-rose-200 bg-rose-50/40 p-4 text-xs text-rose-600">
-                          Erfasse Basaltemperatur und betroffene Bereiche, um diesen Plot zu sehen.
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                    <p className="mt-4 text-[11px] text-rose-500">
+                      Hinweis: Diese Auswertungen dienen der Orientierung und ersetzen keine ärztliche Beratung.
+                    </p>
+                  </Section>
                 </div>
-                <p className="mt-2 text-[11px] text-rose-500">
-                  Hinweis: Die Kennzahlen werden ausschließlich lokal berechnet und dienen der Orientierung – sie ersetzen keine
-                  medizinische Beratung.
-                </p>
-              </Section>
               ) : null}
             </div>
           </SectionScopeContext.Provider>
