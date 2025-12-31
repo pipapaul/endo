@@ -1417,6 +1417,8 @@ type CycleOverviewPoint = {
   ovulationPositive: boolean;
   ovulationPainIntensity: number | null;
   painTimeline: PainShortcutTimelineSegment[] | null;
+  isPredictedOvulationDay: boolean;
+  isInPredictedFertileWindow: boolean;
 };
 
 type CycleOverviewData = {
@@ -1555,6 +1557,56 @@ const OvulationMarkerDot = ({ cx, cy }: DotProps) => {
   );
 };
 
+const PredictedOvulationDot = ({ cx, cy }: DotProps) => {
+  if (typeof cx !== "number" || typeof cy !== "number") {
+    return null;
+  }
+
+  return (
+    <g>
+      <circle
+        cx={cx}
+        cy={cy}
+        r={6}
+        fill="#fefce8"
+        stroke="#eab308"
+        strokeWidth={1.5}
+        strokeDasharray="3,2"
+      />
+      <text
+        x={cx}
+        y={cy + 3}
+        textAnchor="middle"
+        fontSize={9}
+        fill="#ca8a04"
+        fontWeight="bold"
+      >
+        ?
+      </text>
+    </g>
+  );
+};
+
+const FertileWindowDot = ({ cx, cy }: DotProps) => {
+  if (typeof cx !== "number" || typeof cy !== "number") {
+    return null;
+  }
+
+  return (
+    <g>
+      <circle
+        cx={cx}
+        cy={cy}
+        r={5}
+        fill="#fdf2f8"
+        stroke="#f472b6"
+        strokeWidth={1.5}
+        strokeDasharray="2,2"
+      />
+    </g>
+  );
+};
+
 const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
   const bleedingGradientId = useId();
   const todayIso = useMemo(() => formatDate(new Date()), []);
@@ -1598,7 +1650,14 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
           <p>Beeinträchtigung: {payload.impactNRS ?? "–"}/10</p>
           <p>Blutung: {payload.bleedingLabel}</p>
           {payload.pbacScore !== null ? <p>PBAC: {payload.pbacScore}</p> : null}
-          {payload.ovulationPositive ? <p>Eisprung markiert</p> : null}
+          {payload.ovulationPositive ? (
+            <p className="font-medium text-yellow-700">Eisprung bestätigt (LH+)</p>
+          ) : payload.isPredictedOvulationDay ? (
+            <p className="text-yellow-600">Eisprung geschätzt</p>
+          ) : null}
+          {payload.isInPredictedFertileWindow && !payload.isPredictedOvulationDay && !payload.ovulationPositive ? (
+            <p className="text-pink-600">Fruchtbares Fenster (geschätzt)</p>
+          ) : null}
           {hasTimeline && timeline ? (
             <div className="mt-2">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-rose-400">Tagesverlauf</p>
@@ -1698,6 +1757,37 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               activeDot={{ r: 5, stroke: "#be123c", fill: "#fff", strokeWidth: 2 }}
               name="Schmerz"
               isAnimationActive={false}
+            />
+            <Scatter
+              data={chartPoints.filter(
+                (p) =>
+                  p.isInPredictedFertileWindow &&
+                  !p.isPredictedOvulationDay &&
+                  !p.ovulationPositive
+              )}
+              dataKey="painValue"
+              yAxisId="painImpact"
+              shape={<FertileWindowDot />}
+              isAnimationActive={false}
+              name="Fruchtbares Fenster (geschätzt)"
+            />
+            <Scatter
+              data={chartPoints.filter(
+                (p) => p.isPredictedOvulationDay && !p.ovulationPositive
+              )}
+              dataKey="painValue"
+              yAxisId="painImpact"
+              shape={<PredictedOvulationDot />}
+              isAnimationActive={false}
+              name="Eisprung (geschätzt)"
+            />
+            <Scatter
+              data={chartPoints.filter((p) => p.ovulationPositive)}
+              dataKey="painValue"
+              yAxisId="painImpact"
+              shape={<OvulationMarkerDot />}
+              isAnimationActive={false}
+              name="Eisprung (bestätigt)"
             />
           </ComposedChart>
         </ResponsiveContainer>
@@ -3031,8 +3121,60 @@ export default function HomePage() {
     const startDate = new Date(todayDate);
     startDate.setDate(startDate.getDate() - (CYCLE_OVERVIEW_MAX_DAYS - 1));
 
+    // Calculate prediction data for chart markers
+    const prediction = (() => {
+      // Calculate cycle start dates inline
+      const startDates = annotatedDailyEntries
+        .filter(({ cycleDay, entry }) => cycleDay === 1 && entry.date <= today)
+        .map(({ entry }) => entry.date);
+
+      if (!startDates.length) {
+        return null;
+      }
+
+      // Calculate completed cycle lengths inline
+      const lengths: number[] = [];
+      for (let i = 0; i < startDates.length - 1; i += 1) {
+        const current = parseIsoDate(startDates[i]);
+        const next = parseIsoDate(startDates[i + 1]);
+        if (!current || !next) continue;
+        const diffDays = Math.round((next.getTime() - current.getTime()) / MS_PER_DAY);
+        if (diffDays > 0) lengths.push(diffDays);
+      }
+
+      if (lengths.length === 0) {
+        return null;
+      }
+
+      const recentLengths = lengths.slice(-3);
+      const avgLength = Math.round(
+        recentLengths.reduce((sum, v) => sum + v, 0) / recentLengths.length
+      );
+      if (!Number.isFinite(avgLength) || avgLength <= 14) return null;
+
+      const ovulationDay = avgLength - 14;
+      const fertileStart = Math.max(1, ovulationDay - 5);
+      const fertileEnd = ovulationDay + 1;
+      const lastStart = startDates[startDates.length - 1];
+
+      return { ovulationDay, fertileStart, fertileEnd, lastStart };
+    })();
+
+    const getPredictionForCycleDay = (cycleDay: number | null) => {
+      if (!prediction || cycleDay === null) {
+        return { isPredictedOvulationDay: false, isInPredictedFertileWindow: false };
+      }
+      return {
+        isPredictedOvulationDay: cycleDay === prediction.ovulationDay,
+        isInPredictedFertileWindow:
+          cycleDay >= prediction.fertileStart && cycleDay <= prediction.fertileEnd,
+      };
+    };
+
     const pointsByDate = new Map<string, CycleOverviewPoint>();
     annotatedDailyEntries.forEach(({ entry, cycleDay }) => {
+      const { isPredictedOvulationDay, isInPredictedFertileWindow } =
+        getPredictionForCycleDay(cycleDay);
       pointsByDate.set(entry.date, {
         date: entry.date,
         cycleDay: cycleDay ?? null,
@@ -3043,6 +3185,8 @@ export default function HomePage() {
         ovulationPositive: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
         ovulationPainIntensity: entry.ovulationPain?.intensity ?? null,
         painTimeline: null,
+        isPredictedOvulationDay,
+        isInPredictedFertileWindow,
       });
     });
 
@@ -3056,6 +3200,23 @@ export default function HomePage() {
       if (existing) {
         points.push({ ...existing, painTimeline: timeline });
       } else {
+        // For dates without entries, calculate prediction from date position
+        let isPredictedOvulationDay = false;
+        let isInPredictedFertileWindow = false;
+
+        if (prediction) {
+          const lastStartDate = parseIsoDate(prediction.lastStart);
+          if (lastStartDate) {
+            const diffMs = currentDate.getTime() - lastStartDate.getTime();
+            if (diffMs >= 0) {
+              const cycleDay = Math.floor(diffMs / MS_PER_DAY) + 1;
+              isPredictedOvulationDay = cycleDay === prediction.ovulationDay;
+              isInPredictedFertileWindow =
+                cycleDay >= prediction.fertileStart && cycleDay <= prediction.fertileEnd;
+            }
+          }
+        }
+
         points.push({
           date: iso,
           cycleDay: null,
@@ -3066,6 +3227,8 @@ export default function HomePage() {
           ovulationPositive: false,
           ovulationPainIntensity: null,
           painTimeline: timeline,
+          isPredictedOvulationDay,
+          isInPredictedFertileWindow,
         });
       }
     }
@@ -5074,6 +5237,77 @@ export default function HomePage() {
     todayDate,
   ]);
 
+  const ovulationPrediction = useMemo(() => {
+    if (completedCycleLengths.length === 0 || !cycleStartDates.length || !todayDate) {
+      return null;
+    }
+
+    const recentLengths = completedCycleLengths.slice(-3);
+    const averageCycleLength = Math.round(
+      recentLengths.reduce((sum, v) => sum + v, 0) / recentLengths.length
+    );
+
+    if (!Number.isFinite(averageCycleLength) || averageCycleLength <= 14) {
+      return null;
+    }
+
+    const predictedOvulationDay = averageCycleLength - 14;
+    const fertileWindowStart = Math.max(1, predictedOvulationDay - 5);
+    const fertileWindowEnd = predictedOvulationDay + 1;
+
+    const lastStartIso = cycleStartDates[cycleStartDates.length - 1];
+    const lastStartDate = parseIsoDate(lastStartIso);
+    if (!lastStartDate) {
+      return null;
+    }
+
+    const diffMs = todayDate.getTime() - lastStartDate.getTime();
+    if (diffMs < 0) {
+      return null;
+    }
+    const currentCycleDay = Math.floor(diffMs / MS_PER_DAY) + 1;
+    const daysUntilOvulation = predictedOvulationDay - currentCycleDay;
+    const isInFertileWindow =
+      currentCycleDay >= fertileWindowStart && currentCycleDay <= fertileWindowEnd;
+    const isOvulationDay = currentCycleDay === predictedOvulationDay;
+
+    return {
+      predictedOvulationDay,
+      fertileWindowStart,
+      fertileWindowEnd,
+      daysUntilOvulation,
+      isInFertileWindow,
+      isOvulationDay,
+      averageCycleLength,
+      cycleCount: recentLengths.length,
+      currentCycleDay,
+      lastCycleStartDate: lastStartIso,
+    };
+  }, [completedCycleLengths, cycleStartDates, todayDate]);
+
+  const ovulationBadgeLabel = useMemo(() => {
+    if (!ovulationPrediction) {
+      return null;
+    }
+
+    const { daysUntilOvulation, isOvulationDay, isInFertileWindow, cycleCount } = ovulationPrediction;
+    const uncertaintyPrefix = cycleCount < 3 ? "~" : "";
+
+    if (isOvulationDay) {
+      return `${uncertaintyPrefix}Eisprung heute (geschätzt)`;
+    }
+
+    if (daysUntilOvulation > 0 && daysUntilOvulation <= 7) {
+      return `${uncertaintyPrefix}Eisprung in ${daysUntilOvulation} ${daysUntilOvulation === 1 ? "Tag" : "Tagen"}`;
+    }
+
+    if (isInFertileWindow && daysUntilOvulation < 0) {
+      return `${uncertaintyPrefix}Fruchtbares Fenster`;
+    }
+
+    return null;
+  }, [ovulationPrediction]);
+
   const todayCycleComparisonBadge = useMemo((): { label: string; className: string } | null => {
     if (!hasDailyEntryForToday) return null;
     const todayEntry = annotatedDailyEntries.find(({ entry }) => entry.date === today);
@@ -6762,6 +6996,14 @@ export default function HomePage() {
                   ) : null}
                   {expectedPeriodBadgeLabel ? (
                     <Badge className="bg-amber-100 text-rose-800">{expectedPeriodBadgeLabel}</Badge>
+                  ) : null}
+                  {ovulationBadgeLabel ? (
+                    <Badge
+                      className="bg-yellow-100 text-yellow-800"
+                      title={`Basierend auf ${ovulationPrediction?.cycleCount ?? 0} ${ovulationPrediction?.cycleCount === 1 ? "Zyklus" : "Zyklen"}. Eisprung = Zykluslänge − 14 Tage.`}
+                    >
+                      {ovulationBadgeLabel}
+                    </Badge>
                   ) : null}
                 </div>
                 {infoMessage && <p className="text-sm font-medium text-rose-600">{infoMessage}</p>}
