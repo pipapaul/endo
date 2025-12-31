@@ -1557,8 +1557,15 @@ const OvulationMarkerDot = ({ cx, cy }: DotProps) => {
   );
 };
 
-const PredictedOvulationDot = ({ cx, cy }: DotProps) => {
-  if (typeof cx !== "number" || typeof cy !== "number") {
+type PredictionDotProps = DotProps & { payload?: CycleOverviewChartPoint };
+
+const PredictedOvulationDot = ({ cx, cy, payload }: PredictionDotProps) => {
+  if (
+    typeof cx !== "number" ||
+    typeof cy !== "number" ||
+    !payload?.isPredictedOvulationDay ||
+    payload?.ovulationPositive
+  ) {
     return null;
   }
 
@@ -1587,8 +1594,14 @@ const PredictedOvulationDot = ({ cx, cy }: DotProps) => {
   );
 };
 
-const FertileWindowDot = ({ cx, cy }: DotProps) => {
-  if (typeof cx !== "number" || typeof cy !== "number") {
+const FertileWindowDot = ({ cx, cy, payload }: PredictionDotProps) => {
+  if (
+    typeof cx !== "number" ||
+    typeof cy !== "number" ||
+    !payload?.isInPredictedFertileWindow ||
+    payload?.isPredictedOvulationDay ||
+    payload?.ovulationPositive
+  ) {
     return null;
   }
 
@@ -1759,35 +1772,20 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               isAnimationActive={false}
             />
             <Scatter
-              data={chartPoints.filter(
-                (p) =>
-                  p.isInPredictedFertileWindow &&
-                  !p.isPredictedOvulationDay &&
-                  !p.ovulationPositive
-              )}
+              data={chartPoints}
               dataKey="painValue"
               yAxisId="painImpact"
               shape={<FertileWindowDot />}
               isAnimationActive={false}
-              name="Fruchtbares Fenster (geschätzt)"
+              legendType="none"
             />
             <Scatter
-              data={chartPoints.filter(
-                (p) => p.isPredictedOvulationDay && !p.ovulationPositive
-              )}
+              data={chartPoints}
               dataKey="painValue"
               yAxisId="painImpact"
               shape={<PredictedOvulationDot />}
               isAnimationActive={false}
-              name="Eisprung (geschätzt)"
-            />
-            <Scatter
-              data={chartPoints.filter((p) => p.ovulationPositive)}
-              dataKey="painValue"
-              yAxisId="painImpact"
-              shape={<OvulationMarkerDot />}
-              isAnimationActive={false}
-              name="Eisprung (bestätigt)"
+              legendType="none"
             />
           </ComposedChart>
         </ResponsiveContainer>
