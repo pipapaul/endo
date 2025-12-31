@@ -1771,19 +1771,23 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               name="Schmerz"
               isAnimationActive={false}
             />
-            <Scatter
-              data={chartPoints}
+            <Line
+              type="monotone"
               dataKey="painValue"
               yAxisId="painImpact"
-              shape={<FertileWindowDot />}
+              stroke="none"
+              dot={<FertileWindowDot />}
+              activeDot={false}
               isAnimationActive={false}
               legendType="none"
             />
-            <Scatter
-              data={chartPoints}
+            <Line
+              type="monotone"
               dataKey="painValue"
               yAxisId="painImpact"
-              shape={<PredictedOvulationDot />}
+              stroke="none"
+              dot={<PredictedOvulationDot />}
+              activeDot={false}
               isAnimationActive={false}
               legendType="none"
             />
