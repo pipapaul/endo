@@ -6,6 +6,7 @@ export interface FeatureFlags {
   moduleUrinary?: boolean;
   moduleHeadache?: boolean;
   moduleDizziness?: boolean;
+  billingMethod?: boolean;
 }
 
 export type PainGranularity = "tag" | "dritteltag";

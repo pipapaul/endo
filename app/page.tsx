@@ -46,6 +46,7 @@ import {
   Pill,
   Plus,
   CheckCircle2,
+  Settings,
   ShieldCheck,
   Smartphone,
   Upload,
@@ -2778,6 +2779,7 @@ export default function HomePage() {
   const [currentTime, setCurrentTime] = useState<Date>(() => new Date());
   const [showCheckInPopup, setShowCheckInPopup] = useState(false);
   const [pendingDismissCheckIn, setPendingDismissCheckIn] = useState<PendingCheckIn | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   const isDailyDirty = useMemo(
     () =>
@@ -6967,6 +6969,45 @@ export default function HomePage() {
           </Button>
         </div>
       )}
+      {showSettings && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowSettings(false);
+          }}
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="mb-6 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-rose-900">Einstellungen</h2>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowSettings(false)}
+                className="text-rose-500 hover:text-rose-700"
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+            <div className="space-y-4">
+              <div className="flex items-start justify-between gap-4 rounded-xl border border-rose-100 bg-rose-50/50 p-4">
+                <div className="flex-1">
+                  <p className="font-medium text-rose-900">Eisprungbestimmung mit Billingmethode</p>
+                  <p className="mt-1 text-sm text-rose-600">Bestimmung anhand des Cervixschleims</p>
+                </div>
+                <Switch
+                  checked={featureFlags.billingMethod ?? false}
+                  onCheckedChange={(checked) =>
+                    setFeatureFlags((prev) => ({ ...prev, billingMethod: checked }))
+                  }
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <SectionCompletionContext.Provider value={sectionCompletionContextValue}>
         {detailToolbar}
         <main
@@ -7239,6 +7280,15 @@ export default function HomePage() {
                   )}
                 </div>
               )}
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setShowSettings(true)}
+                className="mx-auto flex items-center gap-2 text-sm text-rose-600 hover:text-rose-700"
+              >
+                <Settings className="h-4 w-4" />
+                Einstellungen
+              </Button>
             </div>
           ) : (
             <div className="flex flex-col gap-6">
