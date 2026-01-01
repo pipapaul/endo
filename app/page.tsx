@@ -90,6 +90,7 @@ import { usePersistentState } from "@/lib/usePersistentState";
 import WeeklyTabShell from "@/components/weekly/WeeklyTabShell";
 import {
   BauchIcon,
+  CervixMucusIcon,
   MedicationIcon,
   NotesTagsIcon,
   OptionalValuesIcon,
@@ -409,6 +410,7 @@ const sortQuickPainEvents = (events: QuickPainEvent[]): QuickPainEvent[] =>
 
 type DailyCategoryId =
   | "overview"
+  | "cervixMucus"
   | "pain"
   | "symptoms"
   | "bleeding"
@@ -3308,6 +3310,7 @@ export default function HomePage() {
   const dailyToolbarLabel = useMemo(() => {
     const categoryLabels: Record<DailyCategoryId, string> = {
       overview: "Check-in Übersicht",
+      cervixMucus: "Cervixschleim",
       pain: "Schmerzen",
       symptoms: "Symptome",
       bleeding: "Blutung",
@@ -6080,70 +6083,83 @@ export default function HomePage() {
   }, [latestPainShortcutEvent]);
   const BleedingQuickAddNoticeIcon = bleedingQuickAddNotice?.Icon;
 
-  const dailyCategoryButtons = useMemo(
-    () =>
-      [
+  const dailyCategoryButtons = useMemo(() => {
+    const baseButtons: Array<{
+      id: Exclude<DailyCategoryId, "overview">;
+      title: string;
+      description: string;
+      icon?: ComponentType<SVGProps<SVGSVGElement>>;
+      quickActions?: Array<{ label: string; onClick: () => void }>;
+    }> = [
+      {
+        id: "pain" as const,
+        title: "Schmerzen",
+        description: "Körperkarte, Intensität & Auswirkungen",
+        icon: PainIcon,
+        quickActions: [{ label: "Heute keine Schmerzen", onClick: handleQuickNoPain }],
+      },
+      {
+        id: "symptoms" as const,
+        title: "Symptome",
+        description: "Typische Endometriose-Symptome dokumentieren",
+        icon: SymptomsIcon,
+        quickActions: [{ label: "Heute keine Symptome", onClick: handleQuickNoSymptoms }],
+      },
+      {
+        id: "bleeding" as const,
+        title: "Periode und Blutung",
+        description: "Blutung, PBAC-Score & Begleitsymptome",
+        icon: PeriodIcon,
+        quickActions: [{ label: "Heute keine Periode", onClick: handleQuickNoBleeding }],
+      },
+      {
+        id: "medication" as const,
+        title: TERMS.meds.label,
+        description: "Eingenommene Medikamente & Hilfen",
+        icon: MedicationIcon,
+        quickActions: [{ label: "Heute keine Medikamente", onClick: handleQuickNoMedication }],
+      },
+      {
+        id: "sleep" as const,
+        title: "Schlaf",
+        description: "Dauer, Qualität & Aufwachphasen",
+        icon: SleepIcon,
+      },
+      {
+        id: "bowelBladder" as const,
+        title: "Darm & Blase",
+        description: "Verdauung & Blase im Blick behalten",
+        icon: BauchIcon,
+      },
+      {
+        id: "notes" as const,
+        title: "Notizen & Tags",
+        description: "Freitextnotizen und Tags ergänzen",
+        icon: NotesTagsIcon,
+      },
+      {
+        id: "optional" as const,
+        title: "Optionale Werte",
+        description: "Hilfsmittel- & Wearable-Daten erfassen",
+        icon: OptionalValuesIcon,
+      },
+    ];
+
+    if (featureFlags.billingMethod) {
+      return [
         {
-          id: "pain" as const,
-          title: "Schmerzen",
-          description: "Körperkarte, Intensität & Auswirkungen",
-          icon: PainIcon,
-          quickActions: [{ label: "Heute keine Schmerzen", onClick: handleQuickNoPain }],
+          id: "cervixMucus" as const,
+          title: "Cervixschleim",
+          description: "Beobachtung nach der Billings-Methode",
+          icon: CervixMucusIcon,
+          quickActions: undefined,
         },
-        {
-          id: "symptoms" as const,
-          title: "Symptome",
-          description: "Typische Endometriose-Symptome dokumentieren",
-          icon: SymptomsIcon,
-          quickActions: [{ label: "Heute keine Symptome", onClick: handleQuickNoSymptoms }],
-        },
-        {
-          id: "bleeding" as const,
-          title: "Periode und Blutung",
-          description: "Blutung, PBAC-Score & Begleitsymptome",
-          icon: PeriodIcon,
-          quickActions: [{ label: "Heute keine Periode", onClick: handleQuickNoBleeding }],
-        },
-        {
-          id: "medication" as const,
-          title: TERMS.meds.label,
-          description: "Eingenommene Medikamente & Hilfen",
-          icon: MedicationIcon,
-          quickActions: [{ label: "Heute keine Medikamente", onClick: handleQuickNoMedication }],
-        },
-        {
-          id: "sleep" as const,
-          title: "Schlaf",
-          description: "Dauer, Qualität & Aufwachphasen",
-          icon: SleepIcon,
-        },
-        {
-          id: "bowelBladder" as const,
-          title: "Darm & Blase",
-          description: "Verdauung & Blase im Blick behalten",
-          icon: BauchIcon,
-        },
-        {
-          id: "notes" as const,
-          title: "Notizen & Tags",
-          description: "Freitextnotizen und Tags ergänzen",
-          icon: NotesTagsIcon,
-        },
-        {
-          id: "optional" as const,
-          title: "Optionale Werte",
-          description: "Hilfsmittel- & Wearable-Daten erfassen",
-          icon: OptionalValuesIcon,
-        },
-      ] satisfies Array<{
-        id: Exclude<DailyCategoryId, "overview">;
-        title: string;
-        description: string;
-        icon?: ComponentType<SVGProps<SVGSVGElement>>;
-        quickActions?: Array<{ label: string; onClick: () => void }>;
-      }>,
-    [handleQuickNoBleeding, handleQuickNoMedication, handleQuickNoPain, handleQuickNoSymptoms]
-  );
+        ...baseButtons,
+      ];
+    }
+
+    return baseButtons;
+  }, [featureFlags.billingMethod, handleQuickNoBleeding, handleQuickNoMedication, handleQuickNoPain, handleQuickNoSymptoms]);
 
   useEffect(() => {
     if (previousDailyScopeRef.current === resolvedDailyScopeKey) {
@@ -6994,7 +7010,7 @@ export default function HomePage() {
             <div className="space-y-4">
               <div className="flex items-start justify-between gap-4 rounded-xl border border-rose-100 bg-rose-50/50 p-4">
                 <div className="flex-1">
-                  <p className="font-medium text-rose-900">Eisprungbestimmung mit Billingmethode</p>
+                  <p className="font-medium text-rose-900">Eisprungbestimmung mit Billings-Methode</p>
                   <p className="mt-1 text-sm text-rose-600">Bestimmung anhand des Cervixschleims</p>
                 </div>
                 <Switch
@@ -7581,7 +7597,84 @@ export default function HomePage() {
                   </div>
                 </div>
               </div>
-              <div className={cn("space-y-6", dailyActiveCategory === "pain" ? "" : "hidden")}> 
+              <div className={cn("space-y-6", dailyActiveCategory === "cervixMucus" ? "" : "hidden")}>
+                <Section
+                  title="Cervixschleim"
+                  description="Beobachtung nach der Billings-Methode"
+                >
+                  <div className="space-y-6">
+                    <div className="space-y-3">
+                      <p className="text-sm font-medium text-rose-800">Empfindung</p>
+                      <div className="flex flex-wrap gap-2">
+                        {([
+                          { value: "dry", label: "Trocken" },
+                          { value: "moist", label: "Feucht" },
+                          { value: "wet", label: "Nass" },
+                          { value: "slippery", label: "Glitschig" },
+                        ] as const).map((option) => (
+                          <Button
+                            key={option.value}
+                            type="button"
+                            variant={dailyDraft.cervixMucus?.observation === option.value ? "default" : "outline"}
+                            className={cn(
+                              "rounded-full",
+                              dailyDraft.cervixMucus?.observation === option.value
+                                ? "bg-rose-600 text-white hover:bg-rose-700"
+                                : "border-rose-200 text-rose-700 hover:bg-rose-50"
+                            )}
+                            onClick={() =>
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                cervixMucus: {
+                                  ...(prev.cervixMucus ?? {}),
+                                  observation: prev.cervixMucus?.observation === option.value ? undefined : option.value,
+                                },
+                              }))
+                            }
+                          >
+                            {option.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <p className="text-sm font-medium text-rose-800">Aussehen</p>
+                      <div className="flex flex-wrap gap-2">
+                        {([
+                          { value: "none", label: "Nichts" },
+                          { value: "sticky", label: "Klebrig" },
+                          { value: "creamy", label: "Cremig" },
+                          { value: "eggWhite", label: "Spinnbar (Eiweiß)" },
+                        ] as const).map((option) => (
+                          <Button
+                            key={option.value}
+                            type="button"
+                            variant={dailyDraft.cervixMucus?.appearance === option.value ? "default" : "outline"}
+                            className={cn(
+                              "rounded-full",
+                              dailyDraft.cervixMucus?.appearance === option.value
+                                ? "bg-rose-600 text-white hover:bg-rose-700"
+                                : "border-rose-200 text-rose-700 hover:bg-rose-50"
+                            )}
+                            onClick={() =>
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                cervixMucus: {
+                                  ...(prev.cervixMucus ?? {}),
+                                  appearance: prev.cervixMucus?.appearance === option.value ? undefined : option.value,
+                                },
+                              }))
+                            }
+                          >
+                            {option.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </Section>
+              </div>
+              <div className={cn("space-y-6", dailyActiveCategory === "pain" ? "" : "hidden")}>
                 <Section
                   title="Schmerzen"
                   description="Schmerzen hinzufügen, Intensität und Art je Region festhalten und Auswirkungen dokumentieren"
