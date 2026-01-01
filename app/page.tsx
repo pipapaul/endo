@@ -489,6 +489,7 @@ type DailyCategoryId =
   | "optional";
 
 const DAILY_CATEGORY_KEYS: Exclude<DailyCategoryId, "overview">[] = [
+  "cervixMucus",
   "pain",
   "symptoms",
   "bleeding",
@@ -940,6 +941,7 @@ const SCALE_OPTIONS_0_4 = [0, 1, 2, 3, 4] as const;
 const SCALE_OPTIONS_0_3 = [0, 1, 2, 3] as const;
 
 type TrackableDailyCategoryId =
+  | "cervixMucus"
   | "pain"
   | "symptoms"
   | "bleeding"
@@ -950,6 +952,7 @@ type TrackableDailyCategoryId =
   | "optional";
 
 const TRACKED_DAILY_CATEGORY_IDS: TrackableDailyCategoryId[] = [
+  "cervixMucus",
   "pain",
   "symptoms",
   "bleeding",
@@ -1084,6 +1087,13 @@ const extractDailyCategorySnapshot = (
   pbacCounts: PbacCounts
 ): CategorySnapshot | null => {
   switch (categoryId) {
+    case "cervixMucus": {
+      return {
+        entry: {
+          cervixMucus: entry.cervixMucus ? { ...entry.cervixMucus } : null,
+        },
+      };
+    }
     case "pain": {
       const painRegions = (entry.painRegions ?? []).map((region) => ({
         regionId: region.regionId,
@@ -1229,6 +1239,13 @@ const restoreDailyCategorySnapshot = (
   let nextPbacCounts: PbacCounts = pbacCounts;
 
   switch (categoryId) {
+    case "cervixMucus": {
+      const data = snapshot.entry as { cervixMucus?: DailyEntry["cervixMucus"] | null } | undefined;
+      if (data) {
+        nextEntry.cervixMucus = data.cervixMucus ? { ...data.cervixMucus } : undefined;
+      }
+      break;
+    }
     case "pain": {
       const data = snapshot.entry as
         | {
@@ -5787,6 +5804,7 @@ export default function HomePage() {
     Record<Exclude<DailyCategoryId, "overview">, string>
   > = useMemo(
     () => ({
+      cervixMucus: "Cervixschleim",
       pain: "Schmerzen",
       symptoms: "Typische Endometriose-Symptome",
       bleeding: "Periode und Blutung",
@@ -6659,6 +6677,39 @@ export default function HomePage() {
       const entry = dailyDraft;
       const summaries: Partial<Record<Exclude<DailyCategoryId, "overview">, string[]>> = {};
 
+      // Cervix mucus summary (only when Billings method is enabled)
+      if (featureFlags.billingMethod) {
+        const mucusLines: string[] = [];
+        const mucus = entry.cervixMucus;
+        if (mucus?.observation || mucus?.appearance) {
+          const observationLabels: Record<string, string> = {
+            dry: "Trocken",
+            moist: "Feucht",
+            wet: "Nass",
+            slippery: "Glitschig",
+          };
+          const appearanceLabels: Record<string, string> = {
+            none: "Nichts",
+            sticky: "Klebrig",
+            creamy: "Cremig",
+            eggWhite: "Spinnbar (Eiweiß)",
+          };
+          if (mucus.observation) {
+            mucusLines.push(`Empfindung: ${observationLabels[mucus.observation] ?? mucus.observation}`);
+          }
+          if (mucus.appearance) {
+            mucusLines.push(`Aussehen: ${appearanceLabels[mucus.appearance] ?? mucus.appearance}`);
+          }
+          const fertilityScore = scoreCervixMucusFertility(mucus);
+          if (fertilityScore >= 3) {
+            mucusLines.push(fertilityScore === 4 ? "🟢 Peak-Fruchtbarkeit" : "🟡 Hohe Fruchtbarkeit");
+          }
+        } else {
+          mucusLines.push("Noch nicht erfasst.");
+        }
+        summaries.cervixMucus = mucusLines;
+      }
+
       const painRegions = entry.painRegions ?? [];
       const painLines: string[] = [];
 
@@ -6892,7 +6943,7 @@ export default function HomePage() {
 
       return summaries;
     },
-    [dailyDraft, sortedPainShortcutEvents]
+    [dailyDraft, featureFlags.billingMethod, sortedPainShortcutEvents]
   );
 
   useLayoutEffect(() => {
