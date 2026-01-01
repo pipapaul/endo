@@ -90,6 +90,7 @@ import { usePersistentState } from "@/lib/usePersistentState";
 import WeeklyTabShell from "@/components/weekly/WeeklyTabShell";
 import {
   BauchIcon,
+  CervixMucusIcon,
   MedicationIcon,
   NotesTagsIcon,
   OptionalValuesIcon,
@@ -202,6 +203,74 @@ const createInitialCycleComputationState = () => ({
 });
 
 type CycleComputationState = ReturnType<typeof createInitialCycleComputationState>;
+
+/**
+ * Billings Method: Score cervix mucus for fertility indication
+ * Based on the Billings Ovulation Method (BOM) scientific criteria:
+ * - Peak mucus (slippery + egg white) indicates imminent ovulation
+ * - Returns a score from 0-4, where 4 is peak fertility
+ */
+const scoreCervixMucusFertility = (
+  mucus: DailyEntry["cervixMucus"] | undefined
+): number => {
+  if (!mucus) return 0;
+
+  const observation = mucus.observation;
+  const appearance = mucus.appearance;
+
+  const isSlippery = observation === "slippery";
+  const isWet = observation === "wet";
+  const isMoist = observation === "moist";
+  const isEggWhite = appearance === "eggWhite";
+  const isCreamy = appearance === "creamy";
+  const isSticky = appearance === "sticky";
+
+  // Peak fertility: slippery sensation with egg-white appearance
+  if (isSlippery && isEggWhite) return 4;
+
+  // High fertility combinations
+  if (isSlippery || isEggWhite) return 3;
+  if (isWet && (isCreamy || isEggWhite)) return 3;
+
+  // Medium fertility
+  if (isWet || isCreamy) return 2;
+  if (isMoist && isSticky) return 1;
+
+  // Low fertility (dry/none/sticky)
+  return 0;
+};
+
+/**
+ * Identifies peak mucus days in a cycle (score >= 3)
+ * The last day of peak mucus is the "Peak Day" in Billings terminology
+ */
+const findPeakMucusDayInCycle = (
+  entries: Array<{ entry: DailyEntry; cycleDay: number | null }>,
+  cycleStartDate: string
+): number | null => {
+  const cycleEntries = entries.filter(({ entry, cycleDay }) => {
+    if (cycleDay === null || cycleDay < 1) return false;
+    return entry.date >= cycleStartDate;
+  });
+
+  // Find the last day with peak mucus (score >= 3) followed by a drop
+  let lastPeakDay: number | null = null;
+  let previousScore = 0;
+
+  for (const { entry, cycleDay } of cycleEntries) {
+    const score = scoreCervixMucusFertility(entry.cervixMucus);
+    if (score >= 3) {
+      lastPeakDay = cycleDay;
+    }
+    // If we had peak mucus and now it dropped, we found the Peak Day
+    if (previousScore >= 3 && score < 3 && lastPeakDay !== null) {
+      return lastPeakDay;
+    }
+    previousScore = score;
+  }
+
+  return lastPeakDay;
+};
 
 const computeCycleDayForEntry = (
   state: CycleComputationState,
@@ -409,6 +478,7 @@ const sortQuickPainEvents = (events: QuickPainEvent[]): QuickPainEvent[] =>
 
 type DailyCategoryId =
   | "overview"
+  | "cervixMucus"
   | "pain"
   | "symptoms"
   | "bleeding"
@@ -419,6 +489,7 @@ type DailyCategoryId =
   | "optional";
 
 const DAILY_CATEGORY_KEYS: Exclude<DailyCategoryId, "overview">[] = [
+  "cervixMucus",
   "pain",
   "symptoms",
   "bleeding",
@@ -870,6 +941,7 @@ const SCALE_OPTIONS_0_4 = [0, 1, 2, 3, 4] as const;
 const SCALE_OPTIONS_0_3 = [0, 1, 2, 3] as const;
 
 type TrackableDailyCategoryId =
+  | "cervixMucus"
   | "pain"
   | "symptoms"
   | "bleeding"
@@ -880,6 +952,7 @@ type TrackableDailyCategoryId =
   | "optional";
 
 const TRACKED_DAILY_CATEGORY_IDS: TrackableDailyCategoryId[] = [
+  "cervixMucus",
   "pain",
   "symptoms",
   "bleeding",
@@ -1014,6 +1087,13 @@ const extractDailyCategorySnapshot = (
   pbacCounts: PbacCounts
 ): CategorySnapshot | null => {
   switch (categoryId) {
+    case "cervixMucus": {
+      return {
+        entry: {
+          cervixMucus: entry.cervixMucus ? { ...entry.cervixMucus } : null,
+        },
+      };
+    }
     case "pain": {
       const painRegions = (entry.painRegions ?? []).map((region) => ({
         regionId: region.regionId,
@@ -1159,6 +1239,13 @@ const restoreDailyCategorySnapshot = (
   let nextPbacCounts: PbacCounts = pbacCounts;
 
   switch (categoryId) {
+    case "cervixMucus": {
+      const data = snapshot.entry as { cervixMucus?: DailyEntry["cervixMucus"] | null } | undefined;
+      if (data) {
+        nextEntry.cervixMucus = data.cervixMucus ? { ...data.cervixMucus } : undefined;
+      }
+      break;
+    }
     case "pain": {
       const data = snapshot.entry as
         | {
@@ -1420,6 +1507,7 @@ type CycleOverviewPoint = {
   painTimeline: PainShortcutTimelineSegment[] | null;
   isPredictedOvulationDay: boolean;
   isInPredictedFertileWindow: boolean;
+  mucusFertilityScore: number | null;
 };
 
 type CycleOverviewData = {
@@ -1621,6 +1709,49 @@ const FertileWindowDot = ({ cx, cy, payload }: PredictionDotProps) => {
   );
 };
 
+/**
+ * Mucus fertility indicator dot - shows peak fertility mucus observations
+ * Only shown when Billings method is enabled and score >= 3 (high fertility)
+ */
+const MucusFertilityDot = ({ cx, cy, payload }: PredictionDotProps) => {
+  if (
+    typeof cx !== "number" ||
+    typeof cy !== "number" ||
+    !payload?.mucusFertilityScore ||
+    payload.mucusFertilityScore < 3
+  ) {
+    return null;
+  }
+
+  const isPeakFertility = payload.mucusFertilityScore === 4;
+
+  return (
+    <g>
+      {/* Outer glow for peak fertility */}
+      {isPeakFertility && (
+        <circle
+          cx={cx}
+          cy={cy - 12}
+          r={6}
+          fill="#dcfce7"
+          stroke="#22c55e"
+          strokeWidth={1}
+          opacity={0.5}
+        />
+      )}
+      {/* Main indicator */}
+      <circle
+        cx={cx}
+        cy={cy - 12}
+        r={isPeakFertility ? 4 : 3}
+        fill={isPeakFertility ? "#22c55e" : "#86efac"}
+        stroke={isPeakFertility ? "#15803d" : "#22c55e"}
+        strokeWidth={1.5}
+      />
+    </g>
+  );
+};
+
 const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
   const bleedingGradientId = useId();
   const todayIso = useMemo(() => formatDate(new Date()), []);
@@ -1671,6 +1802,13 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
           ) : null}
           {payload.isInPredictedFertileWindow && !payload.isPredictedOvulationDay && !payload.ovulationPositive ? (
             <p className="text-pink-600">Fruchtbares Fenster (geschätzt)</p>
+          ) : null}
+          {payload.mucusFertilityScore !== null && payload.mucusFertilityScore >= 3 ? (
+            <p className={cn(
+              payload.mucusFertilityScore === 4 ? "font-medium text-green-700" : "text-green-600"
+            )}>
+              {payload.mucusFertilityScore === 4 ? "Cervixschleim: Peak (hohe Fruchtbarkeit)" : "Cervixschleim: Fruchtbar"}
+            </p>
           ) : null}
           {hasTimeline && timeline ? (
             <div className="mt-2">
@@ -1788,6 +1926,16 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               yAxisId="painImpact"
               stroke="none"
               dot={<PredictedOvulationDot />}
+              activeDot={false}
+              isAnimationActive={false}
+              legendType="none"
+            />
+            <Line
+              type="monotone"
+              dataKey="painValue"
+              yAxisId="painImpact"
+              stroke="none"
+              dot={<MucusFertilityDot />}
               activeDot={false}
               isAnimationActive={false}
               legendType="none"
@@ -3126,6 +3274,7 @@ export default function HomePage() {
     startDate.setDate(startDate.getDate() - (CYCLE_OVERVIEW_MAX_DAYS - 1));
 
     // Calculate prediction data for chart markers
+    // Uses cycle length method, enhanced with Billings method (cervix mucus) when enabled
     const prediction = (() => {
       // Calculate cycle start dates inline
       const startDates = annotatedDailyEntries
@@ -3156,7 +3305,46 @@ export default function HomePage() {
       );
       if (!Number.isFinite(avgLength) || avgLength <= 14) return null;
 
-      const ovulationDay = avgLength - 14;
+      // Base prediction using standard luteal phase method
+      let ovulationDay = avgLength - 14;
+
+      // Enhanced prediction using Billings method (cervix mucus data)
+      // Scientific basis: Peak mucus (slippery + egg-white) indicates ovulation within 24-48 hours
+      // Reference: Billings et al., The Lancet, 1972; WHO multicenter study, 1981
+      if (featureFlags.billingMethod) {
+        // Analyze peak mucus days from completed cycles
+        const peakDays: number[] = [];
+        for (let i = 0; i < startDates.length - 1; i += 1) {
+          const cycleStart = startDates[i];
+          const cycleEnd = startDates[i + 1];
+
+          // Get entries for this cycle
+          const cycleEntries = annotatedDailyEntries.filter(({ entry }) =>
+            entry.date >= cycleStart && entry.date < cycleEnd
+          );
+
+          // Find peak mucus day in this cycle
+          const peakDay = findPeakMucusDayInCycle(cycleEntries, cycleStart);
+          if (peakDay !== null && peakDay > 0 && peakDay < avgLength) {
+            peakDays.push(peakDay);
+          }
+        }
+
+        // If we have mucus data from at least 2 cycles, use it to refine prediction
+        // Ovulation typically occurs on Peak Day or within 1-2 days after
+        if (peakDays.length >= 2) {
+          const avgPeakDay = Math.round(
+            peakDays.reduce((sum, v) => sum + v, 0) / peakDays.length
+          );
+          // Ovulation is typically on Peak Day + 1 (studies show 80% within ±1 day of Peak)
+          const mucusBasedOvulation = avgPeakDay + 1;
+
+          // Combine both methods: weighted average favoring mucus data when available
+          // Mucus data is more reliable as it reflects actual hormonal changes
+          ovulationDay = Math.round((mucusBasedOvulation * 2 + ovulationDay) / 3);
+        }
+      }
+
       const fertileStart = Math.max(1, ovulationDay - 5);
       const fertileEnd = ovulationDay + 1;
       const lastStart = startDates[startDates.length - 1];
@@ -3179,6 +3367,9 @@ export default function HomePage() {
     annotatedDailyEntries.forEach(({ entry, cycleDay }) => {
       const { isPredictedOvulationDay, isInPredictedFertileWindow } =
         getPredictionForCycleDay(cycleDay);
+      const mucusScore = featureFlags.billingMethod
+        ? scoreCervixMucusFertility(entry.cervixMucus)
+        : null;
       pointsByDate.set(entry.date, {
         date: entry.date,
         cycleDay: cycleDay ?? null,
@@ -3191,6 +3382,7 @@ export default function HomePage() {
         painTimeline: null,
         isPredictedOvulationDay,
         isInPredictedFertileWindow,
+        mucusFertilityScore: mucusScore,
       });
     });
 
@@ -3233,6 +3425,7 @@ export default function HomePage() {
           painTimeline: timeline,
           isPredictedOvulationDay,
           isInPredictedFertileWindow,
+          mucusFertilityScore: null,
         });
       }
     }
@@ -3241,7 +3434,7 @@ export default function HomePage() {
       startDate: formatDate(startDate),
       points,
     };
-  }, [annotatedDailyEntries, painShortcutTimelineByDate, today]);
+  }, [annotatedDailyEntries, featureFlags.billingMethod, painShortcutTimelineByDate, today]);
 
   const canGoToNextDay = useMemo(() => dailyDraft.date < today, [dailyDraft.date, today]);
 
@@ -3308,6 +3501,7 @@ export default function HomePage() {
   const dailyToolbarLabel = useMemo(() => {
     const categoryLabels: Record<DailyCategoryId, string> = {
       overview: "Check-in Übersicht",
+      cervixMucus: "Cervixschleim",
       pain: "Schmerzen",
       symptoms: "Symptome",
       bleeding: "Blutung",
@@ -5610,6 +5804,7 @@ export default function HomePage() {
     Record<Exclude<DailyCategoryId, "overview">, string>
   > = useMemo(
     () => ({
+      cervixMucus: "Cervixschleim",
       pain: "Schmerzen",
       symptoms: "Typische Endometriose-Symptome",
       bleeding: "Periode und Blutung",
@@ -6080,70 +6275,83 @@ export default function HomePage() {
   }, [latestPainShortcutEvent]);
   const BleedingQuickAddNoticeIcon = bleedingQuickAddNotice?.Icon;
 
-  const dailyCategoryButtons = useMemo(
-    () =>
-      [
+  const dailyCategoryButtons = useMemo(() => {
+    const baseButtons: Array<{
+      id: Exclude<DailyCategoryId, "overview">;
+      title: string;
+      description: string;
+      icon?: ComponentType<SVGProps<SVGSVGElement>>;
+      quickActions?: Array<{ label: string; onClick: () => void }>;
+    }> = [
+      {
+        id: "pain" as const,
+        title: "Schmerzen",
+        description: "Körperkarte, Intensität & Auswirkungen",
+        icon: PainIcon,
+        quickActions: [{ label: "Heute keine Schmerzen", onClick: handleQuickNoPain }],
+      },
+      {
+        id: "symptoms" as const,
+        title: "Symptome",
+        description: "Typische Endometriose-Symptome dokumentieren",
+        icon: SymptomsIcon,
+        quickActions: [{ label: "Heute keine Symptome", onClick: handleQuickNoSymptoms }],
+      },
+      {
+        id: "bleeding" as const,
+        title: "Periode und Blutung",
+        description: "Blutung, PBAC-Score & Begleitsymptome",
+        icon: PeriodIcon,
+        quickActions: [{ label: "Heute keine Periode", onClick: handleQuickNoBleeding }],
+      },
+      {
+        id: "medication" as const,
+        title: TERMS.meds.label,
+        description: "Eingenommene Medikamente & Hilfen",
+        icon: MedicationIcon,
+        quickActions: [{ label: "Heute keine Medikamente", onClick: handleQuickNoMedication }],
+      },
+      {
+        id: "sleep" as const,
+        title: "Schlaf",
+        description: "Dauer, Qualität & Aufwachphasen",
+        icon: SleepIcon,
+      },
+      {
+        id: "bowelBladder" as const,
+        title: "Darm & Blase",
+        description: "Verdauung & Blase im Blick behalten",
+        icon: BauchIcon,
+      },
+      {
+        id: "notes" as const,
+        title: "Notizen & Tags",
+        description: "Freitextnotizen und Tags ergänzen",
+        icon: NotesTagsIcon,
+      },
+      {
+        id: "optional" as const,
+        title: "Optionale Werte",
+        description: "Hilfsmittel- & Wearable-Daten erfassen",
+        icon: OptionalValuesIcon,
+      },
+    ];
+
+    if (featureFlags.billingMethod) {
+      return [
         {
-          id: "pain" as const,
-          title: "Schmerzen",
-          description: "Körperkarte, Intensität & Auswirkungen",
-          icon: PainIcon,
-          quickActions: [{ label: "Heute keine Schmerzen", onClick: handleQuickNoPain }],
+          id: "cervixMucus" as const,
+          title: "Cervixschleim",
+          description: "Beobachtung nach der Billings-Methode",
+          icon: CervixMucusIcon,
+          quickActions: undefined,
         },
-        {
-          id: "symptoms" as const,
-          title: "Symptome",
-          description: "Typische Endometriose-Symptome dokumentieren",
-          icon: SymptomsIcon,
-          quickActions: [{ label: "Heute keine Symptome", onClick: handleQuickNoSymptoms }],
-        },
-        {
-          id: "bleeding" as const,
-          title: "Periode und Blutung",
-          description: "Blutung, PBAC-Score & Begleitsymptome",
-          icon: PeriodIcon,
-          quickActions: [{ label: "Heute keine Periode", onClick: handleQuickNoBleeding }],
-        },
-        {
-          id: "medication" as const,
-          title: TERMS.meds.label,
-          description: "Eingenommene Medikamente & Hilfen",
-          icon: MedicationIcon,
-          quickActions: [{ label: "Heute keine Medikamente", onClick: handleQuickNoMedication }],
-        },
-        {
-          id: "sleep" as const,
-          title: "Schlaf",
-          description: "Dauer, Qualität & Aufwachphasen",
-          icon: SleepIcon,
-        },
-        {
-          id: "bowelBladder" as const,
-          title: "Darm & Blase",
-          description: "Verdauung & Blase im Blick behalten",
-          icon: BauchIcon,
-        },
-        {
-          id: "notes" as const,
-          title: "Notizen & Tags",
-          description: "Freitextnotizen und Tags ergänzen",
-          icon: NotesTagsIcon,
-        },
-        {
-          id: "optional" as const,
-          title: "Optionale Werte",
-          description: "Hilfsmittel- & Wearable-Daten erfassen",
-          icon: OptionalValuesIcon,
-        },
-      ] satisfies Array<{
-        id: Exclude<DailyCategoryId, "overview">;
-        title: string;
-        description: string;
-        icon?: ComponentType<SVGProps<SVGSVGElement>>;
-        quickActions?: Array<{ label: string; onClick: () => void }>;
-      }>,
-    [handleQuickNoBleeding, handleQuickNoMedication, handleQuickNoPain, handleQuickNoSymptoms]
-  );
+        ...baseButtons,
+      ];
+    }
+
+    return baseButtons;
+  }, [featureFlags.billingMethod, handleQuickNoBleeding, handleQuickNoMedication, handleQuickNoPain, handleQuickNoSymptoms]);
 
   useEffect(() => {
     if (previousDailyScopeRef.current === resolvedDailyScopeKey) {
@@ -6469,6 +6677,39 @@ export default function HomePage() {
       const entry = dailyDraft;
       const summaries: Partial<Record<Exclude<DailyCategoryId, "overview">, string[]>> = {};
 
+      // Cervix mucus summary (only when Billings method is enabled)
+      if (featureFlags.billingMethod) {
+        const mucusLines: string[] = [];
+        const mucus = entry.cervixMucus;
+        if (mucus?.observation || mucus?.appearance) {
+          const observationLabels: Record<string, string> = {
+            dry: "Trocken",
+            moist: "Feucht",
+            wet: "Nass",
+            slippery: "Glitschig",
+          };
+          const appearanceLabels: Record<string, string> = {
+            none: "Nichts",
+            sticky: "Klebrig",
+            creamy: "Cremig",
+            eggWhite: "Spinnbar (Eiweiß)",
+          };
+          if (mucus.observation) {
+            mucusLines.push(`Empfindung: ${observationLabels[mucus.observation] ?? mucus.observation}`);
+          }
+          if (mucus.appearance) {
+            mucusLines.push(`Aussehen: ${appearanceLabels[mucus.appearance] ?? mucus.appearance}`);
+          }
+          const fertilityScore = scoreCervixMucusFertility(mucus);
+          if (fertilityScore >= 3) {
+            mucusLines.push(fertilityScore === 4 ? "🟢 Peak-Fruchtbarkeit" : "🟡 Hohe Fruchtbarkeit");
+          }
+        } else {
+          mucusLines.push("Noch nicht erfasst.");
+        }
+        summaries.cervixMucus = mucusLines;
+      }
+
       const painRegions = entry.painRegions ?? [];
       const painLines: string[] = [];
 
@@ -6702,7 +6943,7 @@ export default function HomePage() {
 
       return summaries;
     },
-    [dailyDraft, sortedPainShortcutEvents]
+    [dailyDraft, featureFlags.billingMethod, sortedPainShortcutEvents]
   );
 
   useLayoutEffect(() => {
@@ -6994,7 +7235,7 @@ export default function HomePage() {
             <div className="space-y-4">
               <div className="flex items-start justify-between gap-4 rounded-xl border border-rose-100 bg-rose-50/50 p-4">
                 <div className="flex-1">
-                  <p className="font-medium text-rose-900">Eisprungbestimmung mit Billingmethode</p>
+                  <p className="font-medium text-rose-900">Eisprungbestimmung mit Billings-Methode</p>
                   <p className="mt-1 text-sm text-rose-600">Bestimmung anhand des Cervixschleims</p>
                 </div>
                 <Switch
@@ -7581,7 +7822,84 @@ export default function HomePage() {
                   </div>
                 </div>
               </div>
-              <div className={cn("space-y-6", dailyActiveCategory === "pain" ? "" : "hidden")}> 
+              <div className={cn("space-y-6", dailyActiveCategory === "cervixMucus" ? "" : "hidden")}>
+                <Section
+                  title="Cervixschleim"
+                  description="Beobachtung nach der Billings-Methode"
+                >
+                  <div className="space-y-6">
+                    <div className="space-y-3">
+                      <p className="text-sm font-medium text-rose-800">Empfindung</p>
+                      <div className="flex flex-wrap gap-2">
+                        {([
+                          { value: "dry", label: "Trocken" },
+                          { value: "moist", label: "Feucht" },
+                          { value: "wet", label: "Nass" },
+                          { value: "slippery", label: "Glitschig" },
+                        ] as const).map((option) => (
+                          <Button
+                            key={option.value}
+                            type="button"
+                            variant={dailyDraft.cervixMucus?.observation === option.value ? "default" : "outline"}
+                            className={cn(
+                              "rounded-full",
+                              dailyDraft.cervixMucus?.observation === option.value
+                                ? "bg-rose-600 text-white hover:bg-rose-700"
+                                : "border-rose-200 text-rose-700 hover:bg-rose-50"
+                            )}
+                            onClick={() =>
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                cervixMucus: {
+                                  ...(prev.cervixMucus ?? {}),
+                                  observation: prev.cervixMucus?.observation === option.value ? undefined : option.value,
+                                },
+                              }))
+                            }
+                          >
+                            {option.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <p className="text-sm font-medium text-rose-800">Aussehen</p>
+                      <div className="flex flex-wrap gap-2">
+                        {([
+                          { value: "none", label: "Nichts" },
+                          { value: "sticky", label: "Klebrig" },
+                          { value: "creamy", label: "Cremig" },
+                          { value: "eggWhite", label: "Spinnbar (Eiweiß)" },
+                        ] as const).map((option) => (
+                          <Button
+                            key={option.value}
+                            type="button"
+                            variant={dailyDraft.cervixMucus?.appearance === option.value ? "default" : "outline"}
+                            className={cn(
+                              "rounded-full",
+                              dailyDraft.cervixMucus?.appearance === option.value
+                                ? "bg-rose-600 text-white hover:bg-rose-700"
+                                : "border-rose-200 text-rose-700 hover:bg-rose-50"
+                            )}
+                            onClick={() =>
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                cervixMucus: {
+                                  ...(prev.cervixMucus ?? {}),
+                                  appearance: prev.cervixMucus?.appearance === option.value ? undefined : option.value,
+                                },
+                              }))
+                            }
+                          >
+                            {option.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </Section>
+              </div>
+              <div className={cn("space-y-6", dailyActiveCategory === "pain" ? "" : "hidden")}>
                 <Section
                   title="Schmerzen"
                   description="Schmerzen hinzufügen, Intensität und Art je Region festhalten und Auswirkungen dokumentieren"

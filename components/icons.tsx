@@ -160,6 +160,24 @@ export function NotesTagsIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function CervixMucusIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 96.91 96.91"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      focusable="false"
+      {...props}
+    >
+      <circle cx="48.45" cy="48.45" r="48.45" fill="#fff" />
+      <circle cx="48.45" cy="48.45" r="48.45" fill="currentColor" fillOpacity={0.2} />
+      <ellipse cx="48.45" cy="42" rx="18" ry="12" fill="currentColor" fillOpacity={0.5} />
+      <ellipse cx="48.45" cy="58" rx="14" ry="10" fill="currentColor" fillOpacity={0.4} />
+      <ellipse cx="48.45" cy="50" rx="8" ry="6" fill="currentColor" fillOpacity={0.7} />
+    </svg>
+  );
+}
+
 export function OptionalValuesIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg

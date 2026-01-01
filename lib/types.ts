@@ -112,6 +112,11 @@ export interface DailyEntry {
     orthostatic?: boolean;
   };
 
+  cervixMucus?: {
+    observation?: "dry" | "moist" | "wet" | "slippery";
+    appearance?: "none" | "sticky" | "creamy" | "eggWhite";
+  };
+
   notesTags?: string[];
   notesFree?: string;
 }
