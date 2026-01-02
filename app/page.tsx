@@ -4593,6 +4593,148 @@ export default function HomePage() {
           `Schwindel an starken Blutungstagen: ${dizzinessStats.heavyDays}/${dizzinessStats.presentDays || 0}`
         );
       }
+
+      // Impact score
+      const impactValues = dailyFiltered
+        .map((entry) => entry.impactNRS)
+        .filter((v): v is number => typeof v === "number");
+      if (impactValues.length) {
+        const avgImpact = impactValues.reduce((sum, v) => sum + v, 0) / impactValues.length;
+        lines.push(`Ø Beeinträchtigung (0–10): ${avgImpact.toFixed(1)}`);
+      }
+
+      // Rescue medications
+      const medCounts = new Map<string, number>();
+      dailyFiltered.forEach((entry) => {
+        entry.rescueMeds?.forEach((med) => {
+          if (med.name) {
+            medCounts.set(med.name, (medCounts.get(med.name) ?? 0) + 1);
+          }
+        });
+      });
+      if (medCounts.size > 0) {
+        const topMeds = Array.from(medCounts.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([name, count]) => `${name}: ${count}x`)
+          .join(", ");
+        lines.push(`Bedarfsmedikation: ${topMeds}`);
+      }
+
+      // Activity data
+      const stepsValues = dailyFiltered
+        .map((entry) => entry.activity?.steps)
+        .filter((v): v is number => typeof v === "number" && v > 0);
+      if (stepsValues.length) {
+        const avgSteps = Math.round(stepsValues.reduce((sum, v) => sum + v, 0) / stepsValues.length);
+        lines.push(`Ø Schritte/Tag: ${avgSteps.toLocaleString("de-DE")}`);
+      }
+
+      // GI/Bristol stool type
+      const bristolValues: number[] = [];
+      dailyFiltered.forEach((entry) => {
+        const bt = entry.gi?.bristolType;
+        if (typeof bt === "number") bristolValues.push(bt);
+      });
+      if (bristolValues.length) {
+        const avgBristol = bristolValues.reduce((sum, v) => sum + v, 0) / bristolValues.length;
+        lines.push(`Ø Bristol-Stuhlskala: ${avgBristol.toFixed(1)}`);
+      }
+
+      // Ovulation data
+      const lhPositiveDays = dailyFiltered.filter((entry) => entry.ovulation?.lhPositive).length;
+      const lhTestDays = dailyFiltered.filter((entry) => entry.ovulation?.lhTestDone).length;
+      const bbtValues = dailyFiltered
+        .map((entry) => entry.ovulation?.bbtCelsius)
+        .filter((v): v is number => typeof v === "number");
+      const ovulationPainDays = dailyFiltered.filter((entry) => entry.ovulationPain?.intensity).length;
+
+      if (lhTestDays > 0 || bbtValues.length > 0 || ovulationPainDays > 0) {
+        lines.push("");
+        lines.push("-- Eisprung-Tracking --");
+        if (lhTestDays > 0) {
+          lines.push(`LH-Tests durchgeführt: ${lhTestDays} Tage (${lhPositiveDays} positiv)`);
+        }
+        if (bbtValues.length > 0) {
+          const avgBbt = bbtValues.reduce((sum, v) => sum + v, 0) / bbtValues.length;
+          const minBbt = Math.min(...bbtValues);
+          const maxBbt = Math.max(...bbtValues);
+          lines.push(`Basaltemperatur: Ø ${avgBbt.toFixed(2)}°C (${minBbt.toFixed(2)}–${maxBbt.toFixed(2)}°C)`);
+        }
+        if (ovulationPainDays > 0) {
+          lines.push(`Mittelschmerz dokumentiert: ${ovulationPainDays} Tage`);
+        }
+      }
+
+      // Cervix mucus / Billings data (only if Billings method is enabled)
+      if (featureFlags.billingMethod) {
+        const mucusEntries = dailyFiltered.filter((entry) => entry.cervixMucus?.observation || entry.cervixMucus?.appearance);
+        if (mucusEntries.length > 0) {
+          lines.push("");
+          lines.push("-- Cervixschleim (Billings) --");
+          lines.push(`Erfasste Tage: ${mucusEntries.length}`);
+
+          const observationCounts = new Map<string, number>();
+          const appearanceCounts = new Map<string, number>();
+          mucusEntries.forEach((entry) => {
+            if (entry.cervixMucus?.observation) {
+              observationCounts.set(entry.cervixMucus.observation, (observationCounts.get(entry.cervixMucus.observation) ?? 0) + 1);
+            }
+            if (entry.cervixMucus?.appearance) {
+              appearanceCounts.set(entry.cervixMucus.appearance, (appearanceCounts.get(entry.cervixMucus.appearance) ?? 0) + 1);
+            }
+          });
+
+          const observationLabels: Record<string, string> = {
+            dry: "Trocken", moist: "Feucht", wet: "Nass", slippery: "Glitschig"
+          };
+          const appearanceLabels: Record<string, string> = {
+            none: "Nichts", sticky: "Klebrig", creamy: "Cremig", eggWhite: "Spinnbar"
+          };
+
+          const observationSummary = Array.from(observationCounts.entries())
+            .map(([key, count]) => `${observationLabels[key] ?? key}: ${count}`)
+            .join(", ");
+          const appearanceSummary = Array.from(appearanceCounts.entries())
+            .map(([key, count]) => `${appearanceLabels[key] ?? key}: ${count}`)
+            .join(", ");
+
+          if (observationSummary) lines.push(`Empfindung: ${observationSummary}`);
+          if (appearanceSummary) lines.push(`Aussehen: ${appearanceSummary}`);
+
+          // Peak mucus days (score >= 3)
+          const peakDays = mucusEntries.filter((entry) => scoreCervixMucusFertility(entry.cervixMucus) >= 3).length;
+          if (peakDays > 0) {
+            lines.push(`Tage mit hoher Fruchtbarkeit (Peak): ${peakDays}`);
+          }
+        }
+      }
+
+      // Cycle length statistics
+      const cycleStartsInPeriod = annotatedDailyEntries
+        .filter(({ cycleDay, entry }) => cycleDay === 1 && entry.date >= thresholdIso && entry.date <= today)
+        .map(({ entry }) => entry.date)
+        .sort();
+      if (cycleStartsInPeriod.length >= 2) {
+        const cycleLengthsInPeriod: number[] = [];
+        for (let i = 0; i < cycleStartsInPeriod.length - 1; i += 1) {
+          const start = parseIsoDate(cycleStartsInPeriod[i]);
+          const end = parseIsoDate(cycleStartsInPeriod[i + 1]);
+          if (start && end) {
+            const diff = Math.round((end.getTime() - start.getTime()) / MS_PER_DAY);
+            if (diff > 0) cycleLengthsInPeriod.push(diff);
+          }
+        }
+        if (cycleLengthsInPeriod.length > 0) {
+          lines.push("");
+          lines.push("-- Zyklusdaten --");
+          lines.push(`Anzahl Zyklen: ${cycleLengthsInPeriod.length}`);
+          const avgCycleLength = cycleLengthsInPeriod.reduce((sum, v) => sum + v, 0) / cycleLengthsInPeriod.length;
+          const minCycle = Math.min(...cycleLengthsInPeriod);
+          const maxCycle = Math.max(...cycleLengthsInPeriod);
+          lines.push(`Ø Zykluslänge: ${avgCycleLength.toFixed(1)} Tage (${minCycle}–${maxCycle} Tage)`);
+        }
+      }
     } else {
       lines.push("Keine Tagesdaten im Zeitraum.");
     }
@@ -4651,6 +4793,21 @@ export default function HomePage() {
         `- ${MODULE_TERMS.dizzinessOpt.present.label}: ${MODULE_TERMS.dizzinessOpt.present.help}`,
         `- ${MODULE_TERMS.dizzinessOpt.nrs.label}: ${MODULE_TERMS.dizzinessOpt.nrs.help}`,
         `- ${MODULE_TERMS.dizzinessOpt.orthostatic.label}: ${MODULE_TERMS.dizzinessOpt.orthostatic.help}`
+      );
+    }
+
+    // Additional glossary entries for new fields
+    lines.push(
+      "- Beeintraechtigung: Wie stark der Schmerz den Alltag beeinflusst (0-10)",
+      "- Bristol-Stuhlskala: Klassifikation der Stuhlkonsistenz (1=hart, 7=fluessig)",
+      "- LH-Test: Ovulationstest zur Bestimmung des luteinisierenden Hormons",
+      "- BBT/Basaltemperatur: Koerpertemperatur direkt nach dem Aufwachen",
+      "- Mittelschmerz: Schmerz um den Eisprung herum"
+    );
+    if (featureFlags.billingMethod) {
+      lines.push(
+        "- Cervixschleim: Zervikaler Schleim zur Fruchtbarkeitsbestimmung (Billings-Methode)",
+        "- Peak-Tage: Tage mit hoher Fruchtbarkeit (glitschiger/spinnbarer Schleim)"
       );
     }
 
