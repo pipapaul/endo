@@ -5449,7 +5449,44 @@ export default function HomePage() {
       return null;
     }
 
-    const predictedOvulationDay = averageCycleLength - 14;
+    // Base prediction using standard luteal phase method
+    let predictedOvulationDay = averageCycleLength - 14;
+    let usingBillingsMethod = false;
+
+    // Enhanced prediction using Billings method when enabled
+    if (featureFlags.billingMethod) {
+      // Analyze peak mucus days from completed cycles
+      const peakDays: number[] = [];
+      for (let i = 0; i < cycleStartDates.length - 1; i += 1) {
+        const cycleStart = cycleStartDates[i];
+        const cycleEnd = cycleStartDates[i + 1];
+
+        // Get entries for this cycle
+        const cycleEntries = annotatedDailyEntries.filter(({ entry }) =>
+          entry.date >= cycleStart && entry.date < cycleEnd
+        );
+
+        // Find peak mucus day in this cycle
+        const peakDay = findPeakMucusDayInCycle(cycleEntries, cycleStart);
+        if (peakDay !== null && peakDay > 0 && peakDay < averageCycleLength) {
+          peakDays.push(peakDay);
+        }
+      }
+
+      // If we have mucus data from at least 2 cycles, use Billings method
+      if (peakDays.length >= 2) {
+        const avgPeakDay = Math.round(
+          peakDays.reduce((sum, v) => sum + v, 0) / peakDays.length
+        );
+        // Ovulation is typically on Peak Day + 1
+        const mucusBasedOvulation = avgPeakDay + 1;
+        // Combine both methods: weighted average favoring mucus data
+        predictedOvulationDay = Math.round((mucusBasedOvulation * 2 + predictedOvulationDay) / 3);
+        usingBillingsMethod = true;
+      }
+      // If Billings is ON but not enough data, use fallback (standard method)
+    }
+
     const fertileWindowStart = Math.max(1, predictedOvulationDay - 5);
     const fertileWindowEnd = predictedOvulationDay + 1;
 
@@ -5480,8 +5517,10 @@ export default function HomePage() {
       cycleCount: recentLengths.length,
       currentCycleDay,
       lastCycleStartDate: lastStartIso,
+      usingBillingsMethod,
+      billingMethodEnabled: featureFlags.billingMethod ?? false,
     };
-  }, [completedCycleLengths, cycleStartDates, todayDate]);
+  }, [completedCycleLengths, cycleStartDates, todayDate, featureFlags.billingMethod, annotatedDailyEntries]);
 
   const ovulationBadgeLabel = useMemo(() => {
     if (!ovulationPrediction) {
@@ -7237,6 +7276,7 @@ export default function HomePage() {
                 <div className="flex-1">
                   <p className="font-medium text-rose-900">Eisprungbestimmung mit Billings-Methode</p>
                   <p className="mt-1 text-sm text-rose-600">Bestimmung anhand des Cervixschleims</p>
+                  <p className="mt-2 text-xs text-rose-500">Verbesserte Vorhersagen werden erst nach mindestens 2 Zyklen mit Cervixschleim-Daten angezeigt. Bis dahin wird die Standard-Methode verwendet.</p>
                 </div>
                 <Switch
                   checked={featureFlags.billingMethod ?? false}
