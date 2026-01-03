@@ -1,3 +1,5 @@
+import { ProductSettings, DEFAULT_PRODUCT_SETTINGS } from "./productSettings";
+
 const DB_NAME = "endo-track";
 const DB_VERSION = 1;
 const STORE_NAME = "app";
@@ -201,6 +203,7 @@ export async function ensureMigratedFromLocalStorage(): Promise<StorageDriver> {
 }
 
 const LAST_ACTIVE_KEY = "endo.meta.lastActiveAt";
+const PRODUCT_SETTINGS_KEY = "endo.productSettings.v1";
 
 export async function touchLastActive(timestamp: number): Promise<StorageDriver> {
   return setItem(LAST_ACTIVE_KEY, timestamp);
@@ -214,4 +217,22 @@ export function getStorageDriverName(driver: StorageDriver): string {
 
 export function storageSupported(): boolean {
   return hasIndexedDbSupport();
+}
+
+// ProductSettings Persistence
+
+export async function loadProductSettings(): Promise<ProductSettings> {
+  const result = await getItem<ProductSettings>(PRODUCT_SETTINGS_KEY);
+  if (result.value) {
+    // Merge mit DEFAULT_PRODUCT_SETTINGS um neue Felder zu unterstützen
+    return {
+      ...DEFAULT_PRODUCT_SETTINGS,
+      ...result.value,
+    };
+  }
+  return DEFAULT_PRODUCT_SETTINGS;
+}
+
+export async function saveProductSettings(settings: ProductSettings): Promise<StorageDriver> {
+  return setItem(PRODUCT_SETTINGS_KEY, settings);
 }

@@ -85,7 +85,9 @@ import Checkbox from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 
 import { cn } from "@/lib/utils";
-import { touchLastActive } from "@/lib/persistence";
+import { touchLastActive, loadProductSettings, saveProductSettings } from "@/lib/persistence";
+import { ProductSettings, DEFAULT_PRODUCT_SETTINGS } from "@/lib/productSettings";
+import { ProductSettingsPanel } from "@/components/ui/ProductSettingsPanel";
 import { usePersistentState } from "@/lib/usePersistentState";
 import WeeklyTabShell from "@/components/weekly/WeeklyTabShell";
 import {
@@ -2928,6 +2930,12 @@ export default function HomePage() {
   const [showCheckInPopup, setShowCheckInPopup] = useState(false);
   const [pendingDismissCheckIn, setPendingDismissCheckIn] = useState<PendingCheckIn | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [productSettings, setProductSettings] = useState<ProductSettings>(DEFAULT_PRODUCT_SETTINGS);
+
+  // Load product settings on mount
+  useEffect(() => {
+    loadProductSettings().then(setProductSettings);
+  }, []);
 
   const isDailyDirty = useMemo(
     () =>
@@ -7415,7 +7423,7 @@ export default function HomePage() {
             if (e.target === e.currentTarget) setShowSettings(false);
           }}
         >
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
             <div className="mb-6 flex items-center justify-between">
               <h2 className="text-xl font-semibold text-rose-900">Einstellungen</h2>
               <Button
@@ -7428,7 +7436,7 @@ export default function HomePage() {
                 <X className="h-5 w-5" />
               </Button>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-6">
               <div className="flex items-start justify-between gap-4 rounded-xl border border-rose-100 bg-rose-50/50 p-4">
                 <div className="flex-1">
                   <p className="font-medium text-rose-900">Eisprungbestimmung mit Billings-Methode</p>
@@ -7440,6 +7448,17 @@ export default function HomePage() {
                   onCheckedChange={(checked) =>
                     setFeatureFlags((prev) => ({ ...prev, billingMethod: checked }))
                   }
+                />
+              </div>
+
+              <div className="border-t border-rose-100 pt-6">
+                <h3 className="text-lg font-semibold text-rose-900 mb-4">Blutungs-Erfassung</h3>
+                <ProductSettingsPanel
+                  settings={productSettings}
+                  onSettingsChange={async (newSettings) => {
+                    setProductSettings(newSettings);
+                    await saveProductSettings(newSettings);
+                  }}
                 />
               </div>
             </div>
