@@ -60,15 +60,6 @@ export const PRODUCT_CATEGORY_LABELS: Record<ProductCategory, string> = {
   free_bleeding: "Freies Bluten",
 };
 
-/** Kategorien mit Icons (für UI) */
-export const PRODUCT_CATEGORY_ICONS: Record<ProductCategory, string> = {
-  pad: "🩹",
-  tampon: "🔹",
-  cup: "🥤",
-  disc: "⭕",
-  underwear: "🩲",
-  free_bleeding: "💧",
-};
 
 /** Füllgrad-Labels */
 export const FILL_LEVEL_LABELS: Record<number, string> = {
@@ -81,10 +72,10 @@ export const FILL_LEVEL_LABELS: Record<number, string> = {
 
 /** Free Bleeding Intensitäts-Labels */
 export const FREE_BLEEDING_INTENSITY_LABELS = {
-  light: { label: "Tropfen", icon: "💧", volumeMl: 2 },
-  moderate: { label: "Leichter Fluss", icon: "🌊", volumeMl: 5 },
-  heavy: { label: "Starker Fluss", icon: "🌊🌊", volumeMl: 12 },
-  flooding: { label: "Schwall/Flooding", icon: "💦", volumeMl: 20 },
+  light: { label: "Tropfen", volumeMl: 2 },
+  moderate: { label: "Leichter Fluss", volumeMl: 5 },
+  heavy: { label: "Starker Fluss", volumeMl: 12 },
+  flooding: { label: "Schwall/Flooding", volumeMl: 20 },
 };
 
 /** Validiert eine ProductDefinition */

@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import {
-  ProductDefinition,
   FillLevel,
   ExtendedBleedingEntry,
   FreeBleedingEntry,
@@ -13,8 +12,9 @@ import {
   getEnabledProducts,
   FILL_LEVEL_LABELS,
   FREE_BLEEDING_INTENSITY_LABELS,
-  PRODUCT_CATEGORY_ICONS,
+  PRODUCT_CATEGORY_LABELS,
 } from "@/lib/productSettings";
+import { Button } from "@/components/ui/button";
 
 interface ExtendedBleedingEntryFormProps {
   settings: ProductSettings;
@@ -49,9 +49,9 @@ export const ExtendedBleedingEntryForm: React.FC<ExtendedBleedingEntryFormProps>
         id,
         timestamp,
         intensity: freeBleedingIntensity,
-        visibleAmount: "stains", // TODO: UI für visibleAmount
+        visibleAmount: "stains",
         estimatedVolumeMl: intensityData.volumeMl,
-        pbacEquivalentScore: Math.round(intensityData.volumeMl / 2), // Vereinfachte Berechnung
+        pbacEquivalentScore: Math.round(intensityData.volumeMl / 2),
       };
       onAddEntry(entry);
     } else {
@@ -87,18 +87,18 @@ export const ExtendedBleedingEntryForm: React.FC<ExtendedBleedingEntryFormProps>
     : null;
 
   return (
-    <div className="space-y-4 p-4 border rounded-lg">
+    <div className="space-y-4 p-4 border border-rose-100 rounded-xl bg-white">
       {/* Produkt-Auswahl */}
       <div>
-        <label className="block text-sm font-medium mb-2">Produkt</label>
+        <label className="block text-sm font-medium text-rose-900 mb-2">Produkt</label>
         <select
           value={selectedProductId}
           onChange={(e) => setSelectedProductId(e.target.value)}
-          className="w-full border rounded-lg px-3 py-2"
+          className="w-full border border-rose-200 rounded-xl px-3 py-2 text-rose-800 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-transparent"
         >
           {enabledProducts.map((product) => (
             <option key={product.id} value={product.id}>
-              {PRODUCT_CATEGORY_ICONS[product.category]} {product.name}
+              {product.name}
               {product.capacity_ml > 0 ? ` (${product.capacity_ml}ml)` : ""}
             </option>
           ))}
@@ -108,7 +108,7 @@ export const ExtendedBleedingEntryForm: React.FC<ExtendedBleedingEntryFormProps>
       {/* Füllgrad oder Free Bleeding Intensität */}
       {isFreeBleedingSelected ? (
         <div>
-          <label className="block text-sm font-medium mb-2">Intensität</label>
+          <label className="block text-sm font-medium text-rose-900 mb-2">Intensität</label>
           <div className="grid grid-cols-2 gap-2">
             {(
               Object.entries(FREE_BLEEDING_INTENSITY_LABELS) as [
@@ -119,37 +119,36 @@ export const ExtendedBleedingEntryForm: React.FC<ExtendedBleedingEntryFormProps>
               <button
                 key={key}
                 onClick={() => setFreeBleedingIntensity(key)}
-                className={`p-3 border rounded-lg text-left ${
+                className={`p-3 border rounded-xl text-left transition ${
                   freeBleedingIntensity === key
-                    ? "border-blue-500 bg-blue-50"
-                    : "hover:bg-gray-50"
+                    ? "border-rose-400 bg-rose-50"
+                    : "border-rose-100 hover:bg-rose-50/50"
                 }`}
               >
-                <div className="text-xl">{data.icon}</div>
-                <div className="text-sm font-medium">{data.label}</div>
-                <div className="text-xs text-gray-500">~{data.volumeMl} ml</div>
+                <div className="text-sm font-medium text-rose-900">{data.label}</div>
+                <div className="text-xs text-rose-500">~{data.volumeMl} ml</div>
               </button>
             ))}
           </div>
         </div>
       ) : (
         <div>
-          <label className="block text-sm font-medium mb-2">Füllgrad</label>
+          <label className="block text-sm font-medium text-rose-900 mb-2">Füllgrad</label>
           <div className="flex gap-2">
             {([25, 50, 75, 100, 125] as FillLevel[]).map((level) => (
               <button
                 key={level}
                 onClick={() => setFillLevel(level)}
-                className={`flex-1 py-2 px-1 border rounded-lg text-center ${
+                className={`flex-1 py-2 px-1 border rounded-xl text-center transition ${
                   fillLevel === level
-                    ? "border-blue-500 bg-blue-50"
-                    : "hover:bg-gray-50"
+                    ? "border-rose-400 bg-rose-50"
+                    : "border-rose-100 hover:bg-rose-50/50"
                 }`}
               >
-                <div className="text-lg">
-                  {level === 125 ? "💦" : level === 100 ? "🔴" : level >= 75 ? "🟠" : "🟡"}
+                <div className="text-sm font-medium text-rose-900">{level}%</div>
+                <div className="text-xs text-rose-500">
+                  {level === 125 ? "Über" : level === 100 ? "Voll" : level >= 75 ? "Viel" : level >= 50 ? "Halb" : "Wenig"}
                 </div>
-                <div className="text-xs">{level}%</div>
               </button>
             ))}
           </div>
@@ -158,10 +157,10 @@ export const ExtendedBleedingEntryForm: React.FC<ExtendedBleedingEntryFormProps>
 
       {/* Vorschau */}
       {preview && settings.showVolumeEstimate && (
-        <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
-          → Geschätzt: ~{"estimatedVolumeMl" in preview ? preview.estimatedVolumeMl : preview.volumeMl} ml
+        <div className="text-sm text-rose-600 bg-rose-50 p-3 rounded-xl">
+          Geschätzt: ~{"estimatedVolumeMl" in preview ? preview.estimatedVolumeMl : preview.volumeMl} ml
           {settings.showPbacEquivalent && (
-            <span className="ml-2">
+            <span className="ml-2 text-rose-500">
               (PBAC-Äquiv.: {"pbacEquivalentScore" in preview ? preview.pbacEquivalentScore : preview.pbacEquiv})
             </span>
           )}
@@ -169,13 +168,14 @@ export const ExtendedBleedingEntryForm: React.FC<ExtendedBleedingEntryFormProps>
       )}
 
       {/* Submit */}
-      <button
+      <Button
+        type="button"
         onClick={handleSubmit}
         disabled={!selectedProduct}
-        className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+        className="w-full bg-rose-600 text-white hover:bg-rose-500 disabled:opacity-50"
       >
         Eintrag hinzufügen
-      </button>
+      </Button>
     </div>
   );
 };
