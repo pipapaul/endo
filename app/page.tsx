@@ -113,9 +113,15 @@ import {
   createEmptyPbacCounts,
   PBAC_COUNT_KEYS,
   normalizePbacCounts,
+  calculatePbacScore,
+  aggregateExtendedPbacData,
   type PbacCountKey,
   type PbacCounts,
+  type ExtendedBleedingEntry,
+  type FreeBleedingEntry,
+  type ExtendedPbacData,
 } from "@/lib/pbac";
+import { ExtendedBleedingEntryForm } from "@/components/home/ExtendedBleedingEntry";
 import {
   ANALYTICS_SECTION_OPTIONS,
   BASE_PAIN_QUALITIES,
@@ -2691,6 +2697,88 @@ export default function HomePage() {
     },
     [setPbacCounts]
   );
+
+  // Handler for adding extended bleeding entries
+  const handleAddExtendedBleedingEntry = useCallback(
+    (entry: ExtendedBleedingEntry | FreeBleedingEntry) => {
+      setDailyDraft((prev) => {
+        const currentExtendedData: ExtendedPbacData = prev.extendedPbacData ?? {
+          trackingMethod: "pbac_extended",
+          extendedEntries: [],
+          freeBleedingEntries: [],
+        };
+
+        let updatedData: ExtendedPbacData;
+        if ("intensity" in entry) {
+          // FreeBleedingEntry
+          updatedData = {
+            ...currentExtendedData,
+            trackingMethod: "pbac_extended",
+            freeBleedingEntries: [...(currentExtendedData.freeBleedingEntries ?? []), entry],
+          };
+        } else {
+          // ExtendedBleedingEntry
+          updatedData = {
+            ...currentExtendedData,
+            trackingMethod: "pbac_extended",
+            extendedEntries: [...(currentExtendedData.extendedEntries ?? []), entry],
+          };
+        }
+
+        // Recalculate totals
+        const { totalVolumeMl, totalPbacEquivalent } = aggregateExtendedPbacData(updatedData, prev.pbacCounts);
+        updatedData.totalEstimatedVolumeMl = totalVolumeMl;
+        updatedData.totalPbacEquivalentScore = totalPbacEquivalent;
+
+        return {
+          ...prev,
+          extendedPbacData: updatedData,
+          bleeding: {
+            ...prev.bleeding,
+            isBleeding: true,
+            pbacScore: totalPbacEquivalent,
+          },
+        };
+      });
+    },
+    [setDailyDraft]
+  );
+
+  // Handler for removing extended bleeding entries
+  const handleRemoveExtendedBleedingEntry = useCallback(
+    (entryId: string) => {
+      setDailyDraft((prev) => {
+        if (!prev.extendedPbacData) return prev;
+
+        const updatedData: ExtendedPbacData = {
+          ...prev.extendedPbacData,
+          extendedEntries: (prev.extendedPbacData.extendedEntries ?? []).filter((e) => e.id !== entryId),
+          freeBleedingEntries: (prev.extendedPbacData.freeBleedingEntries ?? []).filter((e) => e.id !== entryId),
+        };
+
+        // Recalculate totals
+        const { totalVolumeMl, totalPbacEquivalent } = aggregateExtendedPbacData(updatedData, prev.pbacCounts);
+        updatedData.totalEstimatedVolumeMl = totalVolumeMl;
+        updatedData.totalPbacEquivalentScore = totalPbacEquivalent;
+
+        const hasEntries =
+          (updatedData.extendedEntries?.length ?? 0) > 0 ||
+          (updatedData.freeBleedingEntries?.length ?? 0) > 0;
+
+        return {
+          ...prev,
+          extendedPbacData: updatedData,
+          bleeding: {
+            ...prev.bleeding,
+            isBleeding: hasEntries || (prev.bleeding?.isBleeding ?? false),
+            pbacScore: totalPbacEquivalent,
+          },
+        };
+      });
+    },
+    [setDailyDraft]
+  );
+
   useEffect(() => {
     if (!draftHasBleeding) {
       setActivePbacCategory("pad");
@@ -8501,6 +8589,83 @@ export default function HomePage() {
                         )}
                       </div>
                       {!showPbacSummaryInToolbar ? renderPbacSummaryPanel() : null}
+
+                      {/* Extended PBAC Mode */}
+                      {productSettings.trackingMethod === "pbac_extended" ? (
+                        <div className="space-y-4">
+                          <ExtendedBleedingEntryForm
+                            settings={productSettings}
+                            onAddEntry={handleAddExtendedBleedingEntry}
+                          />
+
+                          {/* Show list of added entries */}
+                          {(dailyDraft.extendedPbacData?.extendedEntries?.length ?? 0) > 0 ||
+                           (dailyDraft.extendedPbacData?.freeBleedingEntries?.length ?? 0) > 0 ? (
+                            <div className="space-y-2">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Heutige Einträge</p>
+                              <div className="space-y-2">
+                                {dailyDraft.extendedPbacData?.extendedEntries?.map((entry) => (
+                                  <div
+                                    key={entry.id}
+                                    className="flex items-center justify-between gap-2 rounded-xl border border-rose-100 bg-white p-3"
+                                  >
+                                    <div>
+                                      <p className="text-sm font-medium text-rose-900">
+                                        {entry.productId} - {entry.fillLevelPercent}%
+                                      </p>
+                                      <p className="text-xs text-rose-500">
+                                        ~{entry.estimatedVolumeMl} ml
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveExtendedBleedingEntry(entry.id)}
+                                      className="text-rose-400 hover:text-rose-600"
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                ))}
+                                {dailyDraft.extendedPbacData?.freeBleedingEntries?.map((entry) => (
+                                  <div
+                                    key={entry.id}
+                                    className="flex items-center justify-between gap-2 rounded-xl border border-rose-100 bg-white p-3"
+                                  >
+                                    <div>
+                                      <p className="text-sm font-medium text-rose-900">
+                                        Freies Bluten - {entry.intensity}
+                                      </p>
+                                      <p className="text-xs text-rose-500">
+                                        ~{entry.estimatedVolumeMl} ml
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveExtendedBleedingEntry(entry.id)}
+                                      className="text-rose-400 hover:text-rose-600"
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                              {dailyDraft.extendedPbacData?.totalEstimatedVolumeMl != null && (
+                                <div className="rounded-xl bg-rose-50 p-3 text-sm">
+                                  <p className="font-medium text-rose-900">
+                                    Gesamt: ~{dailyDraft.extendedPbacData.totalEstimatedVolumeMl} ml
+                                  </p>
+                                  {productSettings.showPbacEquivalent && (
+                                    <p className="text-xs text-rose-600">
+                                      PBAC-Äquivalent: {dailyDraft.extendedPbacData.totalPbacEquivalentScore}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : (
+                      /* Classic PBAC Mode */
                       <div className="space-y-4">
                         <div className="space-y-2">
                           <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Auswahl</p>
@@ -8699,6 +8864,7 @@ export default function HomePage() {
                         })}
                       </div>
                     </div>
+                      )}
                     <div className="space-y-1 text-xs text-rose-600">
                       {renderIssuesForPath("bleeding.pbacScore")}
                       {renderIssuesForPath("bleeding.clots")}
@@ -10673,25 +10839,38 @@ export default function HomePage() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {PBAC_PRODUCT_ITEMS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => handleBleedingQuickAddSelect(item.id)}
-                  className="flex items-center gap-3 rounded-2xl border border-rose-100 bg-white/90 p-3 text-left text-rose-900 shadow-sm transition hover:border-rose-300"
-                >
-                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-500">
-                    <item.Icon className="h-7 w-7" aria-hidden />
-                  </span>
-                  <div>
-                    <p className="text-sm font-semibold">{item.label}</p>
-                    <p className="text-xs text-rose-500">+{item.score} PBAC</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-rose-500">Die Auswahl wird direkt für heute gezählt.</p>
+
+            {productSettings.trackingMethod === "pbac_extended" ? (
+              <ExtendedBleedingEntryForm
+                settings={productSettings}
+                onAddEntry={(entry) => {
+                  handleAddExtendedBleedingEntry(entry);
+                  setBleedingQuickAddOpen(false);
+                }}
+              />
+            ) : (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {PBAC_PRODUCT_ITEMS.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => handleBleedingQuickAddSelect(item.id)}
+                      className="flex items-center gap-3 rounded-2xl border border-rose-100 bg-white/90 p-3 text-left text-rose-900 shadow-sm transition hover:border-rose-300"
+                    >
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-500">
+                        <item.Icon className="h-7 w-7" aria-hidden />
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold">{item.label}</p>
+                        <p className="text-xs text-rose-500">+{item.score} PBAC</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-rose-500">Die Auswahl wird direkt für heute gezählt.</p>
+              </>
+            )}
           </div>
         </div>
       ) : null}
