@@ -61,21 +61,18 @@ export const PRODUCT_CATEGORY_LABELS: Record<ProductCategory, string> = {
 };
 
 
-/** Füllgrad-Labels */
+/** Füllgrad-Labels (1/3, 2/3, voll) */
 export const FILL_LEVEL_LABELS: Record<number, string> = {
-  25: "Wenig (~25%)",
-  50: "Mittel (~50%)",
-  75: "Viel (~75%)",
-  100: "Voll (100%)",
-  125: "Übergelaufen",
+  33: "⅓",
+  66: "⅔",
+  100: "Voll",
 };
 
 /** Free Bleeding Intensitäts-Labels */
 export const FREE_BLEEDING_INTENSITY_LABELS = {
-  light: { label: "Tropfen", volumeMl: 2 },
-  moderate: { label: "Leichter Fluss", volumeMl: 5 },
-  heavy: { label: "Starker Fluss", volumeMl: 12 },
-  flooding: { label: "Schwall/Flooding", volumeMl: 20 },
+  light: { label: "Leicht", volumeMl: 3 },
+  moderate: { label: "Mittel", volumeMl: 8 },
+  heavy: { label: "Stark", volumeMl: 15 },
 };
 
 /** Validiert eine ProductDefinition */

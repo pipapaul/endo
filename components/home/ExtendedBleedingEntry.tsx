@@ -1,16 +1,17 @@
 "use client";
 
 import React, { useState } from "react";
+import { ChevronLeft } from "lucide-react";
 import {
   FillLevel,
   ExtendedBleedingEntry,
   FreeBleedingEntry,
   calculateExtendedEntryScore,
+  ProductDefinition,
 } from "@/lib/pbac";
 import {
   ProductSettings,
   getEnabledProducts,
-  FILL_LEVEL_LABELS,
   FREE_BLEEDING_INTENSITY_LABELS,
   PRODUCT_CATEGORY_LABELS,
 } from "@/lib/productSettings";
@@ -26,16 +27,20 @@ export const ExtendedBleedingEntryForm: React.FC<ExtendedBleedingEntryFormProps>
   onAddEntry,
 }) => {
   const enabledProducts = getEnabledProducts(settings);
-  const [selectedProductId, setSelectedProductId] = useState<string>(
-    enabledProducts[0]?.id || ""
-  );
-  const [fillLevel, setFillLevel] = useState<FillLevel>(50);
+  const [selectedProduct, setSelectedProduct] = useState<ProductDefinition | null>(null);
+  const [fillLevel, setFillLevel] = useState<FillLevel>(66);
   const [freeBleedingIntensity, setFreeBleedingIntensity] = useState<
     keyof typeof FREE_BLEEDING_INTENSITY_LABELS
   >("moderate");
 
-  const selectedProduct = enabledProducts.find((p) => p.id === selectedProductId);
   const isFreeBleedingSelected = selectedProduct?.category === "free_bleeding";
+
+  // Group products by category
+  const productsByCategory = enabledProducts.reduce((acc, product) => {
+    if (!acc[product.category]) acc[product.category] = [];
+    acc[product.category].push(product);
+    return acc;
+  }, {} as Record<string, ProductDefinition[]>);
 
   const handleSubmit = () => {
     if (!selectedProduct) return;
@@ -70,11 +75,16 @@ export const ExtendedBleedingEntryForm: React.FC<ExtendedBleedingEntryFormProps>
       onAddEntry(entry);
     }
 
-    // Reset
-    setFillLevel(50);
+    // Reset to step 1
+    setSelectedProduct(null);
+    setFillLevel(66);
   };
 
-  // Vorschau der Werte
+  const handleBack = () => {
+    setSelectedProduct(null);
+  };
+
+  // Preview values
   const preview = selectedProduct
     ? isFreeBleedingSelected
       ? {
@@ -86,29 +96,72 @@ export const ExtendedBleedingEntryForm: React.FC<ExtendedBleedingEntryFormProps>
       : calculateExtendedEntryScore(selectedProduct, fillLevel)
     : null;
 
+  // Step 1: Product selection
+  if (!selectedProduct) {
+    return (
+      <div className="space-y-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">
+          Produkt wählen
+        </p>
+
+        {Object.entries(productsByCategory).map(([category, products]) => (
+          <div key={category} className="space-y-2">
+            <p className="text-sm font-medium text-rose-700">
+              {PRODUCT_CATEGORY_LABELS[category as keyof typeof PRODUCT_CATEGORY_LABELS]}
+            </p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {products.map((product) => (
+                <button
+                  key={product.id}
+                  type="button"
+                  onClick={() => setSelectedProduct(product)}
+                  className="flex flex-col items-start gap-1 rounded-xl border border-rose-100 bg-white p-3 text-left transition hover:border-rose-300 hover:bg-rose-50/50"
+                >
+                  <span className="text-sm font-medium text-rose-900">
+                    {product.nameShort || product.name}
+                  </span>
+                  {product.capacity_ml > 0 && (
+                    <span className="text-xs text-rose-500">{product.capacity_ml} ml</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Step 2: Fill level / intensity selection
   return (
-    <div className="space-y-4 p-4 border border-rose-100 rounded-xl bg-white">
-      {/* Produkt-Auswahl */}
-      <div>
-        <label className="block text-sm font-medium text-rose-900 mb-2">Produkt</label>
-        <select
-          value={selectedProductId}
-          onChange={(e) => setSelectedProductId(e.target.value)}
-          className="w-full border border-rose-200 rounded-xl px-3 py-2 text-rose-800 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-transparent"
+    <div className="space-y-4">
+      {/* Header with back button */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={handleBack}
+          className="flex items-center gap-1 text-sm text-rose-600 hover:text-rose-800"
         >
-          {enabledProducts.map((product) => (
-            <option key={product.id} value={product.id}>
-              {product.name}
-              {product.capacity_ml > 0 ? ` (${product.capacity_ml}ml)` : ""}
-            </option>
-          ))}
-        </select>
+          <ChevronLeft className="h-4 w-4" />
+          Zurück
+        </button>
       </div>
 
-      {/* Füllgrad oder Free Bleeding Intensität */}
+      {/* Selected product info */}
+      <div className="rounded-xl bg-rose-50 p-3">
+        <p className="text-xs text-rose-500">Gewähltes Produkt</p>
+        <p className="font-medium text-rose-900">{selectedProduct.name}</p>
+        {selectedProduct.capacity_ml > 0 && (
+          <p className="text-sm text-rose-600">Kapazität: {selectedProduct.capacity_ml} ml</p>
+        )}
+      </div>
+
+      {/* Fill level or Free Bleeding intensity */}
       {isFreeBleedingSelected ? (
         <div>
-          <label className="block text-sm font-medium text-rose-900 mb-2">Intensität</label>
+          <p className="text-xs font-semibold uppercase tracking-wide text-rose-500 mb-2">
+            Intensität wählen
+          </p>
           <div className="grid grid-cols-2 gap-2">
             {(
               Object.entries(FREE_BLEEDING_INTENSITY_LABELS) as [
@@ -118,6 +171,7 @@ export const ExtendedBleedingEntryForm: React.FC<ExtendedBleedingEntryFormProps>
             ).map(([key, data]) => (
               <button
                 key={key}
+                type="button"
                 onClick={() => setFreeBleedingIntensity(key)}
                 className={`p-3 border rounded-xl text-left transition ${
                   freeBleedingIntensity === key
@@ -133,21 +187,26 @@ export const ExtendedBleedingEntryForm: React.FC<ExtendedBleedingEntryFormProps>
         </div>
       ) : (
         <div>
-          <label className="block text-sm font-medium text-rose-900 mb-2">Füllgrad</label>
-          <div className="flex gap-2">
-            {([25, 50, 75, 100, 125] as FillLevel[]).map((level) => (
+          <p className="text-xs font-semibold uppercase tracking-wide text-rose-500 mb-2">
+            Füllgrad wählen
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            {([33, 66, 100] as FillLevel[]).map((level) => (
               <button
                 key={level}
+                type="button"
                 onClick={() => setFillLevel(level)}
-                className={`flex-1 py-2 px-1 border rounded-xl text-center transition ${
+                className={`py-4 px-3 border rounded-xl text-center transition ${
                   fillLevel === level
                     ? "border-rose-400 bg-rose-50"
                     : "border-rose-100 hover:bg-rose-50/50"
                 }`}
               >
-                <div className="text-sm font-medium text-rose-900">{level}%</div>
+                <div className="text-lg font-semibold text-rose-900">
+                  {level === 33 ? "⅓" : level === 66 ? "⅔" : "Voll"}
+                </div>
                 <div className="text-xs text-rose-500">
-                  {level === 125 ? "Über" : level === 100 ? "Voll" : level >= 75 ? "Viel" : level >= 50 ? "Halb" : "Wenig"}
+                  ~{Math.round(selectedProduct.capacity_ml * level / 100)} ml
                 </div>
               </button>
             ))}
@@ -155,7 +214,7 @@ export const ExtendedBleedingEntryForm: React.FC<ExtendedBleedingEntryFormProps>
         </div>
       )}
 
-      {/* Vorschau */}
+      {/* Preview */}
       {preview && settings.showVolumeEstimate && (
         <div className="text-sm text-rose-600 bg-rose-50 p-3 rounded-xl">
           Geschätzt: ~{"estimatedVolumeMl" in preview ? preview.estimatedVolumeMl : preview.volumeMl} ml
@@ -171,8 +230,7 @@ export const ExtendedBleedingEntryForm: React.FC<ExtendedBleedingEntryFormProps>
       <Button
         type="button"
         onClick={handleSubmit}
-        disabled={!selectedProduct}
-        className="w-full bg-rose-600 text-white hover:bg-rose-500 disabled:opacity-50"
+        className="w-full bg-rose-600 text-white hover:bg-rose-500"
       >
         Eintrag hinzufügen
       </Button>

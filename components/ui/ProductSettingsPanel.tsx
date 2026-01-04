@@ -31,8 +31,16 @@ export const ProductSettingsPanel: React.FC<ProductSettingsPanelProps> = ({
   const [customCategory, setCustomCategory] = useState<ProductCategory>("cup");
   const [customCapacity, setCustomCapacity] = useState(25);
 
-  // Alle Produkte (Standard + Custom)
-  const allProducts = [...DEFAULT_PRODUCTS, ...settings.customProducts];
+  // Alle Produkte (Standard + Custom), gefiltert nach Tracking-Methode
+  const allProducts = [...DEFAULT_PRODUCTS, ...settings.customProducts].filter((product) => {
+    if (settings.trackingMethod === "pbac_classic") {
+      // Klassischer PBAC: Nur klassische PBAC-Produkte
+      return product.isClassicPbac === true;
+    } else {
+      // Erweiterter PBAC: Keine klassischen PBAC-Produkte (haben isClassicPbac: true)
+      return product.isClassicPbac !== true;
+    }
+  });
 
   // Gruppiert nach Kategorie
   const productsByCategory = allProducts.reduce((acc, product) => {
@@ -192,7 +200,7 @@ export const ProductSettingsPanel: React.FC<ProductSettingsPanelProps> = ({
           </div>
         ) : (
           <p className="text-sm text-rose-600 mb-4">
-            Aktiviere die Produkte, die du verwendest. Du gibst dann bei jedem Wechsel den Füllgrad (25–100%) an.
+            Wähle deine Produkte aus. Bei jedem Wechsel gibst du den Füllgrad an (⅓, ⅔ oder voll).
           </p>
         )}
 
@@ -202,11 +210,8 @@ export const ProductSettingsPanel: React.FC<ProductSettingsPanelProps> = ({
             const isFullyEnabled = isCategoryFullyEnabled(category);
             const isPartiallyEnabled = isCategoryPartiallyEnabled(category);
 
-            // Bei klassischem PBAC nur pad und tampon anzeigen
-            if (
-              settings.trackingMethod === "pbac_classic" &&
-              !["pad", "tampon"].includes(category)
-            ) {
+            // Keine leeren Kategorien anzeigen
+            if (!products || products.length === 0) {
               return null;
             }
 
@@ -271,19 +276,18 @@ export const ProductSettingsPanel: React.FC<ProductSettingsPanelProps> = ({
                     </label>
                   ))}
 
-                  {/* Button für eigenes Produkt (nur bei erweiterten Kategorien) */}
-                  {!["pad", "tampon"].includes(category) &&
-                    settings.trackingMethod === "pbac_extended" && (
-                      <button
-                        onClick={() => {
-                          setCustomCategory(category);
-                          setShowAddCustom(true);
-                        }}
-                        className="text-sm text-rose-600 hover:text-rose-800 mt-2"
-                      >
-                        + Eigene Größe hinzufügen
-                      </button>
-                    )}
+                  {/* Button für eigenes Produkt (nur im erweiterten PBAC-Modus) */}
+                  {settings.trackingMethod === "pbac_extended" && (
+                    <button
+                      onClick={() => {
+                        setCustomCategory(category);
+                        setShowAddCustom(true);
+                      }}
+                      className="text-sm text-rose-600 hover:text-rose-800 mt-2"
+                    >
+                      + Eigene Größe hinzufügen
+                    </button>
+                  )}
                 </div>
               </div>
             );

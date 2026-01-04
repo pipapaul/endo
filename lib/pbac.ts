@@ -60,8 +60,8 @@ export type ProductCategory =
   | "underwear"     // Periodenslip
   | "free_bleeding"; // Freies Bluten
 
-/** Füllgrad in Prozent (125 = übergelaufen) */
-export type FillLevel = 25 | 50 | 75 | 100 | 125;
+/** Füllgrad: 1/3, 2/3, voll */
+export type FillLevel = 33 | 66 | 100;
 
 /** Produkt-Definition für Einstellungen */
 export interface ProductDefinition {
@@ -89,7 +89,7 @@ export interface ExtendedBleedingEntry {
 export interface FreeBleedingEntry {
   id: string;
   timestamp: string;
-  intensity: "light" | "moderate" | "heavy" | "flooding";
+  intensity: "light" | "moderate" | "heavy";
   visibleAmount: "none" | "spots" | "stains" | "soaked";
   estimatedVolumeMl: number;
   pbacEquivalentScore: number;
@@ -112,7 +112,9 @@ export interface ExtendedPbacData {
 // ============================================
 
 export const DEFAULT_PRODUCTS: ProductDefinition[] = [
-  // Klassische PBAC-Produkte: "leicht/mittel/stark" = Sättigung beim Wechsel, NICHT Produktgröße
+  // ============================================
+  // KLASSISCHER PBAC: Sättigung beim Wechsel (NUR für pbac_classic)
+  // ============================================
   { id: "pad_light", category: "pad", name: "Leicht gesättigt", nameShort: "Leicht", capacity_ml: 3, enabled: true, isClassicPbac: true },
   { id: "pad_medium", category: "pad", name: "Mittel gesättigt", nameShort: "Mittel", capacity_ml: 8, enabled: true, isClassicPbac: true },
   { id: "pad_heavy", category: "pad", name: "Stark gesättigt", nameShort: "Stark", capacity_ml: 20, enabled: true, isClassicPbac: true },
@@ -120,15 +122,37 @@ export const DEFAULT_PRODUCTS: ProductDefinition[] = [
   { id: "tampon_medium", category: "tampon", name: "Mittel gesättigt", nameShort: "Mittel", capacity_ml: 9, enabled: true, isClassicPbac: true },
   { id: "tampon_heavy", category: "tampon", name: "Stark gesättigt", nameShort: "Stark", capacity_ml: 12, enabled: true, isClassicPbac: true },
 
-  // Erweiterte Produkte: Hier geht es um Produktgrößen (Füllgrad wird separat erfasst)
+  // ============================================
+  // ERWEITERTER PBAC: Produkttypen (Füllgrad wird separat erfasst)
+  // ============================================
+
+  // Binden nach Typ (Kapazitäten entsprechen klassischem PBAC bei "voll")
+  { id: "ext_pad_light", category: "pad", name: "Slipeinlage", nameShort: "Slip", capacity_ml: 3, enabled: false },
+  { id: "ext_pad_normal", category: "pad", name: "Binde Normal", nameShort: "Normal", capacity_ml: 8, enabled: false },
+  { id: "ext_pad_super", category: "pad", name: "Binde Super", nameShort: "Super", capacity_ml: 15, enabled: false },
+  { id: "ext_pad_night", category: "pad", name: "Binde Nacht", nameShort: "Nacht", capacity_ml: 20, enabled: false },
+
+  // Tampons nach Typ (Kapazitäten entsprechen klassischem PBAC bei "voll")
+  { id: "ext_tampon_light", category: "tampon", name: "Tampon Light", nameShort: "Light", capacity_ml: 3, enabled: false },
+  { id: "ext_tampon_regular", category: "tampon", name: "Tampon Regular", nameShort: "Regular", capacity_ml: 9, enabled: false },
+  { id: "ext_tampon_super", category: "tampon", name: "Tampon Super", nameShort: "Super", capacity_ml: 12, enabled: false },
+  { id: "ext_tampon_superplus", category: "tampon", name: "Tampon Super+", nameShort: "Super+", capacity_ml: 15, enabled: false },
+
+  // Menstruationstassen
   { id: "cup_s", category: "cup", name: "Größe S", nameShort: "S", capacity_ml: 20, enabled: false },
   { id: "cup_m", category: "cup", name: "Größe M", nameShort: "M", capacity_ml: 26, enabled: false },
   { id: "cup_l", category: "cup", name: "Größe L", nameShort: "L", capacity_ml: 33, enabled: false },
+
+  // Menstruationsdisc
   { id: "disc_standard", category: "disc", name: "Standard", nameShort: "Standard", capacity_ml: 50, enabled: false },
   { id: "disc_large", category: "disc", name: "Groß", nameShort: "Groß", capacity_ml: 70, enabled: false },
+
+  // Periodenslips
   { id: "underwear_light", category: "underwear", name: "Leichte Saugkraft", nameShort: "Leicht", capacity_ml: 10, enabled: false },
   { id: "underwear_medium", category: "underwear", name: "Mittlere Saugkraft", nameShort: "Mittel", capacity_ml: 20, enabled: false },
   { id: "underwear_heavy", category: "underwear", name: "Starke Saugkraft", nameShort: "Stark", capacity_ml: 30, enabled: false },
+
+  // Freies Bluten
   { id: "free_bleeding", category: "free_bleeding", name: "Freies Bluten", nameShort: "Frei", capacity_ml: 0, enabled: false },
 ];
 
@@ -164,11 +188,9 @@ export const calculatePbacScore = (counts: PbacCounts): number => {
  * Mapping für Free Bleeding Intensität zu ml
  */
 const FREE_BLEEDING_VOLUME_MAP: Record<FillLevel, number> = {
-  25: 2,    // Tropfen/wenig
-  50: 5,    // Leichter Fluss
-  75: 12,   // Starker Fluss
-  100: 20,  // Sehr stark/Schwall
-  125: 30,  // Extrem/unkontrolliert
+  33: 3,    // Leichter Fluss
+  66: 8,    // Mittlerer Fluss
+  100: 15,  // Starker Fluss
 };
 
 /**
