@@ -126,17 +126,21 @@ export const DEFAULT_PRODUCTS: ProductDefinition[] = [
   // ERWEITERTER PBAC: Produkttypen (Füllgrad wird separat erfasst)
   // ============================================
 
-  // Binden nach Typ (Kapazitäten entsprechen klassischem PBAC bei "voll")
-  { id: "ext_pad_light", category: "pad", name: "Slipeinlage", nameShort: "Slip", capacity_ml: 3, enabled: false },
-  { id: "ext_pad_normal", category: "pad", name: "Binde Normal", nameShort: "Normal", capacity_ml: 8, enabled: false },
-  { id: "ext_pad_super", category: "pad", name: "Binde Super", nameShort: "Super", capacity_ml: 15, enabled: false },
-  { id: "ext_pad_night", category: "pad", name: "Binde Nacht", nameShort: "Nacht", capacity_ml: 20, enabled: false },
+  // Binden nach Typ
+  // "Binde Normal" bei voll = klassischer PBAC "stark" (20ml)
+  // Bei ⅓ ≈ leicht, bei ⅔ ≈ mittel, bei voll ≈ stark
+  { id: "ext_pad_light", category: "pad", name: "Slipeinlage", nameShort: "Slip", capacity_ml: 5, enabled: false },
+  { id: "ext_pad_normal", category: "pad", name: "Binde Normal", nameShort: "Normal", capacity_ml: 20, enabled: false },
+  { id: "ext_pad_super", category: "pad", name: "Binde Super", nameShort: "Super", capacity_ml: 25, enabled: false },
+  { id: "ext_pad_night", category: "pad", name: "Binde Nacht", nameShort: "Nacht", capacity_ml: 30, enabled: false },
 
-  // Tampons nach Typ (Kapazitäten entsprechen klassischem PBAC bei "voll")
-  { id: "ext_tampon_light", category: "tampon", name: "Tampon Light", nameShort: "Light", capacity_ml: 3, enabled: false },
-  { id: "ext_tampon_regular", category: "tampon", name: "Tampon Regular", nameShort: "Regular", capacity_ml: 9, enabled: false },
-  { id: "ext_tampon_super", category: "tampon", name: "Tampon Super", nameShort: "Super", capacity_ml: 12, enabled: false },
-  { id: "ext_tampon_superplus", category: "tampon", name: "Tampon Super+", nameShort: "Super+", capacity_ml: 15, enabled: false },
+  // Tampons nach Typ
+  // "Tampon Regular" bei voll = klassischer PBAC "stark" (12ml)
+  // Bei ⅓ ≈ leicht, bei ⅔ ≈ mittel, bei voll ≈ stark
+  { id: "ext_tampon_mini", category: "tampon", name: "Tampon Mini", nameShort: "Mini", capacity_ml: 6, enabled: false },
+  { id: "ext_tampon_regular", category: "tampon", name: "Tampon Regular", nameShort: "Regular", capacity_ml: 12, enabled: false },
+  { id: "ext_tampon_super", category: "tampon", name: "Tampon Super", nameShort: "Super", capacity_ml: 15, enabled: false },
+  { id: "ext_tampon_superplus", category: "tampon", name: "Tampon Super+", nameShort: "Super+", capacity_ml: 18, enabled: false },
 
   // Menstruationstassen
   { id: "cup_s", category: "cup", name: "Größe S", nameShort: "S", capacity_ml: 20, enabled: false },
