@@ -7564,7 +7564,8 @@ export default function HomePage() {
           {isHomeView ? (
             <div className="flex flex-col gap-6">
               <header className="space-y-1">
-                <h1 className="text-3xl font-semibold text-rose-900">Endometriose Symptomtracker</h1>
+                <h1 className="text-4xl font-black tracking-tight text-rose-900">Cycle.</h1>
+                <p className="text-sm text-rose-600">Dein Zyklus- und Symptomtracker</p>
                 <div className="flex flex-wrap items-center gap-2 text-sm text-rose-700">
                   <Badge
                     className="bg-rose-200 text-rose-700"

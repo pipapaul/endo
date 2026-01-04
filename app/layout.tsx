@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "EndoTrack",
-  description: "Minimalistische Endometriose-Tracking App",
+  title: "Cycle.",
+  description: "Dein Zyklus- und Symptomtracker",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: "/favicon.svg",
@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "EndoTrack",
+    title: "Cycle.",
   },
 };
 
