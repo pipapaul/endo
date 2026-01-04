@@ -112,23 +112,23 @@ export interface ExtendedPbacData {
 // ============================================
 
 export const DEFAULT_PRODUCTS: ProductDefinition[] = [
-  // Klassische PBAC-Produkte (immer enabled by default)
-  { id: "pad_light", category: "pad", name: "Binde leicht", nameShort: "Leicht", capacity_ml: 3, enabled: true, isClassicPbac: true },
-  { id: "pad_medium", category: "pad", name: "Binde mittel", nameShort: "Mittel", capacity_ml: 8, enabled: true, isClassicPbac: true },
-  { id: "pad_heavy", category: "pad", name: "Binde stark/Nacht", nameShort: "Stark", capacity_ml: 20, enabled: true, isClassicPbac: true },
-  { id: "tampon_light", category: "tampon", name: "Tampon leicht", nameShort: "Leicht", capacity_ml: 3, enabled: true, isClassicPbac: true },
-  { id: "tampon_medium", category: "tampon", name: "Tampon normal", nameShort: "Normal", capacity_ml: 9, enabled: true, isClassicPbac: true },
-  { id: "tampon_heavy", category: "tampon", name: "Tampon super", nameShort: "Super", capacity_ml: 12, enabled: true, isClassicPbac: true },
+  // Klassische PBAC-Produkte: "leicht/mittel/stark" = Sättigung beim Wechsel, NICHT Produktgröße
+  { id: "pad_light", category: "pad", name: "Leicht gesättigt", nameShort: "Leicht", capacity_ml: 3, enabled: true, isClassicPbac: true },
+  { id: "pad_medium", category: "pad", name: "Mittel gesättigt", nameShort: "Mittel", capacity_ml: 8, enabled: true, isClassicPbac: true },
+  { id: "pad_heavy", category: "pad", name: "Stark gesättigt", nameShort: "Stark", capacity_ml: 20, enabled: true, isClassicPbac: true },
+  { id: "tampon_light", category: "tampon", name: "Leicht gesättigt", nameShort: "Leicht", capacity_ml: 3, enabled: true, isClassicPbac: true },
+  { id: "tampon_medium", category: "tampon", name: "Mittel gesättigt", nameShort: "Mittel", capacity_ml: 9, enabled: true, isClassicPbac: true },
+  { id: "tampon_heavy", category: "tampon", name: "Stark gesättigt", nameShort: "Stark", capacity_ml: 12, enabled: true, isClassicPbac: true },
 
-  // Erweiterte Produkte (standardmäßig deaktiviert)
-  { id: "cup_s", category: "cup", name: "Menstruationstasse S", nameShort: "S", capacity_ml: 20, enabled: false },
-  { id: "cup_m", category: "cup", name: "Menstruationstasse M", nameShort: "M", capacity_ml: 26, enabled: false },
-  { id: "cup_l", category: "cup", name: "Menstruationstasse L", nameShort: "L", capacity_ml: 33, enabled: false },
-  { id: "disc_standard", category: "disc", name: "Menstruationsdisc", nameShort: "Standard", capacity_ml: 50, enabled: false },
-  { id: "disc_large", category: "disc", name: "Menstruationsdisc groß", nameShort: "Groß", capacity_ml: 70, enabled: false },
-  { id: "underwear_light", category: "underwear", name: "Periodenslip leicht", nameShort: "Leicht", capacity_ml: 10, enabled: false },
-  { id: "underwear_medium", category: "underwear", name: "Periodenslip mittel", nameShort: "Mittel", capacity_ml: 20, enabled: false },
-  { id: "underwear_heavy", category: "underwear", name: "Periodenslip stark", nameShort: "Stark", capacity_ml: 30, enabled: false },
+  // Erweiterte Produkte: Hier geht es um Produktgrößen (Füllgrad wird separat erfasst)
+  { id: "cup_s", category: "cup", name: "Größe S", nameShort: "S", capacity_ml: 20, enabled: false },
+  { id: "cup_m", category: "cup", name: "Größe M", nameShort: "M", capacity_ml: 26, enabled: false },
+  { id: "cup_l", category: "cup", name: "Größe L", nameShort: "L", capacity_ml: 33, enabled: false },
+  { id: "disc_standard", category: "disc", name: "Standard", nameShort: "Standard", capacity_ml: 50, enabled: false },
+  { id: "disc_large", category: "disc", name: "Groß", nameShort: "Groß", capacity_ml: 70, enabled: false },
+  { id: "underwear_light", category: "underwear", name: "Leichte Saugkraft", nameShort: "Leicht", capacity_ml: 10, enabled: false },
+  { id: "underwear_medium", category: "underwear", name: "Mittlere Saugkraft", nameShort: "Mittel", capacity_ml: 20, enabled: false },
+  { id: "underwear_heavy", category: "underwear", name: "Starke Saugkraft", nameShort: "Stark", capacity_ml: 30, enabled: false },
   { id: "free_bleeding", category: "free_bleeding", name: "Freies Bluten", nameShort: "Frei", capacity_ml: 0, enabled: false },
 ];
 

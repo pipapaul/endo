@@ -808,7 +808,7 @@ type PbacClotItem = {
 const PBAC_PRODUCT_ITEMS = [
   {
     id: "pad_light",
-    label: "Binde – leicht",
+    label: "Leicht gesättigt",
     score: 1,
     product: "pad",
     saturation: "light",
@@ -816,7 +816,7 @@ const PBAC_PRODUCT_ITEMS = [
   },
   {
     id: "pad_medium",
-    label: "Binde – mittel",
+    label: "Mittel gesättigt",
     score: 5,
     product: "pad",
     saturation: "medium",
@@ -824,7 +824,7 @@ const PBAC_PRODUCT_ITEMS = [
   },
   {
     id: "pad_heavy",
-    label: "Binde – stark",
+    label: "Stark gesättigt",
     score: 20,
     product: "pad",
     saturation: "heavy",
@@ -832,7 +832,7 @@ const PBAC_PRODUCT_ITEMS = [
   },
   {
     id: "tampon_light",
-    label: "Tampon – leicht",
+    label: "Leicht gesättigt",
     score: 1,
     product: "tampon",
     saturation: "light",
@@ -840,7 +840,7 @@ const PBAC_PRODUCT_ITEMS = [
   },
   {
     id: "tampon_medium",
-    label: "Tampon – mittel",
+    label: "Mittel gesättigt",
     score: 5,
     product: "tampon",
     saturation: "medium",
@@ -848,7 +848,7 @@ const PBAC_PRODUCT_ITEMS = [
   },
   {
     id: "tampon_heavy",
-    label: "Tampon – stark",
+    label: "Stark gesättigt",
     score: 10,
     product: "tampon",
     saturation: "heavy",
@@ -900,8 +900,8 @@ type BleedingQuickAddNotice = {
 };
 
 const PBAC_ENTRY_CATEGORY_OPTIONS = [
-  { id: "pad", label: "Binde", description: "Anzahl & Stärke" },
-  { id: "tampon", label: "Tampon", description: "Anzahl & Stärke" },
+  { id: "pad", label: "Binde", description: "Wie voll beim Wechsel?" },
+  { id: "tampon", label: "Tampon", description: "Wie voll beim Wechsel?" },
   { id: "clot", label: "Koagel", description: "Größe & Häufigkeit" },
   { id: "flooding", label: "Flooding", description: "+5 PBAC bei Aktivierung" },
 ] as const;

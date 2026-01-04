@@ -124,7 +124,10 @@ export const ProductSettingsPanel: React.FC<ProductSettingsPanelProps> = ({
           <div className="flex-1">
             <p className="font-medium text-rose-900">Klassischer PBAC</p>
             <p className="mt-1 text-sm text-rose-600">
-              Nur Binden & Tampons (leicht/mittel/schwer)
+              Binden & Tampons – Sättigung beim Wechsel erfassen
+            </p>
+            <p className="mt-2 text-xs text-rose-500">
+              Wie voll war das Produkt? (leicht/mittel/stark gesättigt)
             </p>
           </div>
           <div className="mt-0.5">
@@ -153,10 +156,10 @@ export const ProductSettingsPanel: React.FC<ProductSettingsPanelProps> = ({
           <div className="flex-1">
             <p className="font-medium text-rose-900">Erweiterter PBAC</p>
             <p className="mt-1 text-sm text-rose-600">
-              Alle Produkte mit Volumen-Schätzung
+              Alle Produkte – Größe wählen, dann Füllgrad angeben
             </p>
             <p className="mt-2 text-xs text-rose-500">
-              Deine bisherigen Daten bleiben vergleichbar durch den PBAC-Äquivalent-Score
+              Für Tassen, Discs, Periodenslips & mehr mit Volumen-Schätzung
             </p>
           </div>
           <div className="mt-0.5">
@@ -178,9 +181,20 @@ export const ProductSettingsPanel: React.FC<ProductSettingsPanelProps> = ({
       {/* Produkt-Auswahl */}
       <div>
         <p className="font-medium text-rose-900 mb-2">Meine Produkte</p>
-        <p className="text-sm text-rose-600 mb-4">
-          Aktiviere nur die Produkte, die du verwendest.
-        </p>
+        {settings.trackingMethod === "pbac_classic" ? (
+          <div className="text-sm text-rose-600 mb-4 space-y-1">
+            <p>Beim klassischen PBAC zählst du, wie oft du wechselst und wie voll das Produkt dabei war:</p>
+            <ul className="text-xs text-rose-500 list-disc list-inside ml-1">
+              <li><strong>Leicht gesättigt</strong> – nur leicht feucht, wenig Blut</li>
+              <li><strong>Mittel gesättigt</strong> – deutlich sichtbar, etwa halb voll</li>
+              <li><strong>Stark gesättigt</strong> – fast vollständig durchtränkt</li>
+            </ul>
+          </div>
+        ) : (
+          <p className="text-sm text-rose-600 mb-4">
+            Aktiviere die Produkte, die du verwendest. Du gibst dann bei jedem Wechsel den Füllgrad (25–100%) an.
+          </p>
+        )}
 
         <div className="space-y-3">
           {(Object.keys(productsByCategory) as ProductCategory[]).map((category) => {

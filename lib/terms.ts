@@ -28,7 +28,7 @@ export const TERMS = {
   pbac: {
     label: "Blutungsstärke",
     tech: "PBAC – Piktorialer Blutungs-Assessment-Chart",
-    help: "Bilderbasierter Score statt leicht/mittel/stark",
+    help: "Zähle Produktwechsel und erfasse die Sättigung (wie voll war das Produkt beim Wechsel?)",
   },
   clots: { label: "Blutklümpchen", tech: "Koagel", help: "Sichtbare Klümpchen im Blut?" },
   flooding: {
