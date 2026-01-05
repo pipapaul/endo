@@ -336,7 +336,7 @@ export const SIMPLE_BLEEDING_INTENSITIES: SimpleBleedingIntensityDefinition[] = 
     pbacEquivalent: 2,
     estimatedVolumeMlMin: 1,
     estimatedVolumeMlMax: 5,
-    productEquivalent: "1–3 leicht befleckte Slipeinlagen",
+    productEquivalent: "Entspricht 1–3 leicht befleckten Slipeinlagen",
   },
   {
     id: "light",
@@ -347,7 +347,7 @@ export const SIMPLE_BLEEDING_INTENSITIES: SimpleBleedingIntensityDefinition[] = 
     pbacEquivalent: 7,
     estimatedVolumeMlMin: 5,
     estimatedVolumeMlMax: 15,
-    productEquivalent: "1–2 mittel gesättigte Tampons/Binden",
+    productEquivalent: "Entspricht 1–2 mittel gesättigten Tampons/Binden",
   },
   {
     id: "medium",
@@ -358,7 +358,7 @@ export const SIMPLE_BLEEDING_INTENSITIES: SimpleBleedingIntensityDefinition[] = 
     pbacEquivalent: 20,
     estimatedVolumeMlMin: 15,
     estimatedVolumeMlMax: 30,
-    productEquivalent: "3–6 mittel gesättigte oder 1–2 komplett getränkte Tampons/Binden",
+    productEquivalent: "Entspricht 3–6 mittel gesättigten oder 1–2 komplett getränkten Tampons/Binden",
   },
   {
     id: "heavy",
@@ -369,7 +369,7 @@ export const SIMPLE_BLEEDING_INTENSITIES: SimpleBleedingIntensityDefinition[] = 
     pbacEquivalent: 45,
     estimatedVolumeMlMin: 30,
     estimatedVolumeMlMax: 50,
-    productEquivalent: "6–12 mittel gesättigte oder 2–3 komplett getränkte Tampons/Binden",
+    productEquivalent: "Entspricht 6–12 mittel gesättigten oder 2–3 komplett getränkten Tampons/Binden",
   },
   {
     id: "very_heavy",
@@ -380,7 +380,7 @@ export const SIMPLE_BLEEDING_INTENSITIES: SimpleBleedingIntensityDefinition[] = 
     pbacEquivalent: 80,
     estimatedVolumeMlMin: 50,
     estimatedVolumeMlMax: 80,
-    productEquivalent: "mehr als 3 komplett getränkte Tampons/Binden",
+    productEquivalent: "Entspricht mehr als 3 komplett getränkten Tampons/Binden",
   },
 ];
 
