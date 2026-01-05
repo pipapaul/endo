@@ -86,7 +86,7 @@ import { Badge } from "@/components/ui/badge";
 
 import { cn } from "@/lib/utils";
 import { touchLastActive, loadProductSettings, saveProductSettings } from "@/lib/persistence";
-import { ProductSettings, DEFAULT_PRODUCT_SETTINGS } from "@/lib/productSettings";
+import { ProductSettings, DEFAULT_PRODUCT_SETTINGS, getProductById, FILL_LEVEL_LABELS, FREE_BLEEDING_INTENSITY_LABELS } from "@/lib/productSettings";
 import { ProductSettingsPanel } from "@/components/ui/ProductSettingsPanel";
 import { usePersistentState } from "@/lib/usePersistentState";
 import WeeklyTabShell from "@/components/weekly/WeeklyTabShell";
@@ -3894,65 +3894,140 @@ export default function HomePage() {
     pbacProductSummary.some((item) => item.count > 0) ||
     pbacClotSummary.some((item) => item.count > 0) ||
     pbacFlooding;
+  const hasExtendedPbacEntries =
+    (dailyDraft.extendedPbacData?.extendedEntries?.length ?? 0) > 0 ||
+    (dailyDraft.extendedPbacData?.freeBleedingEntries?.length ?? 0) > 0;
   const showPbacSummaryInToolbar =
     activeView === "daily" &&
     dailyActiveCategory === "bleeding" &&
-    draftHasBleeding;
-  const renderPbacSummaryPanel = () => (
-    <div className="space-y-4 rounded-xl border border-rose-100 bg-rose-50/90 p-4 text-sm text-rose-700 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">PBAC-Assistent</p>
-          <TermHeadline termKey="pbac" />
-        </div>
-        <div className="text-right">
-          <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Score</p>
-          <p className="text-3xl font-bold text-rose-900">{pbacScore}</p>
-        </div>
-      </div>
-      {hasPbacSummaryData ? (
-        <div className="flex flex-wrap gap-2">
-          {pbacProductSummary
-            .filter((item) => item.count > 0)
-            .map((item) => (
-              <span
-                key={item.id}
-                className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-medium text-rose-900"
-              >
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-rose-100 text-rose-500">
-                  <item.Icon className="h-3.5 w-3.5" aria-hidden />
-                </span>
-                <span>
-                  {item.count}× {item.label}
-                </span>
-                <span className="font-semibold text-rose-600">+{item.count * item.score}</span>
-              </span>
-            ))}
-          {pbacClotSummary
-            .filter((item) => item.count > 0)
-            .map((item) => (
-              <span
-                key={item.id}
-                className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-medium text-rose-900"
-              >
-                <span>
-                  {item.count}× {item.label}
-                </span>
-                <span className="font-semibold text-rose-600">+{item.count * item.score}</span>
-              </span>
-            ))}
-          {pbacFlooding ? (
-            <span className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-semibold text-rose-900">
-              <span>Flooding</span>
-              <span className="text-rose-600">+{PBAC_FLOODING_SCORE}</span>
+    (draftHasBleeding || hasExtendedPbacEntries);
+
+  const renderPbacSummaryPanel = () => {
+    const isExtendedMode = productSettings.trackingMethod === "pbac_extended";
+    const displayScore = isExtendedMode
+      ? dailyDraft.extendedPbacData?.totalPbacEquivalentScore ?? 0
+      : pbacScore;
+    const displayVolume = dailyDraft.extendedPbacData?.totalEstimatedVolumeMl ?? 0;
+
+    return (
+      <div className="rounded-xl border border-rose-100 bg-white/80 p-3 text-[11px] text-rose-700 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-rose-500">
+          <span>{isExtendedMode ? "Blutungsübersicht" : "PBAC-Assistent"}</span>
+          {isExtendedMode && displayVolume > 0 && (
+            <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] text-rose-700">
+              ~{displayVolume} ml
             </span>
-          ) : null}
+          )}
+          {displayScore > 0 && (
+            <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] text-rose-700">
+              {isExtendedMode ? "PBAC-Äquiv." : "Score"}: {displayScore}
+            </span>
+          )}
         </div>
-      ) : (
-        <p className="text-xs text-rose-600">Füge unten Produkte hinzu, um deinen Score zu berechnen.</p>
-      )}
-    </div>
-  );
+
+        {/* Extended PBAC entries */}
+        {isExtendedMode && hasExtendedPbacEntries ? (
+          <div className="mt-3 space-y-2">
+            <div className="flex flex-wrap gap-2">
+              {dailyDraft.extendedPbacData?.extendedEntries?.map((entry) => {
+                const product = getProductById(productSettings, entry.productId);
+                const productName = product?.nameShort || product?.name || entry.productId;
+                const fillLabel = FILL_LEVEL_LABELS[entry.fillLevelPercent] || `${entry.fillLevelPercent}%`;
+                return (
+                  <span
+                    key={entry.id}
+                    className="inline-flex items-center gap-2 rounded-full bg-rose-50/80 px-3 py-1 text-[11px] font-medium text-rose-800"
+                  >
+                    <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+                      {fillLabel}
+                    </span>
+                    <span className="text-rose-700">{productName}</span>
+                    <span className="text-rose-500">~{entry.estimatedVolumeMl}ml</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveExtendedBleedingEntry(entry.id)}
+                      className="rounded-full p-1 text-rose-400 transition hover:bg-rose-100 hover:text-rose-700"
+                      aria-label="Eintrag entfernen"
+                    >
+                      <X className="h-3 w-3" aria-hidden />
+                    </button>
+                  </span>
+                );
+              })}
+              {dailyDraft.extendedPbacData?.freeBleedingEntries?.map((entry) => {
+                const intensityLabel = FREE_BLEEDING_INTENSITY_LABELS[entry.intensity as keyof typeof FREE_BLEEDING_INTENSITY_LABELS]?.label || entry.intensity;
+                return (
+                  <span
+                    key={entry.id}
+                    className="inline-flex items-center gap-2 rounded-full bg-rose-50/80 px-3 py-1 text-[11px] font-medium text-rose-800"
+                  >
+                    <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+                      {intensityLabel}
+                    </span>
+                    <span className="text-rose-700">Freies Bluten</span>
+                    <span className="text-rose-500">~{entry.estimatedVolumeMl}ml</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveExtendedBleedingEntry(entry.id)}
+                      className="rounded-full p-1 text-rose-400 transition hover:bg-rose-100 hover:text-rose-700"
+                      aria-label="Eintrag entfernen"
+                    >
+                      <X className="h-3 w-3" aria-hidden />
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Classic PBAC entries */}
+        {!isExtendedMode && hasPbacSummaryData ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {pbacProductSummary
+              .filter((item) => item.count > 0)
+              .map((item) => (
+                <span
+                  key={item.id}
+                  className="inline-flex items-center gap-2 rounded-full bg-rose-50/80 px-3 py-1 text-[11px] font-medium text-rose-800"
+                >
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-100 text-rose-500">
+                    <item.Icon className="h-3 w-3" aria-hidden />
+                  </span>
+                  <span>{item.count}× {item.label}</span>
+                  <span className="text-rose-500">+{item.count * item.score}</span>
+                </span>
+              ))}
+            {pbacClotSummary
+              .filter((item) => item.count > 0)
+              .map((item) => (
+                <span
+                  key={item.id}
+                  className="inline-flex items-center gap-2 rounded-full bg-rose-50/80 px-3 py-1 text-[11px] font-medium text-rose-800"
+                >
+                  <span>{item.count}× {item.label}</span>
+                  <span className="text-rose-500">+{item.count * item.score}</span>
+                </span>
+              ))}
+            {pbacFlooding ? (
+              <span className="inline-flex items-center gap-2 rounded-full bg-rose-50/80 px-3 py-1 text-[11px] font-semibold text-rose-800">
+                <span>Flooding</span>
+                <span className="text-rose-500">+{PBAC_FLOODING_SCORE}</span>
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* Empty state */}
+        {!isExtendedMode && !hasPbacSummaryData && (
+          <p className="mt-2 text-xs text-rose-600">Füge unten Produkte hinzu, um deinen Score zu berechnen.</p>
+        )}
+        {isExtendedMode && !hasExtendedPbacEntries && (
+          <p className="mt-2 text-xs text-rose-600">Füge unten Produkte hinzu, um deine Blutung zu erfassen.</p>
+        )}
+      </div>
+    );
+  };
   const painSummaryRegions = useMemo(
     () =>
       (dailyDraft.painRegions ?? []).map((region) => ({
@@ -8713,78 +8788,10 @@ export default function HomePage() {
                         </div>
                       ) : productSettings.trackingMethod === "pbac_extended" ? (
                         /* Extended PBAC Mode */
-                        <div className="space-y-4">
-                          <ExtendedBleedingEntryForm
-                            settings={productSettings}
-                            onAddEntry={handleAddExtendedBleedingEntry}
-                          />
-
-                          {/* Show list of added entries */}
-                          {(dailyDraft.extendedPbacData?.extendedEntries?.length ?? 0) > 0 ||
-                           (dailyDraft.extendedPbacData?.freeBleedingEntries?.length ?? 0) > 0 ? (
-                            <div className="space-y-2">
-                              <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Heutige Einträge</p>
-                              <div className="space-y-2">
-                                {dailyDraft.extendedPbacData?.extendedEntries?.map((entry) => (
-                                  <div
-                                    key={entry.id}
-                                    className="flex items-center justify-between gap-2 rounded-xl border border-rose-100 bg-white p-3"
-                                  >
-                                    <div>
-                                      <p className="text-sm font-medium text-rose-900">
-                                        {entry.productId} - {entry.fillLevelPercent}%
-                                      </p>
-                                      <p className="text-xs text-rose-500">
-                                        ~{entry.estimatedVolumeMl} ml
-                                      </p>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemoveExtendedBleedingEntry(entry.id)}
-                                      className="text-rose-400 hover:text-rose-600"
-                                    >
-                                      <X className="h-4 w-4" />
-                                    </button>
-                                  </div>
-                                ))}
-                                {dailyDraft.extendedPbacData?.freeBleedingEntries?.map((entry) => (
-                                  <div
-                                    key={entry.id}
-                                    className="flex items-center justify-between gap-2 rounded-xl border border-rose-100 bg-white p-3"
-                                  >
-                                    <div>
-                                      <p className="text-sm font-medium text-rose-900">
-                                        Freies Bluten - {entry.intensity}
-                                      </p>
-                                      <p className="text-xs text-rose-500">
-                                        ~{entry.estimatedVolumeMl} ml
-                                      </p>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemoveExtendedBleedingEntry(entry.id)}
-                                      className="text-rose-400 hover:text-rose-600"
-                                    >
-                                      <X className="h-4 w-4" />
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                              {dailyDraft.extendedPbacData?.totalEstimatedVolumeMl != null && (
-                                <div className="rounded-xl bg-rose-50 p-3 text-sm">
-                                  <p className="font-medium text-rose-900">
-                                    Gesamt: ~{dailyDraft.extendedPbacData.totalEstimatedVolumeMl} ml
-                                  </p>
-                                  {productSettings.showPbacEquivalent && (
-                                    <p className="text-xs text-rose-600">
-                                      PBAC-Äquivalent: {dailyDraft.extendedPbacData.totalPbacEquivalentScore}
-                                    </p>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          ) : null}
-                        </div>
+                        <ExtendedBleedingEntryForm
+                          settings={productSettings}
+                          onAddEntry={handleAddExtendedBleedingEntry}
+                        />
                       ) : (
                       /* Classic PBAC Mode */
                       <div className="space-y-4">

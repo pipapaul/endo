@@ -50,6 +50,15 @@ export const hasExtendedProductsEnabled = (settings: ProductSettings): boolean =
   return enabledProducts.some(p => !p.isClassicPbac);
 };
 
+/** Holt ein Produkt anhand der ID */
+export const getProductById = (
+  settings: ProductSettings,
+  productId: string
+): ProductDefinition | undefined => {
+  const allProducts = getAllProducts(settings);
+  return allProducts.find(p => p.id === productId);
+};
+
 /** Kategorien mit deutschen Labels */
 export const PRODUCT_CATEGORY_LABELS: Record<ProductCategory, string> = {
   pad: "Binden",
