@@ -1925,8 +1925,8 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
                 <stop offset="100%" stopColor="#fbcfe8" stopOpacity={0.05} />
               </linearGradient>
               {/* Blur filter for simple mode uncertainty visualization */}
-              <filter id={`${bleedingGradientId}-blur`} x="-20%" y="-20%" width="140%" height="140%">
-                <feGaussianBlur in="SourceGraphic" stdDeviation="3" />
+              <filter id={`${bleedingGradientId}-blur`} x="-10%" y="-10%" width="120%" height="120%">
+                <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" />
               </filter>
             </defs>
             <XAxis
