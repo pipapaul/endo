@@ -129,6 +129,12 @@ import {
 } from "@/lib/pbac";
 import { ExtendedBleedingEntryForm } from "@/components/home/ExtendedBleedingEntry";
 import {
+  type ColorScheme,
+  getColorSchemeName,
+  getColorSchemeDescription,
+  getColorSchemeSwatches,
+} from "@/lib/theme";
+import {
   ANALYTICS_SECTION_OPTIONS,
   BASE_PAIN_QUALITIES,
   DETAIL_TOOLBAR_FALLBACK_HEIGHT,
@@ -3129,13 +3135,27 @@ export default function HomePage() {
   const [showCheckInPopup, setShowCheckInPopup] = useState(false);
   const [pendingDismissCheckIn, setPendingDismissCheckIn] = useState<PendingCheckIn | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [settingsPage, setSettingsPage] = useState<"main" | "ovulation" | "bleeding">("main");
+  const [settingsPage, setSettingsPage] = useState<"main" | "ovulation" | "bleeding" | "colorScheme">("main");
   const [productSettings, setProductSettings] = useState<ProductSettings>(DEFAULT_PRODUCT_SETTINGS);
+  const [colorScheme, setColorScheme, colorSchemeMeta] = usePersistentState<ColorScheme>(
+    "endo-color-scheme",
+    "neutral"
+  );
 
   // Load product settings on mount
   useEffect(() => {
     loadProductSettings().then(setProductSettings);
   }, []);
+
+  // Apply color scheme to document
+  useEffect(() => {
+    if (!colorSchemeMeta.ready) return;
+    if (colorScheme === "neutral") {
+      document.documentElement.setAttribute("data-theme", "neutral");
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
+  }, [colorScheme, colorSchemeMeta.ready]);
 
   const isDailyDirty = useMemo(
     () =>
@@ -7791,6 +7811,14 @@ export default function HomePage() {
                   <span className="text-lg font-semibold text-rose-900">Blutungs-Erfassung</span>
                   <ChevronRight className="h-5 w-5 text-rose-400" />
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setSettingsPage("colorScheme")}
+                  className="flex w-full items-center justify-between gap-3 p-4 rounded-xl border border-rose-100 bg-rose-50/50 text-left hover:bg-rose-50 transition"
+                >
+                  <span className="text-lg font-semibold text-rose-900">Farbschema</span>
+                  <ChevronRight className="h-5 w-5 text-rose-400" />
+                </button>
               </div>
             )}
 
@@ -7825,6 +7853,68 @@ export default function HomePage() {
                   todayHasBleedingData={todayHasAnyBleedingData}
                   onResetTodayBleedingData={handleResetTodayBleedingData}
                 />
+              </div>
+            )}
+
+            {settingsPage === "colorScheme" && (
+              <div>
+                <h3 className="text-lg font-semibold text-rose-900 mb-4">Farbschema</h3>
+                <p className="text-sm text-rose-600 mb-4">
+                  Wähle ein Farbschema für die App.
+                </p>
+                <div className="space-y-3">
+                  {(["neutral", "rose"] as const).map((scheme) => {
+                    const swatches = getColorSchemeSwatches(scheme);
+                    const isSelected = colorScheme === scheme;
+                    return (
+                      <button
+                        key={scheme}
+                        type="button"
+                        onClick={() => setColorScheme(scheme)}
+                        className={cn(
+                          "flex w-full items-start justify-between gap-4 rounded-xl border p-4 text-left transition",
+                          isSelected
+                            ? "border-rose-300 bg-rose-50/50"
+                            : "border-rose-100 hover:bg-rose-50/30"
+                        )}
+                      >
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3">
+                            <div className="flex gap-1">
+                              {swatches.map((color, i) => (
+                                <div
+                                  key={i}
+                                  className="h-4 w-4 rounded-full border border-black/10"
+                                  style={{ backgroundColor: color }}
+                                />
+                              ))}
+                            </div>
+                            <p className="font-medium text-rose-900">
+                              {getColorSchemeName(scheme)}
+                            </p>
+                          </div>
+                          <p className="mt-1 text-sm text-rose-600">
+                            {getColorSchemeDescription(scheme)}
+                          </p>
+                        </div>
+                        <div className="mt-0.5">
+                          <div
+                            className={cn(
+                              "flex h-5 w-5 items-center justify-center rounded-full border-2",
+                              isSelected
+                                ? "border-rose-500 bg-rose-500"
+                                : "border-rose-300"
+                            )}
+                          >
+                            {isSelected && (
+                              <div className="h-2 w-2 rounded-full bg-white" />
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>

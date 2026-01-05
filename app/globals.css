@@ -3,10 +3,73 @@
 @tailwind utilities;
 
 :root {
+  /* Rose theme (default) */
   --endo-accent: #e11d48;
   --endo-bg: #fff1f2;
   --section-card-completed-bg: #fffbeb;
   --section-card-completed-border: #facc15;
+
+  /* Semantic colors - Rose theme uses accent for most */
+  --endo-bleeding: #e11d48;
+  --endo-bleeding-light: #fecdd3;
+  --endo-pain: #be123c;
+  --endo-pain-light: #fda4af;
+  --endo-ovulation: #facc15;
+  --endo-ovulation-light: #fef3c7;
+  --endo-fertility: #f472b6;
+  --endo-fertility-light: #fdf2f8;
+  --endo-success: #22c55e;
+  --endo-success-light: #dcfce7;
+  --endo-info: #e11d48;
+  --endo-info-light: #ffe4e6;
+
+  /* Slider colors */
+  --endo-slider-active: rgba(225, 29, 72, 0.75);
+  --endo-slider-track: rgba(225, 29, 72, 0.14);
+  --endo-slider-shadow: rgba(225, 29, 72, 0.18);
+  --endo-slider-shadow-active: rgba(225, 29, 72, 0.24);
+}
+
+/* Neutral theme - warm grey with semantic colors */
+[data-theme="neutral"] {
+  /* Override Tailwind rose palette */
+  --tw-rose-50: #faf8f5;
+  --tw-rose-100: #f2efea;
+  --tw-rose-200: #e0dcd7;
+  --tw-rose-300: #c9c4bc;
+  --tw-rose-400: #a8a099;
+  --tw-rose-500: #5b7a6b;
+  --tw-rose-600: #4a6659;
+  --tw-rose-700: #3d5348;
+  --tw-rose-800: #3d4a4f;
+  --tw-rose-900: #2d3436;
+  --tw-rose-950: #1a1f20;
+
+  /* Core colors */
+  --endo-accent: #5b7a6b;
+  --endo-bg: #f7f5f2;
+  --section-card-completed-bg: #e8f4eb;
+  --section-card-completed-border: #7cb88c;
+
+  /* Semantic colors - contextual meaning */
+  --endo-bleeding: #c4786a;
+  --endo-bleeding-light: #f0ddd9;
+  --endo-pain: #8b7b9c;
+  --endo-pain-light: #e8e4ed;
+  --endo-ovulation: #d4a574;
+  --endo-ovulation-light: #f5ebe0;
+  --endo-fertility: #7cb88c;
+  --endo-fertility-light: #e8f4eb;
+  --endo-success: #5b7a6b;
+  --endo-success-light: #e8f0eb;
+  --endo-info: #6b8a9a;
+  --endo-info-light: #e4ecef;
+
+  /* Slider colors */
+  --endo-slider-active: rgba(91, 122, 107, 0.75);
+  --endo-slider-track: rgba(91, 122, 107, 0.14);
+  --endo-slider-shadow: rgba(91, 122, 107, 0.18);
+  --endo-slider-shadow-active: rgba(91, 122, 107, 0.24);
 }
 
 html {
@@ -38,13 +101,13 @@ body {
 .endo-slider::-moz-range-track {
   height: 0.5rem;
   border-radius: 9999px;
-  background: rgba(244, 114, 182, 0.16);
+  background: var(--endo-slider-track);
 }
 
 .endo-slider::-moz-range-progress {
   height: 0.5rem;
   border-radius: 9999px;
-  background: rgba(225, 29, 72, 0.7);
+  background: var(--endo-slider-active);
 }
 
 .endo-slider::-webkit-slider-thumb {
@@ -55,7 +118,7 @@ body {
   border-radius: 9999px;
   background: #fff;
   border: 3px solid var(--endo-accent);
-  box-shadow: 0 12px 25px rgba(225, 29, 72, 0.18);
+  box-shadow: 0 12px 25px var(--endo-slider-shadow);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   cursor: pointer;
   margin-top: -0.5rem;
@@ -67,7 +130,7 @@ body {
   border-radius: 9999px;
   background: #fff;
   border: 3px solid var(--endo-accent);
-  box-shadow: 0 12px 25px rgba(225, 29, 72, 0.18);
+  box-shadow: 0 12px 25px var(--endo-slider-shadow);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   cursor: pointer;
 }
@@ -77,7 +140,7 @@ body {
 .endo-slider:active::-moz-range-thumb,
 .endo-slider:focus-visible::-moz-range-thumb {
   transform: scale(1.06);
-  box-shadow: 0 16px 32px rgba(225, 29, 72, 0.24);
+  box-shadow: 0 16px 32px var(--endo-slider-shadow-active);
 }
 
 .endo-slider:disabled::-webkit-slider-thumb,
