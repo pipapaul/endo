@@ -93,76 +93,150 @@
 }
 
 /* Semantic section color overrides for neutral theme */
-/* Each section gets its own vibrant color for easy navigation */
+/* Each section gets its own vibrant color - overrides Tailwind rose classes */
+
+/* Section color CSS variables for each section type */
 [data-theme="neutral"] [data-section="bleeding"] {
-  --tw-rose-500: var(--endo-bleeding);
-  --tw-rose-600: #c85048;
-  --tw-rose-50: var(--endo-bleeding-light);
-  --tw-rose-100: #fbe6e5;
+  --section-color: var(--endo-bleeding);
+  --section-color-dark: #c85048;
+  --section-color-light: var(--endo-bleeding-light);
+  --section-color-lighter: #fbe6e5;
+  --section-color-border: #f0c4c2;
+  --section-color-text: #9a4540;
+  --section-color-text-light: #b85550;
 }
 
 [data-theme="neutral"] [data-section="pain"] {
-  --tw-rose-500: var(--endo-pain);
-  --tw-rose-600: #8858a0;
-  --tw-rose-50: var(--endo-pain-light);
-  --tw-rose-100: #f0e5f5;
+  --section-color: var(--endo-pain);
+  --section-color-dark: #8858a0;
+  --section-color-light: var(--endo-pain-light);
+  --section-color-lighter: #f0e5f5;
+  --section-color-border: #d4c0e0;
+  --section-color-text: #7a5a90;
+  --section-color-text-light: #9b6bb3;
 }
 
 [data-theme="neutral"] [data-section="ovulation"] {
-  --tw-rose-500: var(--endo-ovulation);
-  --tw-rose-600: #d09035;
-  --tw-rose-50: var(--endo-ovulation-light);
-  --tw-rose-100: #fcefda;
+  --section-color: var(--endo-ovulation);
+  --section-color-dark: #d09035;
+  --section-color-light: var(--endo-ovulation-light);
+  --section-color-lighter: #fcefda;
+  --section-color-border: #f0d4a0;
+  --section-color-text: #a07830;
+  --section-color-text-light: #c89038;
 }
 
 [data-theme="neutral"] [data-section="fertility"] {
-  --tw-rose-500: var(--endo-fertility);
-  --tw-rose-600: #2d9478;
-  --tw-rose-50: var(--endo-fertility-light);
-  --tw-rose-100: #dcf0e8;
+  --section-color: var(--endo-fertility);
+  --section-color-dark: #2d9478;
+  --section-color-light: var(--endo-fertility-light);
+  --section-color-lighter: #dcf0e8;
+  --section-color-border: #a8d8c8;
+  --section-color-text: #2d7868;
+  --section-color-text-light: #3da88a;
 }
 
 [data-theme="neutral"] [data-section="medication"] {
-  --tw-rose-500: var(--endo-medication);
-  --tw-rose-600: #4a8dc0;
-  --tw-rose-50: var(--endo-medication-light);
-  --tw-rose-100: #e0edf7;
+  --section-color: var(--endo-medication);
+  --section-color-dark: #4a8dc0;
+  --section-color-light: var(--endo-medication-light);
+  --section-color-lighter: #e0edf7;
+  --section-color-border: #b0d0e8;
+  --section-color-text: #4078a0;
+  --section-color-text-light: #5a9fd4;
 }
 
 [data-theme="neutral"] [data-section="sleep"] {
-  --tw-rose-500: var(--endo-sleep);
-  --tw-rose-600: #7568b8;
-  --tw-rose-50: var(--endo-sleep-light);
-  --tw-rose-100: #e8e4f5;
+  --section-color: var(--endo-sleep);
+  --section-color-dark: #7568b8;
+  --section-color-light: var(--endo-sleep-light);
+  --section-color-lighter: #e8e4f5;
+  --section-color-border: #c8c0e0;
+  --section-color-text: #6858a0;
+  --section-color-text-light: #8b7ec9;
 }
 
 [data-theme="neutral"] [data-section="notes"] {
-  --tw-rose-500: var(--endo-notes);
-  --tw-rose-600: #b58055;
-  --tw-rose-50: var(--endo-notes-light);
-  --tw-rose-100: #f5ebe0;
+  --section-color: var(--endo-notes);
+  --section-color-dark: #b58055;
+  --section-color-light: var(--endo-notes-light);
+  --section-color-lighter: #f5ebe0;
+  --section-color-border: #dcc8b0;
+  --section-color-text: #8a6848;
+  --section-color-text-light: #c9956a;
 }
 
 [data-theme="neutral"] [data-section="symptoms"] {
-  --tw-rose-500: var(--endo-symptoms);
-  --tw-rose-600: #c06588;
-  --tw-rose-50: var(--endo-symptoms-light);
-  --tw-rose-100: #f8e5ed;
+  --section-color: var(--endo-symptoms);
+  --section-color-dark: #c06588;
+  --section-color-light: var(--endo-symptoms-light);
+  --section-color-lighter: #f8e5ed;
+  --section-color-border: #e8c0d0;
+  --section-color-text: #a05878;
+  --section-color-text-light: #d4789a;
 }
 
 [data-theme="neutral"] [data-section="energy"] {
-  --tw-rose-500: var(--endo-energy);
-  --tw-rose-600: #d0804a;
-  --tw-rose-50: var(--endo-energy-light);
-  --tw-rose-100: #fceee0;
+  --section-color: var(--endo-energy);
+  --section-color-dark: #d0804a;
+  --section-color-light: var(--endo-energy-light);
+  --section-color-lighter: #fceee0;
+  --section-color-border: #f0c8a0;
+  --section-color-text: #a86838;
+  --section-color-text-light: #e8955a;
 }
 
 [data-theme="neutral"] [data-section="mood"] {
-  --tw-rose-500: var(--endo-mood);
-  --tw-rose-600: #c87575;
-  --tw-rose-50: var(--endo-mood-light);
-  --tw-rose-100: #fbe8e8;
+  --section-color: var(--endo-mood);
+  --section-color-dark: #c87575;
+  --section-color-light: var(--endo-mood-light);
+  --section-color-lighter: #fbe8e8;
+  --section-color-border: #e8c0c0;
+  --section-color-text: #a06060;
+  --section-color-text-light: #e08888;
 }
+
+/* Override Tailwind rose classes within sections */
+[data-theme="neutral"] [data-section] .bg-rose-50 { background-color: var(--section-color-light) !important; }
+[data-theme="neutral"] [data-section] .bg-rose-100 { background-color: var(--section-color-lighter) !important; }
+[data-theme="neutral"] [data-section] .bg-rose-200 { background-color: var(--section-color-border) !important; }
+[data-theme="neutral"] [data-section] .bg-rose-500 { background-color: var(--section-color) !important; }
+[data-theme="neutral"] [data-section] .bg-rose-600 { background-color: var(--section-color-dark) !important; }
+[data-theme="neutral"] [data-section] .bg-rose-700 { background-color: var(--section-color-dark) !important; }
+
+[data-theme="neutral"] [data-section] .text-rose-500 { color: var(--section-color) !important; }
+[data-theme="neutral"] [data-section] .text-rose-600 { color: var(--section-color-text-light) !important; }
+[data-theme="neutral"] [data-section] .text-rose-700 { color: var(--section-color-text-light) !important; }
+[data-theme="neutral"] [data-section] .text-rose-800 { color: var(--section-color-text) !important; }
+[data-theme="neutral"] [data-section] .text-rose-900 { color: var(--section-color-text) !important; }
+
+[data-theme="neutral"] [data-section] .border-rose-100 { border-color: var(--section-color-lighter) !important; }
+[data-theme="neutral"] [data-section] .border-rose-200 { border-color: var(--section-color-border) !important; }
+[data-theme="neutral"] [data-section] .border-rose-300 { border-color: var(--section-color-border) !important; }
+[data-theme="neutral"] [data-section] .border-rose-500 { border-color: var(--section-color) !important; }
+
+[data-theme="neutral"] [data-section] .ring-rose-500 { --tw-ring-color: var(--section-color) !important; }
+[data-theme="neutral"] [data-section] .ring-rose-600 { --tw-ring-color: var(--section-color-dark) !important; }
+
+[data-theme="neutral"] [data-section] .hover\:bg-rose-50:hover { background-color: var(--section-color-light) !important; }
+[data-theme="neutral"] [data-section] .hover\:bg-rose-100:hover { background-color: var(--section-color-lighter) !important; }
+[data-theme="neutral"] [data-section] .hover\:bg-rose-600:hover { background-color: var(--section-color-dark) !important; }
+[data-theme="neutral"] [data-section] .hover\:bg-rose-700:hover { background-color: var(--section-color-dark) !important; }
+
+[data-theme="neutral"] [data-section] .hover\:text-rose-700:hover { color: var(--section-color-text-light) !important; }
+[data-theme="neutral"] [data-section] .hover\:text-rose-800:hover { color: var(--section-color-text) !important; }
+
+[data-theme="neutral"] [data-section] .hover\:border-rose-300:hover { border-color: var(--section-color-border) !important; }
+[data-theme="neutral"] [data-section] .hover\:border-rose-400:hover { border-color: var(--section-color) !important; }
+
+[data-theme="neutral"] [data-section] .focus\:ring-rose-500:focus { --tw-ring-color: var(--section-color) !important; }
+
+/* Gradient backgrounds for section headers */
+[data-theme="neutral"] [data-section] .from-rose-50\/80 { --tw-gradient-from: var(--section-color-light) !important; }
+[data-theme="neutral"] [data-section] .to-rose-50\/40 { --tw-gradient-to: color-mix(in srgb, var(--section-color-light) 40%, transparent) !important; }
+
+/* Text opacity variants */
+[data-theme="neutral"] [data-section] .text-rose-600\/80 { color: color-mix(in srgb, var(--section-color-text-light) 80%, transparent) !important; }
 
 html {
   width: 100%;
