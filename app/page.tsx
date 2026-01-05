@@ -36,7 +36,6 @@ import {
   Activity,
   Calendar,
   CalendarDays,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -3019,7 +3018,7 @@ export default function HomePage() {
   const [showCheckInPopup, setShowCheckInPopup] = useState(false);
   const [pendingDismissCheckIn, setPendingDismissCheckIn] = useState<PendingCheckIn | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [settingsExpanded, setSettingsExpanded] = useState<{ ovulation: boolean; bleeding: boolean }>({ ovulation: false, bleeding: false });
+  const [settingsPage, setSettingsPage] = useState<"main" | "ovulation" | "bleeding">("main");
   const [productSettings, setProductSettings] = useState<ProductSettings>(DEFAULT_PRODUCT_SETTINGS);
 
   // Load product settings on mount
@@ -7515,70 +7514,84 @@ export default function HomePage() {
         >
           <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
             <div className="mb-6 flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-rose-900">Einstellungen</h2>
+              {settingsPage === "main" ? (
+                <h2 className="text-xl font-semibold text-rose-900">Einstellungen</h2>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setSettingsPage("main")}
+                  className="flex items-center gap-2 text-rose-600 hover:text-rose-800 transition"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                  <span className="font-medium">Zurück</span>
+                </button>
+              )}
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                onClick={() => setShowSettings(false)}
+                onClick={() => {
+                  setShowSettings(false);
+                  setSettingsPage("main");
+                }}
                 className="text-rose-500 hover:text-rose-700"
               >
                 <X className="h-5 w-5" />
               </Button>
             </div>
-            <div className="space-y-3">
-              {/* Kategorie: Eisprungsbestimmung */}
-              <div className="rounded-xl border border-rose-100 overflow-hidden">
+
+            {settingsPage === "main" && (
+              <div className="space-y-3">
                 <button
                   type="button"
-                  onClick={() => setSettingsExpanded((prev) => ({ ...prev, ovulation: !prev.ovulation }))}
-                  className="flex w-full items-center justify-between gap-3 p-4 bg-rose-50/50 text-left hover:bg-rose-50 transition"
+                  onClick={() => setSettingsPage("ovulation")}
+                  className="flex w-full items-center justify-between gap-3 p-4 rounded-xl border border-rose-100 bg-rose-50/50 text-left hover:bg-rose-50 transition"
                 >
                   <span className="text-lg font-semibold text-rose-900">Eisprungsbestimmung</span>
-                  <ChevronDown className={cn("h-5 w-5 text-rose-400 transition-transform", settingsExpanded.ovulation && "rotate-180")} />
+                  <ChevronRight className="h-5 w-5 text-rose-400" />
                 </button>
-                {settingsExpanded.ovulation && (
-                  <div className="p-4 border-t border-rose-100 bg-white">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        <p className="font-medium text-rose-900">Billings-Methode</p>
-                        <p className="mt-1 text-sm text-rose-600">Bestimmung anhand des Cervixschleims</p>
-                        <p className="mt-2 text-xs text-rose-500">Verbesserte Vorhersagen werden erst nach mindestens 2 Zyklen mit Cervixschleim-Daten angezeigt. Bis dahin wird die Standard-Methode verwendet.</p>
-                      </div>
-                      <Switch
-                        checked={featureFlags.billingMethod ?? false}
-                        onCheckedChange={(checked) =>
-                          setFeatureFlags((prev) => ({ ...prev, billingMethod: checked }))
-                        }
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Kategorie: Blutungs-Erfassung */}
-              <div className="rounded-xl border border-rose-100 overflow-hidden">
                 <button
                   type="button"
-                  onClick={() => setSettingsExpanded((prev) => ({ ...prev, bleeding: !prev.bleeding }))}
-                  className="flex w-full items-center justify-between gap-3 p-4 bg-rose-50/50 text-left hover:bg-rose-50 transition"
+                  onClick={() => setSettingsPage("bleeding")}
+                  className="flex w-full items-center justify-between gap-3 p-4 rounded-xl border border-rose-100 bg-rose-50/50 text-left hover:bg-rose-50 transition"
                 >
                   <span className="text-lg font-semibold text-rose-900">Blutungs-Erfassung</span>
-                  <ChevronDown className={cn("h-5 w-5 text-rose-400 transition-transform", settingsExpanded.bleeding && "rotate-180")} />
+                  <ChevronRight className="h-5 w-5 text-rose-400" />
                 </button>
-                {settingsExpanded.bleeding && (
-                  <div className="p-4 border-t border-rose-100 bg-white">
-                    <ProductSettingsPanel
-                      settings={productSettings}
-                      onSettingsChange={async (newSettings) => {
-                        setProductSettings(newSettings);
-                        await saveProductSettings(newSettings);
-                      }}
-                    />
-                  </div>
-                )}
               </div>
-            </div>
+            )}
+
+            {settingsPage === "ovulation" && (
+              <div>
+                <h3 className="text-lg font-semibold text-rose-900 mb-4">Eisprungsbestimmung</h3>
+                <div className="flex items-start justify-between gap-4 rounded-xl border border-rose-100 bg-rose-50/50 p-4">
+                  <div className="flex-1">
+                    <p className="font-medium text-rose-900">Billings-Methode</p>
+                    <p className="mt-1 text-sm text-rose-600">Bestimmung anhand des Cervixschleims</p>
+                    <p className="mt-2 text-xs text-rose-500">Verbesserte Vorhersagen werden erst nach mindestens 2 Zyklen mit Cervixschleim-Daten angezeigt. Bis dahin wird die Standard-Methode verwendet.</p>
+                  </div>
+                  <Switch
+                    checked={featureFlags.billingMethod ?? false}
+                    onCheckedChange={(checked) =>
+                      setFeatureFlags((prev) => ({ ...prev, billingMethod: checked }))
+                    }
+                  />
+                </div>
+              </div>
+            )}
+
+            {settingsPage === "bleeding" && (
+              <div>
+                <h3 className="text-lg font-semibold text-rose-900 mb-4">Blutungs-Erfassung</h3>
+                <ProductSettingsPanel
+                  settings={productSettings}
+                  onSettingsChange={async (newSettings) => {
+                    setProductSettings(newSettings);
+                    await saveProductSettings(newSettings);
+                  }}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}
