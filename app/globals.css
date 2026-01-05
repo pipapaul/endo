@@ -95,20 +95,59 @@
 /* Semantic section color overrides for neutral theme */
 /* Charcoal headlines, warm neutral backgrounds, vibrant icons only */
 
-/* Section icon colors - vibrant for visual distinction */
-[data-theme="neutral"] [data-section="bleeding"] { --section-icon-color: var(--endo-bleeding); }
-[data-theme="neutral"] [data-section="pain"] { --section-icon-color: var(--endo-pain); }
-[data-theme="neutral"] [data-section="ovulation"] { --section-icon-color: var(--endo-ovulation); }
-[data-theme="neutral"] [data-section="fertility"] { --section-icon-color: var(--endo-fertility); }
-[data-theme="neutral"] [data-section="medication"] { --section-icon-color: var(--endo-medication); }
-[data-theme="neutral"] [data-section="sleep"] { --section-icon-color: var(--endo-sleep); }
-[data-theme="neutral"] [data-section="notes"] { --section-icon-color: var(--endo-notes); }
-[data-theme="neutral"] [data-section="symptoms"] { --section-icon-color: var(--endo-symptoms); }
-[data-theme="neutral"] [data-section="energy"] { --section-icon-color: var(--endo-energy); }
-[data-theme="neutral"] [data-section="mood"] { --section-icon-color: var(--endo-mood); }
+/* Section colors - each section gets its own vibrant color for icons AND highlights */
+[data-theme="neutral"] [data-section="bleeding"] {
+  --section-color: var(--endo-bleeding);
+  --section-color-dark: #d04842;
+  --section-color-light: #fdf0ef;
+}
+[data-theme="neutral"] [data-section="pain"] {
+  --section-color: var(--endo-pain);
+  --section-color-dark: #9333ea;
+  --section-color-light: #f8f0fc;
+}
+[data-theme="neutral"] [data-section="ovulation"] {
+  --section-color: var(--endo-ovulation);
+  --section-color-dark: #d97706;
+  --section-color-light: #fef7e8;
+}
+[data-theme="neutral"] [data-section="fertility"] {
+  --section-color: var(--endo-fertility);
+  --section-color-dark: #0d9488;
+  --section-color-light: #e8f6f1;
+}
+[data-theme="neutral"] [data-section="medication"] {
+  --section-color: var(--endo-medication);
+  --section-color-dark: #0284c7;
+  --section-color-light: #edf5fc;
+}
+[data-theme="neutral"] [data-section="sleep"] {
+  --section-color: var(--endo-sleep);
+  --section-color-dark: #7c3aed;
+  --section-color-light: #f3f0fa;
+}
+[data-theme="neutral"] [data-section="notes"] {
+  --section-color: var(--endo-notes);
+  --section-color-dark: #ea580c;
+  --section-color-light: #faf4ed;
+}
+[data-theme="neutral"] [data-section="symptoms"] {
+  --section-color: var(--endo-symptoms);
+  --section-color-dark: #db2777;
+  --section-color-light: #fcf0f4;
+}
+[data-theme="neutral"] [data-section="energy"] {
+  --section-color: var(--endo-energy);
+  --section-color-dark: #ea580c;
+  --section-color-light: #fef5ed;
+}
+[data-theme="neutral"] [data-section="mood"] {
+  --section-color: var(--endo-mood);
+  --section-color-dark: #ec4899;
+  --section-color-light: #fdf2f2;
+}
 
-/* All sections use consistent neutral palette for backgrounds, borders, text */
-/* Red (#f13524) for highlights/buttons, charcoal (#3d352e) for text */
+/* All sections use neutral backgrounds/borders, charcoal text, but section color for highlights */
 [data-theme="neutral"] [data-section] {
   --section-bg: #faf6f0;
   --section-bg-light: #fdf9f5;
@@ -117,18 +156,16 @@
   --section-text: #3d352e;
   --section-text-secondary: #5c5147;
   --section-text-muted: #8a8078;
-  --section-highlight: #f13524;
-  --section-highlight-dark: #d92d1e;
 }
 
 /* Override Tailwind rose classes within sections */
-/* Backgrounds: neutral for subtle, red for highlights */
+/* Backgrounds: neutral for subtle, section color for highlights */
 [data-theme="neutral"] [data-section] .bg-rose-50 { background-color: var(--section-bg-light) !important; }
 [data-theme="neutral"] [data-section] .bg-rose-100 { background-color: var(--section-bg) !important; }
 [data-theme="neutral"] [data-section] .bg-rose-200 { background-color: var(--section-border-light) !important; }
-[data-theme="neutral"] [data-section] .bg-rose-500 { background-color: var(--section-highlight) !important; }
-[data-theme="neutral"] [data-section] .bg-rose-600 { background-color: var(--section-highlight) !important; }
-[data-theme="neutral"] [data-section] .bg-rose-700 { background-color: var(--section-highlight-dark) !important; }
+[data-theme="neutral"] [data-section] .bg-rose-500 { background-color: var(--section-color) !important; }
+[data-theme="neutral"] [data-section] .bg-rose-600 { background-color: var(--section-color) !important; }
+[data-theme="neutral"] [data-section] .bg-rose-700 { background-color: var(--section-color-dark) !important; }
 
 /* Text: charcoal for readability */
 [data-theme="neutral"] [data-section] .text-rose-500 { color: var(--section-text) !important; }
@@ -137,21 +174,21 @@
 [data-theme="neutral"] [data-section] .text-rose-800 { color: var(--section-text) !important; }
 [data-theme="neutral"] [data-section] .text-rose-900 { color: var(--section-text) !important; }
 
-/* Borders: neutral tones */
+/* Borders: neutral tones, section color for emphasis */
 [data-theme="neutral"] [data-section] .border-rose-100 { border-color: var(--section-border-light) !important; }
 [data-theme="neutral"] [data-section] .border-rose-200 { border-color: var(--section-border) !important; }
 [data-theme="neutral"] [data-section] .border-rose-300 { border-color: var(--section-border) !important; }
-[data-theme="neutral"] [data-section] .border-rose-500 { border-color: var(--section-highlight) !important; }
+[data-theme="neutral"] [data-section] .border-rose-500 { border-color: var(--section-color) !important; }
 
-/* Rings: red accent */
-[data-theme="neutral"] [data-section] .ring-rose-500 { --tw-ring-color: var(--section-highlight) !important; }
-[data-theme="neutral"] [data-section] .ring-rose-600 { --tw-ring-color: var(--section-highlight-dark) !important; }
+/* Rings: section color */
+[data-theme="neutral"] [data-section] .ring-rose-500 { --tw-ring-color: var(--section-color) !important; }
+[data-theme="neutral"] [data-section] .ring-rose-600 { --tw-ring-color: var(--section-color-dark) !important; }
 
 /* Hover states */
 [data-theme="neutral"] [data-section] .hover\:bg-rose-50:hover { background-color: var(--section-bg-light) !important; }
 [data-theme="neutral"] [data-section] .hover\:bg-rose-100:hover { background-color: var(--section-bg) !important; }
-[data-theme="neutral"] [data-section] .hover\:bg-rose-600:hover { background-color: var(--section-highlight) !important; }
-[data-theme="neutral"] [data-section] .hover\:bg-rose-700:hover { background-color: var(--section-highlight-dark) !important; }
+[data-theme="neutral"] [data-section] .hover\:bg-rose-600:hover { background-color: var(--section-color) !important; }
+[data-theme="neutral"] [data-section] .hover\:bg-rose-700:hover { background-color: var(--section-color-dark) !important; }
 
 [data-theme="neutral"] [data-section] .hover\:text-rose-700:hover { color: var(--section-text-secondary) !important; }
 [data-theme="neutral"] [data-section] .hover\:text-rose-800:hover { color: var(--section-text) !important; }
@@ -159,8 +196,12 @@
 [data-theme="neutral"] [data-section] .hover\:border-rose-300:hover { border-color: var(--section-border) !important; }
 [data-theme="neutral"] [data-section] .hover\:border-rose-400:hover { border-color: var(--section-text-muted) !important; }
 
-/* Focus states: red accent */
-[data-theme="neutral"] [data-section] .focus\:ring-rose-500:focus { --tw-ring-color: var(--section-highlight) !important; }
+/* Focus states: section color */
+[data-theme="neutral"] [data-section] .focus\:ring-rose-500:focus { --tw-ring-color: var(--section-color) !important; }
+
+/* Icons use section color */
+[data-theme="neutral"] [data-section] svg:not(.no-section-color) { color: var(--section-color); }
+[data-theme="neutral"] [data-section] .lucide { color: var(--section-color); }
 
 /* Gradient backgrounds for section headers - warm neutral */
 [data-theme="neutral"] [data-section] .from-rose-50\/80 { --tw-gradient-from: rgba(250, 246, 240, 0.8) !important; }
@@ -168,10 +209,6 @@
 
 /* Text opacity variants */
 [data-theme="neutral"] [data-section] .text-rose-600\/80 { color: rgba(92, 81, 71, 0.8) !important; }
-
-/* Icons within sections get vibrant colors */
-[data-theme="neutral"] [data-section] svg { color: var(--section-icon-color); }
-[data-theme="neutral"] [data-section] .lucide { color: var(--section-icon-color); }
 
 html {
   width: 100%;
