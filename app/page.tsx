@@ -117,12 +117,14 @@ import {
   aggregateExtendedPbacData,
   SIMPLE_BLEEDING_INTENSITIES,
   getSimpleBleedingPbacEquivalent,
+  getTrackingMethodLabel,
   type PbacCountKey,
   type PbacCounts,
   type ExtendedBleedingEntry,
   type FreeBleedingEntry,
   type ExtendedPbacData,
   type SimpleBleedingIntensity,
+  type TrackingMethod,
 } from "@/lib/pbac";
 import { ExtendedBleedingEntryForm } from "@/components/home/ExtendedBleedingEntry";
 import {
@@ -1513,6 +1515,7 @@ type CycleOverviewPoint = {
   impactNRS: number | null;
   pbacScore: number | null;
   isBleeding: boolean;
+  bleedingTrackingMethod: TrackingMethod | null;
   ovulationPositive: boolean;
   ovulationPainIntensity: number | null;
   painTimeline: PainShortcutTimelineSegment[] | null;
@@ -1806,6 +1809,11 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
           <p>Beeinträchtigung: {payload.impactNRS ?? "–"}/10</p>
           <p>Blutung: {payload.bleedingLabel}</p>
           {payload.pbacScore !== null ? <p>PBAC: {payload.pbacScore}</p> : null}
+          {payload.bleedingTrackingMethod && payload.isBleeding ? (
+            <p className="text-rose-500 text-[10px]">
+              ({getTrackingMethodLabel(payload.bleedingTrackingMethod)})
+            </p>
+          ) : null}
           {payload.ovulationPositive ? (
             <p className="font-medium text-yellow-700">Eisprung bestätigt (LH+)</p>
           ) : payload.isPredictedOvulationDay ? (
@@ -2586,7 +2594,18 @@ export default function HomePage() {
           if (arePbacCountsEqual(draftCounts, normalized)) {
             return draft;
           }
-          return { ...draft, pbacCounts: normalized };
+          // Check if we're adding counts (not just clearing)
+          const hasAnyCounts = Object.values(normalized).some((v) => v > 0);
+          // If adding counts, tag with classic PBAC tracking method
+          const extendedPbacData = hasAnyCounts
+            ? {
+                ...(draft.extendedPbacData ?? {}),
+                trackingMethod: "pbac_classic" as const,
+                extendedEntries: draft.extendedPbacData?.extendedEntries ?? [],
+                freeBleedingEntries: draft.extendedPbacData?.freeBleedingEntries ?? [],
+              }
+            : draft.extendedPbacData;
+          return { ...draft, pbacCounts: normalized, extendedPbacData };
         });
         return nextState;
       });
@@ -2624,6 +2643,33 @@ export default function HomePage() {
     [dailyDraft, pbacCounts]
   );
   const bleedingActive = hasBleedingForEntry(dailyDraft);
+
+  // Comprehensive check: does today have any bleeding data (any mode)?
+  const todayHasAnyBleedingData = useMemo(() => {
+    if (draftHasBleeding) return true;
+    // Check simple mode intensity
+    if (dailyDraft.simpleBleedingIntensity && dailyDraft.simpleBleedingIntensity !== "none") return true;
+    // Check extended PBAC entries
+    const extData = dailyDraft.extendedPbacData;
+    if (extData) {
+      if (extData.extendedEntries && extData.extendedEntries.length > 0) return true;
+      if (extData.freeBleedingEntries && extData.freeBleedingEntries.length > 0) return true;
+    }
+    return false;
+  }, [draftHasBleeding, dailyDraft.simpleBleedingIntensity, dailyDraft.extendedPbacData]);
+
+  // Handler to reset today's bleeding data (called when mode changes)
+  const handleResetTodayBleedingData = useCallback(() => {
+    setPbacCountsState(createEmptyPbacCounts());
+    setDailyDraft((prev) => ({
+      ...prev,
+      bleeding: { isBleeding: false },
+      pbacCounts: createEmptyPbacCounts(),
+      simpleBleedingIntensity: undefined,
+      extendedPbacData: undefined,
+    }));
+  }, [setDailyDraft]);
+
   const [activePbacCategory, setActivePbacCategory] = useState<PbacEntryCategory>("pad");
   const [bleedingQuickAddOpen, setBleedingQuickAddOpen] = useState(false);
   const [pendingBleedingQuickAdd, setPendingBleedingQuickAdd] = useState<PbacProductItemId | null>(null);
@@ -3477,6 +3523,7 @@ export default function HomePage() {
         impactNRS: entry.impactNRS ?? null,
         pbacScore: entry.bleeding?.pbacScore ?? null,
         isBleeding: hasBleedingForEntry(entry),
+        bleedingTrackingMethod: entry.extendedPbacData?.trackingMethod ?? null,
         ovulationPositive: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
         ovulationPainIntensity: entry.ovulationPain?.intensity ?? null,
         painTimeline: null,
@@ -3520,6 +3567,7 @@ export default function HomePage() {
           impactNRS: null,
           pbacScore: null,
           isBleeding: false,
+          bleedingTrackingMethod: null,
           ovulationPositive: false,
           ovulationPainIntensity: null,
           painTimeline: timeline,
@@ -3597,6 +3645,27 @@ export default function HomePage() {
   }, [dailyDraft.date]);
 
   const isSelectedDateToday = useMemo(() => dailyDraft.date === today, [dailyDraft.date, today]);
+
+  // Determine effective tracking method for the bleeding section
+  // For historical entries with data, use the mode they were entered in
+  // Otherwise use the current productSettings
+  const effectiveBleedingTrackingMethod = useMemo(() => {
+    // If entry has extendedPbacData with a trackingMethod, use it
+    const entryMethod = dailyDraft.extendedPbacData?.trackingMethod;
+    if (entryMethod) {
+      return entryMethod;
+    }
+    // For entries without extendedPbacData (legacy or new), use current setting
+    return productSettings.trackingMethod;
+  }, [dailyDraft.extendedPbacData?.trackingMethod, productSettings.trackingMethod]);
+
+  // Check if we're viewing data entered with a different mode than current setting
+  const isViewingDifferentBleedingMode = useMemo(() => {
+    const entryMethod = dailyDraft.extendedPbacData?.trackingMethod;
+    // Only show badge if entry has data AND the mode differs from current setting
+    if (!entryMethod) return false;
+    return entryMethod !== productSettings.trackingMethod && todayHasAnyBleedingData;
+  }, [dailyDraft.extendedPbacData?.trackingMethod, productSettings.trackingMethod, todayHasAnyBleedingData]);
 
   const dailyToolbarLabel = useMemo(() => {
     const categoryLabels: Record<DailyCategoryId, string> = {
@@ -3903,7 +3972,7 @@ export default function HomePage() {
     (draftHasBleeding || hasExtendedPbacEntries);
 
   const renderPbacSummaryPanel = () => {
-    const isExtendedMode = productSettings.trackingMethod === "pbac_extended";
+    const isExtendedMode = effectiveBleedingTrackingMethod === "pbac_extended";
     const displayScore = isExtendedMode
       ? dailyDraft.extendedPbacData?.totalPbacEquivalentScore ?? 0
       : pbacScore;
@@ -7667,6 +7736,8 @@ export default function HomePage() {
                     setProductSettings(newSettings);
                     await saveProductSettings(newSettings);
                   }}
+                  todayHasBleedingData={todayHasAnyBleedingData}
+                  onResetTodayBleedingData={handleResetTodayBleedingData}
                 />
               </div>
             )}
@@ -8711,8 +8782,25 @@ export default function HomePage() {
                       </div>
                       {!showPbacSummaryInToolbar ? renderPbacSummaryPanel() : null}
 
+                      {/* Show badge when viewing data entered with a different mode */}
+                      {isViewingDifferentBleedingMode && (
+                        <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+                          <p className="font-medium">
+                            Erfasst mit:{" "}
+                            {effectiveBleedingTrackingMethod === "simple"
+                              ? "Vereinfachte Erfassung"
+                              : effectiveBleedingTrackingMethod === "pbac_classic"
+                                ? "Klassischer PBAC"
+                                : "Erweiterter PBAC"}
+                          </p>
+                          <p className="text-xs text-amber-600 mt-1">
+                            Diese Daten wurden mit einer anderen Erfassungsmethode eingetragen.
+                          </p>
+                        </div>
+                      )}
+
                       {/* Simple Tracking Mode */}
-                      {productSettings.trackingMethod === "simple" ? (
+                      {effectiveBleedingTrackingMethod === "simple" ? (
                         <div className="space-y-4">
                           <div className="space-y-2">
                             <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Blutungsstärke heute</p>
@@ -8734,6 +8822,13 @@ export default function HomePage() {
                                         ...prev.bleeding,
                                         isBleeding: true,
                                         pbacScore,
+                                      },
+                                      // Tag with tracking method for historical reference
+                                      extendedPbacData: {
+                                        ...(prev.extendedPbacData ?? {}),
+                                        trackingMethod: "simple",
+                                        extendedEntries: prev.extendedPbacData?.extendedEntries ?? [],
+                                        freeBleedingEntries: prev.extendedPbacData?.freeBleedingEntries ?? [],
                                       },
                                     }));
                                   }}
@@ -8786,7 +8881,7 @@ export default function HomePage() {
                             </button>
                           )}
                         </div>
-                      ) : productSettings.trackingMethod === "pbac_extended" ? (
+                      ) : effectiveBleedingTrackingMethod === "pbac_extended" ? (
                         /* Extended PBAC Mode */
                         <ExtendedBleedingEntryForm
                           settings={productSettings}
@@ -10968,7 +11063,7 @@ export default function HomePage() {
               </button>
             </div>
 
-            {productSettings.trackingMethod === "pbac_extended" ? (
+            {effectiveBleedingTrackingMethod === "pbac_extended" ? (
               <ExtendedBleedingEntryForm
                 settings={productSettings}
                 onAddEntry={(entry) => {

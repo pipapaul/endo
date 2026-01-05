@@ -20,17 +20,26 @@ import { Button } from "@/components/ui/button";
 interface ProductSettingsPanelProps {
   settings: ProductSettings;
   onSettingsChange: (settings: ProductSettings) => void;
+  /** Whether today has any bleeding data that would be reset on mode change */
+  todayHasBleedingData?: boolean;
+  /** Called when mode change is confirmed and today's data should be reset */
+  onResetTodayBleedingData?: () => void;
 }
 
 export const ProductSettingsPanel: React.FC<ProductSettingsPanelProps> = ({
   settings,
   onSettingsChange,
+  todayHasBleedingData,
+  onResetTodayBleedingData,
 }) => {
   const [showAddCustom, setShowAddCustom] = useState(false);
   const [showProductConfig, setShowProductConfig] = useState(false);
   const [customName, setCustomName] = useState("");
   const [customCategory, setCustomCategory] = useState<ProductCategory>("cup");
   const [customCapacity, setCustomCapacity] = useState(25);
+  // State for mode change confirmation dialog
+  const [pendingMethodChange, setPendingMethodChange] = useState<TrackingMethod | null>(null);
+  const [showModeChangeConfirm, setShowModeChangeConfirm] = useState(false);
 
   // Alle Produkte (Standard + Custom), gefiltert nach Tracking-Methode
   const allProducts = [...DEFAULT_PRODUCTS, ...settings.customProducts].filter((product) => {
@@ -51,7 +60,34 @@ export const ProductSettingsPanel: React.FC<ProductSettingsPanelProps> = ({
   }, {} as Record<ProductCategory, ProductDefinition[]>);
 
   const handleTrackingMethodChange = (method: TrackingMethod) => {
-    onSettingsChange({ ...settings, trackingMethod: method });
+    // If same method, do nothing
+    if (method === settings.trackingMethod) {
+      return;
+    }
+    // If today has bleeding data, show confirmation dialog
+    if (todayHasBleedingData) {
+      setPendingMethodChange(method);
+      setShowModeChangeConfirm(true);
+    } else {
+      // No data to reset, change directly
+      onSettingsChange({ ...settings, trackingMethod: method });
+    }
+  };
+
+  const handleModeChangeConfirm = () => {
+    if (pendingMethodChange) {
+      // Reset today's bleeding data first
+      onResetTodayBleedingData?.();
+      // Then change the tracking method
+      onSettingsChange({ ...settings, trackingMethod: pendingMethodChange });
+    }
+    setShowModeChangeConfirm(false);
+    setPendingMethodChange(null);
+  };
+
+  const handleModeChangeCancel = () => {
+    setShowModeChangeConfirm(false);
+    setPendingMethodChange(null);
   };
 
   const handleProductToggle = (productId: string, enabled: boolean) => {
@@ -448,6 +484,40 @@ export const ProductSettingsPanel: React.FC<ProductSettingsPanelProps> = ({
                 className="flex-1 bg-rose-600 text-white hover:bg-rose-500"
               >
                 Hinzufügen
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mode Change Confirmation Dialog */}
+      {showModeChangeConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[110]">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4 shadow-xl">
+            <h3 className="text-lg font-semibold text-rose-900 mb-3">
+              Erfassungsmethode ändern?
+            </h3>
+            <p className="text-sm text-rose-700 mb-2">
+              Die Blutungsdaten des heutigen Tages werden zurückgesetzt, um Verwechslungen zwischen verschiedenen Erfassungsmethoden zu vermeiden.
+            </p>
+            <p className="text-xs text-rose-500 mb-6">
+              Einträge vor heute bleiben unverändert.
+            </p>
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleModeChangeCancel}
+                className="flex-1 border-rose-200 text-rose-700 hover:bg-rose-50"
+              >
+                Abbrechen
+              </Button>
+              <Button
+                type="button"
+                onClick={handleModeChangeConfirm}
+                className="flex-1 bg-rose-600 text-white hover:bg-rose-500"
+              >
+                Modus ändern
               </Button>
             </div>
           </div>

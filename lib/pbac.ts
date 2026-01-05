@@ -402,3 +402,19 @@ export const getSimpleBleedingPbacEquivalent = (
   const def = getSimpleBleedingIntensityDefinition(intensity);
   return def?.pbacEquivalent ?? 0;
 };
+
+/**
+ * Returns human-readable label for a tracking method
+ */
+export const getTrackingMethodLabel = (method: TrackingMethod): string => {
+  switch (method) {
+    case "simple":
+      return "Vereinfachte Erfassung";
+    case "pbac_classic":
+      return "Klassischer PBAC";
+    case "pbac_extended":
+      return "Erweiterter PBAC";
+    default:
+      return method;
+  }
+};
