@@ -33,210 +33,136 @@
   --endo-decorative-shadow: rgba(244, 114, 182, 0.35);
 }
 
-/* Neutral theme - warm, friendly palette with vibrant semantic colors */
+/* Neutral theme - warm, friendly palette with charcoal headlines and vibrant icons */
 [data-theme="neutral"] {
-  /* Override Tailwind rose palette with warm, inviting colors */
-  --tw-rose-50: #fdf9f5;   /* warm cream with peachy undertone - main background */
+  /* Override Tailwind rose palette with warm neutral tones */
+  --tw-rose-50: #fdf9f5;   /* warm cream - main background */
   --tw-rose-100: #faf6f0;  /* soft warm white - cards */
   --tw-rose-200: #f0e9df;  /* warm sand - light border */
   --tw-rose-300: #e0d6c8;  /* warm taupe - medium border */
   --tw-rose-400: #b5a899;  /* warm muted - subtle text */
-  --tw-rose-500: #e07b5f;  /* warm coral - friendly primary accent */
-  --tw-rose-600: #d06a4e;  /* deeper coral - hover */
-  --tw-rose-700: #b85a42;  /* rich terracotta */
+  --tw-rose-500: #3d352e;  /* warm charcoal - primary accent */
+  --tw-rose-600: #2a241f;  /* deeper charcoal - hover */
+  --tw-rose-700: #1f1a16;  /* deep charcoal */
   --tw-rose-800: #5c5147;  /* warm dark brown - secondary text */
   --tw-rose-900: #3d352e;  /* warm charcoal - primary text */
   --tw-rose-950: #2a241f;  /* deepest warm black */
 
-  /* Core colors */
-  --endo-accent: #e07b5f;
+  /* Core colors - charcoal accent for headlines */
+  --endo-accent: #3d352e;
   --endo-bg: #fdf9f5;
-  --section-card-completed-bg: #eef7eb;
-  --section-card-completed-border: #7cb87c;
+  --section-card-completed-bg: #f5f7f2;
+  --section-card-completed-border: #c8d4c0;
 
-  /* Semantic colors - vibrant, distinct colors for navigation */
-  --endo-bleeding: #e06058;       /* rich coral-red */
+  /* Vibrant semantic colors - for icons only */
+  --endo-bleeding: #e8524a;       /* vibrant coral-red */
   --endo-bleeding-light: #fdf0ef;
-  --endo-pain: #9b6bb3;           /* vibrant violet-purple */
+  --endo-pain: #a855f7;           /* vibrant violet */
   --endo-pain-light: #f8f0fc;
-  --endo-ovulation: #e8a445;      /* golden saffron/amber */
+  --endo-ovulation: #f59e0b;      /* vibrant amber */
   --endo-ovulation-light: #fef7e8;
-  --endo-fertility: #3da88a;      /* fresh teal-green */
+  --endo-fertility: #14b8a6;      /* vibrant teal */
   --endo-fertility-light: #e8f6f1;
-  --endo-medication: #5a9fd4;     /* bright sky blue */
+  --endo-medication: #0ea5e9;     /* vibrant sky blue */
   --endo-medication-light: #edf5fc;
-  --endo-sleep: #8b7ec9;          /* soft periwinkle/lavender */
+  --endo-sleep: #8b5cf6;          /* vibrant indigo */
   --endo-sleep-light: #f3f0fa;
-  --endo-notes: #c9956a;          /* warm caramel */
+  --endo-notes: #f97316;          /* vibrant orange */
   --endo-notes-light: #faf4ed;
-  --endo-symptoms: #d4789a;       /* soft rose-pink */
+  --endo-symptoms: #ec4899;       /* vibrant pink */
   --endo-symptoms-light: #fcf0f4;
-  --endo-energy: #e8955a;         /* warm tangerine */
+  --endo-energy: #f97316;         /* vibrant orange */
   --endo-energy-light: #fef5ed;
-  --endo-mood: #e08888;           /* gentle coral-pink */
+  --endo-mood: #f472b6;           /* vibrant pink */
   --endo-mood-light: #fdf2f2;
-  --endo-success: #3da88a;
+  --endo-success: #10b981;
   --endo-success-light: #e8f6f1;
-  --endo-info: #5a9fd4;
+  --endo-info: #0ea5e9;
   --endo-info-light: #edf5fc;
-  --endo-warning: #e8a445;
+  --endo-warning: #f59e0b;
   --endo-warning-light: #fef7e8;
 
-  /* Slider colors - coral to match accent */
-  --endo-slider-active: rgba(224, 123, 95, 0.85);
-  --endo-slider-track: rgba(224, 123, 95, 0.18);
-  --endo-slider-shadow: rgba(224, 123, 95, 0.25);
-  --endo-slider-shadow-active: rgba(224, 123, 95, 0.35);
+  /* Slider colors - charcoal to match accent */
+  --endo-slider-active: rgba(61, 53, 46, 0.85);
+  --endo-slider-track: rgba(61, 53, 46, 0.12);
+  --endo-slider-shadow: rgba(61, 53, 46, 0.15);
+  --endo-slider-shadow-active: rgba(61, 53, 46, 0.25);
 
-  /* Decorative shadow - warm coral */
-  --endo-decorative-shadow: rgba(224, 123, 95, 0.35);
+  /* Decorative shadow - warm neutral */
+  --endo-decorative-shadow: rgba(61, 53, 46, 0.25);
 }
 
 /* Semantic section color overrides for neutral theme */
-/* Each section gets its own vibrant color - overrides Tailwind rose classes */
+/* Charcoal headlines, warm neutral backgrounds, vibrant icons only */
 
-/* Section color CSS variables for each section type */
-[data-theme="neutral"] [data-section="bleeding"] {
-  --section-color: var(--endo-bleeding);
-  --section-color-dark: #c85048;
-  --section-color-light: var(--endo-bleeding-light);
-  --section-color-lighter: #fbe6e5;
-  --section-color-border: #f0c4c2;
-  --section-color-text: #9a4540;
-  --section-color-text-light: #b85550;
+/* Section icon colors - vibrant for visual distinction */
+[data-theme="neutral"] [data-section="bleeding"] { --section-icon-color: var(--endo-bleeding); }
+[data-theme="neutral"] [data-section="pain"] { --section-icon-color: var(--endo-pain); }
+[data-theme="neutral"] [data-section="ovulation"] { --section-icon-color: var(--endo-ovulation); }
+[data-theme="neutral"] [data-section="fertility"] { --section-icon-color: var(--endo-fertility); }
+[data-theme="neutral"] [data-section="medication"] { --section-icon-color: var(--endo-medication); }
+[data-theme="neutral"] [data-section="sleep"] { --section-icon-color: var(--endo-sleep); }
+[data-theme="neutral"] [data-section="notes"] { --section-icon-color: var(--endo-notes); }
+[data-theme="neutral"] [data-section="symptoms"] { --section-icon-color: var(--endo-symptoms); }
+[data-theme="neutral"] [data-section="energy"] { --section-icon-color: var(--endo-energy); }
+[data-theme="neutral"] [data-section="mood"] { --section-icon-color: var(--endo-mood); }
+
+/* All sections use consistent neutral palette for backgrounds, borders, text */
+[data-theme="neutral"] [data-section] {
+  --section-bg: #faf6f0;
+  --section-bg-light: #fdf9f5;
+  --section-border: #e0d6c8;
+  --section-border-light: #f0e9df;
+  --section-text: #3d352e;
+  --section-text-secondary: #5c5147;
+  --section-text-muted: #8a8078;
 }
 
-[data-theme="neutral"] [data-section="pain"] {
-  --section-color: var(--endo-pain);
-  --section-color-dark: #8858a0;
-  --section-color-light: var(--endo-pain-light);
-  --section-color-lighter: #f0e5f5;
-  --section-color-border: #d4c0e0;
-  --section-color-text: #7a5a90;
-  --section-color-text-light: #9b6bb3;
-}
+/* Override Tailwind rose classes within sections - neutral palette */
+[data-theme="neutral"] [data-section] .bg-rose-50 { background-color: var(--section-bg-light) !important; }
+[data-theme="neutral"] [data-section] .bg-rose-100 { background-color: var(--section-bg) !important; }
+[data-theme="neutral"] [data-section] .bg-rose-200 { background-color: var(--section-border-light) !important; }
+[data-theme="neutral"] [data-section] .bg-rose-500 { background-color: var(--section-text) !important; }
+[data-theme="neutral"] [data-section] .bg-rose-600 { background-color: #2a241f !important; }
+[data-theme="neutral"] [data-section] .bg-rose-700 { background-color: #1f1a16 !important; }
 
-[data-theme="neutral"] [data-section="ovulation"] {
-  --section-color: var(--endo-ovulation);
-  --section-color-dark: #d09035;
-  --section-color-light: var(--endo-ovulation-light);
-  --section-color-lighter: #fcefda;
-  --section-color-border: #f0d4a0;
-  --section-color-text: #a07830;
-  --section-color-text-light: #c89038;
-}
+[data-theme="neutral"] [data-section] .text-rose-500 { color: var(--section-text) !important; }
+[data-theme="neutral"] [data-section] .text-rose-600 { color: var(--section-text-secondary) !important; }
+[data-theme="neutral"] [data-section] .text-rose-700 { color: var(--section-text-secondary) !important; }
+[data-theme="neutral"] [data-section] .text-rose-800 { color: var(--section-text) !important; }
+[data-theme="neutral"] [data-section] .text-rose-900 { color: var(--section-text) !important; }
 
-[data-theme="neutral"] [data-section="fertility"] {
-  --section-color: var(--endo-fertility);
-  --section-color-dark: #2d9478;
-  --section-color-light: var(--endo-fertility-light);
-  --section-color-lighter: #dcf0e8;
-  --section-color-border: #a8d8c8;
-  --section-color-text: #2d7868;
-  --section-color-text-light: #3da88a;
-}
+[data-theme="neutral"] [data-section] .border-rose-100 { border-color: var(--section-border-light) !important; }
+[data-theme="neutral"] [data-section] .border-rose-200 { border-color: var(--section-border) !important; }
+[data-theme="neutral"] [data-section] .border-rose-300 { border-color: var(--section-border) !important; }
+[data-theme="neutral"] [data-section] .border-rose-500 { border-color: var(--section-text) !important; }
 
-[data-theme="neutral"] [data-section="medication"] {
-  --section-color: var(--endo-medication);
-  --section-color-dark: #4a8dc0;
-  --section-color-light: var(--endo-medication-light);
-  --section-color-lighter: #e0edf7;
-  --section-color-border: #b0d0e8;
-  --section-color-text: #4078a0;
-  --section-color-text-light: #5a9fd4;
-}
+[data-theme="neutral"] [data-section] .ring-rose-500 { --tw-ring-color: var(--section-text) !important; }
+[data-theme="neutral"] [data-section] .ring-rose-600 { --tw-ring-color: #2a241f !important; }
 
-[data-theme="neutral"] [data-section="sleep"] {
-  --section-color: var(--endo-sleep);
-  --section-color-dark: #7568b8;
-  --section-color-light: var(--endo-sleep-light);
-  --section-color-lighter: #e8e4f5;
-  --section-color-border: #c8c0e0;
-  --section-color-text: #6858a0;
-  --section-color-text-light: #8b7ec9;
-}
+[data-theme="neutral"] [data-section] .hover\:bg-rose-50:hover { background-color: var(--section-bg-light) !important; }
+[data-theme="neutral"] [data-section] .hover\:bg-rose-100:hover { background-color: var(--section-bg) !important; }
+[data-theme="neutral"] [data-section] .hover\:bg-rose-600:hover { background-color: #2a241f !important; }
+[data-theme="neutral"] [data-section] .hover\:bg-rose-700:hover { background-color: #1f1a16 !important; }
 
-[data-theme="neutral"] [data-section="notes"] {
-  --section-color: var(--endo-notes);
-  --section-color-dark: #b58055;
-  --section-color-light: var(--endo-notes-light);
-  --section-color-lighter: #f5ebe0;
-  --section-color-border: #dcc8b0;
-  --section-color-text: #8a6848;
-  --section-color-text-light: #c9956a;
-}
+[data-theme="neutral"] [data-section] .hover\:text-rose-700:hover { color: var(--section-text-secondary) !important; }
+[data-theme="neutral"] [data-section] .hover\:text-rose-800:hover { color: var(--section-text) !important; }
 
-[data-theme="neutral"] [data-section="symptoms"] {
-  --section-color: var(--endo-symptoms);
-  --section-color-dark: #c06588;
-  --section-color-light: var(--endo-symptoms-light);
-  --section-color-lighter: #f8e5ed;
-  --section-color-border: #e8c0d0;
-  --section-color-text: #a05878;
-  --section-color-text-light: #d4789a;
-}
+[data-theme="neutral"] [data-section] .hover\:border-rose-300:hover { border-color: var(--section-border) !important; }
+[data-theme="neutral"] [data-section] .hover\:border-rose-400:hover { border-color: var(--section-text-muted) !important; }
 
-[data-theme="neutral"] [data-section="energy"] {
-  --section-color: var(--endo-energy);
-  --section-color-dark: #d0804a;
-  --section-color-light: var(--endo-energy-light);
-  --section-color-lighter: #fceee0;
-  --section-color-border: #f0c8a0;
-  --section-color-text: #a86838;
-  --section-color-text-light: #e8955a;
-}
+[data-theme="neutral"] [data-section] .focus\:ring-rose-500:focus { --tw-ring-color: var(--section-text) !important; }
 
-[data-theme="neutral"] [data-section="mood"] {
-  --section-color: var(--endo-mood);
-  --section-color-dark: #c87575;
-  --section-color-light: var(--endo-mood-light);
-  --section-color-lighter: #fbe8e8;
-  --section-color-border: #e8c0c0;
-  --section-color-text: #a06060;
-  --section-color-text-light: #e08888;
-}
-
-/* Override Tailwind rose classes within sections */
-[data-theme="neutral"] [data-section] .bg-rose-50 { background-color: var(--section-color-light) !important; }
-[data-theme="neutral"] [data-section] .bg-rose-100 { background-color: var(--section-color-lighter) !important; }
-[data-theme="neutral"] [data-section] .bg-rose-200 { background-color: var(--section-color-border) !important; }
-[data-theme="neutral"] [data-section] .bg-rose-500 { background-color: var(--section-color) !important; }
-[data-theme="neutral"] [data-section] .bg-rose-600 { background-color: var(--section-color-dark) !important; }
-[data-theme="neutral"] [data-section] .bg-rose-700 { background-color: var(--section-color-dark) !important; }
-
-[data-theme="neutral"] [data-section] .text-rose-500 { color: var(--section-color) !important; }
-[data-theme="neutral"] [data-section] .text-rose-600 { color: var(--section-color-text-light) !important; }
-[data-theme="neutral"] [data-section] .text-rose-700 { color: var(--section-color-text-light) !important; }
-[data-theme="neutral"] [data-section] .text-rose-800 { color: var(--section-color-text) !important; }
-[data-theme="neutral"] [data-section] .text-rose-900 { color: var(--section-color-text) !important; }
-
-[data-theme="neutral"] [data-section] .border-rose-100 { border-color: var(--section-color-lighter) !important; }
-[data-theme="neutral"] [data-section] .border-rose-200 { border-color: var(--section-color-border) !important; }
-[data-theme="neutral"] [data-section] .border-rose-300 { border-color: var(--section-color-border) !important; }
-[data-theme="neutral"] [data-section] .border-rose-500 { border-color: var(--section-color) !important; }
-
-[data-theme="neutral"] [data-section] .ring-rose-500 { --tw-ring-color: var(--section-color) !important; }
-[data-theme="neutral"] [data-section] .ring-rose-600 { --tw-ring-color: var(--section-color-dark) !important; }
-
-[data-theme="neutral"] [data-section] .hover\:bg-rose-50:hover { background-color: var(--section-color-light) !important; }
-[data-theme="neutral"] [data-section] .hover\:bg-rose-100:hover { background-color: var(--section-color-lighter) !important; }
-[data-theme="neutral"] [data-section] .hover\:bg-rose-600:hover { background-color: var(--section-color-dark) !important; }
-[data-theme="neutral"] [data-section] .hover\:bg-rose-700:hover { background-color: var(--section-color-dark) !important; }
-
-[data-theme="neutral"] [data-section] .hover\:text-rose-700:hover { color: var(--section-color-text-light) !important; }
-[data-theme="neutral"] [data-section] .hover\:text-rose-800:hover { color: var(--section-color-text) !important; }
-
-[data-theme="neutral"] [data-section] .hover\:border-rose-300:hover { border-color: var(--section-color-border) !important; }
-[data-theme="neutral"] [data-section] .hover\:border-rose-400:hover { border-color: var(--section-color) !important; }
-
-[data-theme="neutral"] [data-section] .focus\:ring-rose-500:focus { --tw-ring-color: var(--section-color) !important; }
-
-/* Gradient backgrounds for section headers */
-[data-theme="neutral"] [data-section] .from-rose-50\/80 { --tw-gradient-from: var(--section-color-light) !important; }
-[data-theme="neutral"] [data-section] .to-rose-50\/40 { --tw-gradient-to: color-mix(in srgb, var(--section-color-light) 40%, transparent) !important; }
+/* Gradient backgrounds for section headers - warm neutral */
+[data-theme="neutral"] [data-section] .from-rose-50\/80 { --tw-gradient-from: rgba(250, 246, 240, 0.8) !important; }
+[data-theme="neutral"] [data-section] .to-rose-50\/40 { --tw-gradient-to: rgba(250, 246, 240, 0.4) !important; }
 
 /* Text opacity variants */
-[data-theme="neutral"] [data-section] .text-rose-600\/80 { color: color-mix(in srgb, var(--section-color-text-light) 80%, transparent) !important; }
+[data-theme="neutral"] [data-section] .text-rose-600\/80 { color: rgba(92, 81, 71, 0.8) !important; }
+
+/* Icons within sections get vibrant colors */
+[data-theme="neutral"] [data-section] svg { color: var(--section-icon-color); }
+[data-theme="neutral"] [data-section] .lucide { color: var(--section-icon-color); }
 
 html {
   width: 100%;

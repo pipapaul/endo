@@ -78,72 +78,72 @@ export const THEME_COLORS = {
       200: "#f0e9df", // warm sand - light borders
       300: "#e0d6c8", // warm taupe - medium borders
       400: "#b5a899", // warm muted - subtle text
-      500: "#e07b5f", // warm coral - friendly primary accent
-      600: "#d06a4e", // deeper coral - hover
-      700: "#b85a42", // rich terracotta
+      500: "#3d352e", // warm charcoal - primary accent (headlines)
+      600: "#2a241f", // deeper charcoal - hover
+      700: "#1f1a16", // deep charcoal
       800: "#5c5147", // warm dark brown - secondary text
       900: "#3d352e", // warm charcoal - primary text
       950: "#2a241f", // deepest warm black
     },
-    accent: "#e07b5f", // warm coral - friendly, inviting
+    accent: "#3d352e", // warm charcoal - headlines and primary accent
     background: "#fdf9f5", // warm cream with peachy undertone
-    // Semantic colors - vibrant, distinct colors for each section
+    // Semantic colors - vibrant colors for icons and accents
     semantic: {
-      // Bleeding: rich coral-red (warm, not alarming)
-      bleeding: "#e06058",
+      // Bleeding: vibrant coral-red
+      bleeding: "#e8524a",
       bleedingLight: "#fdf0ef",
       // Pain: vibrant violet-purple
-      pain: "#9b6bb3",
+      pain: "#a855f7",
       painLight: "#f8f0fc",
-      // Ovulation: golden saffron/amber
-      ovulation: "#e8a445",
+      // Ovulation: vibrant golden amber
+      ovulation: "#f59e0b",
       ovulationLight: "#fef7e8",
-      // Fertility: fresh teal-green
-      fertility: "#3da88a",
+      // Fertility: vibrant teal-green
+      fertility: "#14b8a6",
       fertilityLight: "#e8f6f1",
-      // Medication: bright sky blue
-      medication: "#5a9fd4",
+      // Medication: vibrant sky blue
+      medication: "#0ea5e9",
       medicationLight: "#edf5fc",
-      // Sleep: soft periwinkle/lavender
-      sleep: "#8b7ec9",
+      // Sleep: vibrant indigo/purple
+      sleep: "#8b5cf6",
       sleepLight: "#f3f0fa",
-      // Notes: warm caramel
-      notes: "#c9956a",
+      // Notes: vibrant amber/orange
+      notes: "#f97316",
       notesLight: "#faf4ed",
-      // Symptoms: soft rose-pink
-      symptoms: "#d4789a",
+      // Symptoms: vibrant rose-pink
+      symptoms: "#ec4899",
       symptomsLight: "#fcf0f4",
-      // Energy: warm tangerine
-      energy: "#e8955a",
+      // Energy: vibrant orange
+      energy: "#f97316",
       energyLight: "#fef5ed",
-      // Mood: gentle coral-pink
-      mood: "#e08888",
+      // Mood: vibrant pink
+      mood: "#f472b6",
       moodLight: "#fdf2f2",
-      // Success: fresh emerald
-      success: "#3da88a",
+      // Success: vibrant emerald
+      success: "#10b981",
       successLight: "#e8f6f1",
-      // Info: clear sky blue
-      info: "#5a9fd4",
+      // Info: vibrant sky blue
+      info: "#0ea5e9",
       infoLight: "#edf5fc",
-      // Warning: golden amber
-      warning: "#e8a445",
+      // Warning: vibrant amber
+      warning: "#f59e0b",
       warningLight: "#fef7e8",
     },
     chart: {
-      bleedingArea: "rgba(224, 96, 88, 0.35)",
-      bleedingLine: "#e06058",
-      painLine: "#9b6bb3",
-      ovulationMarker: "#e8a445",
-      ovulationMarkerBorder: "#c88a2a",
-      fertileWindow: "#3da88a",
+      bleedingArea: "rgba(232, 82, 74, 0.35)",
+      bleedingLine: "#e8524a",
+      painLine: "#a855f7",
+      ovulationMarker: "#f59e0b",
+      ovulationMarkerBorder: "#d97706",
+      fertileWindow: "#14b8a6",
       fertileWindowLight: "#e8f6f1",
-      mucusFertility: "#3da88a",
-      grid: "rgba(224, 123, 95, 0.12)",
+      mucusFertility: "#14b8a6",
+      grid: "rgba(61, 53, 46, 0.08)",
     },
     slider: {
-      active: "rgba(224, 123, 95, 0.85)",
-      track: "rgba(224, 123, 95, 0.18)",
-      shadow: "rgba(224, 123, 95, 0.25)",
+      active: "rgba(61, 53, 46, 0.85)",
+      track: "rgba(61, 53, 46, 0.12)",
+      shadow: "rgba(61, 53, 46, 0.15)",
     },
   },
 } as const;
@@ -182,8 +182,8 @@ export function getColorSchemeDescription(scheme: ColorScheme): string {
 export function getColorSchemeSwatches(scheme: ColorScheme): string[] {
   if (scheme === "neutral") {
     const colors = THEME_COLORS.neutral;
-    // Show the vibrant semantic colors for neutral theme
-    return [colors.accent, colors.semantic.fertility, colors.semantic.sleep];
+    // Show charcoal + vibrant icon colors for neutral theme
+    return [colors.accent, colors.semantic.fertility, colors.semantic.medication];
   }
   const colors = THEME_COLORS[scheme];
   return [colors.ui[500], colors.ui[300], colors.ui[50]];
