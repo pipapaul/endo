@@ -78,14 +78,14 @@ export const THEME_COLORS = {
       200: "#f0e9df", // warm sand - light borders
       300: "#e0d6c8", // warm taupe - medium borders
       400: "#b5a899", // warm muted - subtle text
-      500: "#3d352e", // warm charcoal - primary accent (headlines)
-      600: "#2a241f", // deeper charcoal - hover
-      700: "#1f1a16", // deep charcoal
+      500: "#f13524", // vibrant red - highlight accent
+      600: "#d92d1e", // darker red - hover
+      700: "#b82518", // deep red
       800: "#5c5147", // warm dark brown - secondary text
       900: "#3d352e", // warm charcoal - primary text
       950: "#2a241f", // deepest warm black
     },
-    accent: "#3d352e", // warm charcoal - headlines and primary accent
+    accent: "#f13524", // vibrant red - highlight accent
     background: "#fdf9f5", // warm cream with peachy undertone
     // Semantic colors - vibrant colors for icons and accents
     semantic: {
@@ -141,9 +141,9 @@ export const THEME_COLORS = {
       grid: "rgba(61, 53, 46, 0.08)",
     },
     slider: {
-      active: "rgba(61, 53, 46, 0.85)",
-      track: "rgba(61, 53, 46, 0.12)",
-      shadow: "rgba(61, 53, 46, 0.15)",
+      active: "rgba(241, 53, 36, 0.85)",
+      track: "rgba(241, 53, 36, 0.15)",
+      shadow: "rgba(241, 53, 36, 0.2)",
     },
   },
 } as const;
