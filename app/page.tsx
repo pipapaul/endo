@@ -117,6 +117,7 @@ import {
   aggregateExtendedPbacData,
   SIMPLE_BLEEDING_INTENSITIES,
   getSimpleBleedingPbacEquivalent,
+  getSimpleBleedingIntensityDefinition,
   getTrackingMethodLabel,
   type PbacCountKey,
   type PbacCounts,
@@ -1516,6 +1517,7 @@ type CycleOverviewPoint = {
   pbacScore: number | null;
   isBleeding: boolean;
   bleedingTrackingMethod: TrackingMethod | null;
+  simpleBleedingIntensity: SimpleBleedingIntensity | null;
   ovulationPositive: boolean;
   ovulationPainIntensity: number | null;
   painTimeline: PainShortcutTimelineSegment[] | null;
@@ -1599,6 +1601,10 @@ const describeBleedingLevel = (point: CycleOverviewPoint) => {
 type CycleOverviewChartPoint = CycleOverviewPoint & {
   bleedingLabel: string;
   bleedingValue: number;
+  // For simple mode: uncertainty range for thicker/blurry display
+  simpleBleedingMin: number;
+  simpleBleedingMax: number;
+  isSimpleModeDay: boolean;
   dateLabel: string;
   painValue: number;
   impactValue: number | null;
@@ -1779,10 +1785,25 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
         ? Math.max(0, Math.min(10, Number(point.impactNRS)))
         : null;
 
+      // Compute simple mode uncertainty range
+      const isSimpleModeDay = point.bleedingTrackingMethod === "simple" && point.simpleBleedingIntensity != null;
+      let simpleBleedingMin = 0;
+      let simpleBleedingMax = 0;
+      if (isSimpleModeDay && point.simpleBleedingIntensity) {
+        const intensityDef = getSimpleBleedingIntensityDefinition(point.simpleBleedingIntensity);
+        if (intensityDef) {
+          simpleBleedingMin = intensityDef.pbacEquivalentMin;
+          simpleBleedingMax = intensityDef.pbacEquivalentMax;
+        }
+      }
+
       return {
         ...point,
         bleedingLabel: bleeding.label,
         bleedingValue: bleeding.value,
+        simpleBleedingMin,
+        simpleBleedingMax,
+        isSimpleModeDay,
         dateLabel: formatShortGermanDate(point.date),
         painValue,
         impactValue,
@@ -1880,6 +1901,15 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
                 <stop offset="0%" stopColor="#fb7185" stopOpacity={0.45} />
                 <stop offset="100%" stopColor="#fbcfe8" stopOpacity={0.1} />
               </linearGradient>
+              {/* Gradient for simple mode uncertainty band */}
+              <linearGradient id={`${bleedingGradientId}-simple`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#fb7185" stopOpacity={0.25} />
+                <stop offset="100%" stopColor="#fbcfe8" stopOpacity={0.05} />
+              </linearGradient>
+              {/* Blur filter for simple mode uncertainty visualization */}
+              <filter id={`${bleedingGradientId}-blur`} x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur in="SourceGraphic" stdDeviation="3" />
+              </filter>
             </defs>
             <XAxis
               dataKey="date"
@@ -1896,6 +1926,20 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
             <Tooltip
               cursor={{ stroke: "#fb7185", strokeOpacity: 0.2, strokeWidth: 1 }}
               content={renderTooltip}
+            />
+            {/* Simple mode uncertainty band - shows the range of possible values with blur */}
+            <Area
+              type="monotone"
+              dataKey="simpleBleedingMax"
+              yAxisId="pbac"
+              fill={`url(#${bleedingGradientId}-simple)`}
+              stroke="#fb7185"
+              strokeWidth={4}
+              strokeOpacity={0.3}
+              fillOpacity={1}
+              name="Blutung (Bereich)"
+              isAnimationActive={false}
+              style={{ filter: `url(#${bleedingGradientId}-blur)` }}
             />
             <Area
               type="monotone"
@@ -3524,6 +3568,7 @@ export default function HomePage() {
         pbacScore: entry.bleeding?.pbacScore ?? null,
         isBleeding: hasBleedingForEntry(entry),
         bleedingTrackingMethod: entry.extendedPbacData?.trackingMethod ?? null,
+        simpleBleedingIntensity: entry.simpleBleedingIntensity ?? null,
         ovulationPositive: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
         ovulationPainIntensity: entry.ovulationPain?.intensity ?? null,
         painTimeline: null,
@@ -3568,6 +3613,7 @@ export default function HomePage() {
           pbacScore: null,
           isBleeding: false,
           bleedingTrackingMethod: null,
+          simpleBleedingIntensity: null,
           ovulationPositive: false,
           ovulationPainIntensity: null,
           painTimeline: timeline,
@@ -4109,11 +4155,11 @@ export default function HomePage() {
           </div>
         ) : null}
 
-        {/* Empty state */}
-        {!isExtendedMode && !hasPbacSummaryData && (
+        {/* Empty state - only show for PBAC modes, not for simple mode */}
+        {!isSimpleMode && !isExtendedMode && !hasPbacSummaryData && (
           <p className="mt-2 text-xs text-rose-600">Füge unten Produkte hinzu, um deinen Score zu berechnen.</p>
         )}
-        {isExtendedMode && !hasExtendedPbacEntries && (
+        {!isSimpleMode && isExtendedMode && !hasExtendedPbacEntries && (
           <p className="mt-2 text-xs text-rose-600">Füge unten Produkte hinzu, um deine Blutung zu erfassen.</p>
         )}
       </div>
