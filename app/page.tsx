@@ -115,11 +115,14 @@ import {
   normalizePbacCounts,
   calculatePbacScore,
   aggregateExtendedPbacData,
+  SIMPLE_BLEEDING_INTENSITIES,
+  getSimpleBleedingPbacEquivalent,
   type PbacCountKey,
   type PbacCounts,
   type ExtendedBleedingEntry,
   type FreeBleedingEntry,
   type ExtendedPbacData,
+  type SimpleBleedingIntensity,
 } from "@/lib/pbac";
 import { ExtendedBleedingEntryForm } from "@/components/home/ExtendedBleedingEntry";
 import {
@@ -8633,8 +8636,83 @@ export default function HomePage() {
                       </div>
                       {!showPbacSummaryInToolbar ? renderPbacSummaryPanel() : null}
 
-                      {/* Extended PBAC Mode */}
-                      {productSettings.trackingMethod === "pbac_extended" ? (
+                      {/* Simple Tracking Mode */}
+                      {productSettings.trackingMethod === "simple" ? (
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Blutungsstärke heute</p>
+                            <p className="text-sm text-rose-700">Wähle die Stärke, die am besten zu deinem heutigen Tag passt.</p>
+                          </div>
+                          <div className="space-y-2">
+                            {SIMPLE_BLEEDING_INTENSITIES.filter((i) => i.id !== "none").map((intensity) => {
+                              const isSelected = dailyDraft.simpleBleedingIntensity === intensity.id;
+                              const pbacScore = getSimpleBleedingPbacEquivalent(intensity.id);
+                              return (
+                                <button
+                                  key={intensity.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setDailyDraft((prev) => ({
+                                      ...prev,
+                                      simpleBleedingIntensity: intensity.id,
+                                      bleeding: {
+                                        ...prev.bleeding,
+                                        isBleeding: true,
+                                        pbacScore,
+                                      },
+                                    }));
+                                  }}
+                                  className={cn(
+                                    "flex w-full items-start gap-3 rounded-xl border p-4 text-left transition",
+                                    isSelected
+                                      ? "border-rose-300 bg-rose-50"
+                                      : "border-rose-100 bg-white hover:border-rose-200"
+                                  )}
+                                >
+                                  <div
+                                    className={cn(
+                                      "mt-0.5 h-5 w-5 rounded-full border-2 flex items-center justify-center flex-shrink-0",
+                                      isSelected ? "border-rose-500 bg-rose-500" : "border-rose-300"
+                                    )}
+                                  >
+                                    {isSelected && <div className="h-2 w-2 rounded-full bg-white" />}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-medium text-rose-900">{intensity.label}</p>
+                                    <p className="text-sm text-rose-600">{intensity.description}</p>
+                                    <p className="mt-1 text-xs text-rose-500">
+                                      Entspricht {intensity.productEquivalent}
+                                    </p>
+                                    <p className="text-xs text-rose-400">
+                                      PBAC-Äquivalent: {intensity.pbacEquivalentMin}–{intensity.pbacEquivalentMax}
+                                    </p>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {dailyDraft.simpleBleedingIntensity && dailyDraft.simpleBleedingIntensity !== "none" && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  simpleBleedingIntensity: undefined,
+                                  bleeding: {
+                                    ...prev.bleeding,
+                                    isBleeding: false,
+                                    pbacScore: undefined,
+                                  },
+                                }));
+                              }}
+                              className="text-sm text-rose-500 hover:text-rose-700"
+                            >
+                              Auswahl zurücksetzen
+                            </button>
+                          )}
+                        </div>
+                      ) : productSettings.trackingMethod === "pbac_extended" ? (
+                        /* Extended PBAC Mode */
                         <div className="space-y-4">
                           <ExtendedBleedingEntryForm
                             settings={productSettings}

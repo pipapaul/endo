@@ -293,3 +293,112 @@ export const createEmptyExtendedPbacData = (
   totalEstimatedVolumeMl: 0,
   totalPbacEquivalentScore: 0,
 });
+
+// ============================================
+// VEREINFACHTE ERFASSUNG (Simple Tracking)
+// ============================================
+
+/** Intensitätsstufen für vereinfachte Erfassung */
+export type SimpleBleedingIntensity = "none" | "very_light" | "light" | "medium" | "heavy" | "very_heavy";
+
+/** Definition einer Intensitätsstufe */
+export interface SimpleBleedingIntensityDefinition {
+  id: SimpleBleedingIntensity;
+  label: string;
+  description: string;
+  pbacEquivalentMin: number;
+  pbacEquivalentMax: number;
+  pbacEquivalent: number;  // Mittlerer Wert für Berechnungen
+  estimatedVolumeMlMin: number;
+  estimatedVolumeMlMax: number;
+  productEquivalent: string;  // z.B. "1-2 Tampons/Binden"
+}
+
+/** Definitionen der Intensitätsstufen */
+export const SIMPLE_BLEEDING_INTENSITIES: SimpleBleedingIntensityDefinition[] = [
+  {
+    id: "none",
+    label: "Keine Blutung",
+    description: "Keine Blutung heute",
+    pbacEquivalentMin: 0,
+    pbacEquivalentMax: 0,
+    pbacEquivalent: 0,
+    estimatedVolumeMlMin: 0,
+    estimatedVolumeMlMax: 0,
+    productEquivalent: "–",
+  },
+  {
+    id: "very_light",
+    label: "Sehr schwach",
+    description: "Schmierblutung, kaum sichtbar",
+    pbacEquivalentMin: 1,
+    pbacEquivalentMax: 3,
+    pbacEquivalent: 2,
+    estimatedVolumeMlMin: 1,
+    estimatedVolumeMlMax: 5,
+    productEquivalent: "weniger als 1 Tampon/Binde",
+  },
+  {
+    id: "light",
+    label: "Schwach",
+    description: "Leichte Blutung",
+    pbacEquivalentMin: 4,
+    pbacEquivalentMax: 10,
+    pbacEquivalent: 7,
+    estimatedVolumeMlMin: 5,
+    estimatedVolumeMlMax: 15,
+    productEquivalent: "etwa 1 Tampon/Binde",
+  },
+  {
+    id: "medium",
+    label: "Mittel",
+    description: "Normale Blutung",
+    pbacEquivalentMin: 11,
+    pbacEquivalentMax: 30,
+    pbacEquivalent: 20,
+    estimatedVolumeMlMin: 15,
+    estimatedVolumeMlMax: 30,
+    productEquivalent: "etwa 2–3 Tampons/Binden",
+  },
+  {
+    id: "heavy",
+    label: "Stark",
+    description: "Starke Blutung",
+    pbacEquivalentMin: 31,
+    pbacEquivalentMax: 60,
+    pbacEquivalent: 45,
+    estimatedVolumeMlMin: 30,
+    estimatedVolumeMlMax: 50,
+    productEquivalent: "etwa 4–5 Tampons/Binden",
+  },
+  {
+    id: "very_heavy",
+    label: "Sehr stark",
+    description: "Sehr starke Blutung",
+    pbacEquivalentMin: 61,
+    pbacEquivalentMax: 100,
+    pbacEquivalent: 80,
+    estimatedVolumeMlMin: 50,
+    estimatedVolumeMlMax: 80,
+    productEquivalent: "mehr als 5 Tampons/Binden",
+  },
+];
+
+/**
+ * Holt die Definition für eine Intensitätsstufe
+ */
+export const getSimpleBleedingIntensityDefinition = (
+  intensity: SimpleBleedingIntensity
+): SimpleBleedingIntensityDefinition | undefined => {
+  return SIMPLE_BLEEDING_INTENSITIES.find((i) => i.id === intensity);
+};
+
+/**
+ * Berechnet PBAC-Äquivalent für vereinfachte Erfassung
+ */
+export const getSimpleBleedingPbacEquivalent = (
+  intensity: SimpleBleedingIntensity
+): number => {
+  const def = getSimpleBleedingIntensityDefinition(intensity);
+  return def?.pbacEquivalent ?? 0;
+};
