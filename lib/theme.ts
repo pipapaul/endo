@@ -71,13 +71,13 @@ export const THEME_COLORS = {
    * Uses distinct colors for each section to aid comprehension.
    */
   neutral: {
-    // Base UI colors - warm, inviting palette
+    // Base UI colors - warm, inviting palette with good contrast
     ui: {
-      50: "#fdf9f5", // warm cream with peachy undertone - main background
-      100: "#faf6f0", // soft warm white - cards
-      200: "#f0e9df", // warm sand - light borders
-      300: "#e0d6c8", // warm taupe - medium borders
-      400: "#b5a899", // warm muted - subtle text
+      50: "#f5efe8", // warmer cream - main background (darker for contrast)
+      100: "#f0e8df", // warm off-white - cards
+      200: "#e5dcd0", // warm sand - light borders
+      300: "#d5c9ba", // warm taupe - medium borders
+      400: "#a89888", // warm muted - subtle text
       500: "#f13524", // vibrant red - highlight accent
       600: "#d92d1e", // darker red - hover
       700: "#b82518", // deep red
@@ -86,7 +86,7 @@ export const THEME_COLORS = {
       950: "#2a241f", // deepest warm black
     },
     accent: "#f13524", // vibrant red - highlight accent
-    background: "#fdf9f5", // warm cream with peachy undertone
+    background: "#f5efe8", // warmer cream - darker for better contrast
     // Semantic colors - vibrant colors for icons and accents
     semantic: {
       // Bleeding: vibrant coral-red

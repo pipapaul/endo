@@ -8342,7 +8342,11 @@ export default function HomePage() {
                             className="flex w-full items-start gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:ring-offset-2"
                           >
                             {Icon ? (
-                              <span className={iconWrapperClasses} aria-hidden="true">
+                              <span
+                                className={iconWrapperClasses}
+                                aria-hidden="true"
+                                data-category-icon={isCompleted ? undefined : category.id}
+                              >
                                 <Icon className="h-full w-full" />
                               </span>
                             ) : null}

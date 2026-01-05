@@ -33,24 +33,24 @@
   --endo-decorative-shadow: rgba(244, 114, 182, 0.35);
 }
 
-/* Neutral theme - warm, friendly palette with vibrant red highlights and vibrant icons */
+/* Neutral theme - warm, friendly palette with vibrant section colors */
 [data-theme="neutral"] {
-  /* Override Tailwind rose palette with warm neutral tones + red accent */
-  --tw-rose-50: #fdf9f5;   /* warm cream - main background */
-  --tw-rose-100: #faf6f0;  /* soft warm white - cards */
-  --tw-rose-200: #f0e9df;  /* warm sand - light border */
-  --tw-rose-300: #e0d6c8;  /* warm taupe - medium border */
-  --tw-rose-400: #b5a899;  /* warm muted - subtle text */
-  --tw-rose-500: #f13524;  /* vibrant red - highlight accent */
+  /* Override Tailwind rose palette with warm neutral tones */
+  --tw-rose-50: #f5efe8;   /* warmer cream - main background (darker) */
+  --tw-rose-100: #f0e8df;  /* warm off-white - cards */
+  --tw-rose-200: #e5dcd0;  /* warm sand - light border */
+  --tw-rose-300: #d5c9ba;  /* warm taupe - medium border */
+  --tw-rose-400: #a89888;  /* warm muted - subtle text */
+  --tw-rose-500: #f13524;  /* vibrant red - default highlight */
   --tw-rose-600: #d92d1e;  /* darker red - hover */
   --tw-rose-700: #b82518;  /* deep red */
   --tw-rose-800: #5c5147;  /* warm dark brown - secondary text */
   --tw-rose-900: #3d352e;  /* warm charcoal - primary text */
   --tw-rose-950: #2a241f;  /* deepest warm black */
 
-  /* Core colors - vibrant red accent for highlights */
+  /* Core colors */
   --endo-accent: #f13524;
-  --endo-bg: #fdf9f5;
+  --endo-bg: #f5efe8;  /* darker, warmer background */
   --section-card-completed-bg: #f5f7f2;
   --section-card-completed-border: #c8d4c0;
 
@@ -149,10 +149,10 @@
 
 /* All sections use neutral backgrounds/borders, charcoal text, but section color for highlights */
 [data-theme="neutral"] [data-section] {
-  --section-bg: #faf6f0;
-  --section-bg-light: #fdf9f5;
-  --section-border: #e0d6c8;
-  --section-border-light: #f0e9df;
+  --section-bg: #f0e8df;
+  --section-bg-light: #f5efe8;
+  --section-border: #d5c9ba;
+  --section-border-light: #e5dcd0;
   --section-text: #3d352e;
   --section-text-secondary: #5c5147;
   --section-text-muted: #8a8078;
@@ -204,11 +204,33 @@
 [data-theme="neutral"] [data-section] .lucide { color: var(--section-color); }
 
 /* Gradient backgrounds for section headers - warm neutral */
-[data-theme="neutral"] [data-section] .from-rose-50\/80 { --tw-gradient-from: rgba(250, 246, 240, 0.8) !important; }
-[data-theme="neutral"] [data-section] .to-rose-50\/40 { --tw-gradient-to: rgba(250, 246, 240, 0.4) !important; }
+[data-theme="neutral"] [data-section] .from-rose-50\/80 { --tw-gradient-from: rgba(240, 232, 223, 0.8) !important; }
+[data-theme="neutral"] [data-section] .to-rose-50\/40 { --tw-gradient-to: rgba(240, 232, 223, 0.4) !important; }
 
 /* Text opacity variants */
 [data-theme="neutral"] [data-section] .text-rose-600\/80 { color: rgba(92, 81, 71, 0.8) !important; }
+
+/* Category icon colors for the daily check-in overview page */
+[data-theme="neutral"] [data-category-icon="pain"] { color: var(--endo-pain) !important; }
+[data-theme="neutral"] [data-category-icon="symptoms"] { color: var(--endo-symptoms) !important; }
+[data-theme="neutral"] [data-category-icon="bleeding"] { color: var(--endo-bleeding) !important; }
+[data-theme="neutral"] [data-category-icon="medication"] { color: var(--endo-medication) !important; }
+[data-theme="neutral"] [data-category-icon="sleep"] { color: var(--endo-sleep) !important; }
+[data-theme="neutral"] [data-category-icon="bowelBladder"] { color: var(--endo-symptoms) !important; }
+[data-theme="neutral"] [data-category-icon="notes"] { color: var(--endo-notes) !important; }
+[data-theme="neutral"] [data-category-icon="optional"] { color: var(--endo-ovulation) !important; }
+[data-theme="neutral"] [data-category-icon="cervixMucus"] { color: var(--endo-fertility) !important; }
+
+/* Category icon wrapper backgrounds */
+[data-theme="neutral"] [data-category-icon="pain"] { background-color: rgba(168, 85, 247, 0.1) !important; border-color: rgba(168, 85, 247, 0.2) !important; }
+[data-theme="neutral"] [data-category-icon="symptoms"] { background-color: rgba(236, 72, 153, 0.1) !important; border-color: rgba(236, 72, 153, 0.2) !important; }
+[data-theme="neutral"] [data-category-icon="bleeding"] { background-color: rgba(232, 82, 74, 0.1) !important; border-color: rgba(232, 82, 74, 0.2) !important; }
+[data-theme="neutral"] [data-category-icon="medication"] { background-color: rgba(14, 165, 233, 0.1) !important; border-color: rgba(14, 165, 233, 0.2) !important; }
+[data-theme="neutral"] [data-category-icon="sleep"] { background-color: rgba(139, 92, 246, 0.1) !important; border-color: rgba(139, 92, 246, 0.2) !important; }
+[data-theme="neutral"] [data-category-icon="bowelBladder"] { background-color: rgba(236, 72, 153, 0.1) !important; border-color: rgba(236, 72, 153, 0.2) !important; }
+[data-theme="neutral"] [data-category-icon="notes"] { background-color: rgba(249, 115, 22, 0.1) !important; border-color: rgba(249, 115, 22, 0.2) !important; }
+[data-theme="neutral"] [data-category-icon="optional"] { background-color: rgba(245, 158, 11, 0.1) !important; border-color: rgba(245, 158, 11, 0.2) !important; }
+[data-theme="neutral"] [data-category-icon="cervixMucus"] { background-color: rgba(20, 184, 166, 0.1) !important; border-color: rgba(20, 184, 166, 0.2) !important; }
 
 html {
   width: 100%;
