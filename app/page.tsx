@@ -3966,30 +3966,52 @@ export default function HomePage() {
   const hasExtendedPbacEntries =
     (dailyDraft.extendedPbacData?.extendedEntries?.length ?? 0) > 0 ||
     (dailyDraft.extendedPbacData?.freeBleedingEntries?.length ?? 0) > 0;
+  const hasSimpleBleedingData =
+    dailyDraft.simpleBleedingIntensity && dailyDraft.simpleBleedingIntensity !== "none";
   const showPbacSummaryInToolbar =
     activeView === "daily" &&
     dailyActiveCategory === "bleeding" &&
-    (draftHasBleeding || hasExtendedPbacEntries);
+    (draftHasBleeding || hasExtendedPbacEntries || hasSimpleBleedingData);
 
   const renderPbacSummaryPanel = () => {
     const isExtendedMode = effectiveBleedingTrackingMethod === "pbac_extended";
+    const isSimpleMode = effectiveBleedingTrackingMethod === "simple";
     const displayScore = isExtendedMode
       ? dailyDraft.extendedPbacData?.totalPbacEquivalentScore ?? 0
-      : pbacScore;
+      : isSimpleMode
+        ? getSimpleBleedingPbacEquivalent(dailyDraft.simpleBleedingIntensity ?? "none")
+        : pbacScore;
     const displayVolume = dailyDraft.extendedPbacData?.totalEstimatedVolumeMl ?? 0;
+
+    // Get simple mode intensity label
+    const simpleIntensityDef = isSimpleMode && dailyDraft.simpleBleedingIntensity
+      ? SIMPLE_BLEEDING_INTENSITIES.find((i) => i.id === dailyDraft.simpleBleedingIntensity)
+      : null;
+
+    // Determine title based on mode
+    const panelTitle = isSimpleMode
+      ? "Blutungsübersicht"
+      : isExtendedMode
+        ? "Blutungsübersicht"
+        : "PBAC-Assistent";
 
     return (
       <div className="rounded-xl border border-rose-100 bg-white/80 p-3 text-[11px] text-rose-700 shadow-sm">
         <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-rose-500">
-          <span>{isExtendedMode ? "Blutungsübersicht" : "PBAC-Assistent"}</span>
+          <span>{panelTitle}</span>
           {isExtendedMode && displayVolume > 0 && (
             <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] text-rose-700">
               ~{displayVolume} ml
             </span>
           )}
+          {isSimpleMode && simpleIntensityDef && (
+            <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] text-rose-700">
+              {simpleIntensityDef.label}
+            </span>
+          )}
           {displayScore > 0 && (
             <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] text-rose-700">
-              {isExtendedMode ? "PBAC-Äquiv." : "Score"}: {displayScore}
+              {isSimpleMode ? "PBAC-Äquiv." : isExtendedMode ? "PBAC-Äquiv." : "Score"}: {displayScore}
             </span>
           )}
         </div>
@@ -7840,45 +7862,48 @@ export default function HomePage() {
                     </div>
                   </div>
                 </div>
-                <div
-                  role="group"
-                  aria-label={periodShortcutAriaLabel}
-                  className="flex flex-1 min-w-[12rem] items-center gap-3 rounded-xl border border-rose-100 bg-white/80 px-3 py-2 text-rose-800 shadow-sm"
-                >
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setBleedingQuickAddOpen(true)}
+                {/* Hide Periodenprodukte quick tracker in simple mode */}
+                {productSettings.trackingMethod !== "simple" && (
+                  <div
+                    role="group"
                     aria-label={periodShortcutAriaLabel}
-                    className="h-9 w-9 rounded-full border-rose-200 bg-white text-rose-700 shadow-sm transition hover:border-rose-300 hover:bg-rose-50"
+                    className="flex flex-1 min-w-[12rem] items-center gap-3 rounded-xl border border-rose-100 bg-white/80 px-3 py-2 text-rose-800 shadow-sm"
                   >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                  <div className="flex flex-1 items-center justify-between gap-2">
-                    <div className="flex flex-col leading-tight">
-                      <span className="text-[12px] font-semibold leading-tight">Periodenprodukte</span>
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-rose-500">
-                        quick tracker
-                      </span>
-                    </div>
-                    <div className="flex min-h-[0.75rem] flex-wrap items-center justify-end gap-1" aria-hidden>
-                      {bleedingShortcutProducts.dots.length === 0 ? (
-                        <span className="h-1 w-6 rounded-full bg-rose-100" />
-                      ) : (
-                        bleedingShortcutProducts.dots.map((saturation, index) => (
-                          <span
-                            key={`period-inline-dot-${saturation}-${index}`}
-                            className={cn(
-                              "h-2 w-2 rounded-full shadow-sm shadow-rose-200/60",
-                              PBAC_SATURATION_DOT_CLASSES[saturation]
-                            )}
-                          />
-                        ))
-                      )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setBleedingQuickAddOpen(true)}
+                      aria-label={periodShortcutAriaLabel}
+                      className="h-9 w-9 rounded-full border-rose-200 bg-white text-rose-700 shadow-sm transition hover:border-rose-300 hover:bg-rose-50"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                    <div className="flex flex-1 items-center justify-between gap-2">
+                      <div className="flex flex-col leading-tight">
+                        <span className="text-[12px] font-semibold leading-tight">Periodenprodukte</span>
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-rose-500">
+                          quick tracker
+                        </span>
+                      </div>
+                      <div className="flex min-h-[0.75rem] flex-wrap items-center justify-end gap-1" aria-hidden>
+                        {bleedingShortcutProducts.dots.length === 0 ? (
+                          <span className="h-1 w-6 rounded-full bg-rose-100" />
+                        ) : (
+                          bleedingShortcutProducts.dots.map((saturation, index) => (
+                            <span
+                              key={`period-inline-dot-${saturation}-${index}`}
+                              className={cn(
+                                "h-2 w-2 rounded-full shadow-sm shadow-rose-200/60",
+                                PBAC_SATURATION_DOT_CLASSES[saturation]
+                              )}
+                            />
+                          ))
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="sm:col-span-3 lg:col-span-2">
@@ -8767,10 +8792,13 @@ export default function HomePage() {
                     <div className="space-y-6">
                       <div className="space-y-2">
                         <TermHeadline termKey="bleeding_active" />
-                        <p className="text-sm text-rose-700">
-                          Dokumentiere deine Periode über Periodenprodukte, Koagel und Flooding. Der PBAC-Score wird
-                          automatisch berechnet.
-                        </p>
+                        {/* Only show product-based description for non-simple modes */}
+                        {effectiveBleedingTrackingMethod !== "simple" && (
+                          <p className="text-sm text-rose-700">
+                            Dokumentiere deine Periode über Periodenprodukte, Koagel und Flooding. Der PBAC-Score wird
+                            automatisch berechnet.
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="font-medium">Periode heute</span>
@@ -8802,9 +8830,63 @@ export default function HomePage() {
                       {/* Simple Tracking Mode */}
                       {effectiveBleedingTrackingMethod === "simple" ? (
                         <div className="space-y-4">
+                          {/* Keine Blutung button */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                simpleBleedingIntensity: "none",
+                                bleeding: {
+                                  ...prev.bleeding,
+                                  isBleeding: false,
+                                  pbacScore: undefined,
+                                },
+                                extendedPbacData: {
+                                  ...(prev.extendedPbacData ?? {}),
+                                  trackingMethod: "simple",
+                                  extendedEntries: prev.extendedPbacData?.extendedEntries ?? [],
+                                  freeBleedingEntries: prev.extendedPbacData?.freeBleedingEntries ?? [],
+                                },
+                              }));
+                            }}
+                            className={cn(
+                              "flex w-full items-center gap-3 rounded-xl border p-4 text-left transition",
+                              dailyDraft.simpleBleedingIntensity === "none"
+                                ? "border-emerald-300 bg-emerald-50"
+                                : "border-rose-100 bg-white hover:border-rose-200"
+                            )}
+                          >
+                            <div
+                              className={cn(
+                                "h-5 w-5 rounded-full border-2 flex items-center justify-center flex-shrink-0",
+                                dailyDraft.simpleBleedingIntensity === "none"
+                                  ? "border-emerald-500 bg-emerald-500"
+                                  : "border-rose-300"
+                              )}
+                            >
+                              {dailyDraft.simpleBleedingIntensity === "none" && (
+                                <div className="h-2 w-2 rounded-full bg-white" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className={cn(
+                                "font-medium",
+                                dailyDraft.simpleBleedingIntensity === "none" ? "text-emerald-900" : "text-rose-900"
+                              )}>
+                                Keine Blutung
+                              </p>
+                              <p className={cn(
+                                "text-sm",
+                                dailyDraft.simpleBleedingIntensity === "none" ? "text-emerald-600" : "text-rose-600"
+                              )}>
+                                Heute keine Periodenblutung
+                              </p>
+                            </div>
+                          </button>
+
                           <div className="space-y-2">
-                            <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Blutungsstärke heute</p>
-                            <p className="text-sm text-rose-700">Wähle die Stärke, die am besten zu deinem heutigen Tag passt.</p>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Blutungsstärke</p>
                           </div>
                           <div className="space-y-2">
                             {SIMPLE_BLEEDING_INTENSITIES.filter((i) => i.id !== "none").map((intensity) => {
@@ -8861,25 +8943,6 @@ export default function HomePage() {
                               );
                             })}
                           </div>
-                          {dailyDraft.simpleBleedingIntensity && dailyDraft.simpleBleedingIntensity !== "none" && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setDailyDraft((prev) => ({
-                                  ...prev,
-                                  simpleBleedingIntensity: undefined,
-                                  bleeding: {
-                                    ...prev.bleeding,
-                                    isBleeding: false,
-                                    pbacScore: undefined,
-                                  },
-                                }));
-                              }}
-                              className="text-sm text-rose-500 hover:text-rose-700"
-                            >
-                              Auswahl zurücksetzen
-                            </button>
-                          )}
                         </div>
                       ) : effectiveBleedingTrackingMethod === "pbac_extended" ? (
                         /* Extended PBAC Mode */
