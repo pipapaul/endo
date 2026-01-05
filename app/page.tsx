@@ -1580,27 +1580,42 @@ const describeQuickPainEvent = (event: QuickPainEvent) => {
 
 const describeBleedingLevel = (point: CycleOverviewPoint) => {
   if (!point.isBleeding) {
-    return { label: "keine Blutung", value: 0 };
+    return { label: "keine Blutung", value: 0, pbacEquivalent: 0 };
   }
-  const score = typeof point.pbacScore === "number" ? point.pbacScore : 5;
+
+  // Determine the PBAC equivalent score based on tracking method
+  let score: number;
+  if (point.bleedingTrackingMethod === "simple" && point.simpleBleedingIntensity) {
+    // For simple mode, use the PBAC equivalent from intensity
+    score = getSimpleBleedingPbacEquivalent(point.simpleBleedingIntensity);
+  } else if (typeof point.pbacScore === "number") {
+    // For classic/extended PBAC, use actual score
+    score = point.pbacScore;
+  } else {
+    // Fallback for bleeding without score data
+    score = 5;
+  }
+
   if (score >= 41) {
-    return { label: "sehr starke Blutung", value: score };
+    return { label: "sehr starke Blutung", value: score, pbacEquivalent: score };
   }
   if (score >= 26) {
-    return { label: "starke Blutung", value: score };
+    return { label: "starke Blutung", value: score, pbacEquivalent: score };
   }
   if (score >= 10) {
-    return { label: "mittlere Blutung", value: score };
+    return { label: "mittlere Blutung", value: score, pbacEquivalent: score };
   }
   if (score > 0) {
-    return { label: "leichte Blutung", value: score };
+    return { label: "leichte Blutung", value: score, pbacEquivalent: score };
   }
-  return { label: "Blutung ohne PBAC", value: 0 };
+  // Score is 0 but bleeding is marked - minimal bleeding
+  return { label: "minimale Blutung", value: 1, pbacEquivalent: 0 };
 };
 
 type CycleOverviewChartPoint = CycleOverviewPoint & {
   bleedingLabel: string;
   bleedingValue: number;
+  pbacEquivalent: number;
   // For simple mode: uncertainty range for thicker/blurry display
   simpleBleedingMin: number;
   simpleBleedingMax: number;
@@ -1801,6 +1816,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
         ...point,
         bleedingLabel: bleeding.label,
         bleedingValue: bleeding.value,
+        pbacEquivalent: bleeding.pbacEquivalent,
         simpleBleedingMin,
         simpleBleedingMax,
         isSimpleModeDay,
@@ -1829,7 +1845,9 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
           <p>Schmerz: {payload.painNRS}/10</p>
           <p>Beeinträchtigung: {payload.impactNRS ?? "–"}/10</p>
           <p>Blutung: {payload.bleedingLabel}</p>
-          {payload.pbacScore !== null ? <p>PBAC: {payload.pbacScore}</p> : null}
+          {payload.isBleeding && payload.pbacEquivalent > 0 ? (
+            <p>PBAC-Äquivalent: {payload.pbacEquivalent}</p>
+          ) : null}
           {payload.bleedingTrackingMethod && payload.isBleeding ? (
             <p className="text-rose-500 text-[10px]">
               ({getTrackingMethodLabel(payload.bleedingTrackingMethod)})
