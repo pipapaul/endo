@@ -8501,6 +8501,7 @@ export default function HomePage() {
                 <Section
                   title="Cervixschleim"
                   description="Beobachtung nach der Billings-Methode"
+                  sectionType="fertility"
                 >
                   <div className="space-y-6">
                     <div className="space-y-3">
@@ -8578,6 +8579,7 @@ export default function HomePage() {
                 <Section
                   title="Schmerzen"
                   description="Schmerzen hinzufügen, Intensität und Art je Region festhalten und Auswirkungen dokumentieren"
+                  sectionType="pain"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-100 bg-white/80 p-3 text-sm text-rose-800">
                     <p className="text-sm text-rose-700">
@@ -8780,6 +8782,7 @@ export default function HomePage() {
                 <Section
                   title="Typische Endometriose-Symptome"
                   description="Je Symptom: Ja/Nein plus Stärke auf der 0–10 Skala"
+                  sectionType="symptoms"
                 >
                   <div className="grid gap-4">
                     {SYMPTOM_ITEMS.map((item) => {
@@ -8942,6 +8945,7 @@ export default function HomePage() {
               <div className={cn("space-y-6", dailyActiveCategory === "bleeding" ? "" : "hidden")}>
                 <Section
                   title="Periode und Blutung"
+                  sectionType="bleeding"
                 >
                     <div className="space-y-6">
                       <div className="space-y-2">
@@ -9318,6 +9322,7 @@ export default function HomePage() {
                 <Section
                   title={TERMS.meds.label}
                   description="Akut-/Rescue-Medikation des Tages erfassen"
+                  sectionType="medication"
                 >
                   <div className="grid gap-4">
                     <TermHeadline termKey="meds" />
@@ -9470,6 +9475,7 @@ export default function HomePage() {
                 <Section
                   title="Schlaf"
                   description="Kurzabfrage ohne Hilfsmittel"
+                  sectionType="sleep"
                 >
                   <div className="grid gap-4 md:grid-cols-3">
                     <TermField termKey="sleep_hours" htmlFor="sleep-hours">
@@ -9534,6 +9540,7 @@ export default function HomePage() {
                 <Section
                   title="Darm & Blase"
                   description="Situativ erfassbar"
+                  sectionType="symptoms"
                 >
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="grid gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
@@ -9804,6 +9811,7 @@ export default function HomePage() {
                 <Section
                   title="Notizen & Tags"
                   description="Freitext oder wiederkehrende Muster markieren"
+                  sectionType="notes"
                 >
                   <div className="grid gap-3">
                     <TermField termKey="notesTags" htmlFor="notes-tag-input">
@@ -9845,6 +9853,7 @@ export default function HomePage() {
                 <Section
                   title="Optionale Werte (Hilfsmittel nötig)"
                   description="Standardmäßig ausgeblendet – Wearables, LH-Tests, BBT"
+                  sectionType="ovulation"
                   aside={
                     <Switch
                       checked={sensorsVisible}
