@@ -48,8 +48,8 @@ export const arePbacCountsEqual = (a: PbacCounts, b: PbacCounts): boolean => {
 // NEUE ERWEITERUNGEN
 // ============================================
 
-/** Tracking-Methode: Klassisch (nur PBAC) oder Erweitert (mit modernen Produkten) */
-export type TrackingMethod = "pbac_classic" | "pbac_extended";
+/** Tracking-Methode: Vereinfacht, Klassisch (nur PBAC) oder Erweitert (mit modernen Produkten) */
+export type TrackingMethod = "simple" | "pbac_classic" | "pbac_extended";
 
 /** Produkt-Kategorien */
 export type ProductCategory =

@@ -185,10 +185,53 @@ export const ProductSettingsPanel: React.FC<ProductSettingsPanelProps> = ({
             </div>
           </div>
         </label>
+
+        <label
+          className={`flex items-start justify-between gap-4 rounded-xl border p-4 cursor-pointer transition ${
+            settings.trackingMethod === "simple"
+              ? "border-rose-300 bg-rose-50/50"
+              : "border-rose-100 hover:bg-rose-50/30"
+          }`}
+          onClick={() => handleTrackingMethodChange("simple")}
+        >
+          <div className="flex-1">
+            <p className="font-medium text-rose-900">Vereinfachte Erfassung</p>
+            <p className="mt-1 text-sm text-rose-600">
+              Einmalige tägliche Eingabe der Blutungsstärke von sehr schwach bis sehr stark
+            </p>
+            <p className="mt-2 text-xs text-rose-500">
+              Einfacher aber subjektiver/ungenauer
+            </p>
+          </div>
+          <div className="mt-0.5">
+            <div
+              className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                settings.trackingMethod === "simple"
+                  ? "border-rose-500 bg-rose-500"
+                  : "border-rose-300"
+              }`}
+            >
+              {settings.trackingMethod === "simple" && (
+                <div className="w-2 h-2 rounded-full bg-white" />
+              )}
+            </div>
+          </div>
+        </label>
       </div>
 
       {/* Produkt-Auswahl */}
-      {settings.trackingMethod === "pbac_classic" ? (
+      {settings.trackingMethod === "simple" ? (
+        <div className="text-sm text-rose-600 space-y-1">
+          <p>Wähle täglich eine Blutungsstärke aus:</p>
+          <ul className="text-xs text-rose-500 list-disc list-inside ml-1">
+            <li><strong>Sehr schwach</strong> – kaum sichtbar, Schmierblutung</li>
+            <li><strong>Schwach</strong> – leichte Blutung</li>
+            <li><strong>Mittel</strong> – normale Blutung</li>
+            <li><strong>Stark</strong> – starke Blutung</li>
+            <li><strong>Sehr stark</strong> – sehr starke Blutung</li>
+          </ul>
+        </div>
+      ) : settings.trackingMethod === "pbac_classic" ? (
         <div className="text-sm text-rose-600 space-y-1">
           <p>Beim klassischen PBAC zählst du, wie oft du wechselst und wie voll das Produkt dabei war:</p>
           <ul className="text-xs text-rose-500 list-disc list-inside ml-1">
