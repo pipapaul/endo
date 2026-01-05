@@ -129,7 +129,7 @@ export const DEFAULT_PRODUCTS: ProductDefinition[] = [
   // Binden nach Typ
   // "Binde Normal" bei voll = klassischer PBAC "stark" (20ml)
   // Bei ⅓ ≈ leicht, bei ⅔ ≈ mittel, bei voll ≈ stark
-  { id: "ext_pad_light", category: "pad", name: "Slipeinlage", nameShort: "Slip", capacity_ml: 5, enabled: false },
+  { id: "ext_pad_light", category: "pad", name: "Binde leicht", nameShort: "Leicht", capacity_ml: 5, enabled: false },
   { id: "ext_pad_normal", category: "pad", name: "Binde Normal", nameShort: "Normal", capacity_ml: 20, enabled: false },
   { id: "ext_pad_super", category: "pad", name: "Binde Super", nameShort: "Super", capacity_ml: 25, enabled: false },
   { id: "ext_pad_night", category: "pad", name: "Binde Nacht", nameShort: "Nacht", capacity_ml: 30, enabled: false },

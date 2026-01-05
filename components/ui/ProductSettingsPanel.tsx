@@ -27,6 +27,7 @@ export const ProductSettingsPanel: React.FC<ProductSettingsPanelProps> = ({
   onSettingsChange,
 }) => {
   const [showAddCustom, setShowAddCustom] = useState(false);
+  const [showProductConfig, setShowProductConfig] = useState(false);
   const [customName, setCustomName] = useState("");
   const [customCategory, setCustomCategory] = useState<ProductCategory>("cup");
   const [customCapacity, setCustomCapacity] = useState(25);
@@ -187,113 +188,131 @@ export const ProductSettingsPanel: React.FC<ProductSettingsPanelProps> = ({
       </div>
 
       {/* Produkt-Auswahl */}
-      <div>
-        <p className="font-medium text-rose-900 mb-2">Meine Produkte</p>
-        {settings.trackingMethod === "pbac_classic" ? (
-          <div className="text-sm text-rose-600 mb-4 space-y-1">
-            <p>Beim klassischen PBAC zählst du, wie oft du wechselst und wie voll das Produkt dabei war:</p>
-            <ul className="text-xs text-rose-500 list-disc list-inside ml-1">
-              <li><strong>Leicht gesättigt</strong> – nur leicht feucht, wenig Blut</li>
-              <li><strong>Mittel gesättigt</strong> – deutlich sichtbar, etwa halb voll</li>
-              <li><strong>Stark gesättigt</strong> – fast vollständig durchtränkt</li>
-            </ul>
-          </div>
-        ) : (
+      {settings.trackingMethod === "pbac_classic" ? (
+        <div className="text-sm text-rose-600 space-y-1">
+          <p>Beim klassischen PBAC zählst du, wie oft du wechselst und wie voll das Produkt dabei war:</p>
+          <ul className="text-xs text-rose-500 list-disc list-inside ml-1">
+            <li><strong>Leicht gesättigt</strong> – nur leicht feucht, wenig Blut</li>
+            <li><strong>Mittel gesättigt</strong> – deutlich sichtbar, etwa halb voll</li>
+            <li><strong>Stark gesättigt</strong> – fast vollständig durchtränkt</li>
+          </ul>
+        </div>
+      ) : (
+        <div>
           <p className="text-sm text-rose-600 mb-4">
-            Wähle deine Produkte aus. Bei jedem Wechsel gibst du den Füllgrad an (⅓, ⅔ oder voll).
+            Bei jedem Wechsel gibst du den Füllgrad an (⅓, ⅔ oder voll).
           </p>
-        )}
 
-        <div className="space-y-3">
-          {(Object.keys(productsByCategory) as ProductCategory[]).map((category) => {
-            const products = productsByCategory[category];
-            const isFullyEnabled = isCategoryFullyEnabled(category);
-            const isPartiallyEnabled = isCategoryPartiallyEnabled(category);
+          {!showProductConfig ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowProductConfig(true)}
+              className="w-full border-rose-200 text-rose-700 hover:bg-rose-50"
+            >
+              Meine Produkte konfigurieren
+            </Button>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="font-medium text-rose-900">Meine Produkte</p>
+                <button
+                  type="button"
+                  onClick={() => setShowProductConfig(false)}
+                  className="text-sm text-rose-500 hover:text-rose-700"
+                >
+                  Schließen
+                </button>
+              </div>
+              {(Object.keys(productsByCategory) as ProductCategory[]).map((category) => {
+                const products = productsByCategory[category];
+                const isFullyEnabled = isCategoryFullyEnabled(category);
+                const isPartiallyEnabled = isCategoryPartiallyEnabled(category);
 
-            // Keine leeren Kategorien anzeigen
-            if (!products || products.length === 0) {
-              return null;
-            }
+                // Keine leeren Kategorien anzeigen
+                if (!products || products.length === 0) {
+                  return null;
+                }
 
-            return (
-              <div key={category} className="rounded-xl border border-rose-100 overflow-hidden">
-                {/* Kategorie-Header */}
-                <label className="flex items-center justify-between gap-3 p-3 bg-rose-50/50 cursor-pointer">
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      checked={isFullyEnabled}
-                      ref={(el) => {
-                        if (el) el.indeterminate = isPartiallyEnabled;
-                      }}
-                      onChange={(e) => handleCategoryToggle(category, e.target.checked)}
-                      className="w-4 h-4 rounded border-rose-300 text-rose-600 focus:ring-rose-500"
-                    />
-                    <span className="font-medium text-rose-900">{PRODUCT_CATEGORY_LABELS[category]}</span>
-                  </div>
-                </label>
-
-                {/* Produkte in dieser Kategorie */}
-                <div className="p-3 space-y-2 bg-white">
-                  {products.map((product) => (
-                    <label
-                      key={product.id}
-                      className="flex items-center justify-between gap-2 py-1 cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2">
+                return (
+                  <div key={category} className="rounded-xl border border-rose-100 overflow-hidden">
+                    {/* Kategorie-Header */}
+                    <label className="flex items-center justify-between gap-3 p-3 bg-rose-50/50 cursor-pointer">
+                      <div className="flex items-center gap-3">
                         <input
                           type="checkbox"
-                          checked={settings.enabledProductIds.includes(product.id)}
-                          onChange={(e) =>
-                            handleProductToggle(product.id, e.target.checked)
-                          }
+                          checked={isFullyEnabled}
+                          ref={(el) => {
+                            if (el) el.indeterminate = isPartiallyEnabled;
+                          }}
+                          onChange={(e) => handleCategoryToggle(category, e.target.checked)}
                           className="w-4 h-4 rounded border-rose-300 text-rose-600 focus:ring-rose-500"
                         />
-                        <span className="text-rose-800">{product.name}</span>
-                        {product.isCustom && (
-                          <span className="text-xs bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded">
-                            Eigenes
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-rose-500">
-                          {product.capacity_ml > 0 ? `${product.capacity_ml} ml` : "–"}
-                        </span>
-                        {product.isCustom && (
-                          <button
-                            onClick={(e) => {
-                              e.preventDefault();
-                              handleRemoveCustomProduct(product.id);
-                            }}
-                            className="text-rose-400 hover:text-rose-600 text-sm"
-                            title="Entfernen"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        )}
+                        <span className="font-medium text-rose-900">{PRODUCT_CATEGORY_LABELS[category]}</span>
                       </div>
                     </label>
-                  ))}
 
-                  {/* Button für eigenes Produkt (nur im erweiterten PBAC-Modus) */}
-                  {settings.trackingMethod === "pbac_extended" && (
-                    <button
-                      onClick={() => {
-                        setCustomCategory(category);
-                        setShowAddCustom(true);
-                      }}
-                      className="text-sm text-rose-600 hover:text-rose-800 mt-2"
-                    >
-                      + Eigene Größe hinzufügen
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+                    {/* Produkte in dieser Kategorie */}
+                    <div className="p-3 space-y-2 bg-white">
+                      {products.map((product) => (
+                        <label
+                          key={product.id}
+                          className="flex items-center justify-between gap-2 py-1 cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={settings.enabledProductIds.includes(product.id)}
+                              onChange={(e) =>
+                                handleProductToggle(product.id, e.target.checked)
+                              }
+                              className="w-4 h-4 rounded border-rose-300 text-rose-600 focus:ring-rose-500"
+                            />
+                            <span className="text-rose-800">{product.name}</span>
+                            {product.isCustom && (
+                              <span className="text-xs bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded">
+                                Eigenes
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-rose-500">
+                              {product.capacity_ml > 0 ? `${product.capacity_ml} ml` : "–"}
+                            </span>
+                            {product.isCustom && (
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  handleRemoveCustomProduct(product.id);
+                                }}
+                                className="text-rose-400 hover:text-rose-600 text-sm"
+                                title="Entfernen"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </label>
+                      ))}
+
+                      {/* Button für eigenes Produkt */}
+                      <button
+                        onClick={() => {
+                          setCustomCategory(category);
+                          setShowAddCustom(true);
+                        }}
+                        className="text-sm text-rose-600 hover:text-rose-800 mt-2"
+                      >
+                        + Eigene Größe hinzufügen
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
       {/* Anzeige-Optionen */}
       <div className="space-y-3">

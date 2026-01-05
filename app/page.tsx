@@ -7525,22 +7525,27 @@ export default function HomePage() {
               </Button>
             </div>
             <div className="space-y-6">
-              <div className="flex items-start justify-between gap-4 rounded-xl border border-rose-100 bg-rose-50/50 p-4">
-                <div className="flex-1">
-                  <p className="font-medium text-rose-900">Eisprungbestimmung mit Billings-Methode</p>
-                  <p className="mt-1 text-sm text-rose-600">Bestimmung anhand des Cervixschleims</p>
-                  <p className="mt-2 text-xs text-rose-500">Verbesserte Vorhersagen werden erst nach mindestens 2 Zyklen mit Cervixschleim-Daten angezeigt. Bis dahin wird die Standard-Methode verwendet.</p>
+              {/* Kategorie: Eisprungsbestimmung */}
+              <div>
+                <h3 className="text-lg font-semibold text-rose-900 mb-3">Eisprungsbestimmung</h3>
+                <div className="flex items-start justify-between gap-4 rounded-xl border border-rose-100 bg-rose-50/50 p-4">
+                  <div className="flex-1">
+                    <p className="font-medium text-rose-900">Billings-Methode</p>
+                    <p className="mt-1 text-sm text-rose-600">Bestimmung anhand des Cervixschleims</p>
+                    <p className="mt-2 text-xs text-rose-500">Verbesserte Vorhersagen werden erst nach mindestens 2 Zyklen mit Cervixschleim-Daten angezeigt. Bis dahin wird die Standard-Methode verwendet.</p>
+                  </div>
+                  <Switch
+                    checked={featureFlags.billingMethod ?? false}
+                    onCheckedChange={(checked) =>
+                      setFeatureFlags((prev) => ({ ...prev, billingMethod: checked }))
+                    }
+                  />
                 </div>
-                <Switch
-                  checked={featureFlags.billingMethod ?? false}
-                  onCheckedChange={(checked) =>
-                    setFeatureFlags((prev) => ({ ...prev, billingMethod: checked }))
-                  }
-                />
               </div>
 
+              {/* Kategorie: Blutungs-Erfassung */}
               <div className="border-t border-rose-100 pt-6">
-                <h3 className="text-lg font-semibold text-rose-900 mb-4">Blutungs-Erfassung</h3>
+                <h3 className="text-lg font-semibold text-rose-900 mb-3">Blutungs-Erfassung</h3>
                 <ProductSettingsPanel
                   settings={productSettings}
                   onSettingsChange={async (newSettings) => {
