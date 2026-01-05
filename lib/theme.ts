@@ -66,65 +66,84 @@ export const THEME_COLORS = {
 
   /**
    * Neutral Theme (New Default)
-   * Warm grey base with semantic colors for contextual meaning.
-   * Gender-neutral, psychologically appropriate colors.
+   * Warm, friendly base with vibrant semantic colors for navigation.
+   * Modern, colorful palette that's tasteful and easy to navigate.
+   * Uses distinct colors for each section to aid comprehension.
    */
   neutral: {
-    // Base UI colors (warm grey palette, maps to Tailwind rose-* classes)
+    // Base UI colors - warm, inviting palette
     ui: {
-      50: "#faf8f5", // warm white - backgrounds
-      100: "#f2efea", // warm off-white - cards
-      200: "#e0dcd7", // light borders
-      300: "#c9c4bc", // medium borders
-      400: "#a8a099", // muted grey - placeholder text
-      500: "#5b7a6b", // sage green - primary accent
-      600: "#4a6659", // darker sage - hover states
-      700: "#3d5348", // deep sage
-      800: "#3d4a4f", // dark text secondary
-      900: "#2d3436", // dark text primary
-      950: "#1a1f20", // darkest
+      50: "#fdf9f5", // warm cream with peachy undertone - main background
+      100: "#faf6f0", // soft warm white - cards
+      200: "#f0e9df", // warm sand - light borders
+      300: "#e0d6c8", // warm taupe - medium borders
+      400: "#b5a899", // warm muted - subtle text
+      500: "#e07b5f", // warm coral - friendly primary accent
+      600: "#d06a4e", // deeper coral - hover
+      700: "#b85a42", // rich terracotta
+      800: "#5c5147", // warm dark brown - secondary text
+      900: "#3d352e", // warm charcoal - primary text
+      950: "#2a241f", // deepest warm black
     },
-    accent: "#5b7a6b", // sage green - calming, health-associated
-    background: "#f7f5f2", // warm off-white
-    // Semantic colors - each color has contextual meaning
+    accent: "#e07b5f", // warm coral - friendly, inviting
+    background: "#fdf9f5", // warm cream with peachy undertone
+    // Semantic colors - vibrant, distinct colors for each section
     semantic: {
-      // Bleeding: soft terracotta - warm, non-aggressive
-      bleeding: "#c4786a",
-      bleedingLight: "#f0ddd9",
-      // Pain: muted purple - calming, not alarming
-      pain: "#8b7b9c",
-      painLight: "#e8e4ed",
-      // Ovulation: warm amber - fertility, life association
-      ovulation: "#d4a574",
-      ovulationLight: "#f5ebe0",
-      // Fertility: soft green - growth, life
-      fertility: "#7cb88c",
-      fertilityLight: "#e8f4eb",
-      // Success: sage green - consistency with accent
-      success: "#5b7a6b",
-      successLight: "#e8f0eb",
-      // Info: soft teal - neutral, informational
-      info: "#6b8a9a",
-      infoLight: "#e4ecef",
-      // Warning: warm amber
-      warning: "#d4a574",
-      warningLight: "#f5ebe0",
+      // Bleeding: rich coral-red (warm, not alarming)
+      bleeding: "#e06058",
+      bleedingLight: "#fdf0ef",
+      // Pain: vibrant violet-purple
+      pain: "#9b6bb3",
+      painLight: "#f8f0fc",
+      // Ovulation: golden saffron/amber
+      ovulation: "#e8a445",
+      ovulationLight: "#fef7e8",
+      // Fertility: fresh teal-green
+      fertility: "#3da88a",
+      fertilityLight: "#e8f6f1",
+      // Medication: bright sky blue
+      medication: "#5a9fd4",
+      medicationLight: "#edf5fc",
+      // Sleep: soft periwinkle/lavender
+      sleep: "#8b7ec9",
+      sleepLight: "#f3f0fa",
+      // Notes: warm caramel
+      notes: "#c9956a",
+      notesLight: "#faf4ed",
+      // Symptoms: soft rose-pink
+      symptoms: "#d4789a",
+      symptomsLight: "#fcf0f4",
+      // Energy: warm tangerine
+      energy: "#e8955a",
+      energyLight: "#fef5ed",
+      // Mood: gentle coral-pink
+      mood: "#e08888",
+      moodLight: "#fdf2f2",
+      // Success: fresh emerald
+      success: "#3da88a",
+      successLight: "#e8f6f1",
+      // Info: clear sky blue
+      info: "#5a9fd4",
+      infoLight: "#edf5fc",
+      // Warning: golden amber
+      warning: "#e8a445",
+      warningLight: "#fef7e8",
     },
     chart: {
-      bleedingArea: "#c4786a",
-      bleedingLine: "#a85d50",
-      painLine: "#8b7b9c",
-      ovulationMarker: "#d4a574",
-      ovulationMarkerBorder: "#b8895c",
-      fertileWindow: "#7cb88c",
-      fertileWindowLight: "#e8f4eb",
-      mucusFertility: "#5b9a6b",
-      grid: "rgba(91, 122, 107, 0.15)",
+      bleedingArea: "rgba(224, 96, 88, 0.35)",
+      bleedingLine: "#e06058",
+      painLine: "#9b6bb3",
+      ovulationMarker: "#e8a445",
+      ovulationMarkerBorder: "#c88a2a",
+      fertileWindow: "#3da88a",
+      fertileWindowLight: "#e8f6f1",
+      mucusFertility: "#3da88a",
+      grid: "rgba(224, 123, 95, 0.12)",
     },
     slider: {
-      active: "rgba(91, 122, 107, 0.75)",
-      track: "rgba(91, 122, 107, 0.14)",
-      shadow: "rgba(91, 122, 107, 0.18)",
+      active: "rgba(224, 123, 95, 0.85)",
+      track: "rgba(224, 123, 95, 0.18)",
+      shadow: "rgba(224, 123, 95, 0.25)",
     },
   },
 } as const;
@@ -151,7 +170,7 @@ export function getColorSchemeDescription(scheme: ColorScheme): string {
     case "rose":
       return "Klassisches Schema mit Rosa- und Pinktönen";
     case "neutral":
-      return "Warme, kontextbezogene Farben mit semantischer Bedeutung";
+      return "Warme, farbenfrohe Palette mit lebendigen Akzenten";
     default:
       return "";
   }
@@ -161,6 +180,11 @@ export function getColorSchemeDescription(scheme: ColorScheme): string {
  * Get preview swatch colors for a color scheme
  */
 export function getColorSchemeSwatches(scheme: ColorScheme): string[] {
+  if (scheme === "neutral") {
+    const colors = THEME_COLORS.neutral;
+    // Show the vibrant semantic colors for neutral theme
+    return [colors.accent, colors.semantic.fertility, colors.semantic.sleep];
+  }
   const colors = THEME_COLORS[scheme];
   return [colors.ui[500], colors.ui[300], colors.ui[50]];
 }

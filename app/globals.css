@@ -28,48 +28,140 @@
   --endo-slider-track: rgba(225, 29, 72, 0.14);
   --endo-slider-shadow: rgba(225, 29, 72, 0.18);
   --endo-slider-shadow-active: rgba(225, 29, 72, 0.24);
+
+  /* Decorative shadow color */
+  --endo-decorative-shadow: rgba(244, 114, 182, 0.35);
 }
 
-/* Neutral theme - warm grey with semantic colors */
+/* Neutral theme - warm, friendly palette with vibrant semantic colors */
 [data-theme="neutral"] {
-  /* Override Tailwind rose palette */
-  --tw-rose-50: #faf8f5;
-  --tw-rose-100: #f2efea;
-  --tw-rose-200: #e0dcd7;
-  --tw-rose-300: #c9c4bc;
-  --tw-rose-400: #a8a099;
-  --tw-rose-500: #5b7a6b;
-  --tw-rose-600: #4a6659;
-  --tw-rose-700: #3d5348;
-  --tw-rose-800: #3d4a4f;
-  --tw-rose-900: #2d3436;
-  --tw-rose-950: #1a1f20;
+  /* Override Tailwind rose palette with warm, inviting colors */
+  --tw-rose-50: #fdf9f5;   /* warm cream with peachy undertone - main background */
+  --tw-rose-100: #faf6f0;  /* soft warm white - cards */
+  --tw-rose-200: #f0e9df;  /* warm sand - light border */
+  --tw-rose-300: #e0d6c8;  /* warm taupe - medium border */
+  --tw-rose-400: #b5a899;  /* warm muted - subtle text */
+  --tw-rose-500: #e07b5f;  /* warm coral - friendly primary accent */
+  --tw-rose-600: #d06a4e;  /* deeper coral - hover */
+  --tw-rose-700: #b85a42;  /* rich terracotta */
+  --tw-rose-800: #5c5147;  /* warm dark brown - secondary text */
+  --tw-rose-900: #3d352e;  /* warm charcoal - primary text */
+  --tw-rose-950: #2a241f;  /* deepest warm black */
 
   /* Core colors */
-  --endo-accent: #5b7a6b;
-  --endo-bg: #f7f5f2;
-  --section-card-completed-bg: #e8f4eb;
-  --section-card-completed-border: #7cb88c;
+  --endo-accent: #e07b5f;
+  --endo-bg: #fdf9f5;
+  --section-card-completed-bg: #eef7eb;
+  --section-card-completed-border: #7cb87c;
 
-  /* Semantic colors - contextual meaning */
-  --endo-bleeding: #c4786a;
-  --endo-bleeding-light: #f0ddd9;
-  --endo-pain: #8b7b9c;
-  --endo-pain-light: #e8e4ed;
-  --endo-ovulation: #d4a574;
-  --endo-ovulation-light: #f5ebe0;
-  --endo-fertility: #7cb88c;
-  --endo-fertility-light: #e8f4eb;
-  --endo-success: #5b7a6b;
-  --endo-success-light: #e8f0eb;
-  --endo-info: #6b8a9a;
-  --endo-info-light: #e4ecef;
+  /* Semantic colors - vibrant, distinct colors for navigation */
+  --endo-bleeding: #e06058;       /* rich coral-red */
+  --endo-bleeding-light: #fdf0ef;
+  --endo-pain: #9b6bb3;           /* vibrant violet-purple */
+  --endo-pain-light: #f8f0fc;
+  --endo-ovulation: #e8a445;      /* golden saffron/amber */
+  --endo-ovulation-light: #fef7e8;
+  --endo-fertility: #3da88a;      /* fresh teal-green */
+  --endo-fertility-light: #e8f6f1;
+  --endo-medication: #5a9fd4;     /* bright sky blue */
+  --endo-medication-light: #edf5fc;
+  --endo-sleep: #8b7ec9;          /* soft periwinkle/lavender */
+  --endo-sleep-light: #f3f0fa;
+  --endo-notes: #c9956a;          /* warm caramel */
+  --endo-notes-light: #faf4ed;
+  --endo-symptoms: #d4789a;       /* soft rose-pink */
+  --endo-symptoms-light: #fcf0f4;
+  --endo-energy: #e8955a;         /* warm tangerine */
+  --endo-energy-light: #fef5ed;
+  --endo-mood: #e08888;           /* gentle coral-pink */
+  --endo-mood-light: #fdf2f2;
+  --endo-success: #3da88a;
+  --endo-success-light: #e8f6f1;
+  --endo-info: #5a9fd4;
+  --endo-info-light: #edf5fc;
+  --endo-warning: #e8a445;
+  --endo-warning-light: #fef7e8;
 
-  /* Slider colors */
-  --endo-slider-active: rgba(91, 122, 107, 0.75);
-  --endo-slider-track: rgba(91, 122, 107, 0.14);
-  --endo-slider-shadow: rgba(91, 122, 107, 0.18);
-  --endo-slider-shadow-active: rgba(91, 122, 107, 0.24);
+  /* Slider colors - coral to match accent */
+  --endo-slider-active: rgba(224, 123, 95, 0.85);
+  --endo-slider-track: rgba(224, 123, 95, 0.18);
+  --endo-slider-shadow: rgba(224, 123, 95, 0.25);
+  --endo-slider-shadow-active: rgba(224, 123, 95, 0.35);
+
+  /* Decorative shadow - warm coral */
+  --endo-decorative-shadow: rgba(224, 123, 95, 0.35);
+}
+
+/* Semantic section color overrides for neutral theme */
+/* Each section gets its own vibrant color for easy navigation */
+[data-theme="neutral"] [data-section="bleeding"] {
+  --tw-rose-500: var(--endo-bleeding);
+  --tw-rose-600: #c85048;
+  --tw-rose-50: var(--endo-bleeding-light);
+  --tw-rose-100: #fbe6e5;
+}
+
+[data-theme="neutral"] [data-section="pain"] {
+  --tw-rose-500: var(--endo-pain);
+  --tw-rose-600: #8858a0;
+  --tw-rose-50: var(--endo-pain-light);
+  --tw-rose-100: #f0e5f5;
+}
+
+[data-theme="neutral"] [data-section="ovulation"] {
+  --tw-rose-500: var(--endo-ovulation);
+  --tw-rose-600: #d09035;
+  --tw-rose-50: var(--endo-ovulation-light);
+  --tw-rose-100: #fcefda;
+}
+
+[data-theme="neutral"] [data-section="fertility"] {
+  --tw-rose-500: var(--endo-fertility);
+  --tw-rose-600: #2d9478;
+  --tw-rose-50: var(--endo-fertility-light);
+  --tw-rose-100: #dcf0e8;
+}
+
+[data-theme="neutral"] [data-section="medication"] {
+  --tw-rose-500: var(--endo-medication);
+  --tw-rose-600: #4a8dc0;
+  --tw-rose-50: var(--endo-medication-light);
+  --tw-rose-100: #e0edf7;
+}
+
+[data-theme="neutral"] [data-section="sleep"] {
+  --tw-rose-500: var(--endo-sleep);
+  --tw-rose-600: #7568b8;
+  --tw-rose-50: var(--endo-sleep-light);
+  --tw-rose-100: #e8e4f5;
+}
+
+[data-theme="neutral"] [data-section="notes"] {
+  --tw-rose-500: var(--endo-notes);
+  --tw-rose-600: #b58055;
+  --tw-rose-50: var(--endo-notes-light);
+  --tw-rose-100: #f5ebe0;
+}
+
+[data-theme="neutral"] [data-section="symptoms"] {
+  --tw-rose-500: var(--endo-symptoms);
+  --tw-rose-600: #c06588;
+  --tw-rose-50: var(--endo-symptoms-light);
+  --tw-rose-100: #f8e5ed;
+}
+
+[data-theme="neutral"] [data-section="energy"] {
+  --tw-rose-500: var(--endo-energy);
+  --tw-rose-600: #d0804a;
+  --tw-rose-50: var(--endo-energy-light);
+  --tw-rose-100: #fceee0;
+}
+
+[data-theme="neutral"] [data-section="mood"] {
+  --tw-rose-500: var(--endo-mood);
+  --tw-rose-600: #c87575;
+  --tw-rose-50: var(--endo-mood-light);
+  --tw-rose-100: #fbe8e8;
 }
 
 html {
@@ -208,7 +300,7 @@ textarea:focus-visible {
 }
 
 .heart-3d svg {
-  filter: drop-shadow(0 20px 35px rgba(244, 114, 182, 0.35));
+  filter: drop-shadow(0 20px 35px var(--endo-decorative-shadow));
 }
 
 @keyframes heart-spin {
