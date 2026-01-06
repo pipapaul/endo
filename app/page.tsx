@@ -1642,16 +1642,17 @@ const describeBleedingLevel = (point: CycleOverviewPoint) => {
 
 type CycleOverviewChartPoint = CycleOverviewPoint & {
   bleedingLabel: string;
-  bleedingValue: number;
+  bleedingValue: number | null;
   pbacEquivalent: number;
   // For simple mode: uncertainty range for thicker/blurry display
-  simpleBleedingMin: number;
-  simpleBleedingMax: number;
+  simpleBleedingMin: number | null;
+  simpleBleedingMax: number | null;
   isSimpleModeDay: boolean;
   dateLabel: string;
-  painValue: number;
+  painValue: number | null;
   impactValue: number | null;
   isCurrentDay: boolean;
+  isFutureDay: boolean;
 };
 
 type PainDotProps = DotProps & { payload?: CycleOverviewChartPoint };
@@ -1826,20 +1827,37 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
   const chartWidthMultiplier = totalDays / CYCLE_OVERVIEW_VISIBLE_DAYS;
 
   const chartPoints = useMemo<CycleOverviewChartPoint[]>(() => {
+    // Find the first date with actual entry data
+    const firstEntryDate = data.points.find(
+      (p) => p.painNRS > 0 || p.isBleeding || p.impactNRS !== null || p.ovulationPositive
+    )?.date ?? todayIso;
+
     return data.points.map((point) => {
+      const isFutureDay = point.date > todayIso;
+      const isBeforeFirstEntry = point.date < firstEntryDate;
+      const shouldHideData = isFutureDay || isBeforeFirstEntry;
+
       const bleeding = describeBleedingLevel(point);
-      const painValue = Number.isFinite(point.painNRS)
-        ? Math.max(0, Math.min(10, Number(point.painNRS)))
-        : 0;
-      const impactValue = Number.isFinite(point.impactNRS)
-        ? Math.max(0, Math.min(10, Number(point.impactNRS)))
-        : null;
+      const painValue = shouldHideData
+        ? null
+        : Number.isFinite(point.painNRS)
+          ? Math.max(0, Math.min(10, Number(point.painNRS)))
+          : 0;
+      const impactValue = shouldHideData
+        ? null
+        : Number.isFinite(point.impactNRS)
+          ? Math.max(0, Math.min(10, Number(point.impactNRS)))
+          : null;
+      const bleedingValue = shouldHideData ? null : bleeding.value;
 
       // Compute simple mode uncertainty range
       const isSimpleModeDay = point.bleedingTrackingMethod === "simple" && point.simpleBleedingIntensity != null;
-      let simpleBleedingMin = 0;
-      let simpleBleedingMax = 0;
-      if (isSimpleModeDay && point.simpleBleedingIntensity) {
+      let simpleBleedingMin: number | null = 0;
+      let simpleBleedingMax: number | null = 0;
+      if (shouldHideData) {
+        simpleBleedingMin = null;
+        simpleBleedingMax = null;
+      } else if (isSimpleModeDay && point.simpleBleedingIntensity) {
         const intensityDef = getSimpleBleedingIntensityDefinition(point.simpleBleedingIntensity);
         if (intensityDef) {
           simpleBleedingMin = intensityDef.pbacEquivalentMin;
@@ -1850,7 +1868,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
       return {
         ...point,
         bleedingLabel: bleeding.label,
-        bleedingValue: bleeding.value,
+        bleedingValue,
         pbacEquivalent: bleeding.pbacEquivalent,
         simpleBleedingMin,
         simpleBleedingMax,
@@ -1860,6 +1878,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
         impactValue,
         isCurrentDay: point.date === todayIso,
         painTimeline: point.painTimeline ?? null,
+        isFutureDay,
       };
     });
   }, [data.points, todayIso]);
