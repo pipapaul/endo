@@ -87,7 +87,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { touchLastActive, loadProductSettings, saveProductSettings } from "@/lib/persistence";
 import { ProductSettings, DEFAULT_PRODUCT_SETTINGS, getProductById, FILL_LEVEL_LABELS, FREE_BLEEDING_INTENSITY_LABELS } from "@/lib/productSettings";
-import { ProductSettingsPanel } from "@/components/ui/ProductSettingsPanel";
+import { ProductSettingsPanel, ProductConfigPanel } from "@/components/ui/ProductSettingsPanel";
 import { usePersistentState } from "@/lib/usePersistentState";
 import WeeklyTabShell from "@/components/weekly/WeeklyTabShell";
 import {
@@ -3154,7 +3154,7 @@ export default function HomePage() {
   const [showCheckInPopup, setShowCheckInPopup] = useState(false);
   const [pendingDismissCheckIn, setPendingDismissCheckIn] = useState<PendingCheckIn | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [settingsPage, setSettingsPage] = useState<"main" | "ovulation" | "bleeding" | "colorScheme">("main");
+  const [settingsPage, setSettingsPage] = useState<"main" | "ovulation" | "bleeding" | "colorScheme" | "products">("main");
   const [productSettings, setProductSettings] = useState<ProductSettings>(DEFAULT_PRODUCT_SETTINGS);
   const [colorScheme, setColorScheme, colorSchemeMeta] = usePersistentState<ColorScheme>(
     "endo-color-scheme",
@@ -7888,6 +7888,7 @@ export default function HomePage() {
                   }}
                   todayHasBleedingData={todayHasAnyBleedingData}
                   onResetTodayBleedingData={handleResetTodayBleedingData}
+                  onNavigateToProducts={() => setSettingsPage("products")}
                 />
               </div>
             )}
@@ -7951,6 +7952,19 @@ export default function HomePage() {
                     );
                   })}
                 </div>
+              </div>
+            )}
+
+            {settingsPage === "products" && (
+              <div>
+                <h3 className="text-lg font-semibold text-rose-900 mb-4">Meine Produkte</h3>
+                <ProductConfigPanel
+                  settings={productSettings}
+                  onSettingsChange={async (newSettings) => {
+                    setProductSettings(newSettings);
+                    await saveProductSettings(newSettings);
+                  }}
+                />
               </div>
             )}
           </div>
