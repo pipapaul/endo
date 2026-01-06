@@ -1950,17 +1950,16 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
     []
   );
 
-  // Scroll to today on mount
+  // Scroll to today on mount - position today at ~80% from left (some future visible)
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
 
-    // Calculate scroll position to center today
     const containerWidth = container.clientWidth;
     const scrollWidth = container.scrollWidth;
     const todayPosition = (data.todayIndex / totalDays) * scrollWidth;
-    // Center today in the view
-    const scrollTarget = todayPosition - containerWidth / 2;
+    // Position today at 80% from the left (so ~6 future days visible on right)
+    const scrollTarget = todayPosition - containerWidth * 0.8;
 
     container.scrollLeft = Math.max(0, scrollTarget);
   }, [data.todayIndex, totalDays]);
@@ -1974,10 +1973,11 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
       const containerWidth = container.clientWidth;
       const scrollWidth = container.scrollWidth;
       const todayPosition = (data.todayIndex / totalDays) * scrollWidth;
-      const currentCenter = container.scrollLeft + containerWidth / 2;
-      // Show button if we're more than half a screen away from today
-      const distanceFromToday = Math.abs(todayPosition - currentCenter);
-      setShowScrollToToday(distanceFromToday > containerWidth * 0.5);
+      // Check if today is visible in the current viewport
+      const viewStart = container.scrollLeft;
+      const viewEnd = container.scrollLeft + containerWidth;
+      const todayVisible = todayPosition >= viewStart && todayPosition <= viewEnd;
+      setShowScrollToToday(!todayVisible);
     };
 
     container.addEventListener("scroll", handleScroll);
@@ -1991,7 +1991,8 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
     const containerWidth = container.clientWidth;
     const scrollWidth = container.scrollWidth;
     const todayPosition = (data.todayIndex / totalDays) * scrollWidth;
-    const scrollTarget = todayPosition - containerWidth / 2;
+    // Position today at 80% from the left (matching initial position)
+    const scrollTarget = todayPosition - containerWidth * 0.8;
 
     container.scrollTo({ left: Math.max(0, scrollTarget), behavior: "smooth" });
   }, [data.todayIndex, totalDays]);
@@ -2004,7 +2005,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
     <section aria-label="Zyklusübersicht" className="relative">
       <div
         ref={scrollContainerRef}
-        className="mx-auto h-36 w-[80vw] max-w-full overflow-x-auto sm:h-44 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent"
+        className="h-36 w-full overflow-x-auto sm:h-44 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent"
       >
         <div style={{ width: `${chartWidthMultiplier * 100}%`, minWidth: "100%", height: "100%" }}>
           <ResponsiveContainer>
