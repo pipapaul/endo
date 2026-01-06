@@ -1642,16 +1642,17 @@ const describeBleedingLevel = (point: CycleOverviewPoint) => {
 
 type CycleOverviewChartPoint = CycleOverviewPoint & {
   bleedingLabel: string;
-  bleedingValue: number;
+  bleedingValue: number | null;
   pbacEquivalent: number;
   // For simple mode: uncertainty range for thicker/blurry display
-  simpleBleedingMin: number;
-  simpleBleedingMax: number;
+  simpleBleedingMin: number | null;
+  simpleBleedingMax: number | null;
   isSimpleModeDay: boolean;
   dateLabel: string;
-  painValue: number;
+  painValue: number | null;
   impactValue: number | null;
   isCurrentDay: boolean;
+  isFutureDay: boolean;
 };
 
 type PainDotProps = DotProps & { payload?: CycleOverviewChartPoint };
@@ -1826,20 +1827,37 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
   const chartWidthMultiplier = totalDays / CYCLE_OVERVIEW_VISIBLE_DAYS;
 
   const chartPoints = useMemo<CycleOverviewChartPoint[]>(() => {
+    // Find the first date with actual entry data
+    const firstEntryDate = data.points.find(
+      (p) => p.painNRS > 0 || p.isBleeding || p.impactNRS !== null || p.ovulationPositive
+    )?.date ?? todayIso;
+
     return data.points.map((point) => {
+      const isFutureDay = point.date > todayIso;
+      const isBeforeFirstEntry = point.date < firstEntryDate;
+      const shouldHideData = isFutureDay || isBeforeFirstEntry;
+
       const bleeding = describeBleedingLevel(point);
-      const painValue = Number.isFinite(point.painNRS)
-        ? Math.max(0, Math.min(10, Number(point.painNRS)))
-        : 0;
-      const impactValue = Number.isFinite(point.impactNRS)
-        ? Math.max(0, Math.min(10, Number(point.impactNRS)))
-        : null;
+      const painValue = shouldHideData
+        ? null
+        : Number.isFinite(point.painNRS)
+          ? Math.max(0, Math.min(10, Number(point.painNRS)))
+          : 0;
+      const impactValue = shouldHideData
+        ? null
+        : Number.isFinite(point.impactNRS)
+          ? Math.max(0, Math.min(10, Number(point.impactNRS)))
+          : 0;
+      const bleedingValue = shouldHideData ? null : bleeding.value;
 
       // Compute simple mode uncertainty range
       const isSimpleModeDay = point.bleedingTrackingMethod === "simple" && point.simpleBleedingIntensity != null;
-      let simpleBleedingMin = 0;
-      let simpleBleedingMax = 0;
-      if (isSimpleModeDay && point.simpleBleedingIntensity) {
+      let simpleBleedingMin: number | null = 0;
+      let simpleBleedingMax: number | null = 0;
+      if (shouldHideData) {
+        simpleBleedingMin = null;
+        simpleBleedingMax = null;
+      } else if (isSimpleModeDay && point.simpleBleedingIntensity) {
         const intensityDef = getSimpleBleedingIntensityDefinition(point.simpleBleedingIntensity);
         if (intensityDef) {
           simpleBleedingMin = intensityDef.pbacEquivalentMin;
@@ -1850,7 +1868,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
       return {
         ...point,
         bleedingLabel: bleeding.label,
-        bleedingValue: bleeding.value,
+        bleedingValue,
         pbacEquivalent: bleeding.pbacEquivalent,
         simpleBleedingMin,
         simpleBleedingMax,
@@ -1860,6 +1878,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
         impactValue,
         isCurrentDay: point.date === todayIso,
         painTimeline: point.painTimeline ?? null,
+        isFutureDay,
       };
     });
   }, [data.points, todayIso]);
@@ -1950,17 +1969,16 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
     []
   );
 
-  // Scroll to today on mount
+  // Scroll to today on mount - position today at ~80% from left (some future visible)
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
 
-    // Calculate scroll position to center today
     const containerWidth = container.clientWidth;
     const scrollWidth = container.scrollWidth;
     const todayPosition = (data.todayIndex / totalDays) * scrollWidth;
-    // Center today in the view
-    const scrollTarget = todayPosition - containerWidth / 2;
+    // Position today at 80% from the left (so ~6 future days visible on right)
+    const scrollTarget = todayPosition - containerWidth * 0.8;
 
     container.scrollLeft = Math.max(0, scrollTarget);
   }, [data.todayIndex, totalDays]);
@@ -1974,10 +1992,11 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
       const containerWidth = container.clientWidth;
       const scrollWidth = container.scrollWidth;
       const todayPosition = (data.todayIndex / totalDays) * scrollWidth;
-      const currentCenter = container.scrollLeft + containerWidth / 2;
-      // Show button if we're more than half a screen away from today
-      const distanceFromToday = Math.abs(todayPosition - currentCenter);
-      setShowScrollToToday(distanceFromToday > containerWidth * 0.5);
+      // Check if today is visible in the current viewport
+      const viewStart = container.scrollLeft;
+      const viewEnd = container.scrollLeft + containerWidth;
+      const todayVisible = todayPosition >= viewStart && todayPosition <= viewEnd;
+      setShowScrollToToday(!todayVisible);
     };
 
     container.addEventListener("scroll", handleScroll);
@@ -1991,7 +2010,8 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
     const containerWidth = container.clientWidth;
     const scrollWidth = container.scrollWidth;
     const todayPosition = (data.todayIndex / totalDays) * scrollWidth;
-    const scrollTarget = todayPosition - containerWidth / 2;
+    // Position today at 80% from the left (matching initial position)
+    const scrollTarget = todayPosition - containerWidth * 0.8;
 
     container.scrollTo({ left: Math.max(0, scrollTarget), behavior: "smooth" });
   }, [data.todayIndex, totalDays]);
@@ -2004,7 +2024,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
     <section aria-label="Zyklusübersicht" className="relative">
       <div
         ref={scrollContainerRef}
-        className="mx-auto h-36 w-[80vw] max-w-full overflow-x-auto sm:h-44 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent"
+        className="h-36 w-full overflow-x-auto sm:h-44 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent"
       >
         <div style={{ width: `${chartWidthMultiplier * 100}%`, minWidth: "100%", height: "100%" }}>
           <ResponsiveContainer>
