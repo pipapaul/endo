@@ -241,28 +241,6 @@
 /* Text opacity variants */
 [data-theme="neutral"] [data-section] .text-rose-600\/80 { color: rgba(92, 81, 71, 0.8) !important; }
 
-/* Category icon colors for the daily check-in overview page */
-[data-theme="neutral"] [data-category-icon="pain"] { color: var(--endo-pain) !important; }
-[data-theme="neutral"] [data-category-icon="symptoms"] { color: var(--endo-symptoms) !important; }
-[data-theme="neutral"] [data-category-icon="bleeding"] { color: var(--endo-bleeding) !important; }
-[data-theme="neutral"] [data-category-icon="medication"] { color: var(--endo-medication) !important; }
-[data-theme="neutral"] [data-category-icon="sleep"] { color: var(--endo-sleep) !important; }
-[data-theme="neutral"] [data-category-icon="bowelBladder"] { color: var(--endo-symptoms) !important; }
-[data-theme="neutral"] [data-category-icon="notes"] { color: var(--endo-notes) !important; }
-[data-theme="neutral"] [data-category-icon="optional"] { color: var(--endo-ovulation) !important; }
-[data-theme="neutral"] [data-category-icon="cervixMucus"] { color: var(--endo-fertility) !important; }
-
-/* Category icon wrapper backgrounds */
-[data-theme="neutral"] [data-category-icon="pain"] { background-color: rgba(168, 85, 247, 0.1) !important; border-color: rgba(168, 85, 247, 0.2) !important; }
-[data-theme="neutral"] [data-category-icon="symptoms"] { background-color: rgba(236, 72, 153, 0.1) !important; border-color: rgba(236, 72, 153, 0.2) !important; }
-[data-theme="neutral"] [data-category-icon="bleeding"] { background-color: rgba(232, 82, 74, 0.1) !important; border-color: rgba(232, 82, 74, 0.2) !important; }
-[data-theme="neutral"] [data-category-icon="medication"] { background-color: rgba(14, 165, 233, 0.1) !important; border-color: rgba(14, 165, 233, 0.2) !important; }
-[data-theme="neutral"] [data-category-icon="sleep"] { background-color: rgba(139, 92, 246, 0.1) !important; border-color: rgba(139, 92, 246, 0.2) !important; }
-[data-theme="neutral"] [data-category-icon="bowelBladder"] { background-color: rgba(236, 72, 153, 0.1) !important; border-color: rgba(236, 72, 153, 0.2) !important; }
-[data-theme="neutral"] [data-category-icon="notes"] { background-color: rgba(249, 115, 22, 0.1) !important; border-color: rgba(249, 115, 22, 0.2) !important; }
-[data-theme="neutral"] [data-category-icon="optional"] { background-color: rgba(245, 158, 11, 0.1) !important; border-color: rgba(245, 158, 11, 0.2) !important; }
-[data-theme="neutral"] [data-category-icon="cervixMucus"] { background-color: rgba(20, 184, 166, 0.1) !important; border-color: rgba(20, 184, 166, 0.2) !important; }
-
 html {
   width: 100%;
   overflow-x: hidden;

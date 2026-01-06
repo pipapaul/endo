@@ -520,6 +520,25 @@ const DAILY_CATEGORY_KEYS: Exclude<DailyCategoryId, "overview">[] = [
   "optional",
 ];
 
+/**
+ * Color mapping for daily check-in categories.
+ * Each category has a saturated color for icons and a pastel color for backgrounds.
+ */
+const CATEGORY_COLORS: Record<
+  Exclude<DailyCategoryId, "overview">,
+  { saturated: string; pastel: string; border: string }
+> = {
+  pain: { saturated: "#a855f7", pastel: "#f8f0fc", border: "rgba(168, 85, 247, 0.25)" },
+  symptoms: { saturated: "#ec4899", pastel: "#fcf0f4", border: "rgba(236, 72, 153, 0.25)" },
+  bleeding: { saturated: "#e8524a", pastel: "#fdf0ef", border: "rgba(232, 82, 74, 0.25)" },
+  medication: { saturated: "#0ea5e9", pastel: "#edf5fc", border: "rgba(14, 165, 233, 0.25)" },
+  sleep: { saturated: "#8b5cf6", pastel: "#f3f0fa", border: "rgba(139, 92, 246, 0.25)" },
+  bowelBladder: { saturated: "#ec4899", pastel: "#fcf0f4", border: "rgba(236, 72, 153, 0.25)" },
+  notes: { saturated: "#f97316", pastel: "#faf4ed", border: "rgba(249, 115, 22, 0.25)" },
+  optional: { saturated: "#f59e0b", pastel: "#fef7e8", border: "rgba(245, 158, 11, 0.25)" },
+  cervixMucus: { saturated: "#14b8a6", pastel: "#e8f6f1", border: "rgba(20, 184, 166, 0.25)" },
+};
+
 const isTrackedDailyCategory = (
   categoryId: DailyCategoryId
 ): categoryId is TrackableDailyCategoryId =>
@@ -7660,12 +7679,29 @@ export default function HomePage() {
     </div>
   ) : null;
 
+  // Compute toolbar background color based on active category
+  const toolbarBgColor = useMemo(() => {
+    if (activeView === "daily" && dailyActiveCategory !== "overview") {
+      const categoryColor = CATEGORY_COLORS[dailyActiveCategory];
+      return categoryColor?.pastel ?? "var(--endo-bg, #fff)";
+    }
+    return "var(--endo-bg, #fff)";
+  }, [activeView, dailyActiveCategory]);
+
+  const toolbarBorderColor = useMemo(() => {
+    if (activeView === "daily" && dailyActiveCategory !== "overview") {
+      const categoryColor = CATEGORY_COLORS[dailyActiveCategory];
+      return categoryColor?.border ?? undefined;
+    }
+    return undefined;
+  }, [activeView, dailyActiveCategory]);
+
   const detailToolbar = !isHomeView ? (
     <>
       <header
         ref={detailToolbarRef}
-        className="fixed inset-x-0 top-0 z-40 border-b border-rose-100 bg-white/90 shadow-sm backdrop-blur supports-[backdrop-filter:none]:bg-white"
-        style={{ backgroundColor: "var(--endo-bg, #fff)" }}
+        className="fixed inset-x-0 top-0 z-40 border-b shadow-sm backdrop-blur supports-[backdrop-filter:none]:bg-white"
+        style={{ backgroundColor: toolbarBgColor, borderColor: toolbarBorderColor }}
       >
         <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -8320,12 +8356,7 @@ export default function HomePage() {
                         isCompleted &&
                         isTrackableCategory &&
                         (categoryZeroStates[category.id as TrackableDailyCategoryId] ?? false);
-                      const iconWrapperClasses = cn(
-                        "flex h-12 w-12 flex-none items-center justify-center rounded-full border transition",
-                        isCompleted
-                          ? "border-amber-200 bg-amber-100 text-amber-600"
-                          : "border-rose-100 bg-rose-50 text-rose-400 group-hover:border-rose-200 group-hover:bg-rose-100 group-hover:text-rose-500"
-                      );
+                      const categoryColor = CATEGORY_COLORS[category.id];
                       return (
                         <div
                           key={category.id}
@@ -8333,8 +8364,16 @@ export default function HomePage() {
                             "group rounded-2xl border p-4 shadow-sm transition hover:shadow-md",
                             isCompleted
                               ? "border-amber-200 bg-amber-50 hover:border-amber-300"
-                              : "border-rose-100 bg-white/80 hover:border-rose-200"
+                              : "hover:shadow-lg"
                           )}
+                          style={
+                            isCompleted
+                              ? undefined
+                              : {
+                                  backgroundColor: categoryColor.pastel,
+                                  borderColor: categoryColor.border,
+                                }
+                          }
                         >
                           <button
                             type="button"
@@ -8343,9 +8382,20 @@ export default function HomePage() {
                           >
                             {Icon ? (
                               <span
-                                className={iconWrapperClasses}
+                                className={cn(
+                                  "flex h-12 w-12 flex-none items-center justify-center rounded-full border transition",
+                                  isCompleted && "border-amber-200 bg-amber-100 text-amber-600"
+                                )}
+                                style={
+                                  isCompleted
+                                    ? undefined
+                                    : {
+                                        backgroundColor: "rgba(255, 255, 255, 0.7)",
+                                        borderColor: categoryColor.border,
+                                        color: categoryColor.saturated,
+                                      }
+                                }
                                 aria-hidden="true"
-                                data-category-icon={isCompleted ? undefined : category.id}
                               >
                                 <Icon className="h-full w-full" />
                               </span>
