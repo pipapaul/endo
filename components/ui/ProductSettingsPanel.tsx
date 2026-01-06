@@ -71,6 +71,10 @@ export const ProductSettingsPanel: React.FC<ProductSettingsPanelProps> = ({
     } else {
       // No data to reset, change directly
       onSettingsChange({ ...settings, trackingMethod: method });
+      // Auto-expand product config when switching to extended mode
+      if (method === "pbac_extended") {
+        setShowProductConfig(true);
+      }
     }
   };
 
@@ -80,6 +84,10 @@ export const ProductSettingsPanel: React.FC<ProductSettingsPanelProps> = ({
       onResetTodayBleedingData?.();
       // Then change the tracking method
       onSettingsChange({ ...settings, trackingMethod: pendingMethodChange });
+      // Auto-expand product config when switching to extended mode
+      if (pendingMethodChange === "pbac_extended") {
+        setShowProductConfig(true);
+      }
     }
     setShowModeChangeConfirm(false);
     setPendingMethodChange(null);
@@ -190,37 +198,56 @@ export const ProductSettingsPanel: React.FC<ProductSettingsPanelProps> = ({
           </div>
         </label>
 
-        <label
-          className={`flex items-start justify-between gap-4 rounded-xl border p-4 cursor-pointer transition ${
+        <div
+          className={`rounded-xl border overflow-hidden transition ${
             settings.trackingMethod === "pbac_extended"
               ? "border-rose-300 bg-rose-50/50"
               : "border-rose-100 hover:bg-rose-50/30"
           }`}
-          onClick={() => handleTrackingMethodChange("pbac_extended")}
         >
-          <div className="flex-1">
-            <p className="font-medium text-rose-900">Erweiterter PBAC</p>
-            <p className="mt-1 text-sm text-rose-600">
-              Alle Produkte – Größe wählen, dann Füllgrad angeben
-            </p>
-            <p className="mt-2 text-xs text-rose-500">
-              Für Tassen, Discs, Periodenslips & mehr mit Volumen-Schätzung
-            </p>
-          </div>
-          <div className="mt-0.5">
-            <div
-              className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                settings.trackingMethod === "pbac_extended"
-                  ? "border-rose-500 bg-rose-500"
-                  : "border-rose-300"
-              }`}
-            >
-              {settings.trackingMethod === "pbac_extended" && (
-                <div className="w-2 h-2 rounded-full bg-white" />
-              )}
+          <label
+            className="flex items-start justify-between gap-4 p-4 cursor-pointer"
+            onClick={() => handleTrackingMethodChange("pbac_extended")}
+          >
+            <div className="flex-1">
+              <p className="font-medium text-rose-900">Erweiterter PBAC</p>
+              <p className="mt-1 text-sm text-rose-600">
+                Alle Produkte – Größe wählen, dann Füllgrad angeben
+              </p>
+              <p className="mt-2 text-xs text-rose-500">
+                Für Tassen, Discs, Periodenslips & mehr mit Volumen-Schätzung
+              </p>
             </div>
-          </div>
-        </label>
+            <div className="mt-0.5">
+              <div
+                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                  settings.trackingMethod === "pbac_extended"
+                    ? "border-rose-500 bg-rose-500"
+                    : "border-rose-300"
+                }`}
+              >
+                {settings.trackingMethod === "pbac_extended" && (
+                  <div className="w-2 h-2 rounded-full bg-white" />
+                )}
+              </div>
+            </div>
+          </label>
+          {settings.trackingMethod === "pbac_extended" && (
+            <div className="px-4 pb-4 pt-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowProductConfig(!showProductConfig);
+                }}
+                className="w-full border-rose-200 text-rose-700 hover:bg-rose-100"
+              >
+                {showProductConfig ? "Produkte verbergen" : "Meine Produkte konfigurieren"}
+              </Button>
+            </div>
+          )}
+        </div>
 
         <label
           className={`flex items-start justify-between gap-4 rounded-xl border p-4 cursor-pointer transition ${
@@ -276,33 +303,12 @@ export const ProductSettingsPanel: React.FC<ProductSettingsPanelProps> = ({
             <li><strong>Stark gesättigt</strong> – fast vollständig durchtränkt</li>
           </ul>
         </div>
-      ) : (
-        <div>
-          <p className="text-sm text-rose-600 mb-4">
-            Bei jedem Wechsel gibst du den Füllgrad an (⅓, ⅔ oder voll).
-          </p>
-
-          {!showProductConfig ? (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setShowProductConfig(true)}
-              className="w-full border-rose-200 text-rose-700 hover:bg-rose-50"
-            >
-              Meine Produkte konfigurieren
-            </Button>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="font-medium text-rose-900">Meine Produkte</p>
-                <button
-                  type="button"
-                  onClick={() => setShowProductConfig(false)}
-                  className="text-sm text-rose-500 hover:text-rose-700"
-                >
-                  Schließen
-                </button>
-              </div>
+      ) : showProductConfig ? (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="font-medium text-rose-900">Meine Produkte</p>
+            <p className="text-xs text-rose-500">Bei jedem Wechsel gibst du den Füllgrad an (⅓, ⅔ oder voll)</p>
+          </div>
               {(Object.keys(productsByCategory) as ProductCategory[]).map((category) => {
                 const products = productsByCategory[category];
                 const isFullyEnabled = isCategoryFullyEnabled(category);
@@ -388,10 +394,8 @@ export const ProductSettingsPanel: React.FC<ProductSettingsPanelProps> = ({
                   </div>
                 );
               })}
-            </div>
-          )}
         </div>
-      )}
+      ) : null}
 
       {/* Anzeige-Optionen */}
       <div className="space-y-3">
