@@ -1554,9 +1554,12 @@ type CycleOverviewPoint = {
 type CycleOverviewData = {
   startDate: string;
   points: CycleOverviewPoint[];
+  todayIndex: number;
 };
 
-const CYCLE_OVERVIEW_MAX_DAYS = 30;
+const CYCLE_OVERVIEW_PAST_DAYS = 180;
+const CYCLE_OVERVIEW_FUTURE_DAYS = 30;
+const CYCLE_OVERVIEW_VISIBLE_DAYS = 30;
 
 type MenstruationComparisonPoint = {
   cycleDay: number;
@@ -1814,9 +1817,16 @@ const MucusFertilityDot = ({ cx, cy, payload }: PredictionDotProps) => {
 
 const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
   const bleedingGradientId = useId();
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [showScrollToToday, setShowScrollToToday] = useState(false);
   const todayIso = useMemo(() => formatDate(new Date()), []);
+
+  // Calculate chart dimensions
+  const totalDays = data.points.length;
+  const chartWidthMultiplier = totalDays / CYCLE_OVERVIEW_VISIBLE_DAYS;
+
   const chartPoints = useMemo<CycleOverviewChartPoint[]>(() => {
-    return data.points.slice(0, CYCLE_OVERVIEW_MAX_DAYS).map((point) => {
+    return data.points.map((point) => {
       const bleeding = describeBleedingLevel(point);
       const painValue = Number.isFinite(point.painNRS)
         ? Math.max(0, Math.min(10, Number(point.painNRS)))
@@ -1940,15 +1950,65 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
     []
   );
 
+  // Scroll to today on mount
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    // Calculate scroll position to center today
+    const containerWidth = container.clientWidth;
+    const scrollWidth = container.scrollWidth;
+    const todayPosition = (data.todayIndex / totalDays) * scrollWidth;
+    // Center today in the view
+    const scrollTarget = todayPosition - containerWidth / 2;
+
+    container.scrollLeft = Math.max(0, scrollTarget);
+  }, [data.todayIndex, totalDays]);
+
+  // Handle scroll to show/hide "scroll to today" button
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const containerWidth = container.clientWidth;
+      const scrollWidth = container.scrollWidth;
+      const todayPosition = (data.todayIndex / totalDays) * scrollWidth;
+      const currentCenter = container.scrollLeft + containerWidth / 2;
+      // Show button if we're more than half a screen away from today
+      const distanceFromToday = Math.abs(todayPosition - currentCenter);
+      setShowScrollToToday(distanceFromToday > containerWidth * 0.5);
+    };
+
+    container.addEventListener("scroll", handleScroll);
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, [data.todayIndex, totalDays]);
+
+  const scrollToToday = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const containerWidth = container.clientWidth;
+    const scrollWidth = container.scrollWidth;
+    const todayPosition = (data.todayIndex / totalDays) * scrollWidth;
+    const scrollTarget = todayPosition - containerWidth / 2;
+
+    container.scrollTo({ left: Math.max(0, scrollTarget), behavior: "smooth" });
+  }, [data.todayIndex, totalDays]);
+
   if (!chartPoints.length) {
     return null;
   }
 
   return (
-    <section aria-label="Letzte 30 Tage">
-      <div className="mx-auto h-36 w-[80vw] max-w-full sm:h-44">
-        <ResponsiveContainer>
-          <ComposedChart data={chartPoints} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+    <section aria-label="Zyklusübersicht" className="relative">
+      <div
+        ref={scrollContainerRef}
+        className="mx-auto h-36 w-[80vw] max-w-full overflow-x-auto sm:h-44 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent"
+      >
+        <div style={{ width: `${chartWidthMultiplier * 100}%`, minWidth: "100%", height: "100%" }}>
+          <ResponsiveContainer>
+            <ComposedChart data={chartPoints} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
             <defs>
               <linearGradient id={bleedingGradientId} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={CATEGORY_COLORS.bleeding.saturated} stopOpacity={0.45} />
@@ -2056,9 +2116,21 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               isAnimationActive={false}
               legendType="none"
             />
-          </ComposedChart>
-        </ResponsiveContainer>
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
       </div>
+      {showScrollToToday && (
+        <button
+          type="button"
+          onClick={scrollToToday}
+          className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-md border border-gray-200 hover:bg-white hover:shadow-lg transition-all"
+          aria-label="Zu heute scrollen"
+        >
+          <span>Heute</span>
+          <ChevronRight className="h-3 w-3" />
+        </button>
+      )}
     </section>
   );
 };
@@ -3527,8 +3599,9 @@ export default function HomePage() {
       return null;
     }
 
+    // Start from PAST_DAYS ago
     const startDate = new Date(todayDate);
-    startDate.setDate(startDate.getDate() - (CYCLE_OVERVIEW_MAX_DAYS - 1));
+    startDate.setDate(startDate.getDate() - CYCLE_OVERVIEW_PAST_DAYS);
 
     // Calculate prediction data for chart markers
     // Uses cycle length method, enhanced with Billings method (cervix mucus) when enabled
@@ -3648,7 +3721,8 @@ export default function HomePage() {
     });
 
     const points: CycleOverviewPoint[] = [];
-    for (let dayOffset = 0; dayOffset < CYCLE_OVERVIEW_MAX_DAYS; dayOffset += 1) {
+    const totalDays = CYCLE_OVERVIEW_PAST_DAYS + CYCLE_OVERVIEW_FUTURE_DAYS + 1; // +1 for today
+    for (let dayOffset = 0; dayOffset < totalDays; dayOffset += 1) {
       const currentDate = new Date(startDate);
       currentDate.setDate(startDate.getDate() + dayOffset);
       const iso = formatDate(currentDate);
@@ -3696,6 +3770,7 @@ export default function HomePage() {
     return {
       startDate: formatDate(startDate),
       points,
+      todayIndex: CYCLE_OVERVIEW_PAST_DAYS, // Today is at this index (0-based)
     };
   }, [annotatedDailyEntries, featureFlags.billingMethod, painShortcutTimelineByDate, today]);
 
