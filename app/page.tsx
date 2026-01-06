@@ -11363,6 +11363,10 @@ export default function HomePage() {
               <ExtendedBleedingEntryForm
                 settings={productSettings}
                 onAddEntry={(entry) => {
+                  // Ensure we're editing today's draft before adding entry
+                  if (dailyDraft.date !== today) {
+                    selectDailyDate(today);
+                  }
                   handleAddExtendedBleedingEntry(entry);
                   setBleedingQuickAddOpen(false);
                 }}
