@@ -93,7 +93,7 @@ export function SelectValue({ placeholder, className, ...props }: SelectValuePro
   if (!context) throw new Error("SelectValue must be used within Select");
   const label = context.getLabel(context.value);
   return (
-    <span className={cn("text-left", !label && "text-zinc-400", className)} {...props}>
+    <span className={cn("text-left", !label && "text-rose-400", className)} {...props}>
       {label ?? placeholder ?? ""}
     </span>
   );
@@ -135,7 +135,7 @@ export function SelectItem({ value, children, className, ...props }: SelectItemP
       onClick={() => context.setValue(value)}
       className={cn(
         "flex w-full items-center px-3 py-2 text-left text-sm transition",
-        isActive ? "bg-rose-100 text-rose-700" : "hover:bg-rose-50",
+        isActive ? "bg-rose-500 text-white" : "text-rose-700 hover:bg-rose-50",
         className
       )}
       {...props}

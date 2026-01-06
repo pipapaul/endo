@@ -286,11 +286,12 @@ function ChipButton({ active, children, onClick }: ChipButtonProps): JSX.Element
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={cn(
-        "rounded-full px-3 py-1 text-sm transition",
+        "rounded-full border px-3 py-1 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2",
         active
-          ? "bg-rose-500 text-white shadow-sm hover:bg-rose-600"
-          : "bg-rose-100 text-rose-800 hover:bg-rose-200"
+          ? "border-rose-500 bg-rose-500 text-white shadow-sm"
+          : "border-rose-200 bg-white text-rose-700 hover:border-rose-400 hover:bg-rose-50"
       )}
     >
       {children}

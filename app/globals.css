@@ -92,8 +92,39 @@
   --endo-decorative-shadow: rgba(241, 53, 36, 0.3);
 }
 
+/* Global UI overrides for neutral theme - consistent colors outside sections */
+/* These use the default accent color (red) for elements not in a section */
+[data-theme="neutral"] .bg-rose-500:not([data-section] *) { background-color: var(--endo-accent) !important; }
+[data-theme="neutral"] .bg-rose-600:not([data-section] *) { background-color: var(--endo-accent) !important; }
+[data-theme="neutral"] .bg-rose-700:not([data-section] *) { background-color: #d92d1e !important; }
+[data-theme="neutral"] .hover\:bg-rose-500:not([data-section] *):hover { background-color: var(--endo-accent) !important; }
+[data-theme="neutral"] .hover\:bg-rose-600:not([data-section] *):hover { background-color: var(--endo-accent) !important; }
+[data-theme="neutral"] .hover\:bg-rose-700:not([data-section] *):hover { background-color: #d92d1e !important; }
+[data-theme="neutral"] .border-rose-500:not([data-section] *) { border-color: var(--endo-accent) !important; }
+[data-theme="neutral"] .ring-rose-500:not([data-section] *) { --tw-ring-color: var(--endo-accent) !important; }
+[data-theme="neutral"] .focus-visible\:ring-rose-300:not([data-section] *):focus-visible { --tw-ring-color: rgba(241, 53, 36, 0.4) !important; }
+[data-theme="neutral"] .shadow-rose-200:not([data-section] *) { --tw-shadow-color: rgba(241, 53, 36, 0.2) !important; }
+
+/* Global text colors - charcoal for readability */
+[data-theme="neutral"] .text-rose-900:not([data-section] *) { color: #3d352e !important; }
+[data-theme="neutral"] .text-rose-800:not([data-section] *) { color: #3d352e !important; }
+[data-theme="neutral"] .text-rose-700:not([data-section] *) { color: #5c5147 !important; }
+[data-theme="neutral"] .text-rose-600:not([data-section] *) { color: #5c5147 !important; }
+[data-theme="neutral"] .text-rose-500:not([data-section] *) { color: #3d352e !important; }
+[data-theme="neutral"] .text-rose-400:not([data-section] *) { color: #8a8078 !important; }
+
+/* Global border colors - warm neutrals */
+[data-theme="neutral"] .border-rose-100:not([data-section] *) { border-color: #e5dcd0 !important; }
+[data-theme="neutral"] .border-rose-200:not([data-section] *) { border-color: #d5c9ba !important; }
+[data-theme="neutral"] .border-rose-300:not([data-section] *) { border-color: #d5c9ba !important; }
+
+/* Global background colors - warm neutrals */
+[data-theme="neutral"] .bg-rose-50:not([data-section] *) { background-color: #f5efe8 !important; }
+[data-theme="neutral"] .bg-rose-100:not([data-section] *) { background-color: #f0e8df !important; }
+[data-theme="neutral"] .bg-rose-200:not([data-section] *) { background-color: #e5dcd0 !important; }
+
 /* Semantic section color overrides for neutral theme */
-/* Charcoal headlines, warm neutral backgrounds, vibrant icons only */
+/* Within sections, use the section-specific color for highlights */
 
 /* Section colors - each section gets its own vibrant color for icons AND highlights */
 [data-theme="neutral"] [data-section="bleeding"] {
