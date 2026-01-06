@@ -3622,7 +3622,9 @@ export default function HomePage() {
         cycleDay: cycleDay ?? null,
         painNRS: entry.painNRS ?? 0,
         impactNRS: entry.impactNRS ?? null,
-        pbacScore: entry.bleeding?.pbacScore ?? null,
+        pbacScore: entry.extendedPbacData?.trackingMethod === "pbac_extended"
+          ? entry.extendedPbacData?.totalPbacEquivalentScore ?? null
+          : entry.bleeding?.pbacScore ?? null,
         isBleeding: hasBleedingForEntry(entry),
         bleedingTrackingMethod: entry.extendedPbacData?.trackingMethod ?? null,
         simpleBleedingIntensity: entry.simpleBleedingIntensity ?? null,
