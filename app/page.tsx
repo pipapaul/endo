@@ -85,7 +85,9 @@ import Checkbox from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 
 import { cn } from "@/lib/utils";
-import { touchLastActive } from "@/lib/persistence";
+import { touchLastActive, loadProductSettings, saveProductSettings } from "@/lib/persistence";
+import { ProductSettings, DEFAULT_PRODUCT_SETTINGS, getProductById, FILL_LEVEL_LABELS, FREE_BLEEDING_INTENSITY_LABELS } from "@/lib/productSettings";
+import { ProductSettingsPanel, ProductConfigPanel } from "@/components/ui/ProductSettingsPanel";
 import { usePersistentState } from "@/lib/usePersistentState";
 import WeeklyTabShell from "@/components/weekly/WeeklyTabShell";
 import {
@@ -111,9 +113,27 @@ import {
   createEmptyPbacCounts,
   PBAC_COUNT_KEYS,
   normalizePbacCounts,
+  calculatePbacScore,
+  aggregateExtendedPbacData,
+  SIMPLE_BLEEDING_INTENSITIES,
+  getSimpleBleedingPbacEquivalent,
+  getSimpleBleedingIntensityDefinition,
+  getTrackingMethodLabel,
   type PbacCountKey,
   type PbacCounts,
+  type ExtendedBleedingEntry,
+  type FreeBleedingEntry,
+  type ExtendedPbacData,
+  type SimpleBleedingIntensity,
+  type TrackingMethod,
 } from "@/lib/pbac";
+import { ExtendedBleedingEntryForm } from "@/components/home/ExtendedBleedingEntry";
+import {
+  type ColorScheme,
+  getColorSchemeName,
+  getColorSchemeDescription,
+  getColorSchemeSwatches,
+} from "@/lib/theme";
 import {
   ANALYTICS_SECTION_OPTIONS,
   BASE_PAIN_QUALITIES,
@@ -500,6 +520,25 @@ const DAILY_CATEGORY_KEYS: Exclude<DailyCategoryId, "overview">[] = [
   "optional",
 ];
 
+/**
+ * Color mapping for daily check-in categories.
+ * Each category has a saturated color for icons and a pastel color for backgrounds.
+ */
+const CATEGORY_COLORS: Record<
+  Exclude<DailyCategoryId, "overview">,
+  { saturated: string; pastel: string; border: string }
+> = {
+  pain: { saturated: "#a855f7", pastel: "#f8f0fc", border: "rgba(168, 85, 247, 0.25)" },
+  symptoms: { saturated: "#ec4899", pastel: "#fcf0f4", border: "rgba(236, 72, 153, 0.25)" },
+  bleeding: { saturated: "#e8524a", pastel: "#fdf0ef", border: "rgba(232, 82, 74, 0.25)" },
+  medication: { saturated: "#0ea5e9", pastel: "#edf5fc", border: "rgba(14, 165, 233, 0.25)" },
+  sleep: { saturated: "#8b5cf6", pastel: "#f3f0fa", border: "rgba(139, 92, 246, 0.25)" },
+  bowelBladder: { saturated: "#ec4899", pastel: "#fcf0f4", border: "rgba(236, 72, 153, 0.25)" },
+  notes: { saturated: "#f97316", pastel: "#faf4ed", border: "rgba(249, 115, 22, 0.25)" },
+  optional: { saturated: "#f59e0b", pastel: "#fef7e8", border: "rgba(245, 158, 11, 0.25)" },
+  cervixMucus: { saturated: "#14b8a6", pastel: "#e8f6f1", border: "rgba(20, 184, 166, 0.25)" },
+};
+
 const isTrackedDailyCategory = (
   categoryId: DailyCategoryId
 ): categoryId is TrackableDailyCategoryId =>
@@ -800,7 +839,7 @@ type PbacClotItem = {
 const PBAC_PRODUCT_ITEMS = [
   {
     id: "pad_light",
-    label: "Binde – leicht",
+    label: "Leicht gesättigt",
     score: 1,
     product: "pad",
     saturation: "light",
@@ -808,7 +847,7 @@ const PBAC_PRODUCT_ITEMS = [
   },
   {
     id: "pad_medium",
-    label: "Binde – mittel",
+    label: "Mittel gesättigt",
     score: 5,
     product: "pad",
     saturation: "medium",
@@ -816,7 +855,7 @@ const PBAC_PRODUCT_ITEMS = [
   },
   {
     id: "pad_heavy",
-    label: "Binde – stark",
+    label: "Stark gesättigt",
     score: 20,
     product: "pad",
     saturation: "heavy",
@@ -824,7 +863,7 @@ const PBAC_PRODUCT_ITEMS = [
   },
   {
     id: "tampon_light",
-    label: "Tampon – leicht",
+    label: "Leicht gesättigt",
     score: 1,
     product: "tampon",
     saturation: "light",
@@ -832,7 +871,7 @@ const PBAC_PRODUCT_ITEMS = [
   },
   {
     id: "tampon_medium",
-    label: "Tampon – mittel",
+    label: "Mittel gesättigt",
     score: 5,
     product: "tampon",
     saturation: "medium",
@@ -840,7 +879,7 @@ const PBAC_PRODUCT_ITEMS = [
   },
   {
     id: "tampon_heavy",
-    label: "Tampon – stark",
+    label: "Stark gesättigt",
     score: 10,
     product: "tampon",
     saturation: "heavy",
@@ -892,8 +931,8 @@ type BleedingQuickAddNotice = {
 };
 
 const PBAC_ENTRY_CATEGORY_OPTIONS = [
-  { id: "pad", label: "Binde", description: "Anzahl & Stärke" },
-  { id: "tampon", label: "Tampon", description: "Anzahl & Stärke" },
+  { id: "pad", label: "Binde", description: "Wie voll beim Wechsel?" },
+  { id: "tampon", label: "Tampon", description: "Wie voll beim Wechsel?" },
   { id: "clot", label: "Koagel", description: "Größe & Häufigkeit" },
   { id: "flooding", label: "Flooding", description: "+5 PBAC bei Aktivierung" },
 ] as const;
@@ -1502,6 +1541,8 @@ type CycleOverviewPoint = {
   impactNRS: number | null;
   pbacScore: number | null;
   isBleeding: boolean;
+  bleedingTrackingMethod: TrackingMethod | null;
+  simpleBleedingIntensity: SimpleBleedingIntensity | null;
   ovulationPositive: boolean;
   ovulationPainIntensity: number | null;
   painTimeline: PainShortcutTimelineSegment[] | null;
@@ -1513,9 +1554,12 @@ type CycleOverviewPoint = {
 type CycleOverviewData = {
   startDate: string;
   points: CycleOverviewPoint[];
+  todayIndex: number;
 };
 
-const CYCLE_OVERVIEW_MAX_DAYS = 30;
+const CYCLE_OVERVIEW_PAST_DAYS = 180;
+const CYCLE_OVERVIEW_FUTURE_DAYS = 30;
+const CYCLE_OVERVIEW_VISIBLE_DAYS = 30;
 
 type MenstruationComparisonPoint = {
   cycleDay: number;
@@ -1564,27 +1608,46 @@ const describeQuickPainEvent = (event: QuickPainEvent) => {
 
 const describeBleedingLevel = (point: CycleOverviewPoint) => {
   if (!point.isBleeding) {
-    return { label: "keine Blutung", value: 0 };
+    return { label: "keine Blutung", value: 0, pbacEquivalent: 0 };
   }
-  const score = typeof point.pbacScore === "number" ? point.pbacScore : 5;
+
+  // Determine the PBAC equivalent score based on tracking method
+  let score: number;
+  if (point.bleedingTrackingMethod === "simple" && point.simpleBleedingIntensity) {
+    // For simple mode, use the PBAC equivalent from intensity
+    score = getSimpleBleedingPbacEquivalent(point.simpleBleedingIntensity);
+  } else if (typeof point.pbacScore === "number") {
+    // For classic/extended PBAC, use actual score
+    score = point.pbacScore;
+  } else {
+    // Fallback for bleeding without score data
+    score = 5;
+  }
+
   if (score >= 41) {
-    return { label: "sehr starke Blutung", value: score };
+    return { label: "sehr starke Blutung", value: score, pbacEquivalent: score };
   }
   if (score >= 26) {
-    return { label: "starke Blutung", value: score };
+    return { label: "starke Blutung", value: score, pbacEquivalent: score };
   }
   if (score >= 10) {
-    return { label: "mittlere Blutung", value: score };
+    return { label: "mittlere Blutung", value: score, pbacEquivalent: score };
   }
   if (score > 0) {
-    return { label: "leichte Blutung", value: score };
+    return { label: "leichte Blutung", value: score, pbacEquivalent: score };
   }
-  return { label: "Blutung ohne PBAC", value: 0 };
+  // Score is 0 but bleeding is marked - minimal bleeding
+  return { label: "minimale Blutung", value: 1, pbacEquivalent: 0 };
 };
 
 type CycleOverviewChartPoint = CycleOverviewPoint & {
   bleedingLabel: string;
   bleedingValue: number;
+  pbacEquivalent: number;
+  // For simple mode: uncertainty range for thicker/blurry display
+  simpleBleedingMin: number;
+  simpleBleedingMax: number;
+  isSimpleModeDay: boolean;
   dateLabel: string;
   painValue: number;
   impactValue: number | null;
@@ -1607,7 +1670,7 @@ const PainDot = ({ cx, cy, payload }: PainDotProps) => {
       {payload.ovulationPositive ? (
         <circle cx={cx} cy={cy} r={7} fill="#fef3c7" stroke="#facc15" strokeWidth={2} />
       ) : null}
-      <circle cx={cx} cy={cy} r={4} fill="#be123c" stroke="#fff" strokeWidth={2} />
+      <circle cx={cx} cy={cy} r={4} fill={CATEGORY_COLORS.pain.saturated} stroke="#fff" strokeWidth={2} />
     </g>
   );
 };
@@ -1754,9 +1817,16 @@ const MucusFertilityDot = ({ cx, cy, payload }: PredictionDotProps) => {
 
 const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
   const bleedingGradientId = useId();
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [showScrollToToday, setShowScrollToToday] = useState(false);
   const todayIso = useMemo(() => formatDate(new Date()), []);
+
+  // Calculate chart dimensions
+  const totalDays = data.points.length;
+  const chartWidthMultiplier = totalDays / CYCLE_OVERVIEW_VISIBLE_DAYS;
+
   const chartPoints = useMemo<CycleOverviewChartPoint[]>(() => {
-    return data.points.slice(0, CYCLE_OVERVIEW_MAX_DAYS).map((point) => {
+    return data.points.map((point) => {
       const bleeding = describeBleedingLevel(point);
       const painValue = Number.isFinite(point.painNRS)
         ? Math.max(0, Math.min(10, Number(point.painNRS)))
@@ -1765,10 +1835,26 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
         ? Math.max(0, Math.min(10, Number(point.impactNRS)))
         : null;
 
+      // Compute simple mode uncertainty range
+      const isSimpleModeDay = point.bleedingTrackingMethod === "simple" && point.simpleBleedingIntensity != null;
+      let simpleBleedingMin = 0;
+      let simpleBleedingMax = 0;
+      if (isSimpleModeDay && point.simpleBleedingIntensity) {
+        const intensityDef = getSimpleBleedingIntensityDefinition(point.simpleBleedingIntensity);
+        if (intensityDef) {
+          simpleBleedingMin = intensityDef.pbacEquivalentMin;
+          simpleBleedingMax = intensityDef.pbacEquivalentMax;
+        }
+      }
+
       return {
         ...point,
         bleedingLabel: bleeding.label,
         bleedingValue: bleeding.value,
+        pbacEquivalent: bleeding.pbacEquivalent,
+        simpleBleedingMin,
+        simpleBleedingMax,
+        isSimpleModeDay,
         dateLabel: formatShortGermanDate(point.date),
         painValue,
         impactValue,
@@ -1789,22 +1875,41 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
       const hasTimeline = timeline ? timeline.some((segment) => segment.eventCount > 0) : false;
 
       return (
-        <div className="rounded-lg border border-rose-100 bg-white p-3 text-xs text-rose-700 shadow-sm">
-          <p className="font-semibold text-rose-900">{payload.dateLabel}</p>
-          <p>Schmerz: {payload.painNRS}/10</p>
-          <p>Beeinträchtigung: {payload.impactNRS ?? "–"}/10</p>
-          <p>Blutung: {payload.bleedingLabel}</p>
-          {payload.pbacScore !== null ? <p>PBAC: {payload.pbacScore}</p> : null}
+        <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-700 shadow-sm">
+          <p className="font-semibold text-gray-900 mb-2">{payload.dateLabel}</p>
+          <div className="space-y-1">
+            <p className="flex items-center gap-2">
+              <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: CATEGORY_COLORS.pain.saturated }} />
+              <span>Schmerz: {payload.painNRS}/10</span>
+            </p>
+            <p className="flex items-center gap-2">
+              <span className="inline-block w-2.5 h-0.5 rounded-full bg-amber-400" />
+              <span>Beeinträchtigung: {payload.impactNRS ?? "–"}/10</span>
+            </p>
+            <p className="flex items-center gap-2">
+              <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: CATEGORY_COLORS.bleeding.saturated }} />
+              <span>Blutung: {payload.bleedingLabel}</span>
+            </p>
+          </div>
+          {payload.isBleeding && payload.pbacEquivalent > 0 ? (
+            <p className="mt-1 ml-4 text-gray-500">PBAC-Äquivalent: {payload.pbacEquivalent}</p>
+          ) : null}
+          {payload.bleedingTrackingMethod && payload.isBleeding ? (
+            <p className="text-gray-400 text-[10px] ml-4">
+              ({getTrackingMethodLabel(payload.bleedingTrackingMethod)})
+            </p>
+          ) : null}
           {payload.ovulationPositive ? (
-            <p className="font-medium text-yellow-700">Eisprung bestätigt (LH+)</p>
+            <p className="font-medium text-yellow-700 mt-1">Eisprung bestätigt (LH+)</p>
           ) : payload.isPredictedOvulationDay ? (
-            <p className="text-yellow-600">Eisprung geschätzt</p>
+            <p className="text-yellow-600 mt-1">Eisprung geschätzt</p>
           ) : null}
           {payload.isInPredictedFertileWindow && !payload.isPredictedOvulationDay && !payload.ovulationPositive ? (
-            <p className="text-pink-600">Fruchtbares Fenster (geschätzt)</p>
+            <p className="text-pink-600 mt-1">Fruchtbares Fenster (geschätzt)</p>
           ) : null}
           {payload.mucusFertilityScore !== null && payload.mucusFertilityScore >= 3 ? (
             <p className={cn(
+              "mt-1",
               payload.mucusFertilityScore === 4 ? "font-medium text-green-700" : "text-green-600"
             )}>
               {payload.mucusFertilityScore === 4 ? "Cervixschleim: Peak (hohe Fruchtbarkeit)" : "Cervixschleim: Fruchtbar"}
@@ -1812,7 +1917,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
           ) : null}
           {hasTimeline && timeline ? (
             <div className="mt-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-rose-400">Tagesverlauf</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-purple-400">Schmerz-Tagesverlauf</p>
               <div className="mt-1 flex items-end gap-0.5">
                 {timeline.map((segment, index) => {
                   const height = 4 + (segment.maxIntensity / 10) * 14;
@@ -1820,14 +1925,12 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
                   return (
                     <span
                       key={`pain-tooltip-bar-${payload.date}-${index}`}
-                      className={cn(
-                        "w-1.5 rounded-full bg-rose-100",
-                        segment.eventCount > 0 ? "bg-rose-500" : "bg-rose-100"
-                      )}
+                      className="w-1.5 rounded-full"
                       style={{
                         height,
+                        backgroundColor: segment.eventCount > 0 ? CATEGORY_COLORS.pain.saturated : "#e5e7eb",
                         backgroundImage: hasMultiple
-                          ? "repeating-linear-gradient(135deg, #fb7185, #fb7185 6px, #fecdd3 6px, #fecdd3 10px)"
+                          ? `repeating-linear-gradient(135deg, ${CATEGORY_COLORS.pain.saturated}, ${CATEGORY_COLORS.pain.saturated} 6px, #e9d5ff 6px, #e9d5ff 10px)`
                           : undefined,
                       }}
                       title={
@@ -1847,26 +1950,85 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
     []
   );
 
+  // Scroll to today on mount
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    // Calculate scroll position to center today
+    const containerWidth = container.clientWidth;
+    const scrollWidth = container.scrollWidth;
+    const todayPosition = (data.todayIndex / totalDays) * scrollWidth;
+    // Center today in the view
+    const scrollTarget = todayPosition - containerWidth / 2;
+
+    container.scrollLeft = Math.max(0, scrollTarget);
+  }, [data.todayIndex, totalDays]);
+
+  // Handle scroll to show/hide "scroll to today" button
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const containerWidth = container.clientWidth;
+      const scrollWidth = container.scrollWidth;
+      const todayPosition = (data.todayIndex / totalDays) * scrollWidth;
+      const currentCenter = container.scrollLeft + containerWidth / 2;
+      // Show button if we're more than half a screen away from today
+      const distanceFromToday = Math.abs(todayPosition - currentCenter);
+      setShowScrollToToday(distanceFromToday > containerWidth * 0.5);
+    };
+
+    container.addEventListener("scroll", handleScroll);
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, [data.todayIndex, totalDays]);
+
+  const scrollToToday = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const containerWidth = container.clientWidth;
+    const scrollWidth = container.scrollWidth;
+    const todayPosition = (data.todayIndex / totalDays) * scrollWidth;
+    const scrollTarget = todayPosition - containerWidth / 2;
+
+    container.scrollTo({ left: Math.max(0, scrollTarget), behavior: "smooth" });
+  }, [data.todayIndex, totalDays]);
+
   if (!chartPoints.length) {
     return null;
   }
 
   return (
-    <section aria-label="Letzte 30 Tage">
-      <div className="mx-auto h-36 w-[80vw] max-w-full sm:h-44">
-        <ResponsiveContainer>
-          <ComposedChart data={chartPoints} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+    <section aria-label="Zyklusübersicht" className="relative">
+      <div
+        ref={scrollContainerRef}
+        className="mx-auto h-36 w-[80vw] max-w-full overflow-x-auto sm:h-44 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent"
+      >
+        <div style={{ width: `${chartWidthMultiplier * 100}%`, minWidth: "100%", height: "100%" }}>
+          <ResponsiveContainer>
+            <ComposedChart data={chartPoints} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
             <defs>
               <linearGradient id={bleedingGradientId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#fb7185" stopOpacity={0.45} />
-                <stop offset="100%" stopColor="#fbcfe8" stopOpacity={0.1} />
+                <stop offset="0%" stopColor={CATEGORY_COLORS.bleeding.saturated} stopOpacity={0.45} />
+                <stop offset="100%" stopColor={CATEGORY_COLORS.bleeding.saturated} stopOpacity={0.08} />
               </linearGradient>
+              {/* Gradient for simple mode uncertainty band */}
+              <linearGradient id={`${bleedingGradientId}-simple`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={CATEGORY_COLORS.bleeding.saturated} stopOpacity={0.25} />
+                <stop offset="100%" stopColor={CATEGORY_COLORS.bleeding.saturated} stopOpacity={0.05} />
+              </linearGradient>
+              {/* Blur filter for simple mode uncertainty visualization */}
+              <filter id={`${bleedingGradientId}-blur`} x="-10%" y="-10%" width="120%" height="120%">
+                <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" />
+              </filter>
             </defs>
             <XAxis
               dataKey="date"
               axisLine={false}
               tickLine={false}
-              tick={{ fill: "#fb7185", fontSize: 12, fontWeight: 600 }}
+              tick={{ fill: "#9ca3af", fontSize: 12, fontWeight: 600 }}
               tickFormatter={(value: string | number) =>
                 typeof value === "string" ? formatShortGermanDate(value) : ""
               }
@@ -1875,15 +2037,29 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
             <YAxis yAxisId="pbac" domain={[0, 120]} hide />
             <YAxis yAxisId="painImpact" domain={[0, 10]} hide />
             <Tooltip
-              cursor={{ stroke: "#fb7185", strokeOpacity: 0.2, strokeWidth: 1 }}
+              cursor={{ stroke: "#9ca3af", strokeOpacity: 0.2, strokeWidth: 1 }}
               content={renderTooltip}
+            />
+            {/* Simple mode uncertainty band - shows the range of possible values with blur */}
+            <Area
+              type="monotone"
+              dataKey="simpleBleedingMax"
+              yAxisId="pbac"
+              fill={`url(#${bleedingGradientId}-simple)`}
+              stroke={CATEGORY_COLORS.bleeding.saturated}
+              strokeWidth={4}
+              strokeOpacity={0.3}
+              fillOpacity={1}
+              name="Blutung (Bereich)"
+              isAnimationActive={false}
+              style={{ filter: `url(#${bleedingGradientId}-blur)` }}
             />
             <Area
               type="monotone"
               dataKey="bleedingValue"
               yAxisId="pbac"
               fill={`url(#${bleedingGradientId})`}
-              stroke="#fb7185"
+              stroke={CATEGORY_COLORS.bleeding.saturated}
               strokeWidth={1}
               fillOpacity={1}
               name="Blutung"
@@ -1903,10 +2079,10 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               type="monotone"
               dataKey="painValue"
               yAxisId="painImpact"
-              stroke="#be123c"
+              stroke={CATEGORY_COLORS.pain.saturated}
               strokeWidth={2}
               dot={<PainDot />}
-              activeDot={{ r: 5, stroke: "#be123c", fill: "#fff", strokeWidth: 2 }}
+              activeDot={{ r: 5, stroke: CATEGORY_COLORS.pain.saturated, fill: "#fff", strokeWidth: 2 }}
               name="Schmerz"
               isAnimationActive={false}
             />
@@ -1940,9 +2116,21 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               isAnimationActive={false}
               legendType="none"
             />
-          </ComposedChart>
-        </ResponsiveContainer>
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
       </div>
+      {showScrollToToday && (
+        <button
+          type="button"
+          onClick={scrollToToday}
+          className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-md border border-gray-200 hover:bg-white hover:shadow-lg transition-all"
+          aria-label="Zu heute scrollen"
+        >
+          <span>Heute</span>
+          <ChevronRight className="h-3 w-3" />
+        </button>
+      )}
     </section>
   );
 };
@@ -2575,7 +2763,18 @@ export default function HomePage() {
           if (arePbacCountsEqual(draftCounts, normalized)) {
             return draft;
           }
-          return { ...draft, pbacCounts: normalized };
+          // Check if we're adding counts (not just clearing)
+          const hasAnyCounts = Object.values(normalized).some((v) => v > 0);
+          // If adding counts, tag with classic PBAC tracking method
+          const extendedPbacData = hasAnyCounts
+            ? {
+                ...(draft.extendedPbacData ?? {}),
+                trackingMethod: "pbac_classic" as const,
+                extendedEntries: draft.extendedPbacData?.extendedEntries ?? [],
+                freeBleedingEntries: draft.extendedPbacData?.freeBleedingEntries ?? [],
+              }
+            : draft.extendedPbacData;
+          return { ...draft, pbacCounts: normalized, extendedPbacData };
         });
         return nextState;
       });
@@ -2613,6 +2812,33 @@ export default function HomePage() {
     [dailyDraft, pbacCounts]
   );
   const bleedingActive = hasBleedingForEntry(dailyDraft);
+
+  // Comprehensive check: does today have any bleeding data (any mode)?
+  const todayHasAnyBleedingData = useMemo(() => {
+    if (draftHasBleeding) return true;
+    // Check simple mode intensity
+    if (dailyDraft.simpleBleedingIntensity && dailyDraft.simpleBleedingIntensity !== "none") return true;
+    // Check extended PBAC entries
+    const extData = dailyDraft.extendedPbacData;
+    if (extData) {
+      if (extData.extendedEntries && extData.extendedEntries.length > 0) return true;
+      if (extData.freeBleedingEntries && extData.freeBleedingEntries.length > 0) return true;
+    }
+    return false;
+  }, [draftHasBleeding, dailyDraft.simpleBleedingIntensity, dailyDraft.extendedPbacData]);
+
+  // Handler to reset today's bleeding data (called when mode changes)
+  const handleResetTodayBleedingData = useCallback(() => {
+    setPbacCountsState(createEmptyPbacCounts());
+    setDailyDraft((prev) => ({
+      ...prev,
+      bleeding: { isBleeding: false },
+      pbacCounts: createEmptyPbacCounts(),
+      simpleBleedingIntensity: undefined,
+      extendedPbacData: undefined,
+    }));
+  }, [setDailyDraft]);
+
   const [activePbacCategory, setActivePbacCategory] = useState<PbacEntryCategory>("pad");
   const [bleedingQuickAddOpen, setBleedingQuickAddOpen] = useState(false);
   const [pendingBleedingQuickAdd, setPendingBleedingQuickAdd] = useState<PbacProductItemId | null>(null);
@@ -2689,6 +2915,88 @@ export default function HomePage() {
     },
     [setPbacCounts]
   );
+
+  // Handler for adding extended bleeding entries
+  const handleAddExtendedBleedingEntry = useCallback(
+    (entry: ExtendedBleedingEntry | FreeBleedingEntry) => {
+      setDailyDraft((prev) => {
+        const currentExtendedData: ExtendedPbacData = prev.extendedPbacData ?? {
+          trackingMethod: "pbac_extended",
+          extendedEntries: [],
+          freeBleedingEntries: [],
+        };
+
+        let updatedData: ExtendedPbacData;
+        if ("intensity" in entry) {
+          // FreeBleedingEntry
+          updatedData = {
+            ...currentExtendedData,
+            trackingMethod: "pbac_extended",
+            freeBleedingEntries: [...(currentExtendedData.freeBleedingEntries ?? []), entry],
+          };
+        } else {
+          // ExtendedBleedingEntry
+          updatedData = {
+            ...currentExtendedData,
+            trackingMethod: "pbac_extended",
+            extendedEntries: [...(currentExtendedData.extendedEntries ?? []), entry],
+          };
+        }
+
+        // Recalculate totals
+        const { totalVolumeMl, totalPbacEquivalent } = aggregateExtendedPbacData(updatedData, prev.pbacCounts);
+        updatedData.totalEstimatedVolumeMl = totalVolumeMl;
+        updatedData.totalPbacEquivalentScore = totalPbacEquivalent;
+
+        return {
+          ...prev,
+          extendedPbacData: updatedData,
+          bleeding: {
+            ...prev.bleeding,
+            isBleeding: true,
+            pbacScore: totalPbacEquivalent,
+          },
+        };
+      });
+    },
+    [setDailyDraft]
+  );
+
+  // Handler for removing extended bleeding entries
+  const handleRemoveExtendedBleedingEntry = useCallback(
+    (entryId: string) => {
+      setDailyDraft((prev) => {
+        if (!prev.extendedPbacData) return prev;
+
+        const updatedData: ExtendedPbacData = {
+          ...prev.extendedPbacData,
+          extendedEntries: (prev.extendedPbacData.extendedEntries ?? []).filter((e) => e.id !== entryId),
+          freeBleedingEntries: (prev.extendedPbacData.freeBleedingEntries ?? []).filter((e) => e.id !== entryId),
+        };
+
+        // Recalculate totals
+        const { totalVolumeMl, totalPbacEquivalent } = aggregateExtendedPbacData(updatedData, prev.pbacCounts);
+        updatedData.totalEstimatedVolumeMl = totalVolumeMl;
+        updatedData.totalPbacEquivalentScore = totalPbacEquivalent;
+
+        const hasEntries =
+          (updatedData.extendedEntries?.length ?? 0) > 0 ||
+          (updatedData.freeBleedingEntries?.length ?? 0) > 0;
+
+        return {
+          ...prev,
+          extendedPbacData: updatedData,
+          bleeding: {
+            ...prev.bleeding,
+            isBleeding: hasEntries || (prev.bleeding?.isBleeding ?? false),
+            pbacScore: totalPbacEquivalent,
+          },
+        };
+      });
+    },
+    [setDailyDraft]
+  );
+
   useEffect(() => {
     if (!draftHasBleeding) {
       setActivePbacCategory("pad");
@@ -2928,6 +3236,27 @@ export default function HomePage() {
   const [showCheckInPopup, setShowCheckInPopup] = useState(false);
   const [pendingDismissCheckIn, setPendingDismissCheckIn] = useState<PendingCheckIn | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsPage, setSettingsPage] = useState<"main" | "ovulation" | "bleeding" | "colorScheme" | "products">("main");
+  const [productSettings, setProductSettings] = useState<ProductSettings>(DEFAULT_PRODUCT_SETTINGS);
+  const [colorScheme, setColorScheme, colorSchemeMeta] = usePersistentState<ColorScheme>(
+    "endo-color-scheme",
+    "neutral"
+  );
+
+  // Load product settings on mount
+  useEffect(() => {
+    loadProductSettings().then(setProductSettings);
+  }, []);
+
+  // Apply color scheme to document
+  useEffect(() => {
+    if (!colorSchemeMeta.ready) return;
+    if (colorScheme === "neutral") {
+      document.documentElement.setAttribute("data-theme", "neutral");
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
+  }, [colorScheme, colorSchemeMeta.ready]);
 
   const isDailyDirty = useMemo(
     () =>
@@ -3270,8 +3599,9 @@ export default function HomePage() {
       return null;
     }
 
+    // Start from PAST_DAYS ago
     const startDate = new Date(todayDate);
-    startDate.setDate(startDate.getDate() - (CYCLE_OVERVIEW_MAX_DAYS - 1));
+    startDate.setDate(startDate.getDate() - CYCLE_OVERVIEW_PAST_DAYS);
 
     // Calculate prediction data for chart markers
     // Uses cycle length method, enhanced with Billings method (cervix mucus) when enabled
@@ -3375,8 +3705,12 @@ export default function HomePage() {
         cycleDay: cycleDay ?? null,
         painNRS: entry.painNRS ?? 0,
         impactNRS: entry.impactNRS ?? null,
-        pbacScore: entry.bleeding?.pbacScore ?? null,
+        pbacScore: entry.extendedPbacData?.trackingMethod === "pbac_extended"
+          ? entry.extendedPbacData?.totalPbacEquivalentScore ?? null
+          : entry.bleeding?.pbacScore ?? null,
         isBleeding: hasBleedingForEntry(entry),
+        bleedingTrackingMethod: entry.extendedPbacData?.trackingMethod ?? null,
+        simpleBleedingIntensity: entry.simpleBleedingIntensity ?? null,
         ovulationPositive: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
         ovulationPainIntensity: entry.ovulationPain?.intensity ?? null,
         painTimeline: null,
@@ -3387,7 +3721,8 @@ export default function HomePage() {
     });
 
     const points: CycleOverviewPoint[] = [];
-    for (let dayOffset = 0; dayOffset < CYCLE_OVERVIEW_MAX_DAYS; dayOffset += 1) {
+    const totalDays = CYCLE_OVERVIEW_PAST_DAYS + CYCLE_OVERVIEW_FUTURE_DAYS + 1; // +1 for today
+    for (let dayOffset = 0; dayOffset < totalDays; dayOffset += 1) {
       const currentDate = new Date(startDate);
       currentDate.setDate(startDate.getDate() + dayOffset);
       const iso = formatDate(currentDate);
@@ -3420,6 +3755,8 @@ export default function HomePage() {
           impactNRS: null,
           pbacScore: null,
           isBleeding: false,
+          bleedingTrackingMethod: null,
+          simpleBleedingIntensity: null,
           ovulationPositive: false,
           ovulationPainIntensity: null,
           painTimeline: timeline,
@@ -3433,6 +3770,7 @@ export default function HomePage() {
     return {
       startDate: formatDate(startDate),
       points,
+      todayIndex: CYCLE_OVERVIEW_PAST_DAYS, // Today is at this index (0-based)
     };
   }, [annotatedDailyEntries, featureFlags.billingMethod, painShortcutTimelineByDate, today]);
 
@@ -3497,6 +3835,27 @@ export default function HomePage() {
   }, [dailyDraft.date]);
 
   const isSelectedDateToday = useMemo(() => dailyDraft.date === today, [dailyDraft.date, today]);
+
+  // Determine effective tracking method for the bleeding section
+  // For historical entries with data, use the mode they were entered in
+  // Otherwise use the current productSettings
+  const effectiveBleedingTrackingMethod = useMemo(() => {
+    // If entry has extendedPbacData with a trackingMethod, use it
+    const entryMethod = dailyDraft.extendedPbacData?.trackingMethod;
+    if (entryMethod) {
+      return entryMethod;
+    }
+    // For entries without extendedPbacData (legacy or new), use current setting
+    return productSettings.trackingMethod;
+  }, [dailyDraft.extendedPbacData?.trackingMethod, productSettings.trackingMethod]);
+
+  // Check if we're viewing data entered with a different mode than current setting
+  const isViewingDifferentBleedingMode = useMemo(() => {
+    const entryMethod = dailyDraft.extendedPbacData?.trackingMethod;
+    // Only show badge if entry has data AND the mode differs from current setting
+    if (!entryMethod) return false;
+    return entryMethod !== productSettings.trackingMethod && todayHasAnyBleedingData;
+  }, [dailyDraft.extendedPbacData?.trackingMethod, productSettings.trackingMethod, todayHasAnyBleedingData]);
 
   const dailyToolbarLabel = useMemo(() => {
     const categoryLabels: Record<DailyCategoryId, string> = {
@@ -3794,65 +4153,162 @@ export default function HomePage() {
     pbacProductSummary.some((item) => item.count > 0) ||
     pbacClotSummary.some((item) => item.count > 0) ||
     pbacFlooding;
+  const hasExtendedPbacEntries =
+    (dailyDraft.extendedPbacData?.extendedEntries?.length ?? 0) > 0 ||
+    (dailyDraft.extendedPbacData?.freeBleedingEntries?.length ?? 0) > 0;
+  const hasSimpleBleedingData =
+    dailyDraft.simpleBleedingIntensity && dailyDraft.simpleBleedingIntensity !== "none";
   const showPbacSummaryInToolbar =
     activeView === "daily" &&
     dailyActiveCategory === "bleeding" &&
-    draftHasBleeding;
-  const renderPbacSummaryPanel = () => (
-    <div className="space-y-4 rounded-xl border border-rose-100 bg-rose-50/90 p-4 text-sm text-rose-700 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">PBAC-Assistent</p>
-          <TermHeadline termKey="pbac" />
-        </div>
-        <div className="text-right">
-          <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Score</p>
-          <p className="text-3xl font-bold text-rose-900">{pbacScore}</p>
-        </div>
-      </div>
-      {hasPbacSummaryData ? (
-        <div className="flex flex-wrap gap-2">
-          {pbacProductSummary
-            .filter((item) => item.count > 0)
-            .map((item) => (
-              <span
-                key={item.id}
-                className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-medium text-rose-900"
-              >
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-rose-100 text-rose-500">
-                  <item.Icon className="h-3.5 w-3.5" aria-hidden />
-                </span>
-                <span>
-                  {item.count}× {item.label}
-                </span>
-                <span className="font-semibold text-rose-600">+{item.count * item.score}</span>
-              </span>
-            ))}
-          {pbacClotSummary
-            .filter((item) => item.count > 0)
-            .map((item) => (
-              <span
-                key={item.id}
-                className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-medium text-rose-900"
-              >
-                <span>
-                  {item.count}× {item.label}
-                </span>
-                <span className="font-semibold text-rose-600">+{item.count * item.score}</span>
-              </span>
-            ))}
-          {pbacFlooding ? (
-            <span className="flex items-center gap-2 rounded-full border border-rose-100 bg-white/90 px-3 py-1 text-xs font-semibold text-rose-900">
-              <span>Flooding</span>
-              <span className="text-rose-600">+{PBAC_FLOODING_SCORE}</span>
+    (draftHasBleeding || hasExtendedPbacEntries || hasSimpleBleedingData);
+
+  const renderPbacSummaryPanel = () => {
+    const isExtendedMode = effectiveBleedingTrackingMethod === "pbac_extended";
+    const isSimpleMode = effectiveBleedingTrackingMethod === "simple";
+    const displayScore = isExtendedMode
+      ? dailyDraft.extendedPbacData?.totalPbacEquivalentScore ?? 0
+      : isSimpleMode
+        ? getSimpleBleedingPbacEquivalent(dailyDraft.simpleBleedingIntensity ?? "none")
+        : pbacScore;
+    const displayVolume = dailyDraft.extendedPbacData?.totalEstimatedVolumeMl ?? 0;
+
+    // Get simple mode intensity label
+    const simpleIntensityDef = isSimpleMode && dailyDraft.simpleBleedingIntensity
+      ? SIMPLE_BLEEDING_INTENSITIES.find((i) => i.id === dailyDraft.simpleBleedingIntensity)
+      : null;
+
+    // Determine title based on mode
+    const panelTitle = isSimpleMode
+      ? "Blutungsübersicht"
+      : isExtendedMode
+        ? "Blutungsübersicht"
+        : "PBAC-Assistent";
+
+    return (
+      <div className="rounded-xl border border-rose-100 bg-white/80 p-3 text-[11px] text-rose-700 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-rose-500">
+          <span>{panelTitle}</span>
+          {isExtendedMode && displayVolume > 0 && (
+            <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] text-rose-700">
+              ~{displayVolume} ml
             </span>
-          ) : null}
+          )}
+          {isSimpleMode && simpleIntensityDef && (
+            <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] text-rose-700">
+              {simpleIntensityDef.label}
+            </span>
+          )}
+          {displayScore > 0 && (
+            <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] text-rose-700">
+              {isSimpleMode ? "PBAC-Äquiv." : isExtendedMode ? "PBAC-Äquiv." : "Score"}: {displayScore}
+            </span>
+          )}
         </div>
-      ) : (
-        <p className="text-xs text-rose-600">Füge unten Produkte hinzu, um deinen Score zu berechnen.</p>
-      )}
-    </div>
-  );
+
+        {/* Extended PBAC entries */}
+        {isExtendedMode && hasExtendedPbacEntries ? (
+          <div className="mt-3 space-y-2">
+            <div className="flex flex-wrap gap-2">
+              {dailyDraft.extendedPbacData?.extendedEntries?.map((entry) => {
+                const product = getProductById(productSettings, entry.productId);
+                const productName = product?.nameShort || product?.name || entry.productId;
+                const fillLabel = FILL_LEVEL_LABELS[entry.fillLevelPercent] || `${entry.fillLevelPercent}%`;
+                return (
+                  <span
+                    key={entry.id}
+                    className="inline-flex items-center gap-2 rounded-full bg-rose-50/80 px-3 py-1 text-[11px] font-medium text-rose-800"
+                  >
+                    <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+                      {fillLabel}
+                    </span>
+                    <span className="text-rose-700">{productName}</span>
+                    <span className="text-rose-500">~{entry.estimatedVolumeMl}ml</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveExtendedBleedingEntry(entry.id)}
+                      className="rounded-full p-1 text-rose-400 transition hover:bg-rose-100 hover:text-rose-700"
+                      aria-label="Eintrag entfernen"
+                    >
+                      <X className="h-3 w-3" aria-hidden />
+                    </button>
+                  </span>
+                );
+              })}
+              {dailyDraft.extendedPbacData?.freeBleedingEntries?.map((entry) => {
+                const intensityLabel = FREE_BLEEDING_INTENSITY_LABELS[entry.intensity as keyof typeof FREE_BLEEDING_INTENSITY_LABELS]?.label || entry.intensity;
+                return (
+                  <span
+                    key={entry.id}
+                    className="inline-flex items-center gap-2 rounded-full bg-rose-50/80 px-3 py-1 text-[11px] font-medium text-rose-800"
+                  >
+                    <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+                      {intensityLabel}
+                    </span>
+                    <span className="text-rose-700">Freies Bluten</span>
+                    <span className="text-rose-500">~{entry.estimatedVolumeMl}ml</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveExtendedBleedingEntry(entry.id)}
+                      className="rounded-full p-1 text-rose-400 transition hover:bg-rose-100 hover:text-rose-700"
+                      aria-label="Eintrag entfernen"
+                    >
+                      <X className="h-3 w-3" aria-hidden />
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Classic PBAC entries */}
+        {!isExtendedMode && hasPbacSummaryData ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {pbacProductSummary
+              .filter((item) => item.count > 0)
+              .map((item) => (
+                <span
+                  key={item.id}
+                  className="inline-flex items-center gap-2 rounded-full bg-rose-50/80 px-3 py-1 text-[11px] font-medium text-rose-800"
+                >
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-100 text-rose-500">
+                    <item.Icon className="h-3 w-3" aria-hidden />
+                  </span>
+                  <span>{item.count}× {item.label}</span>
+                  <span className="text-rose-500">+{item.count * item.score}</span>
+                </span>
+              ))}
+            {pbacClotSummary
+              .filter((item) => item.count > 0)
+              .map((item) => (
+                <span
+                  key={item.id}
+                  className="inline-flex items-center gap-2 rounded-full bg-rose-50/80 px-3 py-1 text-[11px] font-medium text-rose-800"
+                >
+                  <span>{item.count}× {item.label}</span>
+                  <span className="text-rose-500">+{item.count * item.score}</span>
+                </span>
+              ))}
+            {pbacFlooding ? (
+              <span className="inline-flex items-center gap-2 rounded-full bg-rose-50/80 px-3 py-1 text-[11px] font-semibold text-rose-800">
+                <span>Flooding</span>
+                <span className="text-rose-500">+{PBAC_FLOODING_SCORE}</span>
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* Empty state - only show for PBAC modes, not for simple mode */}
+        {!isSimpleMode && !isExtendedMode && !hasPbacSummaryData && (
+          <p className="mt-2 text-xs text-rose-600">Füge unten Produkte hinzu, um deinen Score zu berechnen.</p>
+        )}
+        {!isSimpleMode && isExtendedMode && !hasExtendedPbacEntries && (
+          <p className="mt-2 text-xs text-rose-600">Füge unten Produkte hinzu, um deine Blutung zu erfassen.</p>
+        )}
+      </div>
+    );
+  };
   const painSummaryRegions = useMemo(
     () =>
       (dailyDraft.painRegions ?? []).map((region) => ({
@@ -7310,12 +7766,29 @@ export default function HomePage() {
     </div>
   ) : null;
 
+  // Compute toolbar background color based on active category
+  const toolbarBgColor = useMemo(() => {
+    if (activeView === "daily" && dailyActiveCategory !== "overview") {
+      const categoryColor = CATEGORY_COLORS[dailyActiveCategory];
+      return categoryColor?.pastel ?? "var(--endo-bg, #fff)";
+    }
+    return "var(--endo-bg, #fff)";
+  }, [activeView, dailyActiveCategory]);
+
+  const toolbarBorderColor = useMemo(() => {
+    if (activeView === "daily" && dailyActiveCategory !== "overview") {
+      const categoryColor = CATEGORY_COLORS[dailyActiveCategory];
+      return categoryColor?.border ?? undefined;
+    }
+    return undefined;
+  }, [activeView, dailyActiveCategory]);
+
   const detailToolbar = !isHomeView ? (
     <>
       <header
         ref={detailToolbarRef}
-        className="fixed inset-x-0 top-0 z-40 border-b border-rose-100 bg-white/90 shadow-sm backdrop-blur supports-[backdrop-filter:none]:bg-white"
-        style={{ backgroundColor: "var(--endo-bg, #fff)" }}
+        className="fixed inset-x-0 top-0 z-40 border-b shadow-sm backdrop-blur supports-[backdrop-filter:none]:bg-white"
+        style={{ backgroundColor: toolbarBgColor, borderColor: toolbarBorderColor }}
       >
         <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -7415,34 +7888,172 @@ export default function HomePage() {
             if (e.target === e.currentTarget) setShowSettings(false);
           }}
         >
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
             <div className="mb-6 flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-rose-900">Einstellungen</h2>
+              {settingsPage === "main" ? (
+                <h2 className="text-xl font-semibold text-rose-900">Einstellungen</h2>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setSettingsPage("main")}
+                  className="flex items-center gap-2 text-rose-600 hover:text-rose-800 transition"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                  <span className="font-medium">Zurück</span>
+                </button>
+              )}
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                onClick={() => setShowSettings(false)}
+                onClick={() => {
+                  setShowSettings(false);
+                  setSettingsPage("main");
+                }}
                 className="text-rose-500 hover:text-rose-700"
               >
                 <X className="h-5 w-5" />
               </Button>
             </div>
-            <div className="space-y-4">
-              <div className="flex items-start justify-between gap-4 rounded-xl border border-rose-100 bg-rose-50/50 p-4">
-                <div className="flex-1">
-                  <p className="font-medium text-rose-900">Eisprungbestimmung mit Billings-Methode</p>
-                  <p className="mt-1 text-sm text-rose-600">Bestimmung anhand des Cervixschleims</p>
-                  <p className="mt-2 text-xs text-rose-500">Verbesserte Vorhersagen werden erst nach mindestens 2 Zyklen mit Cervixschleim-Daten angezeigt. Bis dahin wird die Standard-Methode verwendet.</p>
+
+            {settingsPage === "main" && (
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() => setSettingsPage("ovulation")}
+                  className="flex w-full items-center justify-between gap-3 p-4 rounded-xl border border-rose-100 bg-rose-50/50 text-left hover:bg-rose-50 transition"
+                >
+                  <span className="text-lg font-semibold text-rose-900">Eisprungsbestimmung</span>
+                  <ChevronRight className="h-5 w-5 text-rose-400" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSettingsPage("bleeding")}
+                  className="flex w-full items-center justify-between gap-3 p-4 rounded-xl border border-rose-100 bg-rose-50/50 text-left hover:bg-rose-50 transition"
+                >
+                  <span className="text-lg font-semibold text-rose-900">Blutungs-Erfassung</span>
+                  <ChevronRight className="h-5 w-5 text-rose-400" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSettingsPage("colorScheme")}
+                  className="flex w-full items-center justify-between gap-3 p-4 rounded-xl border border-rose-100 bg-rose-50/50 text-left hover:bg-rose-50 transition"
+                >
+                  <span className="text-lg font-semibold text-rose-900">Farbschema</span>
+                  <ChevronRight className="h-5 w-5 text-rose-400" />
+                </button>
+              </div>
+            )}
+
+            {settingsPage === "ovulation" && (
+              <div>
+                <h3 className="text-lg font-semibold text-rose-900 mb-4">Eisprungsbestimmung</h3>
+                <div className="flex items-start justify-between gap-4 rounded-xl border border-rose-100 bg-rose-50/50 p-4">
+                  <div className="flex-1">
+                    <p className="font-medium text-rose-900">Billings-Methode</p>
+                    <p className="mt-1 text-sm text-rose-600">Bestimmung anhand des Cervixschleims</p>
+                    <p className="mt-2 text-xs text-rose-500">Verbesserte Vorhersagen werden erst nach mindestens 2 Zyklen mit Cervixschleim-Daten angezeigt. Bis dahin wird die Standard-Methode verwendet.</p>
+                  </div>
+                  <Switch
+                    checked={featureFlags.billingMethod ?? false}
+                    onCheckedChange={(checked) =>
+                      setFeatureFlags((prev) => ({ ...prev, billingMethod: checked }))
+                    }
+                  />
                 </div>
-                <Switch
-                  checked={featureFlags.billingMethod ?? false}
-                  onCheckedChange={(checked) =>
-                    setFeatureFlags((prev) => ({ ...prev, billingMethod: checked }))
-                  }
+              </div>
+            )}
+
+            {settingsPage === "bleeding" && (
+              <div>
+                <h3 className="text-lg font-semibold text-rose-900 mb-4">Blutungs-Erfassung</h3>
+                <ProductSettingsPanel
+                  settings={productSettings}
+                  onSettingsChange={async (newSettings) => {
+                    setProductSettings(newSettings);
+                    await saveProductSettings(newSettings);
+                  }}
+                  todayHasBleedingData={todayHasAnyBleedingData}
+                  onResetTodayBleedingData={handleResetTodayBleedingData}
+                  onNavigateToProducts={() => setSettingsPage("products")}
                 />
               </div>
-            </div>
+            )}
+
+            {settingsPage === "colorScheme" && (
+              <div>
+                <h3 className="text-lg font-semibold text-rose-900 mb-4">Farbschema</h3>
+                <p className="text-sm text-rose-600 mb-4">
+                  Wähle ein Farbschema für die App.
+                </p>
+                <div className="space-y-3">
+                  {(["neutral", "rose"] as const).map((scheme) => {
+                    const swatches = getColorSchemeSwatches(scheme);
+                    const isSelected = colorScheme === scheme;
+                    return (
+                      <button
+                        key={scheme}
+                        type="button"
+                        onClick={() => setColorScheme(scheme)}
+                        className={cn(
+                          "flex w-full items-start justify-between gap-4 rounded-xl border p-4 text-left transition",
+                          isSelected
+                            ? "border-rose-300 bg-rose-50/50"
+                            : "border-rose-100 hover:bg-rose-50/30"
+                        )}
+                      >
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3">
+                            <div className="flex gap-1">
+                              {swatches.map((color, i) => (
+                                <div
+                                  key={i}
+                                  className="h-4 w-4 rounded-full border border-black/10"
+                                  style={{ backgroundColor: color }}
+                                />
+                              ))}
+                            </div>
+                            <p className="font-medium text-rose-900">
+                              {getColorSchemeName(scheme)}
+                            </p>
+                          </div>
+                          <p className="mt-1 text-sm text-rose-600">
+                            {getColorSchemeDescription(scheme)}
+                          </p>
+                        </div>
+                        <div className="mt-0.5">
+                          <div
+                            className={cn(
+                              "flex h-5 w-5 items-center justify-center rounded-full border-2",
+                              isSelected
+                                ? "border-rose-500 bg-rose-500"
+                                : "border-rose-300"
+                            )}
+                          >
+                            {isSelected && (
+                              <div className="h-2 w-2 rounded-full bg-white" />
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {settingsPage === "products" && (
+              <div>
+                <h3 className="text-lg font-semibold text-rose-900 mb-4">Meine Produkte</h3>
+                <ProductConfigPanel
+                  settings={productSettings}
+                  onSettingsChange={async (newSettings) => {
+                    setProductSettings(newSettings);
+                    await saveProductSettings(newSettings);
+                  }}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -7457,7 +8068,8 @@ export default function HomePage() {
           {isHomeView ? (
             <div className="flex flex-col gap-6">
               <header className="space-y-1">
-                <h1 className="text-3xl font-semibold text-rose-900">Endometriose Symptomtracker</h1>
+                <h1 className="text-4xl font-black tracking-tight text-rose-900">Cycle.</h1>
+                <p className="text-sm text-rose-600">Dein Zyklus- und Symptomtracker</p>
                 <div className="flex flex-wrap items-center gap-2 text-sm text-rose-700">
                   <Badge
                     className="bg-rose-200 text-rose-700"
@@ -7541,45 +8153,48 @@ export default function HomePage() {
                     </div>
                   </div>
                 </div>
-                <div
-                  role="group"
-                  aria-label={periodShortcutAriaLabel}
-                  className="flex flex-1 min-w-[12rem] items-center gap-3 rounded-xl border border-rose-100 bg-white/80 px-3 py-2 text-rose-800 shadow-sm"
-                >
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setBleedingQuickAddOpen(true)}
+                {/* Hide Periodenprodukte quick tracker in simple mode */}
+                {productSettings.trackingMethod !== "simple" && (
+                  <div
+                    role="group"
                     aria-label={periodShortcutAriaLabel}
-                    className="h-9 w-9 rounded-full border-rose-200 bg-white text-rose-700 shadow-sm transition hover:border-rose-300 hover:bg-rose-50"
+                    className="flex flex-1 min-w-[12rem] items-center gap-3 rounded-xl border border-rose-100 bg-white/80 px-3 py-2 text-rose-800 shadow-sm"
                   >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                  <div className="flex flex-1 items-center justify-between gap-2">
-                    <div className="flex flex-col leading-tight">
-                      <span className="text-[12px] font-semibold leading-tight">Periodenprodukte</span>
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-rose-500">
-                        quick tracker
-                      </span>
-                    </div>
-                    <div className="flex min-h-[0.75rem] flex-wrap items-center justify-end gap-1" aria-hidden>
-                      {bleedingShortcutProducts.dots.length === 0 ? (
-                        <span className="h-1 w-6 rounded-full bg-rose-100" />
-                      ) : (
-                        bleedingShortcutProducts.dots.map((saturation, index) => (
-                          <span
-                            key={`period-inline-dot-${saturation}-${index}`}
-                            className={cn(
-                              "h-2 w-2 rounded-full shadow-sm shadow-rose-200/60",
-                              PBAC_SATURATION_DOT_CLASSES[saturation]
-                            )}
-                          />
-                        ))
-                      )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setBleedingQuickAddOpen(true)}
+                      aria-label={periodShortcutAriaLabel}
+                      className="h-9 w-9 rounded-full border-rose-200 bg-white text-rose-700 shadow-sm transition hover:border-rose-300 hover:bg-rose-50"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                    <div className="flex flex-1 items-center justify-between gap-2">
+                      <div className="flex flex-col leading-tight">
+                        <span className="text-[12px] font-semibold leading-tight">Periodenprodukte</span>
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-rose-500">
+                          quick tracker
+                        </span>
+                      </div>
+                      <div className="flex min-h-[0.75rem] flex-wrap items-center justify-end gap-1" aria-hidden>
+                        {bleedingShortcutProducts.dots.length === 0 ? (
+                          <span className="h-1 w-6 rounded-full bg-rose-100" />
+                        ) : (
+                          bleedingShortcutProducts.dots.map((saturation, index) => (
+                            <span
+                              key={`period-inline-dot-${saturation}-${index}`}
+                              className={cn(
+                                "h-2 w-2 rounded-full shadow-sm shadow-rose-200/60",
+                                PBAC_SATURATION_DOT_CLASSES[saturation]
+                              )}
+                            />
+                          ))
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="sm:col-span-3 lg:col-span-2">
@@ -7842,12 +8457,7 @@ export default function HomePage() {
                         isCompleted &&
                         isTrackableCategory &&
                         (categoryZeroStates[category.id as TrackableDailyCategoryId] ?? false);
-                      const iconWrapperClasses = cn(
-                        "flex h-12 w-12 flex-none items-center justify-center rounded-full border transition",
-                        isCompleted
-                          ? "border-amber-200 bg-amber-100 text-amber-600"
-                          : "border-rose-100 bg-rose-50 text-rose-400 group-hover:border-rose-200 group-hover:bg-rose-100 group-hover:text-rose-500"
-                      );
+                      const categoryColor = CATEGORY_COLORS[category.id];
                       return (
                         <div
                           key={category.id}
@@ -7855,8 +8465,16 @@ export default function HomePage() {
                             "group rounded-2xl border p-4 shadow-sm transition hover:shadow-md",
                             isCompleted
                               ? "border-amber-200 bg-amber-50 hover:border-amber-300"
-                              : "border-rose-100 bg-white/80 hover:border-rose-200"
+                              : "hover:shadow-lg"
                           )}
+                          style={
+                            isCompleted
+                              ? undefined
+                              : {
+                                  backgroundColor: categoryColor.pastel,
+                                  borderColor: categoryColor.border,
+                                }
+                          }
                         >
                           <button
                             type="button"
@@ -7864,7 +8482,22 @@ export default function HomePage() {
                             className="flex w-full items-start gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:ring-offset-2"
                           >
                             {Icon ? (
-                              <span className={iconWrapperClasses} aria-hidden="true">
+                              <span
+                                className={cn(
+                                  "flex h-12 w-12 flex-none items-center justify-center rounded-full border transition",
+                                  isCompleted && "border-amber-200 bg-amber-100 text-amber-600"
+                                )}
+                                style={
+                                  isCompleted
+                                    ? undefined
+                                    : {
+                                        backgroundColor: "rgba(255, 255, 255, 0.7)",
+                                        borderColor: categoryColor.border,
+                                        color: categoryColor.saturated,
+                                      }
+                                }
+                                aria-hidden="true"
+                              >
                                 <Icon className="h-full w-full" />
                               </span>
                             ) : null}
@@ -8023,6 +8656,7 @@ export default function HomePage() {
                 <Section
                   title="Cervixschleim"
                   description="Beobachtung nach der Billings-Methode"
+                  sectionType="fertility"
                 >
                   <div className="space-y-6">
                     <div className="space-y-3">
@@ -8100,6 +8734,7 @@ export default function HomePage() {
                 <Section
                   title="Schmerzen"
                   description="Schmerzen hinzufügen, Intensität und Art je Region festhalten und Auswirkungen dokumentieren"
+                  sectionType="pain"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-100 bg-white/80 p-3 text-sm text-rose-800">
                     <p className="text-sm text-rose-700">
@@ -8302,6 +8937,7 @@ export default function HomePage() {
                 <Section
                   title="Typische Endometriose-Symptome"
                   description="Je Symptom: Ja/Nein plus Stärke auf der 0–10 Skala"
+                  sectionType="symptoms"
                 >
                   <div className="grid gap-4">
                     {SYMPTOM_ITEMS.map((item) => {
@@ -8464,14 +9100,18 @@ export default function HomePage() {
               <div className={cn("space-y-6", dailyActiveCategory === "bleeding" ? "" : "hidden")}>
                 <Section
                   title="Periode und Blutung"
+                  sectionType="bleeding"
                 >
                     <div className="space-y-6">
                       <div className="space-y-2">
                         <TermHeadline termKey="bleeding_active" />
-                        <p className="text-sm text-rose-700">
-                          Dokumentiere deine Periode über Periodenprodukte, Koagel und Flooding. Der PBAC-Score wird
-                          automatisch berechnet.
-                        </p>
+                        {/* Only show product-based description for non-simple modes */}
+                        {effectiveBleedingTrackingMethod !== "simple" && (
+                          <p className="text-sm text-rose-700">
+                            Dokumentiere deine Periode über Periodenprodukte, Koagel und Flooding. Der PBAC-Score wird
+                            automatisch berechnet.
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="font-medium">Periode heute</span>
@@ -8482,6 +9122,149 @@ export default function HomePage() {
                         )}
                       </div>
                       {!showPbacSummaryInToolbar ? renderPbacSummaryPanel() : null}
+
+                      {/* Show badge when viewing data entered with a different mode */}
+                      {isViewingDifferentBleedingMode && (
+                        <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+                          <p className="font-medium">
+                            Erfasst mit:{" "}
+                            {effectiveBleedingTrackingMethod === "simple"
+                              ? "Vereinfachte Erfassung"
+                              : effectiveBleedingTrackingMethod === "pbac_classic"
+                                ? "Klassischer PBAC"
+                                : "Erweiterter PBAC"}
+                          </p>
+                          <p className="text-xs text-amber-600 mt-1">
+                            Diese Daten wurden mit einer anderen Erfassungsmethode eingetragen.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Simple Tracking Mode */}
+                      {effectiveBleedingTrackingMethod === "simple" ? (
+                        <div className="space-y-4">
+                          {/* Keine Blutung button */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                simpleBleedingIntensity: "none",
+                                bleeding: {
+                                  ...prev.bleeding,
+                                  isBleeding: false,
+                                  pbacScore: undefined,
+                                },
+                                extendedPbacData: {
+                                  ...(prev.extendedPbacData ?? {}),
+                                  trackingMethod: "simple",
+                                  extendedEntries: prev.extendedPbacData?.extendedEntries ?? [],
+                                  freeBleedingEntries: prev.extendedPbacData?.freeBleedingEntries ?? [],
+                                },
+                              }));
+                            }}
+                            className={cn(
+                              "flex w-full items-center gap-3 rounded-xl border p-4 text-left transition",
+                              dailyDraft.simpleBleedingIntensity === "none"
+                                ? "border-emerald-300 bg-emerald-50"
+                                : "border-rose-100 bg-white hover:border-rose-200"
+                            )}
+                          >
+                            <div
+                              className={cn(
+                                "h-5 w-5 rounded-full border-2 flex items-center justify-center flex-shrink-0",
+                                dailyDraft.simpleBleedingIntensity === "none"
+                                  ? "border-emerald-500 bg-emerald-500"
+                                  : "border-rose-300"
+                              )}
+                            >
+                              {dailyDraft.simpleBleedingIntensity === "none" && (
+                                <div className="h-2 w-2 rounded-full bg-white" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className={cn(
+                                "font-medium",
+                                dailyDraft.simpleBleedingIntensity === "none" ? "text-emerald-900" : "text-rose-900"
+                              )}>
+                                Keine Blutung
+                              </p>
+                              <p className={cn(
+                                "text-sm",
+                                dailyDraft.simpleBleedingIntensity === "none" ? "text-emerald-600" : "text-rose-600"
+                              )}>
+                                Heute keine Periodenblutung
+                              </p>
+                            </div>
+                          </button>
+
+                          <div className="space-y-2">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Blutungsstärke</p>
+                          </div>
+                          <div className="space-y-2">
+                            {SIMPLE_BLEEDING_INTENSITIES.filter((i) => i.id !== "none").map((intensity) => {
+                              const isSelected = dailyDraft.simpleBleedingIntensity === intensity.id;
+                              const pbacScore = getSimpleBleedingPbacEquivalent(intensity.id);
+                              return (
+                                <button
+                                  key={intensity.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setDailyDraft((prev) => ({
+                                      ...prev,
+                                      simpleBleedingIntensity: intensity.id,
+                                      bleeding: {
+                                        ...prev.bleeding,
+                                        isBleeding: true,
+                                        pbacScore,
+                                      },
+                                      // Tag with tracking method for historical reference
+                                      extendedPbacData: {
+                                        ...(prev.extendedPbacData ?? {}),
+                                        trackingMethod: "simple",
+                                        extendedEntries: prev.extendedPbacData?.extendedEntries ?? [],
+                                        freeBleedingEntries: prev.extendedPbacData?.freeBleedingEntries ?? [],
+                                      },
+                                    }));
+                                  }}
+                                  className={cn(
+                                    "flex w-full items-start gap-3 rounded-xl border p-4 text-left transition",
+                                    isSelected
+                                      ? "border-rose-300 bg-rose-50"
+                                      : "border-rose-100 bg-white hover:border-rose-200"
+                                  )}
+                                >
+                                  <div
+                                    className={cn(
+                                      "mt-0.5 h-5 w-5 rounded-full border-2 flex items-center justify-center flex-shrink-0",
+                                      isSelected ? "border-rose-500 bg-rose-500" : "border-rose-300"
+                                    )}
+                                  >
+                                    {isSelected && <div className="h-2 w-2 rounded-full bg-white" />}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-medium text-rose-900">{intensity.label}</p>
+                                    <p className="text-sm text-rose-600">{intensity.description}</p>
+                                    <p className="mt-1 text-xs text-rose-500">
+                                      Entspricht {intensity.productEquivalent}
+                                    </p>
+                                    <p className="text-xs text-rose-400">
+                                      PBAC-Äquivalent: {intensity.pbacEquivalentMin}–{intensity.pbacEquivalentMax}
+                                    </p>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : effectiveBleedingTrackingMethod === "pbac_extended" ? (
+                        /* Extended PBAC Mode */
+                        <ExtendedBleedingEntryForm
+                          settings={productSettings}
+                          onAddEntry={handleAddExtendedBleedingEntry}
+                        />
+                      ) : (
+                      /* Classic PBAC Mode */
                       <div className="space-y-4">
                         <div className="space-y-2">
                           <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">Auswahl</p>
@@ -8680,6 +9463,7 @@ export default function HomePage() {
                         })}
                       </div>
                     </div>
+                      )}
                     <div className="space-y-1 text-xs text-rose-600">
                       {renderIssuesForPath("bleeding.pbacScore")}
                       {renderIssuesForPath("bleeding.clots")}
@@ -8693,6 +9477,7 @@ export default function HomePage() {
                 <Section
                   title={TERMS.meds.label}
                   description="Akut-/Rescue-Medikation des Tages erfassen"
+                  sectionType="medication"
                 >
                   <div className="grid gap-4">
                     <TermHeadline termKey="meds" />
@@ -8845,6 +9630,7 @@ export default function HomePage() {
                 <Section
                   title="Schlaf"
                   description="Kurzabfrage ohne Hilfsmittel"
+                  sectionType="sleep"
                 >
                   <div className="grid gap-4 md:grid-cols-3">
                     <TermField termKey="sleep_hours" htmlFor="sleep-hours">
@@ -8909,6 +9695,7 @@ export default function HomePage() {
                 <Section
                   title="Darm & Blase"
                   description="Situativ erfassbar"
+                  sectionType="symptoms"
                 >
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="grid gap-3 rounded-lg border border-rose-100 bg-rose-50 p-4">
@@ -9179,6 +9966,7 @@ export default function HomePage() {
                 <Section
                   title="Notizen & Tags"
                   description="Freitext oder wiederkehrende Muster markieren"
+                  sectionType="notes"
                 >
                   <div className="grid gap-3">
                     <TermField termKey="notesTags" htmlFor="notes-tag-input">
@@ -9220,6 +10008,7 @@ export default function HomePage() {
                 <Section
                   title="Optionale Werte (Hilfsmittel nötig)"
                   description="Standardmäßig ausgeblendet – Wearables, LH-Tests, BBT"
+                  sectionType="ovulation"
                   aside={
                     <Switch
                       checked={sensorsVisible}
@@ -10654,25 +11443,42 @@ export default function HomePage() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {PBAC_PRODUCT_ITEMS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => handleBleedingQuickAddSelect(item.id)}
-                  className="flex items-center gap-3 rounded-2xl border border-rose-100 bg-white/90 p-3 text-left text-rose-900 shadow-sm transition hover:border-rose-300"
-                >
-                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-500">
-                    <item.Icon className="h-7 w-7" aria-hidden />
-                  </span>
-                  <div>
-                    <p className="text-sm font-semibold">{item.label}</p>
-                    <p className="text-xs text-rose-500">+{item.score} PBAC</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-rose-500">Die Auswahl wird direkt für heute gezählt.</p>
+
+            {effectiveBleedingTrackingMethod === "pbac_extended" ? (
+              <ExtendedBleedingEntryForm
+                settings={productSettings}
+                onAddEntry={(entry) => {
+                  // Ensure we're editing today's draft before adding entry
+                  if (dailyDraft.date !== today) {
+                    selectDailyDate(today);
+                  }
+                  handleAddExtendedBleedingEntry(entry);
+                  setBleedingQuickAddOpen(false);
+                }}
+              />
+            ) : (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {PBAC_PRODUCT_ITEMS.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => handleBleedingQuickAddSelect(item.id)}
+                      className="flex items-center gap-3 rounded-2xl border border-rose-100 bg-white/90 p-3 text-left text-rose-900 shadow-sm transition hover:border-rose-300"
+                    >
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-500">
+                        <item.Icon className="h-7 w-7" aria-hidden />
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold">{item.label}</p>
+                        <p className="text-xs text-rose-500">+{item.score} PBAC</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-rose-500">Die Auswahl wird direkt für heute gezählt.</p>
+              </>
+            )}
           </div>
         </div>
       ) : null}

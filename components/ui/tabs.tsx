@@ -70,7 +70,9 @@ export function TabsTrigger({ value, className, ...props }: TabsTriggerProps) {
       onClick={() => context.setValue(value)}
       className={cn(
         "inline-flex w-full items-center justify-center rounded-md px-3 py-2 transition",
-        isActive ? "bg-white text-rose-700 shadow" : "text-rose-700/70 hover:text-rose-700",
+        isActive
+          ? "bg-rose-500 text-white shadow"
+          : "text-rose-700 hover:bg-rose-200",
         className
       )}
       {...props}

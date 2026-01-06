@@ -3,11 +3,243 @@
 @tailwind utilities;
 
 :root {
+  /* Rose theme (default) */
   --endo-accent: #e11d48;
   --endo-bg: #fff1f2;
   --section-card-completed-bg: #fffbeb;
   --section-card-completed-border: #facc15;
+
+  /* Semantic colors - Rose theme uses accent for most */
+  --endo-bleeding: #e11d48;
+  --endo-bleeding-light: #fecdd3;
+  --endo-pain: #be123c;
+  --endo-pain-light: #fda4af;
+  --endo-ovulation: #facc15;
+  --endo-ovulation-light: #fef3c7;
+  --endo-fertility: #f472b6;
+  --endo-fertility-light: #fdf2f8;
+  --endo-success: #22c55e;
+  --endo-success-light: #dcfce7;
+  --endo-info: #e11d48;
+  --endo-info-light: #ffe4e6;
+
+  /* Slider colors */
+  --endo-slider-active: rgba(225, 29, 72, 0.75);
+  --endo-slider-track: rgba(225, 29, 72, 0.14);
+  --endo-slider-shadow: rgba(225, 29, 72, 0.18);
+  --endo-slider-shadow-active: rgba(225, 29, 72, 0.24);
+
+  /* Decorative shadow color */
+  --endo-decorative-shadow: rgba(244, 114, 182, 0.35);
 }
+
+/* Neutral theme - warm, friendly palette with vibrant section colors */
+[data-theme="neutral"] {
+  /* Override Tailwind rose palette with warm neutral tones */
+  --tw-rose-50: #f5efe8;   /* warmer cream - main background (darker) */
+  --tw-rose-100: #f0e8df;  /* warm off-white - cards */
+  --tw-rose-200: #e5dcd0;  /* warm sand - light border */
+  --tw-rose-300: #d5c9ba;  /* warm taupe - medium border */
+  --tw-rose-400: #a89888;  /* warm muted - subtle text */
+  --tw-rose-500: #f13524;  /* vibrant red - default highlight */
+  --tw-rose-600: #d92d1e;  /* darker red - hover */
+  --tw-rose-700: #b82518;  /* deep red */
+  --tw-rose-800: #5c5147;  /* warm dark brown - secondary text */
+  --tw-rose-900: #3d352e;  /* warm charcoal - primary text */
+  --tw-rose-950: #2a241f;  /* deepest warm black */
+
+  /* Core colors */
+  --endo-accent: #f13524;
+  --endo-bg: #f5efe8;  /* darker, warmer background */
+  --section-card-completed-bg: #f5f7f2;
+  --section-card-completed-border: #c8d4c0;
+
+  /* Vibrant semantic colors - for icons only */
+  --endo-bleeding: #e8524a;       /* vibrant coral-red */
+  --endo-bleeding-light: #fdf0ef;
+  --endo-pain: #a855f7;           /* vibrant violet */
+  --endo-pain-light: #f8f0fc;
+  --endo-ovulation: #f59e0b;      /* vibrant amber */
+  --endo-ovulation-light: #fef7e8;
+  --endo-fertility: #14b8a6;      /* vibrant teal */
+  --endo-fertility-light: #e8f6f1;
+  --endo-medication: #0ea5e9;     /* vibrant sky blue */
+  --endo-medication-light: #edf5fc;
+  --endo-sleep: #8b5cf6;          /* vibrant indigo */
+  --endo-sleep-light: #f3f0fa;
+  --endo-notes: #f97316;          /* vibrant orange */
+  --endo-notes-light: #faf4ed;
+  --endo-symptoms: #ec4899;       /* vibrant pink */
+  --endo-symptoms-light: #fcf0f4;
+  --endo-energy: #f97316;         /* vibrant orange */
+  --endo-energy-light: #fef5ed;
+  --endo-mood: #f472b6;           /* vibrant pink */
+  --endo-mood-light: #fdf2f2;
+  --endo-success: #10b981;
+  --endo-success-light: #e8f6f1;
+  --endo-info: #0ea5e9;
+  --endo-info-light: #edf5fc;
+  --endo-warning: #f59e0b;
+  --endo-warning-light: #fef7e8;
+
+  /* Slider colors - red to match accent */
+  --endo-slider-active: rgba(241, 53, 36, 0.85);
+  --endo-slider-track: rgba(241, 53, 36, 0.15);
+  --endo-slider-shadow: rgba(241, 53, 36, 0.2);
+  --endo-slider-shadow-active: rgba(241, 53, 36, 0.3);
+
+  /* Decorative shadow - red accent */
+  --endo-decorative-shadow: rgba(241, 53, 36, 0.3);
+}
+
+/* Global UI overrides for neutral theme - consistent colors outside sections */
+/* These use the default accent color (red) for elements not in a section */
+[data-theme="neutral"] .bg-rose-500:not([data-section] *) { background-color: var(--endo-accent) !important; }
+[data-theme="neutral"] .bg-rose-600:not([data-section] *) { background-color: var(--endo-accent) !important; }
+[data-theme="neutral"] .bg-rose-700:not([data-section] *) { background-color: #d92d1e !important; }
+[data-theme="neutral"] .hover\:bg-rose-500:not([data-section] *):hover { background-color: var(--endo-accent) !important; }
+[data-theme="neutral"] .hover\:bg-rose-600:not([data-section] *):hover { background-color: var(--endo-accent) !important; }
+[data-theme="neutral"] .hover\:bg-rose-700:not([data-section] *):hover { background-color: #d92d1e !important; }
+[data-theme="neutral"] .border-rose-500:not([data-section] *) { border-color: var(--endo-accent) !important; }
+[data-theme="neutral"] .ring-rose-500:not([data-section] *) { --tw-ring-color: var(--endo-accent) !important; }
+[data-theme="neutral"] .focus-visible\:ring-rose-300:not([data-section] *):focus-visible { --tw-ring-color: rgba(241, 53, 36, 0.4) !important; }
+[data-theme="neutral"] .shadow-rose-200:not([data-section] *) { --tw-shadow-color: rgba(241, 53, 36, 0.2) !important; }
+
+/* Global text colors - charcoal for readability */
+[data-theme="neutral"] .text-rose-900:not([data-section] *) { color: #3d352e !important; }
+[data-theme="neutral"] .text-rose-800:not([data-section] *) { color: #3d352e !important; }
+[data-theme="neutral"] .text-rose-700:not([data-section] *) { color: #5c5147 !important; }
+[data-theme="neutral"] .text-rose-600:not([data-section] *) { color: #5c5147 !important; }
+[data-theme="neutral"] .text-rose-500:not([data-section] *) { color: #3d352e !important; }
+[data-theme="neutral"] .text-rose-400:not([data-section] *) { color: #8a8078 !important; }
+
+/* Global border colors - warm neutrals */
+[data-theme="neutral"] .border-rose-100:not([data-section] *) { border-color: #e5dcd0 !important; }
+[data-theme="neutral"] .border-rose-200:not([data-section] *) { border-color: #d5c9ba !important; }
+[data-theme="neutral"] .border-rose-300:not([data-section] *) { border-color: #d5c9ba !important; }
+
+/* Global background colors - warm neutrals */
+[data-theme="neutral"] .bg-rose-50:not([data-section] *) { background-color: #f5efe8 !important; }
+[data-theme="neutral"] .bg-rose-100:not([data-section] *) { background-color: #f0e8df !important; }
+[data-theme="neutral"] .bg-rose-200:not([data-section] *) { background-color: #e5dcd0 !important; }
+
+/* Semantic section color overrides for neutral theme */
+/* Within sections, use the section-specific color for highlights */
+
+/* Section colors - each section gets its own vibrant color for icons AND highlights */
+[data-theme="neutral"] [data-section="bleeding"] {
+  --section-color: var(--endo-bleeding);
+  --section-color-dark: #d04842;
+  --section-color-light: #fdf0ef;
+}
+[data-theme="neutral"] [data-section="pain"] {
+  --section-color: var(--endo-pain);
+  --section-color-dark: #9333ea;
+  --section-color-light: #f8f0fc;
+}
+[data-theme="neutral"] [data-section="ovulation"] {
+  --section-color: var(--endo-ovulation);
+  --section-color-dark: #d97706;
+  --section-color-light: #fef7e8;
+}
+[data-theme="neutral"] [data-section="fertility"] {
+  --section-color: var(--endo-fertility);
+  --section-color-dark: #0d9488;
+  --section-color-light: #e8f6f1;
+}
+[data-theme="neutral"] [data-section="medication"] {
+  --section-color: var(--endo-medication);
+  --section-color-dark: #0284c7;
+  --section-color-light: #edf5fc;
+}
+[data-theme="neutral"] [data-section="sleep"] {
+  --section-color: var(--endo-sleep);
+  --section-color-dark: #7c3aed;
+  --section-color-light: #f3f0fa;
+}
+[data-theme="neutral"] [data-section="notes"] {
+  --section-color: var(--endo-notes);
+  --section-color-dark: #ea580c;
+  --section-color-light: #faf4ed;
+}
+[data-theme="neutral"] [data-section="symptoms"] {
+  --section-color: var(--endo-symptoms);
+  --section-color-dark: #db2777;
+  --section-color-light: #fcf0f4;
+}
+[data-theme="neutral"] [data-section="energy"] {
+  --section-color: var(--endo-energy);
+  --section-color-dark: #ea580c;
+  --section-color-light: #fef5ed;
+}
+[data-theme="neutral"] [data-section="mood"] {
+  --section-color: var(--endo-mood);
+  --section-color-dark: #ec4899;
+  --section-color-light: #fdf2f2;
+}
+
+/* All sections use neutral backgrounds/borders, charcoal text, but section color for highlights */
+[data-theme="neutral"] [data-section] {
+  --section-bg: #f0e8df;
+  --section-bg-light: #f5efe8;
+  --section-border: #d5c9ba;
+  --section-border-light: #e5dcd0;
+  --section-text: #3d352e;
+  --section-text-secondary: #5c5147;
+  --section-text-muted: #8a8078;
+}
+
+/* Override Tailwind rose classes within sections */
+/* Backgrounds: neutral for subtle, section color for highlights */
+[data-theme="neutral"] [data-section] .bg-rose-50 { background-color: var(--section-bg-light) !important; }
+[data-theme="neutral"] [data-section] .bg-rose-100 { background-color: var(--section-bg) !important; }
+[data-theme="neutral"] [data-section] .bg-rose-200 { background-color: var(--section-border-light) !important; }
+[data-theme="neutral"] [data-section] .bg-rose-500 { background-color: var(--section-color) !important; }
+[data-theme="neutral"] [data-section] .bg-rose-600 { background-color: var(--section-color) !important; }
+[data-theme="neutral"] [data-section] .bg-rose-700 { background-color: var(--section-color-dark) !important; }
+
+/* Text: charcoal for readability */
+[data-theme="neutral"] [data-section] .text-rose-500 { color: var(--section-text) !important; }
+[data-theme="neutral"] [data-section] .text-rose-600 { color: var(--section-text-secondary) !important; }
+[data-theme="neutral"] [data-section] .text-rose-700 { color: var(--section-text-secondary) !important; }
+[data-theme="neutral"] [data-section] .text-rose-800 { color: var(--section-text) !important; }
+[data-theme="neutral"] [data-section] .text-rose-900 { color: var(--section-text) !important; }
+
+/* Borders: neutral tones, section color for emphasis */
+[data-theme="neutral"] [data-section] .border-rose-100 { border-color: var(--section-border-light) !important; }
+[data-theme="neutral"] [data-section] .border-rose-200 { border-color: var(--section-border) !important; }
+[data-theme="neutral"] [data-section] .border-rose-300 { border-color: var(--section-border) !important; }
+[data-theme="neutral"] [data-section] .border-rose-500 { border-color: var(--section-color) !important; }
+
+/* Rings: section color */
+[data-theme="neutral"] [data-section] .ring-rose-500 { --tw-ring-color: var(--section-color) !important; }
+[data-theme="neutral"] [data-section] .ring-rose-600 { --tw-ring-color: var(--section-color-dark) !important; }
+
+/* Hover states */
+[data-theme="neutral"] [data-section] .hover\:bg-rose-50:hover { background-color: var(--section-bg-light) !important; }
+[data-theme="neutral"] [data-section] .hover\:bg-rose-100:hover { background-color: var(--section-bg) !important; }
+[data-theme="neutral"] [data-section] .hover\:bg-rose-600:hover { background-color: var(--section-color) !important; }
+[data-theme="neutral"] [data-section] .hover\:bg-rose-700:hover { background-color: var(--section-color-dark) !important; }
+
+[data-theme="neutral"] [data-section] .hover\:text-rose-700:hover { color: var(--section-text-secondary) !important; }
+[data-theme="neutral"] [data-section] .hover\:text-rose-800:hover { color: var(--section-text) !important; }
+
+[data-theme="neutral"] [data-section] .hover\:border-rose-300:hover { border-color: var(--section-border) !important; }
+[data-theme="neutral"] [data-section] .hover\:border-rose-400:hover { border-color: var(--section-text-muted) !important; }
+
+/* Focus states: section color */
+[data-theme="neutral"] [data-section] .focus\:ring-rose-500:focus { --tw-ring-color: var(--section-color) !important; }
+
+/* Icons use section color */
+[data-theme="neutral"] [data-section] svg:not(.no-section-color) { color: var(--section-color); }
+[data-theme="neutral"] [data-section] .lucide { color: var(--section-color); }
+
+/* Gradient backgrounds for section headers - warm neutral */
+[data-theme="neutral"] [data-section] .from-rose-50\/80 { --tw-gradient-from: rgba(240, 232, 223, 0.8) !important; }
+[data-theme="neutral"] [data-section] .to-rose-50\/40 { --tw-gradient-to: rgba(240, 232, 223, 0.4) !important; }
+
+/* Text opacity variants */
+[data-theme="neutral"] [data-section] .text-rose-600\/80 { color: rgba(92, 81, 71, 0.8) !important; }
 
 html {
   width: 100%;
@@ -38,13 +270,13 @@ body {
 .endo-slider::-moz-range-track {
   height: 0.5rem;
   border-radius: 9999px;
-  background: rgba(244, 114, 182, 0.16);
+  background: var(--endo-slider-track);
 }
 
 .endo-slider::-moz-range-progress {
   height: 0.5rem;
   border-radius: 9999px;
-  background: rgba(225, 29, 72, 0.7);
+  background: var(--endo-slider-active);
 }
 
 .endo-slider::-webkit-slider-thumb {
@@ -55,7 +287,7 @@ body {
   border-radius: 9999px;
   background: #fff;
   border: 3px solid var(--endo-accent);
-  box-shadow: 0 12px 25px rgba(225, 29, 72, 0.18);
+  box-shadow: 0 12px 25px var(--endo-slider-shadow);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   cursor: pointer;
   margin-top: -0.5rem;
@@ -67,7 +299,7 @@ body {
   border-radius: 9999px;
   background: #fff;
   border: 3px solid var(--endo-accent);
-  box-shadow: 0 12px 25px rgba(225, 29, 72, 0.18);
+  box-shadow: 0 12px 25px var(--endo-slider-shadow);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   cursor: pointer;
 }
@@ -77,7 +309,7 @@ body {
 .endo-slider:active::-moz-range-thumb,
 .endo-slider:focus-visible::-moz-range-thumb {
   transform: scale(1.06);
-  box-shadow: 0 16px 32px rgba(225, 29, 72, 0.24);
+  box-shadow: 0 16px 32px var(--endo-slider-shadow-active);
 }
 
 .endo-slider:disabled::-webkit-slider-thumb,
@@ -145,7 +377,7 @@ textarea:focus-visible {
 }
 
 .heart-3d svg {
-  filter: drop-shadow(0 20px 35px rgba(244, 114, 182, 0.35));
+  filter: drop-shadow(0 20px 35px var(--endo-decorative-shadow));
 }
 
 @keyframes heart-spin {

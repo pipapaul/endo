@@ -26,8 +26,13 @@ export function Slider({
   const clamped = Math.min(Math.max(current, min), max);
   const range = max - min;
   const percentage = range === 0 ? 0 : ((clamped - min) / range) * 100;
-  const accentColor = disabled ? "rgba(148, 163, 184, 0.55)" : "rgba(225, 29, 72, 0.75)";
-  const trackColor = disabled ? "rgba(148, 163, 184, 0.2)" : "rgba(225, 29, 72, 0.14)";
+  // Use CSS variables for theme support with fallbacks
+  const accentColor = disabled
+    ? "rgba(148, 163, 184, 0.55)"
+    : "var(--endo-slider-active, rgba(225, 29, 72, 0.75))";
+  const trackColor = disabled
+    ? "rgba(148, 163, 184, 0.2)"
+    : "var(--endo-slider-track, rgba(225, 29, 72, 0.14))";
 
   return (
     <input

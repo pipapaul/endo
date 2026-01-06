@@ -1,4 +1,4 @@
-import type { PbacCounts } from "./pbac";
+import type { PbacCounts, ExtendedPbacData, SimpleBleedingIntensity } from "./pbac";
 
 export type ID = string;
 
@@ -61,6 +61,8 @@ export interface DailyEntry {
     flooding?: boolean;
   };
   pbacCounts?: PbacCounts;
+  extendedPbacData?: ExtendedPbacData;
+  simpleBleedingIntensity?: SimpleBleedingIntensity;
   symptoms: {
     dysmenorrhea?: { present: boolean; score?: number };
     deepDyspareunia?: { present: boolean; score?: number };

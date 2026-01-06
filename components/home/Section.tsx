@@ -17,6 +17,8 @@ export type SectionCompletionContextValue = {
 export const SectionScopeContext = React.createContext<string | number | null>(null);
 export const SectionCompletionContext = React.createContext<SectionCompletionContextValue | null>(null);
 
+export type SectionType = "pain" | "bleeding" | "ovulation" | "fertility" | "medication" | "sleep" | "notes" | "symptoms" | "energy" | "mood";
+
 export function Section({
   title,
   description,
@@ -25,6 +27,7 @@ export function Section({
   completionEnabled = true,
   variant = "card",
   hideHeader = false,
+  sectionType,
 }: {
   title: string;
   description?: string;
@@ -33,6 +36,7 @@ export function Section({
   completionEnabled?: boolean;
   variant?: "card" | "plain";
   hideHeader?: boolean;
+  sectionType?: SectionType;
 }) {
   const scope = React.useContext(SectionScopeContext);
   const completionContext = React.useContext(SectionCompletionContext);
@@ -73,6 +77,7 @@ export function Section({
     <section
       data-section-card
       data-section-completed={isCompleted ? "true" : "false"}
+      data-section={sectionType}
       className={cn(
         "relative",
         variant === "card"
