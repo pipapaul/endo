@@ -1667,7 +1667,7 @@ const PainDot = ({ cx, cy, payload }: PainDotProps) => {
       {payload.ovulationPositive ? (
         <circle cx={cx} cy={cy} r={7} fill="#fef3c7" stroke="#facc15" strokeWidth={2} />
       ) : null}
-      <circle cx={cx} cy={cy} r={4} fill="#be123c" stroke="#fff" strokeWidth={2} />
+      <circle cx={cx} cy={cy} r={4} fill={CATEGORY_COLORS.pain.saturated} stroke="#fff" strokeWidth={2} />
     </g>
   );
 };
@@ -1865,29 +1865,41 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
       const hasTimeline = timeline ? timeline.some((segment) => segment.eventCount > 0) : false;
 
       return (
-        <div className="rounded-lg border border-rose-100 bg-white p-3 text-xs text-rose-700 shadow-sm">
-          <p className="font-semibold text-rose-900">{payload.dateLabel}</p>
-          <p>Schmerz: {payload.painNRS}/10</p>
-          <p>Beeinträchtigung: {payload.impactNRS ?? "–"}/10</p>
-          <p>Blutung: {payload.bleedingLabel}</p>
+        <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-700 shadow-sm">
+          <p className="font-semibold text-gray-900 mb-2">{payload.dateLabel}</p>
+          <div className="space-y-1">
+            <p className="flex items-center gap-2">
+              <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: CATEGORY_COLORS.pain.saturated }} />
+              <span>Schmerz: {payload.painNRS}/10</span>
+            </p>
+            <p className="flex items-center gap-2">
+              <span className="inline-block w-2.5 h-0.5 rounded-full bg-amber-400" />
+              <span>Beeinträchtigung: {payload.impactNRS ?? "–"}/10</span>
+            </p>
+            <p className="flex items-center gap-2">
+              <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: CATEGORY_COLORS.bleeding.saturated }} />
+              <span>Blutung: {payload.bleedingLabel}</span>
+            </p>
+          </div>
           {payload.isBleeding && payload.pbacEquivalent > 0 ? (
-            <p>PBAC-Äquivalent: {payload.pbacEquivalent}</p>
+            <p className="mt-1 ml-4 text-gray-500">PBAC-Äquivalent: {payload.pbacEquivalent}</p>
           ) : null}
           {payload.bleedingTrackingMethod && payload.isBleeding ? (
-            <p className="text-rose-500 text-[10px]">
+            <p className="text-gray-400 text-[10px] ml-4">
               ({getTrackingMethodLabel(payload.bleedingTrackingMethod)})
             </p>
           ) : null}
           {payload.ovulationPositive ? (
-            <p className="font-medium text-yellow-700">Eisprung bestätigt (LH+)</p>
+            <p className="font-medium text-yellow-700 mt-1">Eisprung bestätigt (LH+)</p>
           ) : payload.isPredictedOvulationDay ? (
-            <p className="text-yellow-600">Eisprung geschätzt</p>
+            <p className="text-yellow-600 mt-1">Eisprung geschätzt</p>
           ) : null}
           {payload.isInPredictedFertileWindow && !payload.isPredictedOvulationDay && !payload.ovulationPositive ? (
-            <p className="text-pink-600">Fruchtbares Fenster (geschätzt)</p>
+            <p className="text-pink-600 mt-1">Fruchtbares Fenster (geschätzt)</p>
           ) : null}
           {payload.mucusFertilityScore !== null && payload.mucusFertilityScore >= 3 ? (
             <p className={cn(
+              "mt-1",
               payload.mucusFertilityScore === 4 ? "font-medium text-green-700" : "text-green-600"
             )}>
               {payload.mucusFertilityScore === 4 ? "Cervixschleim: Peak (hohe Fruchtbarkeit)" : "Cervixschleim: Fruchtbar"}
@@ -1895,7 +1907,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
           ) : null}
           {hasTimeline && timeline ? (
             <div className="mt-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-rose-400">Tagesverlauf</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-purple-400">Schmerz-Tagesverlauf</p>
               <div className="mt-1 flex items-end gap-0.5">
                 {timeline.map((segment, index) => {
                   const height = 4 + (segment.maxIntensity / 10) * 14;
@@ -1903,14 +1915,12 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
                   return (
                     <span
                       key={`pain-tooltip-bar-${payload.date}-${index}`}
-                      className={cn(
-                        "w-1.5 rounded-full bg-rose-100",
-                        segment.eventCount > 0 ? "bg-rose-500" : "bg-rose-100"
-                      )}
+                      className="w-1.5 rounded-full"
                       style={{
                         height,
+                        backgroundColor: segment.eventCount > 0 ? CATEGORY_COLORS.pain.saturated : "#e5e7eb",
                         backgroundImage: hasMultiple
-                          ? "repeating-linear-gradient(135deg, #fb7185, #fb7185 6px, #fecdd3 6px, #fecdd3 10px)"
+                          ? `repeating-linear-gradient(135deg, ${CATEGORY_COLORS.pain.saturated}, ${CATEGORY_COLORS.pain.saturated} 6px, #e9d5ff 6px, #e9d5ff 10px)`
                           : undefined,
                       }}
                       title={
@@ -1941,13 +1951,13 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
           <ComposedChart data={chartPoints} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
             <defs>
               <linearGradient id={bleedingGradientId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#fb7185" stopOpacity={0.45} />
-                <stop offset="100%" stopColor="#fbcfe8" stopOpacity={0.1} />
+                <stop offset="0%" stopColor={CATEGORY_COLORS.bleeding.saturated} stopOpacity={0.45} />
+                <stop offset="100%" stopColor={CATEGORY_COLORS.bleeding.saturated} stopOpacity={0.08} />
               </linearGradient>
               {/* Gradient for simple mode uncertainty band */}
               <linearGradient id={`${bleedingGradientId}-simple`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#fb7185" stopOpacity={0.25} />
-                <stop offset="100%" stopColor="#fbcfe8" stopOpacity={0.05} />
+                <stop offset="0%" stopColor={CATEGORY_COLORS.bleeding.saturated} stopOpacity={0.25} />
+                <stop offset="100%" stopColor={CATEGORY_COLORS.bleeding.saturated} stopOpacity={0.05} />
               </linearGradient>
               {/* Blur filter for simple mode uncertainty visualization */}
               <filter id={`${bleedingGradientId}-blur`} x="-10%" y="-10%" width="120%" height="120%">
@@ -1958,7 +1968,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               dataKey="date"
               axisLine={false}
               tickLine={false}
-              tick={{ fill: "#fb7185", fontSize: 12, fontWeight: 600 }}
+              tick={{ fill: "#9ca3af", fontSize: 12, fontWeight: 600 }}
               tickFormatter={(value: string | number) =>
                 typeof value === "string" ? formatShortGermanDate(value) : ""
               }
@@ -1967,7 +1977,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
             <YAxis yAxisId="pbac" domain={[0, 120]} hide />
             <YAxis yAxisId="painImpact" domain={[0, 10]} hide />
             <Tooltip
-              cursor={{ stroke: "#fb7185", strokeOpacity: 0.2, strokeWidth: 1 }}
+              cursor={{ stroke: "#9ca3af", strokeOpacity: 0.2, strokeWidth: 1 }}
               content={renderTooltip}
             />
             {/* Simple mode uncertainty band - shows the range of possible values with blur */}
@@ -1976,7 +1986,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               dataKey="simpleBleedingMax"
               yAxisId="pbac"
               fill={`url(#${bleedingGradientId}-simple)`}
-              stroke="#fb7185"
+              stroke={CATEGORY_COLORS.bleeding.saturated}
               strokeWidth={4}
               strokeOpacity={0.3}
               fillOpacity={1}
@@ -1989,7 +1999,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               dataKey="bleedingValue"
               yAxisId="pbac"
               fill={`url(#${bleedingGradientId})`}
-              stroke="#fb7185"
+              stroke={CATEGORY_COLORS.bleeding.saturated}
               strokeWidth={1}
               fillOpacity={1}
               name="Blutung"
@@ -2009,10 +2019,10 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               type="monotone"
               dataKey="painValue"
               yAxisId="painImpact"
-              stroke="#be123c"
+              stroke={CATEGORY_COLORS.pain.saturated}
               strokeWidth={2}
               dot={<PainDot />}
-              activeDot={{ r: 5, stroke: "#be123c", fill: "#fff", strokeWidth: 2 }}
+              activeDot={{ r: 5, stroke: CATEGORY_COLORS.pain.saturated, fill: "#fff", strokeWidth: 2 }}
               name="Schmerz"
               isAnimationActive={false}
             />
