@@ -1847,7 +1847,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
         ? null
         : Number.isFinite(point.impactNRS)
           ? Math.max(0, Math.min(10, Number(point.impactNRS)))
-          : null;
+          : 0;
       const bleedingValue = shouldHideData ? null : bleeding.value;
 
       // Compute simple mode uncertainty range
