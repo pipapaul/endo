@@ -2425,6 +2425,27 @@ function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>
     delete (clone as { headacheOpt?: DailyEntry["headacheOpt"] }).headacheOpt;
   }
 
+  // Normalize rescueMeds time field to HH:MM format
+  if (Array.isArray(clone.rescueMeds)) {
+    clone.rescueMeds = clone.rescueMeds.map((med) => {
+      if (!med || typeof med !== "object") return med;
+      if (typeof med.time !== "string" || !med.time) return med;
+
+      // Already in HH:MM format
+      if (/^\d{2}:\d{2}$/.test(med.time)) return med;
+
+      // Try to extract HH:MM from various formats (e.g., "14:30:00", "2025-01-01T14:30:00Z", etc.)
+      const timeMatch = med.time.match(/(\d{2}):(\d{2})/);
+      if (timeMatch) {
+        return { ...med, time: `${timeMatch[1]}:${timeMatch[2]}` };
+      }
+
+      // If we can't parse it, remove the invalid time
+      const { time: _, ...rest } = med;
+      return rest;
+    });
+  }
+
   return applyAutomatedPainSymptoms(normalizeDailyEntry(clone));
 }
 
