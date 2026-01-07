@@ -23,6 +23,10 @@ export const SYMPTOM_TERMS: Record<SymptomKey, TermDescriptor> = {
 
 export type TrendMetricKey = "pain" | "impact" | "symptomAverage" | "sleepQuality" | "steps";
 
+// Time correlation graph types
+export type CycleAlignmentMode = "period" | "ovulation";
+export type CycleViewMode = "last" | "overlay";
+
 export type AnalyticsSectionKey = "progress" | "tracking" | "correlations";
 
 export type AnalyticsSectionOption = {
