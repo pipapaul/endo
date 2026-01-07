@@ -29,6 +29,7 @@ import {
   ScatterChart,
   Scatter,
   ReferenceLine,
+  ReferenceArea,
 } from "recharts";
 import type { DotProps, TooltipProps, TooltipContentProps } from "recharts";
 import {
@@ -150,6 +151,8 @@ import {
   type AnalyticsSectionOption,
   type BackupPayload,
   type BeforeInstallPromptEvent,
+  type CycleAlignmentMode,
+  type CycleViewMode,
   type PendingCheckIn,
   type PendingCheckInType,
   type PendingOverviewConfirm,
@@ -2422,6 +2425,27 @@ function normalizeImportedDailyEntry(entry: DailyEntry & Record<string, unknown>
     delete (clone as { headacheOpt?: DailyEntry["headacheOpt"] }).headacheOpt;
   }
 
+  // Normalize rescueMeds time field to HH:MM format
+  if (Array.isArray(clone.rescueMeds)) {
+    clone.rescueMeds = clone.rescueMeds.map((med) => {
+      if (!med || typeof med !== "object") return med;
+      if (typeof med.time !== "string" || !med.time) return med;
+
+      // Already in HH:MM format
+      if (/^\d{2}:\d{2}$/.test(med.time)) return med;
+
+      // Try to extract HH:MM from various formats (e.g., "14:30:00", "2025-01-01T14:30:00Z", etc.)
+      const timeMatch = med.time.match(/(\d{2}):(\d{2})/);
+      if (timeMatch) {
+        return { ...med, time: `${timeMatch[1]}:${timeMatch[2]}` };
+      }
+
+      // If we can't parse it, remove the invalid time
+      const { time: _, ...rest } = med;
+      return rest;
+    });
+  }
+
   return applyAutomatedPainSymptoms(normalizeDailyEntry(clone));
 }
 
@@ -3246,6 +3270,9 @@ export default function HomePage() {
   const [detailToolbarHeight, setDetailToolbarHeight] = useState<number>(DETAIL_TOOLBAR_FALLBACK_HEIGHT);
   const [activeView, setActiveView] = useState<"home" | "daily" | "weekly" | "monthly" | "analytics">("home");
   const [analyticsActiveSection, setAnalyticsActiveSection] = useState<AnalyticsSectionKey>("progress");
+  const [timeCorrelationAlignment, setTimeCorrelationAlignment] = useState<CycleAlignmentMode>("period");
+  const [timeCorrelationView, setTimeCorrelationView] = useState<CycleViewMode>("last");
+  const [expandedLocationGroups, setExpandedLocationGroups] = useState<Set<string>>(new Set());
   const [dailyActiveCategory, setDailyActiveCategory] = useState<DailyCategoryId>("overview");
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [persistWarning, setPersistWarning] = useState<string | null>(null);
@@ -4937,8 +4964,12 @@ export default function HomePage() {
           const normalizedDaily = parsed.dailyEntries
             .filter((item): item is DailyEntry & Record<string, unknown> => typeof item === "object" && item !== null)
             .map((item) => normalizeImportedDailyEntry(item));
-          if (normalizedDaily.some((entry) => validateDailyEntry(entry).length > 0)) {
-            throw new Error("invalid");
+          const dailyValidationIssues = normalizedDaily
+            .map((entry, idx) => ({ idx, date: entry.date, issues: validateDailyEntry(entry) }))
+            .filter((item) => item.issues.length > 0);
+          if (dailyValidationIssues.length > 0) {
+            console.error("Daily validation issues:", dailyValidationIssues);
+            throw new Error("invalid daily entries");
           }
           const normalizedMonthly = parsed.monthlyEntries
             .filter((item): item is MonthlyEntry & Record<string, unknown> => typeof item === "object" && item !== null)
@@ -4971,7 +5002,8 @@ export default function HomePage() {
           await replaceWeeklyReports(normalizedWeeklyReports);
           refreshWeeklyReports();
           setInfoMessage("Backup importiert.");
-        } catch {
+        } catch (err) {
+          console.error("Backup import failed:", err);
           setInfoMessage("Backup-Import fehlgeschlagen.");
         }
       })
@@ -6330,6 +6362,506 @@ export default function HomePage() {
       },
     };
   }, [derivedDailyEntries]);
+
+  // Time correlation graph data
+  const timeCorrelationData = useMemo(() => {
+    if (cycleStartDates.length === 0) return null;
+
+    const MAX_CYCLES = 12;
+    const starts = [...cycleStartDates].sort().slice(-MAX_CYCLES);
+
+    // Build full cycle data
+    const cycles: Array<{
+      startDate: string;
+      endDate: string | null;
+      length: number;
+      ovulationDay: number | null;
+      entries: Array<{
+        cycleDay: number;
+        entry: DailyEntry;
+      }>;
+    }> = [];
+
+    starts.forEach((startDate, idx) => {
+      const nextStart = starts[idx + 1] ?? null;
+      const entries = annotatedDailyEntries.filter(({ entry, cycleDay }) => {
+        if (!cycleDay) return false;
+        if (entry.date < startDate) return false;
+        if (nextStart && entry.date >= nextStart) return false;
+        return true;
+      });
+
+      // Find confirmed ovulation (LH+)
+      let ovulationDay: number | null = null;
+      for (const { entry, cycleDay } of entries) {
+        if (entry.ovulation?.lhPositive && cycleDay) {
+          ovulationDay = cycleDay;
+          break;
+        }
+      }
+      // If no confirmed, use predicted from average cycle length
+      if (!ovulationDay && completedCycleLengths.length > 0) {
+        const recentLengths = completedCycleLengths.slice(-3);
+        const avgLength = recentLengths.reduce((a, b) => a + b, 0) / recentLengths.length;
+        ovulationDay = Math.round(avgLength - 14);
+      }
+
+      const length = nextStart
+        ? Math.round((new Date(nextStart).getTime() - new Date(startDate).getTime()) / MS_PER_DAY)
+        : entries.length;
+
+      cycles.push({
+        startDate,
+        endDate: nextStart,
+        length,
+        ovulationDay,
+        entries: entries.map(({ entry, cycleDay }) => ({ cycleDay: cycleDay!, entry })),
+      });
+    });
+
+    return cycles.length > 0 ? cycles : null;
+  }, [annotatedDailyEntries, cycleStartDates, completedCycleLengths]);
+
+  // Aligned time correlation data based on selected mode
+  const alignedTimeCorrelationData = useMemo(() => {
+    if (!timeCorrelationData) return null;
+
+    const alignDay = (cycleDay: number, ovulationDay: number | null): number => {
+      if (timeCorrelationAlignment === "period") {
+        return cycleDay;
+      }
+      // Align to ovulation (ovulation = day 0)
+      if (!ovulationDay) return cycleDay;
+      return cycleDay - ovulationDay;
+    };
+
+    return timeCorrelationData.map((cycle) => ({
+      ...cycle,
+      alignedEntries: cycle.entries.map(({ cycleDay, entry }) => ({
+        alignedDay: alignDay(cycleDay, cycle.ovulationDay),
+        cycleDay,
+        entry,
+      })),
+    }));
+  }, [timeCorrelationData, timeCorrelationAlignment]);
+
+  // Heat strip data for time correlation graph
+  const timeCorrelationHeatStrips = useMemo(() => {
+    if (!alignedTimeCorrelationData) return null;
+
+    const SYMPTOM_KEYS: SymptomKey[] = [
+      "dysmenorrhea",
+      "fatigue",
+      "bloating",
+      "deepDyspareunia",
+      "pelvicPainNonMenses",
+      "dyschezia",
+      "dysuria",
+    ];
+
+    const SYMPTOM_LABELS: Record<SymptomKey, string> = {
+      dysmenorrhea: "Regelschmerzen",
+      fatigue: "Erschöpfung",
+      bloating: "Blähungen",
+      deepDyspareunia: "Schmerz b. Sex",
+      pelvicPainNonMenses: "Beckenschmerz",
+      dyschezia: "Stuhlgang",
+      dysuria: "Blase",
+    };
+
+    // Pain location groups with their child regions
+    const LOCATION_GROUPS = [
+      {
+        id: "head-neck",
+        label: "Kopf/Nacken",
+        regions: ["head", "neck"],
+        regionLabels: { head: "Kopf", neck: "Nacken" },
+      },
+      {
+        id: "back",
+        label: "Rücken",
+        regions: ["upper_back_left", "upper_back_right", "mid_back_left", "mid_back_right", "lower_back"],
+        regionLabels: {
+          upper_back_left: "Ob. Rücken li.",
+          upper_back_right: "Ob. Rücken re.",
+          mid_back_left: "Mi. Rücken li.",
+          mid_back_right: "Mi. Rücken re.",
+          lower_back: "LWS/Kreuzbein",
+        },
+      },
+      {
+        id: "upper-body",
+        label: "Oberbauch",
+        regions: ["chest_left", "chest_right", "upper_abdomen_left", "upper_abdomen", "upper_abdomen_right"],
+        regionLabels: {
+          chest_left: "Brust li.",
+          chest_right: "Brust re.",
+          upper_abdomen_left: "Oberbauch li.",
+          upper_abdomen: "Oberbauch Mi.",
+          upper_abdomen_right: "Oberbauch re.",
+        },
+      },
+      {
+        id: "lower-abdomen",
+        label: "Unterbauch",
+        regions: ["lower_abdomen_left", "lower_abdomen", "lower_abdomen_right"],
+        regionLabels: {
+          lower_abdomen_left: "Unterbauch li.",
+          lower_abdomen: "Unterbauch Mi.",
+          lower_abdomen_right: "Unterbauch re.",
+        },
+      },
+      {
+        id: "pelvis",
+        label: "Becken",
+        regions: ["pelvis_left", "pelvis_right", "uterus", "rectal", "vaginal"],
+        regionLabels: {
+          pelvis_left: "Becken li.",
+          pelvis_right: "Becken re.",
+          uterus: "Uterus",
+          rectal: "Rektal",
+          vaginal: "Vaginal",
+        },
+      },
+      {
+        id: "legs",
+        label: "Beine/Hüfte",
+        regions: ["hip_left", "hip_right", "upper_leg_left", "upper_leg_right", "knee_left", "knee_right", "lower_leg_left", "lower_leg_right"],
+        regionLabels: {
+          hip_left: "Hüfte li.",
+          hip_right: "Hüfte re.",
+          upper_leg_left: "Obersch. li.",
+          upper_leg_right: "Obersch. re.",
+          knee_left: "Knie li.",
+          knee_right: "Knie re.",
+          lower_leg_left: "Untersch. li.",
+          lower_leg_right: "Untersch. re.",
+        },
+      },
+    ] as const;
+
+    // Get target cycles based on view mode
+    const targetCycles =
+      timeCorrelationView === "last"
+        ? alignedTimeCorrelationData.length > 1
+          ? [alignedTimeCorrelationData[alignedTimeCorrelationData.length - 2]]
+          : alignedTimeCorrelationData.slice(-1)
+        : alignedTimeCorrelationData;
+
+    // Find day range across all target cycles
+    let minDay = Infinity;
+    let maxDay = -Infinity;
+    targetCycles.forEach((cycle) => {
+      cycle.alignedEntries.forEach(({ alignedDay }) => {
+        if (alignedDay < minDay) minDay = alignedDay;
+        if (alignedDay > maxDay) maxDay = alignedDay;
+      });
+    });
+
+    if (!Number.isFinite(minDay) || !Number.isFinite(maxDay)) {
+      return null;
+    }
+
+    // Clamp to reasonable range
+    minDay = Math.max(minDay, timeCorrelationAlignment === "ovulation" ? -20 : 1);
+    maxDay = Math.min(maxDay, timeCorrelationAlignment === "ovulation" ? 20 : 40);
+    const dayRange = Array.from({ length: maxDay - minDay + 1 }, (_, i) => minDay + i);
+
+    // Aggregate data for symptoms
+    const symptomData = new Map<SymptomKey, Map<number, { sum: number; count: number }>>();
+    SYMPTOM_KEYS.forEach((key) => symptomData.set(key, new Map()));
+
+    // Aggregate data for location groups and individual regions
+    const locationGroupData = new Map<string, Map<number, { sum: number; count: number }>>();
+    const individualLocationData = new Map<string, Map<number, { sum: number; count: number }>>();
+
+    LOCATION_GROUPS.forEach((group) => {
+      locationGroupData.set(group.id, new Map());
+      group.regions.forEach((regionId) => {
+        individualLocationData.set(regionId, new Map());
+      });
+    });
+
+    // Process entries
+    targetCycles.forEach((cycle) => {
+      cycle.alignedEntries.forEach(({ alignedDay, entry }) => {
+        // Symptoms
+        SYMPTOM_KEYS.forEach((key) => {
+          const symptom = entry.symptoms?.[key];
+          if (symptom?.present) {
+            const value = typeof symptom.score === "number" ? symptom.score : 5;
+            const dayMap = symptomData.get(key)!;
+            const current = dayMap.get(alignedDay) ?? { sum: 0, count: 0 };
+            current.sum += value;
+            current.count += 1;
+            dayMap.set(alignedDay, current);
+          }
+        });
+
+        // Pain locations from painRegions, painMapRegionIds, and quickPainEvents
+        const locationIntensities = new Map<string, number>();
+
+        // From painRegions (detailed)
+        entry.painRegions?.forEach((region) => {
+          const regionId = region.regionId;
+          const intensity = typeof region.nrs === "number" ? region.nrs : entry.painNRS ?? 5;
+          const currentMax = locationIntensities.get(regionId) ?? 0;
+          locationIntensities.set(regionId, Math.max(currentMax, intensity));
+        });
+
+        // From painMapRegionIds (simple list)
+        entry.painMapRegionIds?.forEach((regionId) => {
+          if (!locationIntensities.has(regionId)) {
+            locationIntensities.set(regionId, entry.painNRS ?? 5);
+          }
+        });
+
+        // From quickPainEvents
+        entry.quickPainEvents?.forEach((event) => {
+          const regionId = event.regionId;
+          const intensity = event.intensity ?? entry.painNRS ?? 5;
+          const currentMax = locationIntensities.get(regionId) ?? 0;
+          locationIntensities.set(regionId, Math.max(currentMax, intensity));
+        });
+
+        // Aggregate into groups and individual locations
+        locationIntensities.forEach((intensity, regionId) => {
+          // Find which group this region belongs to
+          const group = LOCATION_GROUPS.find((g) => (g.regions as readonly string[]).includes(regionId));
+          if (group) {
+            // Group aggregate
+            const groupMap = locationGroupData.get(group.id)!;
+            const groupCurrent = groupMap.get(alignedDay) ?? { sum: 0, count: 0 };
+            groupCurrent.sum += intensity;
+            groupCurrent.count += 1;
+            groupMap.set(alignedDay, groupCurrent);
+
+            // Individual region
+            const regionMap = individualLocationData.get(regionId);
+            if (regionMap) {
+              const regionCurrent = regionMap.get(alignedDay) ?? { sum: 0, count: 0 };
+              regionCurrent.sum += intensity;
+              regionCurrent.count += 1;
+              regionMap.set(alignedDay, regionCurrent);
+            }
+          }
+        });
+      });
+    });
+
+    // Build symptom rows
+    const symptomRows: Array<{
+      key: string;
+      label: string;
+      type: "symptom";
+      values: Map<number, number | null>;
+    }> = [];
+
+    SYMPTOM_KEYS.forEach((key) => {
+      const dayMap = symptomData.get(key)!;
+      const values = new Map<number, number | null>();
+      dayRange.forEach((day) => {
+        const data = dayMap.get(day);
+        values.set(day, data ? data.sum / data.count : null);
+      });
+      symptomRows.push({ key, label: SYMPTOM_LABELS[key], type: "symptom", values });
+    });
+
+    // Build location group rows (with children for expansion)
+    const locationGroups: Array<{
+      id: string;
+      label: string;
+      values: Map<number, number | null>;
+      children: Array<{
+        id: string;
+        label: string;
+        values: Map<number, number | null>;
+      }>;
+    }> = [];
+
+    LOCATION_GROUPS.forEach((group) => {
+      const groupMap = locationGroupData.get(group.id)!;
+      const groupValues = new Map<number, number | null>();
+      dayRange.forEach((day) => {
+        const data = groupMap.get(day);
+        groupValues.set(day, data ? data.sum / data.count : null);
+      });
+
+      const children: typeof locationGroups[number]["children"] = [];
+      group.regions.forEach((regionId) => {
+        const regionMap = individualLocationData.get(regionId);
+        if (regionMap) {
+          const regionValues = new Map<number, number | null>();
+          dayRange.forEach((day) => {
+            const data = regionMap.get(day);
+            regionValues.set(day, data ? data.sum / data.count : null);
+          });
+          // Only include if there's any data
+          if (Array.from(regionValues.values()).some((v) => v !== null)) {
+            children.push({
+              id: regionId,
+              label: group.regionLabels[regionId as keyof typeof group.regionLabels] ?? regionId,
+              values: regionValues,
+            });
+          }
+        }
+      });
+
+      locationGroups.push({
+        id: group.id,
+        label: group.label,
+        values: groupValues,
+        children,
+      });
+    });
+
+    // Build top graph data (cycle overview with bleeding, pain, ovulation)
+    const topGraphData: Array<{
+      alignedDay: number;
+      bleedingValue: number;
+      painNRS: number | null;
+      impactNRS: number | null;
+      isOvulation: boolean;
+      isFertile: boolean;
+    }> = [];
+
+    // For overlay mode, we need to aggregate across cycles
+    if (timeCorrelationView === "overlay") {
+      const dayAggregates = new Map<
+        number,
+        {
+          bleedingSum: number;
+          bleedingCount: number;
+          painSum: number;
+          painCount: number;
+          impactSum: number;
+          impactCount: number;
+          ovulationCount: number;
+          fertileCount: number;
+          totalCycles: number;
+        }
+      >();
+
+      targetCycles.forEach((cycle) => {
+        const cycleOvulationDay = cycle.ovulationDay
+          ? timeCorrelationAlignment === "ovulation"
+            ? 0
+            : cycle.ovulationDay
+          : null;
+
+        cycle.alignedEntries.forEach(({ alignedDay, entry }) => {
+          const current = dayAggregates.get(alignedDay) ?? {
+            bleedingSum: 0,
+            bleedingCount: 0,
+            painSum: 0,
+            painCount: 0,
+            impactSum: 0,
+            impactCount: 0,
+            ovulationCount: 0,
+            fertileCount: 0,
+            totalCycles: 0,
+          };
+
+          current.totalCycles += 1;
+
+          if (hasBleedingForEntry(entry)) {
+            const pbac = entry.bleeding?.pbacScore ?? 5;
+            current.bleedingSum += pbac;
+            current.bleedingCount += 1;
+          }
+
+          if (typeof entry.painNRS === "number") {
+            current.painSum += entry.painNRS;
+            current.painCount += 1;
+          }
+
+          if (typeof entry.impactNRS === "number") {
+            current.impactSum += entry.impactNRS;
+            current.impactCount += 1;
+          }
+
+          if (cycleOvulationDay !== null && alignedDay === cycleOvulationDay) {
+            current.ovulationCount += 1;
+          }
+
+          if (cycleOvulationDay !== null) {
+            const fertileStart = cycleOvulationDay - 5;
+            const fertileEnd = cycleOvulationDay + 1;
+            if (alignedDay >= fertileStart && alignedDay <= fertileEnd) {
+              current.fertileCount += 1;
+            }
+          }
+
+          dayAggregates.set(alignedDay, current);
+        });
+      });
+
+      dayRange.forEach((day) => {
+        const data = dayAggregates.get(day);
+        topGraphData.push({
+          alignedDay: day,
+          bleedingValue: data && data.bleedingCount > 0 ? data.bleedingSum / data.bleedingCount : 0,
+          painNRS: data && data.painCount > 0 ? data.painSum / data.painCount : null,
+          impactNRS: data && data.impactCount > 0 ? data.impactSum / data.impactCount : null,
+          isOvulation: data ? data.ovulationCount > data.totalCycles / 2 : false,
+          isFertile: data ? data.fertileCount > data.totalCycles / 2 : false,
+        });
+      });
+    } else {
+      // Single cycle mode
+      const cycle = targetCycles[0];
+      if (cycle) {
+        const cycleOvulationDay = cycle.ovulationDay
+          ? timeCorrelationAlignment === "ovulation"
+            ? 0
+            : cycle.ovulationDay
+          : null;
+
+        dayRange.forEach((day) => {
+          const entryData = cycle.alignedEntries.find((e) => e.alignedDay === day);
+          const entry = entryData?.entry;
+
+          const isOvulation = cycleOvulationDay !== null && day === cycleOvulationDay;
+          let isFertile = false;
+          if (cycleOvulationDay !== null) {
+            const fertileStart = cycleOvulationDay - 5;
+            const fertileEnd = cycleOvulationDay + 1;
+            isFertile = day >= fertileStart && day <= fertileEnd;
+          }
+
+          topGraphData.push({
+            alignedDay: day,
+            bleedingValue: entry && hasBleedingForEntry(entry) ? entry.bleeding?.pbacScore ?? 5 : 0,
+            painNRS: entry?.painNRS ?? null,
+            impactNRS: entry?.impactNRS ?? null,
+            isOvulation,
+            isFertile,
+          });
+        });
+      }
+    }
+
+    // Find ovulation day for reference line
+    const ovulationDay =
+      timeCorrelationAlignment === "ovulation"
+        ? 0
+        : targetCycles[0]?.ovulationDay ?? null;
+
+    const hasSymptomData = symptomRows.some((row) => Array.from(row.values.values()).some((v) => v !== null));
+    const hasLocationData = locationGroups.some((group) =>
+      Array.from(group.values.values()).some((v) => v !== null)
+    );
+
+    return {
+      symptomRows,
+      locationGroups,
+      dayRange,
+      topGraphData,
+      ovulationDay,
+      cycleCount: targetCycles.length,
+      hasData: hasSymptomData || hasLocationData,
+    };
+  }, [alignedTimeCorrelationData, timeCorrelationAlignment, timeCorrelationView]);
 
   const backupPayload = useMemo<BackupPayload>(
     () => ({
@@ -10427,6 +10959,349 @@ export default function HomePage() {
                     <p className="font-semibold text-rose-900">Noch keine Periode dokumentiert.</p>
                     <p className="mt-1 text-rose-700">
                       Trage den Start deiner Periode ein, damit aktuelle und vergangene Zyklen miteinander verglichen werden können.
+                    </p>
+                  </div>
+                )}
+              </Section>
+
+              <Section
+                title="Zeit-Korrelation"
+                description="Symptome und Schmerzarten im Zyklusverlauf"
+                completionEnabled={false}
+              >
+                {timeCorrelationHeatStrips?.hasData ? (
+                  <div className="space-y-4">
+                    {/* Toggle controls */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-rose-600">
+                      <span>Ausrichtung</span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant={timeCorrelationAlignment === "period" ? "secondary" : "ghost"}
+                          onClick={() => setTimeCorrelationAlignment("period")}
+                        >
+                          Periodenstart
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={timeCorrelationAlignment === "ovulation" ? "secondary" : "ghost"}
+                          onClick={() => setTimeCorrelationAlignment("ovulation")}
+                        >
+                          Eisprung
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-rose-600">
+                      <span>Ansicht</span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant={timeCorrelationView === "last" ? "secondary" : "ghost"}
+                          onClick={() => setTimeCorrelationView("last")}
+                        >
+                          Letzter Zyklus
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={timeCorrelationView === "overlay" ? "secondary" : "ghost"}
+                          onClick={() => setTimeCorrelationView("overlay")}
+                        >
+                          Alle Zyklen ({timeCorrelationHeatStrips.cycleCount})
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Top graph - Cycle overview */}
+                    <div className="h-32 w-full overflow-hidden rounded-2xl border border-rose-100 bg-white/80 p-3 shadow-sm">
+                      <ResponsiveContainer>
+                        <ComposedChart
+                          data={timeCorrelationHeatStrips.topGraphData}
+                          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                        >
+                          <defs>
+                            <linearGradient id="timeCorr-bleeding-gradient" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#e8524a" stopOpacity={0.5} />
+                              <stop offset="100%" stopColor="#e8524a" stopOpacity={0.1} />
+                            </linearGradient>
+                            <linearGradient id="timeCorr-fertile-gradient" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#f472b6" stopOpacity={0.3} />
+                              <stop offset="100%" stopColor="#f472b6" stopOpacity={0.05} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" vertical={false} />
+                          <XAxis
+                            dataKey="alignedDay"
+                            stroke="#fb7185"
+                            tick={{ fontSize: 10 }}
+                            tickFormatter={(value: number) =>
+                              timeCorrelationAlignment === "ovulation"
+                                ? value === 0
+                                  ? "Ov"
+                                  : value > 0
+                                    ? `+${value}`
+                                    : String(value)
+                                : String(value)
+                            }
+                          />
+                          <YAxis
+                            domain={[0, "auto"]}
+                            stroke="#fb7185"
+                            tick={{ fontSize: 10 }}
+                            hide
+                          />
+                          {/* Fertile window area */}
+                          {timeCorrelationHeatStrips.ovulationDay !== null && (
+                            <ReferenceArea
+                              x1={timeCorrelationHeatStrips.ovulationDay - 5}
+                              x2={timeCorrelationHeatStrips.ovulationDay + 1}
+                              fill="url(#timeCorr-fertile-gradient)"
+                              fillOpacity={1}
+                            />
+                          )}
+                          {/* Bleeding area */}
+                          <Area
+                            type="stepAfter"
+                            dataKey="bleedingValue"
+                            fill="url(#timeCorr-bleeding-gradient)"
+                            stroke="#e8524a"
+                            strokeWidth={1}
+                            fillOpacity={1}
+                            isAnimationActive={false}
+                          />
+                          {/* Pain line */}
+                          <Line
+                            type="monotone"
+                            dataKey="painNRS"
+                            stroke="#a855f7"
+                            strokeWidth={2}
+                            dot={false}
+                            connectNulls
+                            isAnimationActive={false}
+                          />
+                          {/* Ovulation marker */}
+                          {timeCorrelationHeatStrips.ovulationDay !== null && (
+                            <ReferenceLine
+                              x={timeCorrelationHeatStrips.ovulationDay}
+                              stroke="#facc15"
+                              strokeDasharray="4 4"
+                              strokeWidth={2}
+                            />
+                          )}
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    {/* Heat strips */}
+                    <div className="overflow-x-auto rounded-2xl border border-rose-100 bg-white/80 p-4 shadow-sm">
+                      {/* Day header */}
+                      <div className="flex items-center gap-0.5 mb-2 sticky top-0 bg-white/80">
+                        <span className="w-24 shrink-0 text-[10px] font-medium text-rose-600">
+                          {timeCorrelationAlignment === "period" ? "Tag" : "Ov±"}
+                        </span>
+                        {timeCorrelationHeatStrips.dayRange.map((day) => (
+                          <span
+                            key={day}
+                            className={cn(
+                              "w-5 shrink-0 text-center text-[9px]",
+                              day === timeCorrelationHeatStrips.ovulationDay
+                                ? "font-bold text-amber-600"
+                                : "text-rose-400"
+                            )}
+                          >
+                            {timeCorrelationAlignment === "ovulation" && day === 0
+                              ? "Ov"
+                              : timeCorrelationAlignment === "ovulation" && day > 0
+                                ? `+${day}`
+                                : day}
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* Symptom rows */}
+                      <div className="text-[10px] text-rose-500 font-medium mb-1 mt-3">Symptome</div>
+                      {timeCorrelationHeatStrips.symptomRows.map((row) => (
+                        <div key={row.key} className="flex items-center gap-0.5 mb-0.5">
+                          <span
+                            className="w-24 shrink-0 text-[10px] text-rose-600 truncate"
+                            title={row.label}
+                          >
+                            {row.label}
+                          </span>
+                          {timeCorrelationHeatStrips.dayRange.map((day) => {
+                            const value = row.values.get(day) ?? null;
+                            const bgColor =
+                              value === null
+                                ? "#f5f5f5"
+                                : value <= 2
+                                  ? "#fce7f3"
+                                  : value <= 4
+                                    ? "#fbcfe8"
+                                    : value <= 6
+                                      ? "#f9a8d4"
+                                      : value <= 8
+                                        ? "#f472b6"
+                                        : "#ec4899";
+                            return (
+                              <div
+                                key={day}
+                                className="h-4 w-5 shrink-0 rounded-sm"
+                                style={{ backgroundColor: bgColor }}
+                                title={`${row.label} Tag ${day}: ${value !== null ? value.toFixed(1) : "–"}/10`}
+                              />
+                            );
+                          })}
+                        </div>
+                      ))}
+
+                      {/* Separator */}
+                      <div className="h-px bg-rose-100 my-2" />
+
+                      {/* Pain location groups */}
+                      <div className="text-[10px] text-purple-500 font-medium mb-1">Schmerzorte</div>
+                      {timeCorrelationHeatStrips.locationGroups.map((group) => {
+                        const isExpanded = expandedLocationGroups.has(group.id);
+                        const hasData = Array.from(group.values.values()).some((v) => v !== null);
+                        const hasChildren = group.children.length > 0;
+
+                        if (!hasData) return null;
+
+                        return (
+                          <div key={group.id}>
+                            {/* Group row */}
+                            <div
+                              className={cn(
+                                "flex items-center gap-0.5 mb-0.5",
+                                hasChildren && "cursor-pointer hover:bg-purple-50/50 -mx-1 px-1 rounded"
+                              )}
+                              onClick={() => {
+                                if (hasChildren) {
+                                  setExpandedLocationGroups((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(group.id)) {
+                                      next.delete(group.id);
+                                    } else {
+                                      next.add(group.id);
+                                    }
+                                    return next;
+                                  });
+                                }
+                              }}
+                            >
+                              <span
+                                className="w-24 shrink-0 text-[10px] text-purple-600 truncate flex items-center gap-1"
+                                title={group.label}
+                              >
+                                {hasChildren && (
+                                  <ChevronRight
+                                    className={cn(
+                                      "h-3 w-3 transition-transform shrink-0",
+                                      isExpanded && "rotate-90"
+                                    )}
+                                  />
+                                )}
+                                <span className={hasChildren ? "" : "ml-4"}>{group.label}</span>
+                              </span>
+                              {timeCorrelationHeatStrips.dayRange.map((day) => {
+                                const value = group.values.get(day) ?? null;
+                                const bgColor =
+                                  value === null
+                                    ? "#f5f5f5"
+                                    : value <= 2
+                                      ? "#f3e8ff"
+                                      : value <= 4
+                                        ? "#e9d5ff"
+                                        : value <= 6
+                                          ? "#d8b4fe"
+                                          : value <= 8
+                                            ? "#c084fc"
+                                            : "#a855f7";
+                                return (
+                                  <div
+                                    key={day}
+                                    className="h-4 w-5 shrink-0 rounded-sm"
+                                    style={{ backgroundColor: bgColor }}
+                                    title={`${group.label} Tag ${day}: ${value !== null ? value.toFixed(1) : "–"}/10`}
+                                  />
+                                );
+                              })}
+                            </div>
+
+                            {/* Expanded child rows */}
+                            {isExpanded &&
+                              group.children.map((child) => (
+                                <div
+                                  key={child.id}
+                                  className="flex items-center gap-0.5 mb-0.5 ml-3"
+                                >
+                                  <span
+                                    className="w-21 shrink-0 text-[9px] text-purple-400 truncate"
+                                    title={child.label}
+                                  >
+                                    {child.label}
+                                  </span>
+                                  {timeCorrelationHeatStrips.dayRange.map((day) => {
+                                    const value = child.values.get(day) ?? null;
+                                    const bgColor =
+                                      value === null
+                                        ? "#f5f5f5"
+                                        : value <= 2
+                                          ? "#f3e8ff"
+                                          : value <= 4
+                                            ? "#e9d5ff"
+                                            : value <= 6
+                                              ? "#d8b4fe"
+                                              : value <= 8
+                                                ? "#c084fc"
+                                                : "#a855f7";
+                                    return (
+                                      <div
+                                        key={day}
+                                        className="h-3 w-5 shrink-0 rounded-sm"
+                                        style={{ backgroundColor: bgColor }}
+                                        title={`${child.label} Tag ${day}: ${value !== null ? value.toFixed(1) : "–"}/10`}
+                                      />
+                                    );
+                                  })}
+                                </div>
+                              ))}
+                          </div>
+                        );
+                      })}
+
+                      {/* Legend */}
+                      <div className="mt-4 pt-3 border-t border-rose-100">
+                        <div className="flex flex-wrap items-center gap-4 text-[10px] text-rose-600">
+                          <span className="font-medium">Intensität:</span>
+                          <div className="flex items-center gap-1">
+                            <div className="h-3 w-3 rounded-sm bg-gray-100" />
+                            <span>Keine Daten</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <div className="h-3 w-3 rounded-sm" style={{ backgroundColor: "#fce7f3" }} />
+                            <span>Gering</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <div className="h-3 w-3 rounded-sm" style={{ backgroundColor: "#f9a8d4" }} />
+                            <span>Mittel</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <div className="h-3 w-3 rounded-sm" style={{ backgroundColor: "#ec4899" }} />
+                            <span>Stark</span>
+                          </div>
+                        </div>
+                        {timeCorrelationView === "overlay" && (
+                          <p className="mt-2 text-[10px] text-rose-500">
+                            Durchschnittswerte aus {timeCorrelationHeatStrips.cycleCount} Zyklen
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-4 text-sm text-rose-700 shadow-sm">
+                    <p className="font-semibold text-rose-900">Noch keine Korrelationsdaten vorhanden.</p>
+                    <p className="mt-1 text-rose-700">
+                      Dokumentiere mindestens einen vollständigen Zyklus mit Symptomen und Schmerzen, um Korrelationen zu sehen.
                     </p>
                   </div>
                 )}
