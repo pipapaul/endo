@@ -11031,6 +11031,11 @@ export default function HomePage() {
                           <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" vertical={false} />
                           <XAxis
                             dataKey="alignedDay"
+                            type="number"
+                            domain={[
+                              timeCorrelationHeatStrips.dayRange[0],
+                              timeCorrelationHeatStrips.dayRange[timeCorrelationHeatStrips.dayRange.length - 1],
+                            ]}
                             stroke="#fb7185"
                             tick={{ fontSize: 10 }}
                             tickFormatter={(value: number) =>
