@@ -4943,8 +4943,12 @@ export default function HomePage() {
           const normalizedDaily = parsed.dailyEntries
             .filter((item): item is DailyEntry & Record<string, unknown> => typeof item === "object" && item !== null)
             .map((item) => normalizeImportedDailyEntry(item));
-          if (normalizedDaily.some((entry) => validateDailyEntry(entry).length > 0)) {
-            throw new Error("invalid");
+          const dailyValidationIssues = normalizedDaily
+            .map((entry, idx) => ({ idx, date: entry.date, issues: validateDailyEntry(entry) }))
+            .filter((item) => item.issues.length > 0);
+          if (dailyValidationIssues.length > 0) {
+            console.error("Daily validation issues:", dailyValidationIssues);
+            throw new Error("invalid daily entries");
           }
           const normalizedMonthly = parsed.monthlyEntries
             .filter((item): item is MonthlyEntry & Record<string, unknown> => typeof item === "object" && item !== null)
@@ -4977,7 +4981,8 @@ export default function HomePage() {
           await replaceWeeklyReports(normalizedWeeklyReports);
           refreshWeeklyReports();
           setInfoMessage("Backup importiert.");
-        } catch {
+        } catch (err) {
+          console.error("Backup import failed:", err);
           setInfoMessage("Backup-Import fehlgeschlagen.");
         }
       })
