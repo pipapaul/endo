@@ -6338,18 +6338,17 @@ export default function HomePage() {
           break;
         }
       }
-      // If no confirmed, use cycleAnalysis prediction (includes Billings method when enabled)
+      // If no confirmed, calculate from cycle length or use prediction
       // Always provide a fallback to ensure proper alignment
       if (!ovulationDay) {
-        if (nextStart && cycleAnalysis) {
-          // Completed cycle: scale predicted ovulation proportionally to this cycle's length
-          const ratio = length / cycleAnalysis.averageCycleLength;
-          ovulationDay = Math.round(cycleAnalysis.predictedOvulationDay * ratio);
+        if (nextStart) {
+          // Completed cycle: use this cycle's actual length - 14 (luteal phase)
+          ovulationDay = Math.round(length - 14);
         } else if (cycleAnalysis) {
           // Ongoing cycle: use consolidated prediction (includes Billings if enabled)
           ovulationDay = cycleAnalysis.predictedOvulationDay;
         } else if (completedCycleLengths.length > 0) {
-          // Fallback without cycleAnalysis: use average - 14
+          // Fallback: use average of recent cycles - 14
           const recentLengths = completedCycleLengths.slice(-3);
           const avgLength = recentLengths.reduce((a, b) => a + b, 0) / recentLengths.length;
           ovulationDay = Math.round(avgLength - 14);
