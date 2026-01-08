@@ -11052,118 +11052,124 @@ export default function HomePage() {
                         </div>
                       )}
                       {/* Day header */}
-                      <div className="flex items-center mb-2 sticky top-0 bg-white/80 gap-px">
-                        <span className="w-16 shrink-0 text-[9px] font-medium text-rose-600">
+                      <div className="flex items-center mb-2 sticky top-0 bg-white/80">
+                        <span className="w-14 shrink-0 text-[9px] font-medium text-rose-600">
                           {timeCorrelationAlignment === "period" ? "Tag" : "Ov±"}
                         </span>
-                        {timeCorrelationHeatStrips.dayRange.map((day) => {
-                          const isOvulation = day === timeCorrelationHeatStrips.ovulationDay;
-                          const showLabel = timeCorrelationAlignment === "period"
-                            ? day === 1 || day % 5 === 0
-                            : day === 0 || day % 5 === 0;
-                          return (
-                            <span
-                              key={day}
-                              className={cn(
-                                "w-[5px] shrink-0 text-center text-[6px]",
-                                isOvulation
-                                  ? "font-bold text-amber-600"
+                        <div className="flex flex-1 min-w-0">
+                          {timeCorrelationHeatStrips.dayRange.map((day) => {
+                            const isOvulation = day === timeCorrelationHeatStrips.ovulationDay;
+                            const showLabel = timeCorrelationAlignment === "period"
+                              ? day === 1 || day % 5 === 0
+                              : day === 0 || day % 5 === 0;
+                            return (
+                              <span
+                                key={day}
+                                className={cn(
+                                  "flex-1 min-w-0 text-center text-[6px]",
+                                  isOvulation
+                                    ? "font-bold text-amber-600"
+                                    : showLabel
+                                      ? "text-rose-500"
+                                      : "text-rose-300"
+                                )}
+                              >
+                                {isOvulation
+                                  ? "•"
                                   : showLabel
-                                    ? "text-rose-500"
-                                    : "text-rose-300"
-                              )}
-                            >
-                              {isOvulation
-                                ? "•"
-                                : showLabel
-                                  ? (timeCorrelationAlignment === "ovulation" && day > 0 ? `+${day}` : day)
-                                  : ""}
-                            </span>
-                          );
-                        })}
+                                    ? (timeCorrelationAlignment === "ovulation" && day > 0 ? `+${day}` : day)
+                                    : ""}
+                              </span>
+                            );
+                          })}
+                        </div>
                       </div>
 
                       {/* Blutung section - main chart with distinctive styling */}
                       <div className="text-[9px] text-red-600 font-bold mb-1 mt-2">Blutung</div>
-                      <div className="flex items-center mb-0.5 gap-px">
-                        <span className="w-16 shrink-0 text-[9px] text-red-700 font-medium truncate">
+                      <div className="flex items-center mb-0.5">
+                        <span className="w-14 shrink-0 text-[9px] text-red-700 font-medium truncate">
                           Periode
                         </span>
-                        {timeCorrelationHeatStrips.dayRange.map((day) => {
-                          const dayData = timeCorrelationHeatStrips.topGraphData.find(
-                            (d) => d.alignedDay === day
-                          );
-                          const value = dayData?.bleedingValue ?? 0;
-                          const isOvulation = dayData?.isOvulation ?? false;
-                          const isFertile = dayData?.isFertile ?? false;
-                          // Color scale for bleeding (PBAC 0-100+)
-                          const bgColor =
-                            value === 0
-                              ? isFertile
-                                ? "#dcfce7" // pale green for fertile window
-                                : "#f5f5f5"
-                              : value <= 5
-                                ? "#fee2e2"
-                                : value <= 15
-                                  ? "#fecaca"
-                                  : value <= 30
-                                    ? "#fca5a5"
-                                    : value <= 50
-                                      ? "#f87171"
-                                      : "#ef4444";
-                          return (
-                            <div
-                              key={day}
-                              className={cn(
-                                "h-3 w-[5px] shrink-0 rounded-[1px] cursor-pointer",
-                                isOvulation && "ring-1 ring-amber-400"
-                              )}
-                              style={{ backgroundColor: bgColor }}
-                              onClick={() => setCorrelationTooltip({
-                                day,
-                                label: "Periode",
-                                value: value > 0 ? `PBAC ${value.toFixed(0)}` : "Keine Blutung",
-                                details: isOvulation ? "Eisprung" : isFertile ? "Fruchtbares Fenster" : undefined
-                              })}
-                            />
-                          );
-                        })}
+                        <div className="flex flex-1 min-w-0">
+                          {timeCorrelationHeatStrips.dayRange.map((day) => {
+                            const dayData = timeCorrelationHeatStrips.topGraphData.find(
+                              (d) => d.alignedDay === day
+                            );
+                            const value = dayData?.bleedingValue ?? 0;
+                            const isOvulation = dayData?.isOvulation ?? false;
+                            const isFertile = dayData?.isFertile ?? false;
+                            // Color scale for bleeding (PBAC 0-100+)
+                            const bgColor =
+                              value === 0
+                                ? isFertile
+                                  ? "#dcfce7" // pale green for fertile window
+                                  : "#f5f5f5"
+                                : value <= 5
+                                  ? "#fee2e2"
+                                  : value <= 15
+                                    ? "#fecaca"
+                                    : value <= 30
+                                      ? "#fca5a5"
+                                      : value <= 50
+                                        ? "#f87171"
+                                        : "#ef4444";
+                            return (
+                              <div
+                                key={day}
+                                className={cn(
+                                  "h-3 flex-1 min-w-0 rounded-[1px] cursor-pointer",
+                                  isOvulation && "ring-1 ring-amber-400"
+                                )}
+                                style={{ backgroundColor: bgColor }}
+                                onClick={() => setCorrelationTooltip({
+                                  day,
+                                  label: "Periode",
+                                  value: value > 0 ? `PBAC ${value.toFixed(0)}` : "Keine Blutung",
+                                  details: isOvulation ? "Eisprung" : isFertile ? "Fruchtbares Fenster" : undefined
+                                })}
+                              />
+                            );
+                          })}
+                        </div>
                       </div>
 
                       {/* Symptom rows */}
                       <div className="text-[9px] text-rose-500 font-medium mb-1 mt-3">Symptome</div>
                       {timeCorrelationHeatStrips.symptomRows.map((row) => (
-                        <div key={row.key} className="flex items-center mb-0.5 gap-px">
-                          <span className="w-16 shrink-0 text-[8px] text-rose-600 truncate">
+                        <div key={row.key} className="flex items-center mb-0.5">
+                          <span className="w-14 shrink-0 text-[8px] text-rose-600 truncate">
                             {row.label}
                           </span>
-                          {timeCorrelationHeatStrips.dayRange.map((day) => {
-                            const value = row.values.get(day) ?? null;
-                            const bgColor =
-                              value === null
-                                ? "#f5f5f5"
-                                : value <= 2
-                                  ? "#fce7f3"
-                                  : value <= 4
-                                    ? "#fbcfe8"
-                                    : value <= 6
-                                      ? "#f9a8d4"
-                                      : value <= 8
-                                        ? "#f472b6"
-                                        : "#ec4899";
-                            return (
-                              <div
-                                key={day}
-                                className="h-2.5 w-[5px] shrink-0 rounded-[1px] cursor-pointer"
-                                style={{ backgroundColor: bgColor }}
-                                onClick={() => setCorrelationTooltip({
-                                  day,
-                                  label: row.label,
-                                  value: value !== null ? `${value.toFixed(1)}/10` : "Keine Daten"
-                                })}
-                              />
-                            );
-                          })}
+                          <div className="flex flex-1 min-w-0">
+                            {timeCorrelationHeatStrips.dayRange.map((day) => {
+                              const value = row.values.get(day) ?? null;
+                              const bgColor =
+                                value === null
+                                  ? "#f5f5f5"
+                                  : value <= 2
+                                    ? "#fce7f3"
+                                    : value <= 4
+                                      ? "#fbcfe8"
+                                      : value <= 6
+                                        ? "#f9a8d4"
+                                        : value <= 8
+                                          ? "#f472b6"
+                                          : "#ec4899";
+                              return (
+                                <div
+                                  key={day}
+                                  className="h-2.5 flex-1 min-w-0 rounded-[1px] cursor-pointer"
+                                  style={{ backgroundColor: bgColor }}
+                                  onClick={() => setCorrelationTooltip({
+                                    day,
+                                    label: row.label,
+                                    value: value !== null ? `${value.toFixed(1)}/10` : "Keine Daten"
+                                  })}
+                                />
+                              );
+                            })}
+                          </div>
                         </div>
                       ))}
 
@@ -11173,37 +11179,39 @@ export default function HomePage() {
                       {/* Pain location groups */}
                       <div className="text-[9px] text-purple-500 font-medium mb-1">Schmerzorte</div>
                       {/* Gesamt (total) row - max pain across all locations */}
-                      <div className="flex items-center mb-0.5 gap-px">
-                        <span className="w-16 shrink-0 text-[8px] text-purple-700 font-bold truncate">
+                      <div className="flex items-center mb-0.5">
+                        <span className="w-14 shrink-0 text-[8px] text-purple-700 font-bold truncate">
                           Gesamt
                         </span>
-                        {timeCorrelationHeatStrips.dayRange.map((day) => {
-                          const value = timeCorrelationHeatStrips.gesamtPainValues.get(day) ?? null;
-                          const bgColor =
-                            value === null
-                              ? "#f5f5f5"
-                              : value <= 2
-                                ? "#f3e8ff"
-                                : value <= 4
-                                  ? "#e9d5ff"
-                                  : value <= 6
-                                    ? "#d8b4fe"
-                                    : value <= 8
-                                      ? "#c084fc"
-                                      : "#a855f7";
-                          return (
-                            <div
-                              key={day}
-                              className="h-2.5 w-[5px] shrink-0 rounded-[1px] cursor-pointer"
-                              style={{ backgroundColor: bgColor }}
-                              onClick={() => setCorrelationTooltip({
-                                day,
-                                label: "Gesamt",
-                                value: value !== null ? `${value.toFixed(1)}/10 (max)` : "Keine Daten"
-                              })}
-                            />
-                          );
-                        })}
+                        <div className="flex flex-1 min-w-0">
+                          {timeCorrelationHeatStrips.dayRange.map((day) => {
+                            const value = timeCorrelationHeatStrips.gesamtPainValues.get(day) ?? null;
+                            const bgColor =
+                              value === null
+                                ? "#f5f5f5"
+                                : value <= 2
+                                  ? "#f3e8ff"
+                                  : value <= 4
+                                    ? "#e9d5ff"
+                                    : value <= 6
+                                      ? "#d8b4fe"
+                                      : value <= 8
+                                        ? "#c084fc"
+                                        : "#a855f7";
+                            return (
+                              <div
+                                key={day}
+                                className="h-2.5 flex-1 min-w-0 rounded-[1px] cursor-pointer"
+                                style={{ backgroundColor: bgColor }}
+                                onClick={() => setCorrelationTooltip({
+                                  day,
+                                  label: "Gesamt",
+                                  value: value !== null ? `${value.toFixed(1)}/10 (max)` : "Keine Daten"
+                                })}
+                              />
+                            );
+                          })}
+                        </div>
                       </div>
                       {timeCorrelationHeatStrips.locationGroups.map((group) => {
                         const isExpanded = expandedLocationGroups.has(group.id);
@@ -11217,8 +11225,8 @@ export default function HomePage() {
                             {/* Group row */}
                             <div
                               className={cn(
-                                "flex items-center mb-0.5 gap-px",
-                                hasChildren && "cursor-pointer hover:bg-purple-50/50 -mx-1 px-1 rounded"
+                                "flex items-center mb-0.5",
+                                hasChildren && "cursor-pointer hover:bg-purple-50/50 rounded"
                               )}
                               onClick={() => {
                                 if (hasChildren) {
@@ -11235,7 +11243,7 @@ export default function HomePage() {
                               }}
                             >
                               <span
-                                className="w-16 shrink-0 text-[8px] text-purple-600 truncate flex items-center gap-0.5"
+                                className="w-14 shrink-0 text-[8px] text-purple-600 truncate flex items-center gap-0.5"
                                 title={group.label}
                               >
                                 {hasChildren && (
@@ -11248,36 +11256,38 @@ export default function HomePage() {
                                 )}
                                 <span className={hasChildren ? "" : "ml-3"}>{group.label}</span>
                               </span>
-                              {timeCorrelationHeatStrips.dayRange.map((day) => {
-                                const value = group.values.get(day) ?? null;
-                                const bgColor =
-                                  value === null
-                                    ? "#f5f5f5"
-                                    : value <= 2
-                                      ? "#f3e8ff"
-                                      : value <= 4
-                                        ? "#e9d5ff"
-                                        : value <= 6
-                                          ? "#d8b4fe"
-                                          : value <= 8
-                                            ? "#c084fc"
-                                            : "#a855f7";
-                                return (
-                                  <div
-                                    key={day}
-                                    className="h-2.5 w-[5px] shrink-0 rounded-[1px] cursor-pointer"
-                                    style={{ backgroundColor: bgColor }}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setCorrelationTooltip({
-                                        day,
-                                        label: group.label,
-                                        value: value !== null ? `${value.toFixed(1)}/10` : "Keine Daten"
-                                      });
-                                    }}
-                                  />
-                                );
-                              })}
+                              <div className="flex flex-1 min-w-0">
+                                {timeCorrelationHeatStrips.dayRange.map((day) => {
+                                  const value = group.values.get(day) ?? null;
+                                  const bgColor =
+                                    value === null
+                                      ? "#f5f5f5"
+                                      : value <= 2
+                                        ? "#f3e8ff"
+                                        : value <= 4
+                                          ? "#e9d5ff"
+                                          : value <= 6
+                                            ? "#d8b4fe"
+                                            : value <= 8
+                                              ? "#c084fc"
+                                              : "#a855f7";
+                                  return (
+                                    <div
+                                      key={day}
+                                      className="h-2.5 flex-1 min-w-0 rounded-[1px] cursor-pointer"
+                                      style={{ backgroundColor: bgColor }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setCorrelationTooltip({
+                                          day,
+                                          label: group.label,
+                                          value: value !== null ? `${value.toFixed(1)}/10` : "Keine Daten"
+                                        });
+                                      }}
+                                    />
+                                  );
+                                })}
+                              </div>
                             </div>
 
                             {/* Expanded child rows */}
@@ -11285,38 +11295,40 @@ export default function HomePage() {
                               group.children.map((child) => (
                                 <div
                                   key={child.id}
-                                  className="flex items-center mb-0.5 ml-2 gap-px"
+                                  className="flex items-center mb-0.5 ml-2"
                                 >
-                                  <span className="w-14 shrink-0 text-[7px] text-purple-400 truncate">
+                                  <span className="w-12 shrink-0 text-[7px] text-purple-400 truncate">
                                     {child.label}
                                   </span>
-                                  {timeCorrelationHeatStrips.dayRange.map((day) => {
-                                    const value = child.values.get(day) ?? null;
-                                    const bgColor =
-                                      value === null
-                                        ? "#f5f5f5"
-                                        : value <= 2
-                                          ? "#f3e8ff"
-                                          : value <= 4
-                                            ? "#e9d5ff"
-                                            : value <= 6
-                                              ? "#d8b4fe"
-                                              : value <= 8
-                                                ? "#c084fc"
-                                                : "#a855f7";
-                                    return (
-                                      <div
-                                        key={day}
-                                        className="h-2 w-[5px] shrink-0 rounded-[1px] cursor-pointer"
-                                        style={{ backgroundColor: bgColor }}
-                                        onClick={() => setCorrelationTooltip({
-                                          day,
-                                          label: child.label,
-                                          value: value !== null ? `${value.toFixed(1)}/10` : "Keine Daten"
-                                        })}
-                                      />
-                                    );
-                                  })}
+                                  <div className="flex flex-1 min-w-0">
+                                    {timeCorrelationHeatStrips.dayRange.map((day) => {
+                                      const value = child.values.get(day) ?? null;
+                                      const bgColor =
+                                        value === null
+                                          ? "#f5f5f5"
+                                          : value <= 2
+                                            ? "#f3e8ff"
+                                            : value <= 4
+                                              ? "#e9d5ff"
+                                              : value <= 6
+                                                ? "#d8b4fe"
+                                                : value <= 8
+                                                  ? "#c084fc"
+                                                  : "#a855f7";
+                                      return (
+                                        <div
+                                          key={day}
+                                          className="h-2 flex-1 min-w-0 rounded-[1px] cursor-pointer"
+                                          style={{ backgroundColor: bgColor }}
+                                          onClick={() => setCorrelationTooltip({
+                                            day,
+                                            label: child.label,
+                                            value: value !== null ? `${value.toFixed(1)}/10` : "Keine Daten"
+                                          })}
+                                        />
+                                      );
+                                    })}
+                                  </div>
                                 </div>
                               ))}
                           </div>
