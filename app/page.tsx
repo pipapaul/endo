@@ -296,6 +296,223 @@ const findPeakMucusDayInCycle = (
 };
 
 /**
+ * Result type for ovulation calculation
+ */
+type OvulationResult = {
+  ovulationDay: number;
+  confidence: number; // 0-100%
+  method: "mucus_pain" | "mucus" | "pain" | "personal_luteal" | "standard";
+  signals: {
+    peakMucusDay?: number;
+    ovulationPainDay?: number;
+    symptomPeakDay?: number;
+  };
+};
+
+/**
+ * Calculates personal average luteal phase length from completed cycles.
+ * Only uses cycles where ovulation was detected with confidence >= 70%.
+ * Returns null if insufficient data (< 2 qualifying cycles).
+ */
+const calculatePersonalLutealPhase = (
+  completedCycleResults: Array<{
+    cycleLength: number;
+    ovulationDay: number;
+    confidence: number;
+  }>
+): number | null => {
+  // Filter to high-confidence detections only
+  const qualifyingCycles = completedCycleResults.filter(
+    (c) => c.confidence >= 70
+  );
+
+  if (qualifyingCycles.length < 2) return null;
+
+  // Calculate luteal phase for each cycle
+  const lutealPhases = qualifyingCycles.map(
+    (c) => c.cycleLength - c.ovulationDay
+  );
+
+  // Return average, clamped to physiological range (10-16 days)
+  const avg = lutealPhases.reduce((a, b) => a + b, 0) / lutealPhases.length;
+  return Math.max(10, Math.min(16, Math.round(avg)));
+};
+
+/**
+ * Detects symptom patterns that may correlate with ovulation.
+ * Looks for fatigue/bloating spikes that often occur around ovulation.
+ * Returns the day with highest symptom score in the expected window.
+ */
+const detectSymptomPeak = (
+  cycleEntries: Array<{ entry: DailyEntry; cycleDay: number }>,
+  expectedOvulationWindow: { start: number; end: number }
+): { peakDay: number; score: number } | null => {
+  const windowEntries = cycleEntries.filter(
+    ({ cycleDay }) =>
+      cycleDay >= expectedOvulationWindow.start &&
+      cycleDay <= expectedOvulationWindow.end
+  );
+
+  if (windowEntries.length === 0) return null;
+
+  // Score each day based on ovulation-related symptoms
+  let maxScore = 0;
+  let peakDay: number | null = null;
+
+  for (const { entry, cycleDay } of windowEntries) {
+    let score = 0;
+
+    // Fatigue often increases around ovulation
+    if (entry.symptoms?.fatigue?.present) {
+      score += (entry.symptoms.fatigue.score ?? 5) / 10;
+    }
+
+    // Bloating is common around ovulation
+    if (entry.symptoms?.bloating?.present) {
+      score += (entry.symptoms.bloating.score ?? 5) / 10;
+    }
+
+    // Pelvic discomfort (non-menstrual) may indicate ovulation
+    if (entry.symptoms?.pelvicPainNonMenses?.present) {
+      score += (entry.symptoms.pelvicPainNonMenses.score ?? 5) / 10;
+    }
+
+    if (score > maxScore) {
+      maxScore = score;
+      peakDay = cycleDay;
+    }
+  }
+
+  // Only return if we found meaningful symptoms (score > 0.5)
+  return peakDay !== null && maxScore > 0.5 ? { peakDay, score: maxScore } : null;
+};
+
+/**
+ * Unified multi-signal ovulation calculator.
+ * Uses bleeding, mucus, pain, and symptoms to detect ovulation with confidence scoring.
+ * Both charts should use this function for consistent results.
+ */
+const calculateOvulationForCycle = (
+  cycleEntries: Array<{ entry: DailyEntry; cycleDay: number }>,
+  cycleStartDate: string,
+  cycleLength: number,
+  options: {
+    useBillingsMethod: boolean;
+    isCompletedCycle: boolean;
+    personalLutealPhase: number | null;
+  }
+): OvulationResult => {
+  const signals: OvulationResult["signals"] = {};
+
+  // 1. Peak mucus detection (Billings method)
+  if (options.useBillingsMethod) {
+    const entriesWithNullableCycleDay = cycleEntries.map((e) => ({
+      entry: e.entry,
+      cycleDay: e.cycleDay as number | null,
+    }));
+    const peakDay = findPeakMucusDayInCycle(
+      entriesWithNullableCycleDay,
+      cycleStartDate
+    );
+    if (peakDay !== null) signals.peakMucusDay = peakDay;
+  }
+
+  // 2. Ovulation pain detection (strongest pain day with intensity >= 3)
+  let strongestPainDay: number | null = null;
+  let strongestPainIntensity = 0;
+  for (const { entry, cycleDay } of cycleEntries) {
+    const intensity = entry.ovulationPain?.intensity ?? 0;
+    if (intensity > strongestPainIntensity && intensity >= 3) {
+      strongestPainIntensity = intensity;
+      strongestPainDay = cycleDay;
+    }
+  }
+  if (strongestPainDay !== null) {
+    signals.ovulationPainDay = strongestPainDay;
+  }
+
+  // 3. Symptom pattern detection (supporting evidence)
+  const lutealPhase = options.personalLutealPhase ?? 14;
+  const expectedOvulation = cycleLength - lutealPhase;
+  const symptomPeak = detectSymptomPeak(cycleEntries, {
+    start: Math.max(1, expectedOvulation - 5),
+    end: Math.min(cycleLength, expectedOvulation + 5),
+  });
+  if (symptomPeak) signals.symptomPeakDay = symptomPeak.peakDay;
+
+  // Priority-based calculation with cross-validation
+
+  // Priority 1: Peak mucus + Ovulation pain (cross-validated)
+  if (signals.peakMucusDay && signals.ovulationPainDay) {
+    const mucusOvulation = signals.peakMucusDay + 1;
+    // If pain is within ±2 days of mucus prediction, high confidence
+    if (Math.abs(mucusOvulation - signals.ovulationPainDay) <= 2) {
+      // Use mucus as primary, pain confirms
+      return {
+        ovulationDay: mucusOvulation,
+        confidence: 95,
+        method: "mucus_pain",
+        signals,
+      };
+    }
+    // If they disagree, trust mucus (more reliable)
+    return {
+      ovulationDay: mucusOvulation,
+      confidence: 80,
+      method: "mucus",
+      signals,
+    };
+  }
+
+  // Priority 2: Peak mucus only
+  if (signals.peakMucusDay) {
+    const mucusOvulation = signals.peakMucusDay + 1;
+    // Boost confidence if symptom peak agrees
+    const symptomsAgree =
+      signals.symptomPeakDay &&
+      Math.abs(mucusOvulation - signals.symptomPeakDay) <= 2;
+    return {
+      ovulationDay: mucusOvulation,
+      confidence: symptomsAgree ? 90 : 85,
+      method: "mucus",
+      signals,
+    };
+  }
+
+  // Priority 3: Ovulation pain only (high intensity)
+  if (signals.ovulationPainDay && strongestPainIntensity >= 5) {
+    // Boost confidence if symptom peak agrees
+    const symptomsAgree =
+      signals.symptomPeakDay &&
+      Math.abs(signals.ovulationPainDay - signals.symptomPeakDay) <= 2;
+    return {
+      ovulationDay: signals.ovulationPainDay,
+      confidence: symptomsAgree ? 75 : 70,
+      method: "pain",
+      signals,
+    };
+  }
+
+  // Priority 4: Personal luteal phase calculation
+  if (options.personalLutealPhase !== null) {
+    return {
+      ovulationDay: Math.round(cycleLength - options.personalLutealPhase),
+      confidence: 60,
+      method: "personal_luteal",
+      signals,
+    };
+  }
+
+  // Priority 5: Standard fallback (cycle length - 14)
+  return {
+    ovulationDay: Math.round(cycleLength - 14),
+    confidence: 50,
+    method: "standard",
+    signals,
+  };
+};
+
+/**
  * Calculate fertility window from ovulation day
  * Based on: sperm survival (5 days) + egg viability (1 day after ovulation)
  */
@@ -3662,6 +3879,7 @@ export default function HomePage() {
   }, [cycleStartDates]);
 
   // Consolidated cycle analysis - single source of truth for ovulation/fertility predictions
+  // Uses unified multi-signal calculation for consistency with Zeit-Korrelation
   const cycleAnalysis = useMemo(() => {
     const todayDate = parseIsoDate(today);
     if (cycleStartDates.length === 0 || completedCycleLengths.length === 0 || !todayDate) {
@@ -3677,32 +3895,70 @@ export default function HomePage() {
       return null;
     }
 
-    // Base prediction using standard luteal phase method
-    let predictedOvulationDay = averageCycleLength - 14;
-    let usingBillingsMethod = false;
+    // Build cycle results for all completed cycles using unified calculation
+    const completedCycleResults: Array<{
+      cycleLength: number;
+      ovulationDay: number;
+      confidence: number;
+      method: OvulationResult["method"];
+    }> = [];
 
-    // Enhanced prediction using Billings method when enabled
-    if (featureFlags.billingMethod) {
-      const peakDays: number[] = [];
-      for (let i = 0; i < cycleStartDates.length - 1; i += 1) {
-        const cycleStart = cycleStartDates[i];
-        const cycleEnd = cycleStartDates[i + 1];
-        const cycleEntries = annotatedDailyEntries.filter(({ entry }) =>
-          entry.date >= cycleStart && entry.date < cycleEnd
-        );
-        const peakDay = findPeakMucusDayInCycle(cycleEntries, cycleStart);
-        if (peakDay !== null && peakDay > 0 && peakDay < averageCycleLength) {
-          peakDays.push(peakDay);
+    for (let i = 0; i < cycleStartDates.length - 1; i += 1) {
+      const cycleStart = cycleStartDates[i];
+      const cycleEnd = cycleStartDates[i + 1];
+      const cycleLength = Math.round(
+        (new Date(cycleEnd).getTime() - new Date(cycleStart).getTime()) / MS_PER_DAY
+      );
+
+      const cycleEntries = annotatedDailyEntries
+        .filter(({ entry, cycleDay }) =>
+          entry.date >= cycleStart && entry.date < cycleEnd && cycleDay !== null
+        )
+        .map(({ entry, cycleDay }) => ({ entry, cycleDay: cycleDay! }));
+
+      const result = calculateOvulationForCycle(
+        cycleEntries,
+        cycleStart,
+        cycleLength,
+        {
+          useBillingsMethod: featureFlags.billingMethod ?? false,
+          isCompletedCycle: true,
+          personalLutealPhase: null, // First pass without personal data
         }
-      }
-      if (peakDays.length >= 2) {
-        const avgPeakDay = Math.round(
-          peakDays.reduce((sum, v) => sum + v, 0) / peakDays.length
-        );
-        const mucusBasedOvulation = avgPeakDay + 1;
-        predictedOvulationDay = Math.round((mucusBasedOvulation * 2 + predictedOvulationDay) / 3);
-        usingBillingsMethod = true;
-      }
+      );
+
+      completedCycleResults.push({
+        cycleLength,
+        ovulationDay: result.ovulationDay,
+        confidence: result.confidence,
+        method: result.method,
+      });
+    }
+
+    // Calculate personal luteal phase from high-confidence detections
+    const personalLutealPhase = calculatePersonalLutealPhase(completedCycleResults);
+
+    // Calculate predicted ovulation day using confidence-weighted average
+    // from recent cycles (last 3-6)
+    const recentResults = completedCycleResults.slice(-6);
+    let predictedOvulationDay: number;
+    let usingAdvancedMethod = false;
+
+    if (recentResults.length > 0) {
+      const totalWeight = recentResults.reduce((sum, r) => sum + r.confidence, 0);
+      const weightedSum = recentResults.reduce(
+        (sum, r) => sum + r.ovulationDay * r.confidence, 0
+      );
+      predictedOvulationDay = Math.round(weightedSum / totalWeight);
+
+      // Check if we're using advanced methods (mucus, pain, or personal luteal)
+      usingAdvancedMethod = recentResults.some(r =>
+        r.method === "mucus" || r.method === "mucus_pain" ||
+        r.method === "pain" || r.method === "personal_luteal"
+      );
+    } else {
+      // Fallback to standard calculation
+      predictedOvulationDay = averageCycleLength - 14;
     }
 
     const { fertileStart, fertileEnd } = calculateFertileWindow(predictedOvulationDay);
@@ -3731,8 +3987,9 @@ export default function HomePage() {
       isInFertileWindow: currentCycleDay !== null &&
         currentCycleDay >= fertileStart &&
         currentCycleDay <= fertileEnd,
-      usingBillingsMethod,
+      usingBillingsMethod: usingAdvancedMethod,
       billingMethodEnabled: featureFlags.billingMethod ?? false,
+      personalLutealPhase,
     };
   }, [annotatedDailyEntries, cycleStartDates, completedCycleLengths, featureFlags.billingMethod, today]);
 
@@ -6295,24 +6552,19 @@ export default function HomePage() {
     };
   }, [derivedDailyEntries]);
 
-  // Time correlation graph data
+  // Time correlation graph data - uses unified ovulation calculation
   const timeCorrelationData = useMemo(() => {
     if (cycleStartDates.length === 0) return null;
 
     const MAX_CYCLES = 12;
     const starts = [...cycleStartDates].sort().slice(-MAX_CYCLES);
 
-    // Build full cycle data
-    const cycles: Array<{
+    // Build full cycle data with entries
+    const rawCycles: Array<{
       startDate: string;
       endDate: string | null;
       length: number;
-      ovulationDay: number | null;
-      ovulationConfirmed: boolean;
-      entries: Array<{
-        cycleDay: number;
-        entry: DailyEntry;
-      }>;
+      entries: Array<{ cycleDay: number; entry: DailyEntry }>;
     }> = [];
 
     starts.forEach((startDate, idx) => {
@@ -6328,48 +6580,85 @@ export default function HomePage() {
         ? Math.round((new Date(nextStart).getTime() - new Date(startDate).getTime()) / MS_PER_DAY)
         : entries.length;
 
-      // Find confirmed ovulation (LH+)
-      let ovulationDay: number | null = null;
-      let ovulationConfirmed = false;
-      for (const { entry, cycleDay } of entries) {
-        if (entry.ovulation?.lhPositive && cycleDay) {
-          ovulationDay = cycleDay;
-          ovulationConfirmed = true;
-          break;
-        }
-      }
-      // If no confirmed, calculate from cycle length or use prediction
-      // Always provide a fallback to ensure proper alignment
-      if (!ovulationDay) {
-        if (nextStart) {
-          // Completed cycle: use this cycle's actual length - 14 (luteal phase)
-          ovulationDay = Math.round(length - 14);
-        } else if (cycleAnalysis) {
-          // Ongoing cycle: use consolidated prediction (includes Billings if enabled)
-          ovulationDay = cycleAnalysis.predictedOvulationDay;
-        } else if (completedCycleLengths.length > 0) {
-          // Fallback: use average of recent cycles - 14
-          const recentLengths = completedCycleLengths.slice(-3);
-          const avgLength = recentLengths.reduce((a, b) => a + b, 0) / recentLengths.length;
-          ovulationDay = Math.round(avgLength - 14);
-        } else {
-          // Ultimate fallback: assume standard 28-day cycle
-          ovulationDay = 14;
-        }
-      }
-
-      cycles.push({
+      rawCycles.push({
         startDate,
         endDate: nextStart,
         length,
-        ovulationDay,
-        ovulationConfirmed,
         entries: entries.map(({ entry, cycleDay }) => ({ cycleDay: cycleDay!, entry })),
       });
     });
 
+    // First pass: calculate ovulation for completed cycles without personal luteal phase
+    // This is needed to bootstrap the personal luteal phase calculation
+    const firstPassResults: Array<{
+      cycleLength: number;
+      ovulationDay: number;
+      confidence: number;
+    }> = [];
+
+    for (const cycle of rawCycles) {
+      if (cycle.endDate) {
+        // Completed cycle
+        const result = calculateOvulationForCycle(
+          cycle.entries,
+          cycle.startDate,
+          cycle.length,
+          {
+            useBillingsMethod: featureFlags.billingMethod ?? false,
+            isCompletedCycle: true,
+            personalLutealPhase: null,
+          }
+        );
+        firstPassResults.push({
+          cycleLength: cycle.length,
+          ovulationDay: result.ovulationDay,
+          confidence: result.confidence,
+        });
+      }
+    }
+
+    // Calculate personal luteal phase from high-confidence detections
+    const personalLutealPhase = calculatePersonalLutealPhase(firstPassResults);
+
+    // Second pass: build final cycle data with personal luteal phase
+    const cycles: Array<{
+      startDate: string;
+      endDate: string | null;
+      length: number;
+      ovulationDay: number | null;
+      ovulationConfidence: number;
+      ovulationMethod: OvulationResult["method"];
+      entries: Array<{ cycleDay: number; entry: DailyEntry }>;
+    }> = [];
+
+    for (const cycle of rawCycles) {
+      const isCompleted = cycle.endDate !== null;
+
+      // Use unified calculation for all cycles
+      const result = calculateOvulationForCycle(
+        cycle.entries,
+        cycle.startDate,
+        cycle.length,
+        {
+          useBillingsMethod: featureFlags.billingMethod ?? false,
+          isCompletedCycle: isCompleted,
+          personalLutealPhase: personalLutealPhase,
+        }
+      );
+
+      cycles.push({
+        startDate: cycle.startDate,
+        endDate: cycle.endDate,
+        length: cycle.length,
+        ovulationDay: result.ovulationDay,
+        ovulationConfidence: result.confidence,
+        ovulationMethod: result.method,
+        entries: cycle.entries,
+      });
+    }
+
     return cycles.length > 0 ? cycles : null;
-  }, [annotatedDailyEntries, cycleStartDates, completedCycleLengths, cycleAnalysis]);
+  }, [annotatedDailyEntries, cycleStartDates, featureFlags.billingMethod]);
 
   // Aligned time correlation data based on selected mode
   const alignedTimeCorrelationData = useMemo(() => {
