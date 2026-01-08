@@ -4028,21 +4028,112 @@ export default function HomePage() {
     const startDate = new Date(todayDate);
     startDate.setDate(startDate.getDate() - CYCLE_OVERVIEW_PAST_DAYS);
 
-    // Use consolidated cycleAnalysis for prediction data
-    const getPredictionForCycleDay = (cycleDay: number | null) => {
-      if (!cycleAnalysis || cycleDay === null) {
+    // Build per-cycle ovulation map for historical cycles (same calculation as Zeit-Korrelation)
+    // This ensures both charts show identical ovulation/fertility data
+    const cycleOvulationMap = new Map<string, { ovulationDay: number; cycleStart: string; cycleEnd: string | null }>();
+
+    // First pass: calculate ovulation for completed cycles to get personal luteal phase
+    const completedCycleResults: Array<{
+      cycleLength: number;
+      ovulationDay: number;
+      confidence: number;
+    }> = [];
+
+    for (let i = 0; i < cycleStartDates.length - 1; i += 1) {
+      const cycleStart = cycleStartDates[i];
+      const cycleEnd = cycleStartDates[i + 1];
+      const cycleLength = Math.round(
+        (new Date(cycleEnd).getTime() - new Date(cycleStart).getTime()) / MS_PER_DAY
+      );
+
+      const cycleEntries = annotatedDailyEntries
+        .filter(({ entry, cycleDay }) =>
+          entry.date >= cycleStart && entry.date < cycleEnd && cycleDay !== null
+        )
+        .map(({ entry, cycleDay }) => ({ entry, cycleDay: cycleDay! }));
+
+      const result = calculateOvulationForCycle(
+        cycleEntries,
+        cycleStart,
+        cycleLength,
+        {
+          useBillingsMethod: featureFlags.billingMethod ?? false,
+          isCompletedCycle: true,
+          personalLutealPhase: null,
+        }
+      );
+
+      completedCycleResults.push({
+        cycleLength,
+        ovulationDay: result.ovulationDay,
+        confidence: result.confidence,
+      });
+
+      // Store ovulation day for all dates in this cycle
+      cycleOvulationMap.set(cycleStart, {
+        ovulationDay: result.ovulationDay,
+        cycleStart,
+        cycleEnd,
+      });
+    }
+
+    // Calculate personal luteal phase from completed cycles
+    const personalLutealPhase = calculatePersonalLutealPhase(completedCycleResults);
+
+    // Handle current/ongoing cycle (last cycle start with no end)
+    if (cycleStartDates.length > 0) {
+      const lastCycleStart = cycleStartDates[cycleStartDates.length - 1];
+      const isOngoingCycle = !cycleStartDates.some((d, i) =>
+        i < cycleStartDates.length - 1 && cycleStartDates[i] === lastCycleStart
+      );
+
+      if (isOngoingCycle) {
+        // For ongoing cycle, use cycleAnalysis prediction (weighted average)
+        const ongoingOvulationDay = cycleAnalysis?.predictedOvulationDay ?? 14;
+        cycleOvulationMap.set(lastCycleStart, {
+          ovulationDay: ongoingOvulationDay,
+          cycleStart: lastCycleStart,
+          cycleEnd: null,
+        });
+      }
+    }
+
+    // Helper to get ovulation day for a specific date
+    const getOvulationForDate = (dateStr: string): number | null => {
+      // Find which cycle this date belongs to
+      for (let i = cycleStartDates.length - 1; i >= 0; i -= 1) {
+        const cycleStart = cycleStartDates[i];
+        const cycleEnd = cycleStartDates[i + 1] ?? null;
+
+        if (dateStr >= cycleStart && (cycleEnd === null || dateStr < cycleEnd)) {
+          const cycleData = cycleOvulationMap.get(cycleStart);
+          return cycleData?.ovulationDay ?? null;
+        }
+      }
+      return null;
+    };
+
+    // Build prediction function using per-cycle ovulation
+    const getPredictionForDate = (dateStr: string, cycleDay: number | null) => {
+      if (cycleDay === null) {
         return { isPredictedOvulationDay: false, isInPredictedFertileWindow: false };
       }
+
+      const ovulationDay = getOvulationForDate(dateStr);
+      if (ovulationDay === null) {
+        return { isPredictedOvulationDay: false, isInPredictedFertileWindow: false };
+      }
+
       return {
-        isPredictedOvulationDay: cycleDay === cycleAnalysis.predictedOvulationDay,
-        isInPredictedFertileWindow: isFertileDay(cycleDay, cycleAnalysis.predictedOvulationDay),
+        isPredictedOvulationDay: cycleDay === ovulationDay,
+        isInPredictedFertileWindow: isFertileDay(cycleDay, ovulationDay),
       };
     };
 
     const pointsByDate = new Map<string, CycleOverviewPoint>();
     annotatedDailyEntries.forEach(({ entry, cycleDay }) => {
       const { isPredictedOvulationDay, isInPredictedFertileWindow } =
-        getPredictionForCycleDay(cycleDay);
+        getPredictionForDate(entry.date, cycleDay);
       const mucusScore = featureFlags.billingMethod
         ? scoreCervixMucusFertility(entry.cervixMucus)
         : null;
@@ -4081,14 +4172,25 @@ export default function HomePage() {
         let isPredictedOvulationDay = false;
         let isInPredictedFertileWindow = false;
 
-        if (cycleAnalysis) {
-          const lastStartDate = parseIsoDate(cycleAnalysis.lastCycleStartDate);
-          if (lastStartDate) {
-            const diffMs = currentDate.getTime() - lastStartDate.getTime();
-            if (diffMs >= 0) {
-              const cycleDay = Math.floor(diffMs / MS_PER_DAY) + 1;
-              isPredictedOvulationDay = cycleDay === cycleAnalysis.predictedOvulationDay;
-              isInPredictedFertileWindow = isFertileDay(cycleDay, cycleAnalysis.predictedOvulationDay);
+        // Find which cycle this date belongs to and get its ovulation day
+        const ovulationDay = getOvulationForDate(iso);
+        if (ovulationDay !== null) {
+          // Calculate cycle day for this date
+          for (let i = cycleStartDates.length - 1; i >= 0; i -= 1) {
+            const cycleStart = cycleStartDates[i];
+            const cycleEnd = cycleStartDates[i + 1] ?? null;
+
+            if (iso >= cycleStart && (cycleEnd === null || iso < cycleEnd)) {
+              const cycleStartDate = parseIsoDate(cycleStart);
+              if (cycleStartDate) {
+                const diffMs = currentDate.getTime() - cycleStartDate.getTime();
+                if (diffMs >= 0) {
+                  const cycleDay = Math.floor(diffMs / MS_PER_DAY) + 1;
+                  isPredictedOvulationDay = cycleDay === ovulationDay;
+                  isInPredictedFertileWindow = isFertileDay(cycleDay, ovulationDay);
+                }
+              }
+              break;
             }
           }
         }
@@ -4117,7 +4219,7 @@ export default function HomePage() {
       points,
       todayIndex: CYCLE_OVERVIEW_PAST_DAYS, // Today is at this index (0-based)
     };
-  }, [annotatedDailyEntries, cycleAnalysis, featureFlags.billingMethod, painShortcutTimelineByDate, today]);
+  }, [annotatedDailyEntries, cycleAnalysis, cycleStartDates, featureFlags.billingMethod, painShortcutTimelineByDate, today]);
 
   const canGoToNextDay = useMemo(() => dailyDraft.date < today, [dailyDraft.date, today]);
 
