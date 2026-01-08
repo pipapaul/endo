@@ -3273,6 +3273,7 @@ export default function HomePage() {
   const [timeCorrelationAlignment, setTimeCorrelationAlignment] = useState<CycleAlignmentMode>("period");
   const [timeCorrelationView, setTimeCorrelationView] = useState<CycleViewMode>("last");
   const [expandedLocationGroups, setExpandedLocationGroups] = useState<Set<string>>(new Set());
+  const [bleedingCyclesExpanded, setBleedingCyclesExpanded] = useState(false);
   const [correlationTooltip, setCorrelationTooltip] = useState<{ day: number; label: string; value: string; details?: string } | null>(null);
   const [dailyActiveCategory, setDailyActiveCategory] = useState<DailyCategoryId>("overview");
   const [persisted, setPersisted] = useState<boolean | null>(null);
@@ -6879,6 +6880,47 @@ export default function HomePage() {
       gesamtPainValues.set(day, maxPain);
     });
 
+    // Build per-cycle bleeding data for expandable view
+    const cycleBleedingRows: Array<{
+      cycleIndex: number;
+      startDate: string;
+      values: Map<number, { bleedingValue: number; isOvulation: boolean; isFertile: boolean }>;
+    }> = [];
+
+    if (timeCorrelationView === "overlay") {
+      targetCycles.forEach((cycle, idx) => {
+        const cycleOvulationDay = cycle.ovulationDay
+          ? timeCorrelationAlignment === "ovulation"
+            ? 0
+            : cycle.ovulationDay
+          : null;
+
+        const values = new Map<number, { bleedingValue: number; isOvulation: boolean; isFertile: boolean }>();
+
+        cycle.alignedEntries.forEach(({ alignedDay, entry }) => {
+          const isOvulation = cycleOvulationDay !== null && alignedDay === cycleOvulationDay;
+          let isFertile = false;
+          if (cycleOvulationDay !== null) {
+            const fertileStart = cycleOvulationDay - 5;
+            const fertileEnd = cycleOvulationDay + 1;
+            isFertile = alignedDay >= fertileStart && alignedDay <= fertileEnd;
+          }
+
+          values.set(alignedDay, {
+            bleedingValue: hasBleedingForEntry(entry) ? entry.bleeding?.pbacScore ?? 5 : 0,
+            isOvulation,
+            isFertile,
+          });
+        });
+
+        cycleBleedingRows.push({
+          cycleIndex: idx + 1,
+          startDate: cycle.startDate,
+          values,
+        });
+      });
+    }
+
     return {
       symptomRows,
       locationGroups,
@@ -6888,6 +6930,7 @@ export default function HomePage() {
       cycleCount: targetCycles.length,
       hasData: hasSymptomData || hasLocationData,
       gesamtPainValues,
+      cycleBleedingRows,
     };
   }, [alignedTimeCorrelationData, timeCorrelationAlignment, timeCorrelationView]);
 
@@ -11087,9 +11130,27 @@ export default function HomePage() {
 
                       {/* Blutung section - main chart with distinctive styling */}
                       <div className="text-[9px] text-red-600 font-bold mb-1 mt-2">Blutung</div>
-                      <div className="flex items-center mb-0.5">
-                        <span className="w-14 shrink-0 text-[9px] text-red-700 font-medium truncate">
-                          Periode
+                      <div
+                        className={cn(
+                          "flex items-center mb-0.5",
+                          timeCorrelationView === "overlay" && "cursor-pointer hover:bg-red-50/50 rounded"
+                        )}
+                        onClick={() => {
+                          if (timeCorrelationView === "overlay") {
+                            setBleedingCyclesExpanded(!bleedingCyclesExpanded);
+                          }
+                        }}
+                      >
+                        <span className="w-14 shrink-0 text-[9px] text-red-700 font-medium truncate flex items-center gap-0.5">
+                          {timeCorrelationView === "overlay" && (
+                            <ChevronRight
+                              className={cn(
+                                "h-2.5 w-2.5 transition-transform shrink-0",
+                                bleedingCyclesExpanded && "rotate-90"
+                              )}
+                            />
+                          )}
+                          <span>{timeCorrelationView === "overlay" ? "Ø" : "Periode"}</span>
                         </span>
                         <div className="flex flex-1 min-w-0">
                           {timeCorrelationHeatStrips.dayRange.map((day) => {
@@ -11122,17 +11183,67 @@ export default function HomePage() {
                                   isOvulation && "ring-1 ring-amber-400"
                                 )}
                                 style={{ backgroundColor: bgColor }}
-                                onClick={() => setCorrelationTooltip({
-                                  day,
-                                  label: "Periode",
-                                  value: value > 0 ? `PBAC ${value.toFixed(0)}` : "Keine Blutung",
-                                  details: isOvulation ? "Eisprung" : isFertile ? "Fruchtbares Fenster" : undefined
-                                })}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCorrelationTooltip({
+                                    day,
+                                    label: timeCorrelationView === "overlay" ? "Periode (Ø)" : "Periode",
+                                    value: value > 0 ? `PBAC ${value.toFixed(0)}` : "Keine Blutung",
+                                    details: isOvulation ? "Eisprung" : isFertile ? "Fruchtbares Fenster" : undefined
+                                  });
+                                }}
                               />
                             );
                           })}
                         </div>
                       </div>
+                      {/* Expanded individual cycle rows */}
+                      {bleedingCyclesExpanded && timeCorrelationView === "overlay" &&
+                        timeCorrelationHeatStrips.cycleBleedingRows.map((cycle) => (
+                          <div key={cycle.cycleIndex} className="flex items-center mb-0.5 ml-2">
+                            <span className="w-12 shrink-0 text-[7px] text-red-400 truncate">
+                              {new Date(cycle.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}
+                            </span>
+                            <div className="flex flex-1 min-w-0">
+                              {timeCorrelationHeatStrips.dayRange.map((day) => {
+                                const dayData = cycle.values.get(day);
+                                const value = dayData?.bleedingValue ?? 0;
+                                const isOvulation = dayData?.isOvulation ?? false;
+                                const isFertile = dayData?.isFertile ?? false;
+                                const bgColor =
+                                  value === 0
+                                    ? isFertile
+                                      ? "#dcfce7"
+                                      : "#f5f5f5"
+                                    : value <= 5
+                                      ? "#fee2e2"
+                                      : value <= 15
+                                        ? "#fecaca"
+                                        : value <= 30
+                                          ? "#fca5a5"
+                                          : value <= 50
+                                            ? "#f87171"
+                                            : "#ef4444";
+                                return (
+                                  <div
+                                    key={day}
+                                    className={cn(
+                                      "h-2 flex-1 min-w-0 rounded-[1px] cursor-pointer",
+                                      isOvulation && "ring-1 ring-amber-400"
+                                    )}
+                                    style={{ backgroundColor: bgColor }}
+                                    onClick={() => setCorrelationTooltip({
+                                      day,
+                                      label: `Zyklus ${new Date(cycle.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}`,
+                                      value: value > 0 ? `PBAC ${value.toFixed(0)}` : "Keine Blutung",
+                                      details: isOvulation ? "Eisprung" : isFertile ? "Fruchtbares Fenster" : undefined
+                                    })}
+                                  />
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
 
                       {/* Symptom rows */}
                       <div className="text-[9px] text-rose-500 font-medium mb-1 mt-3">Symptome</div>
