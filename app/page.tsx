@@ -3274,6 +3274,8 @@ export default function HomePage() {
   const [timeCorrelationView, setTimeCorrelationView] = useState<CycleViewMode>("last");
   const [expandedLocationGroups, setExpandedLocationGroups] = useState<Set<string>>(new Set());
   const [bleedingCyclesExpanded, setBleedingCyclesExpanded] = useState(false);
+  const [symptomCyclesExpanded, setSymptomCyclesExpanded] = useState<Record<string, boolean>>({});
+  const [gesamtCyclesExpanded, setGesamtCyclesExpanded] = useState(false);
   const [correlationTooltip, setCorrelationTooltip] = useState<{ day: number; label: string; value: string; details?: string } | null>(null);
   const [dailyActiveCategory, setDailyActiveCategory] = useState<DailyCategoryId>("overview");
   const [persisted, setPersisted] = useState<boolean | null>(null);
@@ -6929,6 +6931,85 @@ export default function HomePage() {
       });
     }
 
+    // Build per-cycle symptom data for expandable view
+    const cycleSymptomRows: Array<{
+      cycleIndex: number;
+      startDate: string;
+      symptomValues: Map<SymptomKey, Map<number, number | null>>;
+    }> = [];
+
+    if (timeCorrelationView === "overlay") {
+      targetCycles.forEach((cycle, idx) => {
+        const symptomValues = new Map<SymptomKey, Map<number, number | null>>();
+
+        SYMPTOM_KEYS.forEach((key) => {
+          const dayValues = new Map<number, number | null>();
+          dayRange.forEach((day) => dayValues.set(day, null));
+          symptomValues.set(key, dayValues);
+        });
+
+        cycle.alignedEntries.forEach(({ alignedDay, entry }) => {
+          SYMPTOM_KEYS.forEach((key) => {
+            const symptom = entry.symptoms?.[key];
+            if (symptom?.present) {
+              const value = typeof symptom.score === "number" ? symptom.score : 5;
+              symptomValues.get(key)!.set(alignedDay, value);
+            }
+          });
+        });
+
+        cycleSymptomRows.push({
+          cycleIndex: idx + 1,
+          startDate: cycle.startDate,
+          symptomValues,
+        });
+      });
+    }
+
+    // Build per-cycle Gesamt pain data for expandable view
+    const cycleGesamtRows: Array<{
+      cycleIndex: number;
+      startDate: string;
+      values: Map<number, number | null>;
+    }> = [];
+
+    if (timeCorrelationView === "overlay") {
+      targetCycles.forEach((cycle, idx) => {
+        const values = new Map<number, number | null>();
+        dayRange.forEach((day) => values.set(day, null));
+
+        cycle.alignedEntries.forEach(({ alignedDay, entry }) => {
+          // Collect max pain across all locations for this entry
+          let maxPain: number | null = null;
+
+          entry.painRegions?.forEach((region) => {
+            const intensity = typeof region.nrs === "number" ? region.nrs : entry.painNRS ?? 5;
+            maxPain = maxPain === null ? intensity : Math.max(maxPain, intensity);
+          });
+
+          entry.painMapRegionIds?.forEach(() => {
+            const intensity = entry.painNRS ?? 5;
+            maxPain = maxPain === null ? intensity : Math.max(maxPain, intensity);
+          });
+
+          entry.quickPainEvents?.forEach((event) => {
+            const intensity = event.intensity ?? entry.painNRS ?? 5;
+            maxPain = maxPain === null ? intensity : Math.max(maxPain, intensity);
+          });
+
+          if (maxPain !== null) {
+            values.set(alignedDay, maxPain);
+          }
+        });
+
+        cycleGesamtRows.push({
+          cycleIndex: idx + 1,
+          startDate: cycle.startDate,
+          values,
+        });
+      });
+    }
+
     return {
       symptomRows,
       locationGroups,
@@ -6939,6 +7020,8 @@ export default function HomePage() {
       hasData: hasSymptomData || hasLocationData,
       gesamtPainValues,
       cycleBleedingRows,
+      cycleSymptomRows,
+      cycleGesamtRows,
     };
   }, [alignedTimeCorrelationData, timeCorrelationAlignment, timeCorrelationView]);
 
@@ -11256,39 +11339,101 @@ export default function HomePage() {
                       {/* Symptom rows */}
                       <div className="text-[9px] text-rose-500 font-medium mb-1 mt-3">Symptome</div>
                       {timeCorrelationHeatStrips.symptomRows.map((row) => (
-                        <div key={row.key} className="flex items-center mb-0.5">
-                          <span className="w-14 shrink-0 text-[8px] text-rose-600 truncate">
-                            {row.label}
-                          </span>
-                          <div className="flex flex-1 min-w-0">
-                            {timeCorrelationHeatStrips.dayRange.map((day) => {
-                              const value = row.values.get(day) ?? null;
-                              const bgColor =
-                                value === null
-                                  ? "#f5f5f5"
-                                  : value <= 2
-                                    ? "#fce7f3"
-                                    : value <= 4
-                                      ? "#fbcfe8"
-                                      : value <= 6
-                                        ? "#f9a8d4"
-                                        : value <= 8
-                                          ? "#f472b6"
-                                          : "#ec4899";
-                              return (
-                                <div
-                                  key={day}
-                                  className="h-2.5 flex-1 min-w-0 rounded-[1px] cursor-pointer"
-                                  style={{ backgroundColor: bgColor }}
-                                  onClick={() => setCorrelationTooltip({
-                                    day,
-                                    label: row.label,
-                                    value: value !== null ? `${value.toFixed(1)}/10` : "Keine Daten"
-                                  })}
+                        <div key={row.key}>
+                          {/* Aggregate row */}
+                          <div
+                            className={cn(
+                              "flex items-center mb-0.5",
+                              timeCorrelationView === "overlay" && "cursor-pointer hover:bg-rose-50/50 rounded"
+                            )}
+                            onClick={() => {
+                              if (timeCorrelationView === "overlay") {
+                                setSymptomCyclesExpanded(prev => ({ ...prev, [row.key]: !prev[row.key] }));
+                              }
+                            }}
+                          >
+                            <span className="w-14 shrink-0 text-[8px] text-rose-600 truncate flex items-center gap-0.5">
+                              {timeCorrelationView === "overlay" && (
+                                <ChevronRight
+                                  className={cn(
+                                    "h-2.5 w-2.5 transition-transform shrink-0",
+                                    symptomCyclesExpanded[row.key] && "rotate-90"
+                                  )}
                                 />
-                              );
-                            })}
+                              )}
+                              <span>{row.label}</span>
+                            </span>
+                            <div className="flex flex-1 min-w-0">
+                              {timeCorrelationHeatStrips.dayRange.map((day) => {
+                                const value = row.values.get(day) ?? null;
+                                const bgColor =
+                                  value === null
+                                    ? "#f5f5f5"
+                                    : value <= 2
+                                      ? "#fce7f3"
+                                      : value <= 4
+                                        ? "#fbcfe8"
+                                        : value <= 6
+                                          ? "#f9a8d4"
+                                          : value <= 8
+                                            ? "#f472b6"
+                                            : "#ec4899";
+                                return (
+                                  <div
+                                    key={day}
+                                    className="h-2.5 flex-1 min-w-0 rounded-[1px] cursor-pointer"
+                                    style={{ backgroundColor: bgColor }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setCorrelationTooltip({
+                                        day,
+                                        label: timeCorrelationView === "overlay" ? `${row.label} (Ø)` : row.label,
+                                        value: value !== null ? `${value.toFixed(1)}/10` : "Keine Daten"
+                                      });
+                                    }}
+                                  />
+                                );
+                              })}
+                            </div>
                           </div>
+                          {/* Expanded individual cycle rows */}
+                          {symptomCyclesExpanded[row.key] && timeCorrelationView === "overlay" &&
+                            timeCorrelationHeatStrips.cycleSymptomRows.map((cycle) => (
+                              <div key={cycle.cycleIndex} className="flex items-center mb-0.5 ml-2">
+                                <span className="w-12 shrink-0 text-[7px] text-rose-400 truncate">
+                                  {new Date(cycle.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}
+                                </span>
+                                <div className="flex flex-1 min-w-0">
+                                  {timeCorrelationHeatStrips.dayRange.map((day) => {
+                                    const value = cycle.symptomValues.get(row.key as SymptomKey)?.get(day) ?? null;
+                                    const bgColor =
+                                      value === null
+                                        ? "#f5f5f5"
+                                        : value <= 2
+                                          ? "#fce7f3"
+                                          : value <= 4
+                                            ? "#fbcfe8"
+                                            : value <= 6
+                                              ? "#f9a8d4"
+                                              : value <= 8
+                                                ? "#f472b6"
+                                                : "#ec4899";
+                                    return (
+                                      <div
+                                        key={day}
+                                        className="h-2 flex-1 min-w-0 rounded-[1px] cursor-pointer"
+                                        style={{ backgroundColor: bgColor }}
+                                        onClick={() => setCorrelationTooltip({
+                                          day,
+                                          label: `${row.label} - ${new Date(cycle.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}`,
+                                          value: value !== null ? `${value.toFixed(1)}/10` : "Keine Daten"
+                                        })}
+                                      />
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
                         </div>
                       ))}
 
@@ -11298,39 +11443,100 @@ export default function HomePage() {
                       {/* Pain location groups */}
                       <div className="text-[9px] text-purple-500 font-medium mb-1">Schmerzorte</div>
                       {/* Gesamt (total) row - max pain across all locations */}
-                      <div className="flex items-center mb-0.5">
-                        <span className="w-14 shrink-0 text-[8px] text-purple-700 font-bold truncate">
-                          Gesamt
-                        </span>
-                        <div className="flex flex-1 min-w-0">
-                          {timeCorrelationHeatStrips.dayRange.map((day) => {
-                            const value = timeCorrelationHeatStrips.gesamtPainValues.get(day) ?? null;
-                            const bgColor =
-                              value === null
-                                ? "#f5f5f5"
-                                : value <= 2
-                                  ? "#f3e8ff"
-                                  : value <= 4
-                                    ? "#e9d5ff"
-                                    : value <= 6
-                                      ? "#d8b4fe"
-                                      : value <= 8
-                                        ? "#c084fc"
-                                        : "#a855f7";
-                            return (
-                              <div
-                                key={day}
-                                className="h-2.5 flex-1 min-w-0 rounded-[1px] cursor-pointer"
-                                style={{ backgroundColor: bgColor }}
-                                onClick={() => setCorrelationTooltip({
-                                  day,
-                                  label: "Gesamt",
-                                  value: value !== null ? `${value.toFixed(1)}/10 (max)` : "Keine Daten"
-                                })}
+                      <div>
+                        <div
+                          className={cn(
+                            "flex items-center mb-0.5",
+                            timeCorrelationView === "overlay" && "cursor-pointer hover:bg-purple-50/50 rounded"
+                          )}
+                          onClick={() => {
+                            if (timeCorrelationView === "overlay") {
+                              setGesamtCyclesExpanded(!gesamtCyclesExpanded);
+                            }
+                          }}
+                        >
+                          <span className="w-14 shrink-0 text-[8px] text-purple-700 font-bold truncate flex items-center gap-0.5">
+                            {timeCorrelationView === "overlay" && (
+                              <ChevronRight
+                                className={cn(
+                                  "h-2.5 w-2.5 transition-transform shrink-0",
+                                  gesamtCyclesExpanded && "rotate-90"
+                                )}
                               />
-                            );
-                          })}
+                            )}
+                            <span>Gesamt</span>
+                          </span>
+                          <div className="flex flex-1 min-w-0">
+                            {timeCorrelationHeatStrips.dayRange.map((day) => {
+                              const value = timeCorrelationHeatStrips.gesamtPainValues.get(day) ?? null;
+                              const bgColor =
+                                value === null
+                                  ? "#f5f5f5"
+                                  : value <= 2
+                                    ? "#f3e8ff"
+                                    : value <= 4
+                                      ? "#e9d5ff"
+                                      : value <= 6
+                                        ? "#d8b4fe"
+                                        : value <= 8
+                                          ? "#c084fc"
+                                          : "#a855f7";
+                              return (
+                                <div
+                                  key={day}
+                                  className="h-2.5 flex-1 min-w-0 rounded-[1px] cursor-pointer"
+                                  style={{ backgroundColor: bgColor }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCorrelationTooltip({
+                                      day,
+                                      label: timeCorrelationView === "overlay" ? "Gesamt (Ø)" : "Gesamt",
+                                      value: value !== null ? `${value.toFixed(1)}/10 (max)` : "Keine Daten"
+                                    });
+                                  }}
+                                />
+                              );
+                            })}
+                          </div>
                         </div>
+                        {/* Expanded individual cycle rows */}
+                        {gesamtCyclesExpanded && timeCorrelationView === "overlay" &&
+                          timeCorrelationHeatStrips.cycleGesamtRows.map((cycle) => (
+                            <div key={cycle.cycleIndex} className="flex items-center mb-0.5 ml-2">
+                              <span className="w-12 shrink-0 text-[7px] text-purple-400 truncate">
+                                {new Date(cycle.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}
+                              </span>
+                              <div className="flex flex-1 min-w-0">
+                                {timeCorrelationHeatStrips.dayRange.map((day) => {
+                                  const value = cycle.values.get(day) ?? null;
+                                  const bgColor =
+                                    value === null
+                                      ? "#f5f5f5"
+                                      : value <= 2
+                                        ? "#f3e8ff"
+                                        : value <= 4
+                                          ? "#e9d5ff"
+                                          : value <= 6
+                                            ? "#d8b4fe"
+                                            : value <= 8
+                                              ? "#c084fc"
+                                              : "#a855f7";
+                                  return (
+                                    <div
+                                      key={day}
+                                      className="h-2 flex-1 min-w-0 rounded-[1px] cursor-pointer"
+                                      style={{ backgroundColor: bgColor }}
+                                      onClick={() => setCorrelationTooltip({
+                                        day,
+                                        label: `Gesamt - ${new Date(cycle.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}`,
+                                        value: value !== null ? `${value.toFixed(1)}/10 (max)` : "Keine Daten"
+                                      })}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
                       </div>
                       {timeCorrelationHeatStrips.locationGroups.map((group) => {
                         const isExpanded = expandedLocationGroups.has(group.id);
