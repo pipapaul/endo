@@ -6378,6 +6378,7 @@ export default function HomePage() {
       endDate: string | null;
       length: number;
       ovulationDay: number | null;
+      ovulationConfirmed: boolean;
       entries: Array<{
         cycleDay: number;
         entry: DailyEntry;
@@ -6399,14 +6400,17 @@ export default function HomePage() {
 
       // Find confirmed ovulation (LH+)
       let ovulationDay: number | null = null;
+      let ovulationConfirmed = false;
       for (const { entry, cycleDay } of entries) {
         if (entry.ovulation?.lhPositive && cycleDay) {
           ovulationDay = cycleDay;
+          ovulationConfirmed = true;
           break;
         }
       }
       // If no confirmed, calculate from THIS cycle's length (for completed cycles)
       // or use average cycle length (for ongoing cycle)
+      // Always provide a fallback to ensure proper alignment
       if (!ovulationDay) {
         if (nextStart) {
           // Completed cycle: use this cycle's actual length
@@ -6416,6 +6420,9 @@ export default function HomePage() {
           const recentLengths = completedCycleLengths.slice(-3);
           const avgLength = recentLengths.reduce((a, b) => a + b, 0) / recentLengths.length;
           ovulationDay = Math.round(avgLength - 14);
+        } else {
+          // Fallback: assume standard 28-day cycle
+          ovulationDay = 14;
         }
       }
 
@@ -6424,6 +6431,7 @@ export default function HomePage() {
         endDate: nextStart,
         length,
         ovulationDay,
+        ovulationConfirmed,
         entries: entries.map(({ entry, cycleDay }) => ({ cycleDay: cycleDay!, entry })),
       });
     });
