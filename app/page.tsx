@@ -11085,7 +11085,7 @@ export default function HomePage() {
 
                       {/* Blutung section - main chart with distinctive styling */}
                       <div className="text-[9px] text-red-600 font-bold mb-1 mt-2">Blutung</div>
-                      <div className="flex items-center mb-0.5 -mx-1 px-1 gap-px py-0.5 rounded-lg bg-red-50/50 border border-red-100">
+                      <div className="flex items-center mb-0.5 gap-px">
                         <span className="w-16 shrink-0 text-[9px] text-red-700 font-medium truncate">
                           Periode
                         </span>
@@ -11173,7 +11173,7 @@ export default function HomePage() {
                       {/* Pain location groups */}
                       <div className="text-[9px] text-purple-500 font-medium mb-1">Schmerzorte</div>
                       {/* Gesamt (total) row - max pain across all locations */}
-                      <div className="flex items-center mb-0.5 -mx-1 px-1 py-0.5 gap-px rounded bg-purple-50/50 border border-purple-100">
+                      <div className="flex items-center mb-0.5 gap-px">
                         <span className="w-16 shrink-0 text-[8px] text-purple-700 font-bold truncate">
                           Gesamt
                         </span>
