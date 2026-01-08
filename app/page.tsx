@@ -295,6 +295,24 @@ const findPeakMucusDayInCycle = (
   return lastPeakDay;
 };
 
+/**
+ * Calculate fertility window from ovulation day
+ * Based on: sperm survival (5 days) + egg viability (1 day after ovulation)
+ */
+const calculateFertileWindow = (ovulationDay: number) => ({
+  fertileStart: Math.max(1, ovulationDay - 5),
+  fertileEnd: ovulationDay + 1,
+});
+
+/**
+ * Check if a cycle day falls within the fertile window
+ */
+const isFertileDay = (cycleDay: number, ovulationDay: number | null): boolean => {
+  if (ovulationDay === null) return false;
+  const { fertileStart, fertileEnd } = calculateFertileWindow(ovulationDay);
+  return cycleDay >= fertileStart && cycleDay <= fertileEnd;
+};
+
 const computeCycleDayForEntry = (
   state: CycleComputationState,
   entry: DailyEntry
@@ -3619,6 +3637,105 @@ export default function HomePage() {
     });
   }, [dailyEntriesForGraphs]);
 
+  // Cycle start dates - extracted early for use in prediction calculations
+  const cycleStartDates = useMemo(() => {
+    return annotatedDailyEntries
+      .filter(({ cycleDay, entry }) => cycleDay === 1 && entry.date <= today)
+      .map(({ entry }) => entry.date);
+  }, [annotatedDailyEntries, today]);
+
+  // Completed cycle lengths - for prediction calculations
+  const completedCycleLengths = useMemo(() => {
+    const lengths: number[] = [];
+    for (let index = 0; index < cycleStartDates.length - 1; index += 1) {
+      const current = parseIsoDate(cycleStartDates[index]);
+      const next = parseIsoDate(cycleStartDates[index + 1]);
+      if (!current || !next) {
+        continue;
+      }
+      const diffDays = Math.round((next.getTime() - current.getTime()) / MS_PER_DAY);
+      if (diffDays > 0) {
+        lengths.push(diffDays);
+      }
+    }
+    return lengths;
+  }, [cycleStartDates]);
+
+  // Consolidated cycle analysis - single source of truth for ovulation/fertility predictions
+  const cycleAnalysis = useMemo(() => {
+    const todayDate = parseIsoDate(today);
+    if (cycleStartDates.length === 0 || completedCycleLengths.length === 0 || !todayDate) {
+      return null;
+    }
+
+    const recentLengths = completedCycleLengths.slice(-3);
+    const averageCycleLength = Math.round(
+      recentLengths.reduce((sum, v) => sum + v, 0) / recentLengths.length
+    );
+
+    if (!Number.isFinite(averageCycleLength) || averageCycleLength <= 14) {
+      return null;
+    }
+
+    // Base prediction using standard luteal phase method
+    let predictedOvulationDay = averageCycleLength - 14;
+    let usingBillingsMethod = false;
+
+    // Enhanced prediction using Billings method when enabled
+    if (featureFlags.billingMethod) {
+      const peakDays: number[] = [];
+      for (let i = 0; i < cycleStartDates.length - 1; i += 1) {
+        const cycleStart = cycleStartDates[i];
+        const cycleEnd = cycleStartDates[i + 1];
+        const cycleEntries = annotatedDailyEntries.filter(({ entry }) =>
+          entry.date >= cycleStart && entry.date < cycleEnd
+        );
+        const peakDay = findPeakMucusDayInCycle(cycleEntries, cycleStart);
+        if (peakDay !== null && peakDay > 0 && peakDay < averageCycleLength) {
+          peakDays.push(peakDay);
+        }
+      }
+      if (peakDays.length >= 2) {
+        const avgPeakDay = Math.round(
+          peakDays.reduce((sum, v) => sum + v, 0) / peakDays.length
+        );
+        const mucusBasedOvulation = avgPeakDay + 1;
+        predictedOvulationDay = Math.round((mucusBasedOvulation * 2 + predictedOvulationDay) / 3);
+        usingBillingsMethod = true;
+      }
+    }
+
+    const { fertileStart, fertileEnd } = calculateFertileWindow(predictedOvulationDay);
+    const lastCycleStartDate = cycleStartDates[cycleStartDates.length - 1];
+
+    // Current cycle position
+    const lastStart = parseIsoDate(lastCycleStartDate);
+    const currentCycleDay = lastStart
+      ? Math.floor((todayDate.getTime() - lastStart.getTime()) / MS_PER_DAY) + 1
+      : null;
+
+    const daysUntilOvulation = currentCycleDay !== null
+      ? predictedOvulationDay - currentCycleDay
+      : null;
+
+    return {
+      predictedOvulationDay,
+      fertileStart,
+      fertileEnd,
+      lastCycleStartDate,
+      averageCycleLength,
+      cycleCount: recentLengths.length,
+      currentCycleDay,
+      daysUntilOvulation,
+      isOvulationDay: currentCycleDay === predictedOvulationDay,
+      isInFertileWindow: currentCycleDay !== null &&
+        currentCycleDay >= fertileStart &&
+        currentCycleDay <= fertileEnd,
+      usingBillingsMethod,
+      billingMethodEnabled: featureFlags.billingMethod ?? false,
+    };
+  }, [annotatedDailyEntries, cycleStartDates, completedCycleLengths, featureFlags.billingMethod, today]);
+
   const selectedCycleDay = useMemo(() => {
     if (!dailyDraft.date) return null;
     const entries = derivedDailyEntries.slice();
@@ -3654,93 +3771,14 @@ export default function HomePage() {
     const startDate = new Date(todayDate);
     startDate.setDate(startDate.getDate() - CYCLE_OVERVIEW_PAST_DAYS);
 
-    // Calculate prediction data for chart markers
-    // Uses cycle length method, enhanced with Billings method (cervix mucus) when enabled
-    const prediction = (() => {
-      // Calculate cycle start dates inline
-      const startDates = annotatedDailyEntries
-        .filter(({ cycleDay, entry }) => cycleDay === 1 && entry.date <= today)
-        .map(({ entry }) => entry.date);
-
-      if (!startDates.length) {
-        return null;
-      }
-
-      // Calculate completed cycle lengths inline
-      const lengths: number[] = [];
-      for (let i = 0; i < startDates.length - 1; i += 1) {
-        const current = parseIsoDate(startDates[i]);
-        const next = parseIsoDate(startDates[i + 1]);
-        if (!current || !next) continue;
-        const diffDays = Math.round((next.getTime() - current.getTime()) / MS_PER_DAY);
-        if (diffDays > 0) lengths.push(diffDays);
-      }
-
-      if (lengths.length === 0) {
-        return null;
-      }
-
-      const recentLengths = lengths.slice(-3);
-      const avgLength = Math.round(
-        recentLengths.reduce((sum, v) => sum + v, 0) / recentLengths.length
-      );
-      if (!Number.isFinite(avgLength) || avgLength <= 14) return null;
-
-      // Base prediction using standard luteal phase method
-      let ovulationDay = avgLength - 14;
-
-      // Enhanced prediction using Billings method (cervix mucus data)
-      // Scientific basis: Peak mucus (slippery + egg-white) indicates ovulation within 24-48 hours
-      // Reference: Billings et al., The Lancet, 1972; WHO multicenter study, 1981
-      if (featureFlags.billingMethod) {
-        // Analyze peak mucus days from completed cycles
-        const peakDays: number[] = [];
-        for (let i = 0; i < startDates.length - 1; i += 1) {
-          const cycleStart = startDates[i];
-          const cycleEnd = startDates[i + 1];
-
-          // Get entries for this cycle
-          const cycleEntries = annotatedDailyEntries.filter(({ entry }) =>
-            entry.date >= cycleStart && entry.date < cycleEnd
-          );
-
-          // Find peak mucus day in this cycle
-          const peakDay = findPeakMucusDayInCycle(cycleEntries, cycleStart);
-          if (peakDay !== null && peakDay > 0 && peakDay < avgLength) {
-            peakDays.push(peakDay);
-          }
-        }
-
-        // If we have mucus data from at least 2 cycles, use it to refine prediction
-        // Ovulation typically occurs on Peak Day or within 1-2 days after
-        if (peakDays.length >= 2) {
-          const avgPeakDay = Math.round(
-            peakDays.reduce((sum, v) => sum + v, 0) / peakDays.length
-          );
-          // Ovulation is typically on Peak Day + 1 (studies show 80% within ±1 day of Peak)
-          const mucusBasedOvulation = avgPeakDay + 1;
-
-          // Combine both methods: weighted average favoring mucus data when available
-          // Mucus data is more reliable as it reflects actual hormonal changes
-          ovulationDay = Math.round((mucusBasedOvulation * 2 + ovulationDay) / 3);
-        }
-      }
-
-      const fertileStart = Math.max(1, ovulationDay - 5);
-      const fertileEnd = ovulationDay + 1;
-      const lastStart = startDates[startDates.length - 1];
-
-      return { ovulationDay, fertileStart, fertileEnd, lastStart };
-    })();
-
+    // Use consolidated cycleAnalysis for prediction data
     const getPredictionForCycleDay = (cycleDay: number | null) => {
-      if (!prediction || cycleDay === null) {
+      if (!cycleAnalysis || cycleDay === null) {
         return { isPredictedOvulationDay: false, isInPredictedFertileWindow: false };
       }
       return {
-        isPredictedOvulationDay: cycleDay === prediction.ovulationDay,
-        isInPredictedFertileWindow:
-          cycleDay >= prediction.fertileStart && cycleDay <= prediction.fertileEnd,
+        isPredictedOvulationDay: cycleDay === cycleAnalysis.predictedOvulationDay,
+        isInPredictedFertileWindow: isFertileDay(cycleDay, cycleAnalysis.predictedOvulationDay),
       };
     };
 
@@ -3786,15 +3824,14 @@ export default function HomePage() {
         let isPredictedOvulationDay = false;
         let isInPredictedFertileWindow = false;
 
-        if (prediction) {
-          const lastStartDate = parseIsoDate(prediction.lastStart);
+        if (cycleAnalysis) {
+          const lastStartDate = parseIsoDate(cycleAnalysis.lastCycleStartDate);
           if (lastStartDate) {
             const diffMs = currentDate.getTime() - lastStartDate.getTime();
             if (diffMs >= 0) {
               const cycleDay = Math.floor(diffMs / MS_PER_DAY) + 1;
-              isPredictedOvulationDay = cycleDay === prediction.ovulationDay;
-              isInPredictedFertileWindow =
-                cycleDay >= prediction.fertileStart && cycleDay <= prediction.fertileEnd;
+              isPredictedOvulationDay = cycleDay === cycleAnalysis.predictedOvulationDay;
+              isInPredictedFertileWindow = isFertileDay(cycleDay, cycleAnalysis.predictedOvulationDay);
             }
           }
         }
@@ -3823,7 +3860,7 @@ export default function HomePage() {
       points,
       todayIndex: CYCLE_OVERVIEW_PAST_DAYS, // Today is at this index (0-based)
     };
-  }, [annotatedDailyEntries, featureFlags.billingMethod, painShortcutTimelineByDate, today]);
+  }, [annotatedDailyEntries, cycleAnalysis, featureFlags.billingMethod, painShortcutTimelineByDate, today]);
 
   const canGoToNextDay = useMemo(() => dailyDraft.date < today, [dailyDraft.date, today]);
 
@@ -5924,12 +5961,6 @@ export default function HomePage() {
     return null;
   }, [annotatedDailyEntries, today]);
 
-  const cycleStartDates = useMemo(() => {
-    return annotatedDailyEntries
-      .filter(({ cycleDay, entry }) => cycleDay === 1 && entry.date <= today)
-      .map(({ entry }) => entry.date);
-  }, [annotatedDailyEntries, today]);
-
   const menstruationComparison = useMemo(() => {
     if (!cycleStartDates.length) {
       return null;
@@ -6025,22 +6056,6 @@ export default function HomePage() {
     };
   }, [annotatedDailyEntries, cycleStartDates]);
 
-  const completedCycleLengths = useMemo(() => {
-    const lengths: number[] = [];
-    for (let index = 0; index < cycleStartDates.length - 1; index += 1) {
-      const current = parseIsoDate(cycleStartDates[index]);
-      const next = parseIsoDate(cycleStartDates[index + 1]);
-      if (!current || !next) {
-        continue;
-      }
-      const diffDays = Math.round((next.getTime() - current.getTime()) / MS_PER_DAY);
-      if (diffDays > 0) {
-        lengths.push(diffDays);
-      }
-    }
-    return lengths;
-  }, [cycleStartDates]);
-
   const hasActivePeriod = useMemo(() => {
     const todayEntry = annotatedDailyEntries.find(({ entry }) => entry.date === today);
     if (todayEntry) {
@@ -6104,115 +6119,28 @@ export default function HomePage() {
     todayDate,
   ]);
 
-  const ovulationPrediction = useMemo(() => {
-    if (completedCycleLengths.length === 0 || !cycleStartDates.length || !todayDate) {
-      return null;
-    }
-
-    const recentLengths = completedCycleLengths.slice(-3);
-    const averageCycleLength = Math.round(
-      recentLengths.reduce((sum, v) => sum + v, 0) / recentLengths.length
-    );
-
-    if (!Number.isFinite(averageCycleLength) || averageCycleLength <= 14) {
-      return null;
-    }
-
-    // Base prediction using standard luteal phase method
-    let predictedOvulationDay = averageCycleLength - 14;
-    let usingBillingsMethod = false;
-
-    // Enhanced prediction using Billings method when enabled
-    if (featureFlags.billingMethod) {
-      // Analyze peak mucus days from completed cycles
-      const peakDays: number[] = [];
-      for (let i = 0; i < cycleStartDates.length - 1; i += 1) {
-        const cycleStart = cycleStartDates[i];
-        const cycleEnd = cycleStartDates[i + 1];
-
-        // Get entries for this cycle
-        const cycleEntries = annotatedDailyEntries.filter(({ entry }) =>
-          entry.date >= cycleStart && entry.date < cycleEnd
-        );
-
-        // Find peak mucus day in this cycle
-        const peakDay = findPeakMucusDayInCycle(cycleEntries, cycleStart);
-        if (peakDay !== null && peakDay > 0 && peakDay < averageCycleLength) {
-          peakDays.push(peakDay);
-        }
-      }
-
-      // If we have mucus data from at least 2 cycles, use Billings method
-      if (peakDays.length >= 2) {
-        const avgPeakDay = Math.round(
-          peakDays.reduce((sum, v) => sum + v, 0) / peakDays.length
-        );
-        // Ovulation is typically on Peak Day + 1
-        const mucusBasedOvulation = avgPeakDay + 1;
-        // Combine both methods: weighted average favoring mucus data
-        predictedOvulationDay = Math.round((mucusBasedOvulation * 2 + predictedOvulationDay) / 3);
-        usingBillingsMethod = true;
-      }
-      // If Billings is ON but not enough data, use fallback (standard method)
-    }
-
-    const fertileWindowStart = Math.max(1, predictedOvulationDay - 5);
-    const fertileWindowEnd = predictedOvulationDay + 1;
-
-    const lastStartIso = cycleStartDates[cycleStartDates.length - 1];
-    const lastStartDate = parseIsoDate(lastStartIso);
-    if (!lastStartDate) {
-      return null;
-    }
-
-    const diffMs = todayDate.getTime() - lastStartDate.getTime();
-    if (diffMs < 0) {
-      return null;
-    }
-    const currentCycleDay = Math.floor(diffMs / MS_PER_DAY) + 1;
-    const daysUntilOvulation = predictedOvulationDay - currentCycleDay;
-    const isInFertileWindow =
-      currentCycleDay >= fertileWindowStart && currentCycleDay <= fertileWindowEnd;
-    const isOvulationDay = currentCycleDay === predictedOvulationDay;
-
-    return {
-      predictedOvulationDay,
-      fertileWindowStart,
-      fertileWindowEnd,
-      daysUntilOvulation,
-      isInFertileWindow,
-      isOvulationDay,
-      averageCycleLength,
-      cycleCount: recentLengths.length,
-      currentCycleDay,
-      lastCycleStartDate: lastStartIso,
-      usingBillingsMethod,
-      billingMethodEnabled: featureFlags.billingMethod ?? false,
-    };
-  }, [completedCycleLengths, cycleStartDates, todayDate, featureFlags.billingMethod, annotatedDailyEntries]);
-
   const ovulationBadgeLabel = useMemo(() => {
-    if (!ovulationPrediction) {
+    if (!cycleAnalysis) {
       return null;
     }
 
-    const { daysUntilOvulation, isOvulationDay, isInFertileWindow, cycleCount } = ovulationPrediction;
+    const { daysUntilOvulation, isOvulationDay, isInFertileWindow, cycleCount } = cycleAnalysis;
     const uncertaintyPrefix = cycleCount < 3 ? "~" : "";
 
     if (isOvulationDay) {
       return `${uncertaintyPrefix}Eisprung heute (geschätzt)`;
     }
 
-    if (daysUntilOvulation > 0 && daysUntilOvulation <= 7) {
+    if (daysUntilOvulation !== null && daysUntilOvulation > 0 && daysUntilOvulation <= 7) {
       return `${uncertaintyPrefix}Eisprung in ${daysUntilOvulation} ${daysUntilOvulation === 1 ? "Tag" : "Tagen"}`;
     }
 
-    if (isInFertileWindow && daysUntilOvulation < 0) {
+    if (isInFertileWindow && daysUntilOvulation !== null && daysUntilOvulation < 0) {
       return `${uncertaintyPrefix}Fruchtbares Fenster`;
     }
 
     return null;
-  }, [ovulationPrediction]);
+  }, [cycleAnalysis]);
 
   const todayCycleComparisonBadge = useMemo((): { label: string; className: string } | null => {
     if (!hasDailyEntryForToday) return null;
@@ -6410,20 +6338,23 @@ export default function HomePage() {
           break;
         }
       }
-      // If no confirmed, calculate from THIS cycle's length (for completed cycles)
-      // or use average cycle length (for ongoing cycle)
+      // If no confirmed, use cycleAnalysis prediction (includes Billings method when enabled)
       // Always provide a fallback to ensure proper alignment
       if (!ovulationDay) {
-        if (nextStart) {
-          // Completed cycle: use this cycle's actual length
-          ovulationDay = Math.round(length - 14);
+        if (nextStart && cycleAnalysis) {
+          // Completed cycle: scale predicted ovulation proportionally to this cycle's length
+          const ratio = length / cycleAnalysis.averageCycleLength;
+          ovulationDay = Math.round(cycleAnalysis.predictedOvulationDay * ratio);
+        } else if (cycleAnalysis) {
+          // Ongoing cycle: use consolidated prediction (includes Billings if enabled)
+          ovulationDay = cycleAnalysis.predictedOvulationDay;
         } else if (completedCycleLengths.length > 0) {
-          // Ongoing cycle: use average of recent cycles
+          // Fallback without cycleAnalysis: use average - 14
           const recentLengths = completedCycleLengths.slice(-3);
           const avgLength = recentLengths.reduce((a, b) => a + b, 0) / recentLengths.length;
           ovulationDay = Math.round(avgLength - 14);
         } else {
-          // Fallback: assume standard 28-day cycle
+          // Ultimate fallback: assume standard 28-day cycle
           ovulationDay = 14;
         }
       }
@@ -6439,7 +6370,7 @@ export default function HomePage() {
     });
 
     return cycles.length > 0 ? cycles : null;
-  }, [annotatedDailyEntries, cycleStartDates, completedCycleLengths]);
+  }, [annotatedDailyEntries, cycleStartDates, completedCycleLengths, cycleAnalysis]);
 
   // Aligned time correlation data based on selected mode
   const alignedTimeCorrelationData = useMemo(() => {
@@ -8807,7 +8738,7 @@ export default function HomePage() {
                   {ovulationBadgeLabel ? (
                     <Badge
                       className="bg-yellow-100 text-yellow-800"
-                      title={`Basierend auf ${ovulationPrediction?.cycleCount ?? 0} ${ovulationPrediction?.cycleCount === 1 ? "Zyklus" : "Zyklen"}. Eisprung = Zykluslänge − 14 Tage.`}
+                      title={`Basierend auf ${cycleAnalysis?.cycleCount ?? 0} ${cycleAnalysis?.cycleCount === 1 ? "Zyklus" : "Zyklen"}. Eisprung = Zykluslänge − 14 Tage.`}
                     >
                       {ovulationBadgeLabel}
                     </Badge>
