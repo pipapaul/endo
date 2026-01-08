@@ -7212,9 +7212,11 @@ export default function HomePage() {
     });
 
     // Build per-cycle bleeding data for expandable view
+    // Includes ALL days in dayRange with correct ovulation/fertility markers
     const cycleBleedingRows: Array<{
       cycleIndex: number;
       startDate: string;
+      ovulationDay: number | null;
       values: Map<number, { bleedingValue: number; isOvulation: boolean; isFertile: boolean }>;
     }> = [];
 
@@ -7226,19 +7228,26 @@ export default function HomePage() {
             : cycle.ovulationDay
           : null;
 
-        const values = new Map<number, { bleedingValue: number; isOvulation: boolean; isFertile: boolean }>();
+        // Calculate fertile window once for this cycle
+        const fertileStart = cycleOvulationDay !== null ? cycleOvulationDay - 5 : null;
+        const fertileEnd = cycleOvulationDay !== null ? cycleOvulationDay + 1 : null;
 
+        // Build a map of alignedDay -> entry for quick lookup
+        const entryByDay = new Map<number, DailyEntry>();
         cycle.alignedEntries.forEach(({ alignedDay, entry }) => {
-          const isOvulation = cycleOvulationDay !== null && alignedDay === cycleOvulationDay;
-          let isFertile = false;
-          if (cycleOvulationDay !== null) {
-            const fertileStart = cycleOvulationDay - 5;
-            const fertileEnd = cycleOvulationDay + 1;
-            isFertile = alignedDay >= fertileStart && alignedDay <= fertileEnd;
-          }
+          entryByDay.set(alignedDay, entry);
+        });
 
-          values.set(alignedDay, {
-            bleedingValue: hasBleedingForEntry(entry) ? entry.bleeding?.pbacScore ?? 5 : 0,
+        // Build values for ALL days in dayRange (not just days with entries)
+        const values = new Map<number, { bleedingValue: number; isOvulation: boolean; isFertile: boolean }>();
+        dayRange.forEach((day) => {
+          const entry = entryByDay.get(day);
+          const isOvulation = cycleOvulationDay !== null && day === cycleOvulationDay;
+          const isFertile = fertileStart !== null && fertileEnd !== null &&
+            day >= fertileStart && day <= fertileEnd;
+
+          values.set(day, {
+            bleedingValue: entry && hasBleedingForEntry(entry) ? entry.bleeding?.pbacScore ?? 5 : 0,
             isOvulation,
             isFertile,
           });
@@ -7247,6 +7256,7 @@ export default function HomePage() {
         cycleBleedingRows.push({
           cycleIndex: idx + 1,
           startDate: cycle.startDate,
+          ovulationDay: cycleOvulationDay,
           values,
         });
       });
