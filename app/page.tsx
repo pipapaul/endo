@@ -6391,6 +6391,10 @@ export default function HomePage() {
         return true;
       });
 
+      const length = nextStart
+        ? Math.round((new Date(nextStart).getTime() - new Date(startDate).getTime()) / MS_PER_DAY)
+        : entries.length;
+
       // Find confirmed ovulation (LH+)
       let ovulationDay: number | null = null;
       for (const { entry, cycleDay } of entries) {
@@ -6399,16 +6403,19 @@ export default function HomePage() {
           break;
         }
       }
-      // If no confirmed, use predicted from average cycle length
-      if (!ovulationDay && completedCycleLengths.length > 0) {
-        const recentLengths = completedCycleLengths.slice(-3);
-        const avgLength = recentLengths.reduce((a, b) => a + b, 0) / recentLengths.length;
-        ovulationDay = Math.round(avgLength - 14);
+      // If no confirmed, calculate from THIS cycle's length (for completed cycles)
+      // or use average cycle length (for ongoing cycle)
+      if (!ovulationDay) {
+        if (nextStart) {
+          // Completed cycle: use this cycle's actual length
+          ovulationDay = Math.round(length - 14);
+        } else if (completedCycleLengths.length > 0) {
+          // Ongoing cycle: use average of recent cycles
+          const recentLengths = completedCycleLengths.slice(-3);
+          const avgLength = recentLengths.reduce((a, b) => a + b, 0) / recentLengths.length;
+          ovulationDay = Math.round(avgLength - 14);
+        }
       }
-
-      const length = nextStart
-        ? Math.round((new Date(nextStart).getTime() - new Date(startDate).getTime()) / MS_PER_DAY)
-        : entries.length;
 
       cycles.push({
         startDate,
@@ -6852,6 +6859,25 @@ export default function HomePage() {
       Array.from(group.values.values()).some((v) => v !== null)
     );
 
+    // Calculate gesamt (total) pain as max across all locations per day
+    const gesamtPainValues = new Map<number, number | null>();
+    dayRange.forEach((day) => {
+      let maxPain: number | null = null;
+      locationGroups.forEach((group) => {
+        const groupValue = group.values.get(day);
+        if (groupValue !== null && groupValue !== undefined) {
+          maxPain = maxPain === null ? groupValue : Math.max(maxPain, groupValue);
+        }
+        group.children.forEach((child) => {
+          const childValue = child.values.get(day);
+          if (childValue !== null && childValue !== undefined) {
+            maxPain = maxPain === null ? childValue : Math.max(maxPain, childValue);
+          }
+        });
+      });
+      gesamtPainValues.set(day, maxPain);
+    });
+
     return {
       symptomRows,
       locationGroups,
@@ -6860,6 +6886,7 @@ export default function HomePage() {
       ovulationDay,
       cycleCount: targetCycles.length,
       hasData: hasSymptomData || hasLocationData,
+      gesamtPainValues,
     };
   }, [alignedTimeCorrelationData, timeCorrelationAlignment, timeCorrelationView]);
 
@@ -11011,87 +11038,7 @@ export default function HomePage() {
                       </div>
                     </div>
 
-                    {/* Top graph - Cycle overview */}
-                    <div className="h-32 w-full overflow-hidden rounded-2xl border border-rose-100 bg-white/80 p-3 shadow-sm">
-                      <ResponsiveContainer>
-                        <ComposedChart
-                          data={timeCorrelationHeatStrips.topGraphData}
-                          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-                        >
-                          <defs>
-                            <linearGradient id="timeCorr-bleeding-gradient" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="#e8524a" stopOpacity={0.5} />
-                              <stop offset="100%" stopColor="#e8524a" stopOpacity={0.1} />
-                            </linearGradient>
-                            <linearGradient id="timeCorr-fertile-gradient" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="#f472b6" stopOpacity={0.3} />
-                              <stop offset="100%" stopColor="#f472b6" stopOpacity={0.05} />
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" vertical={false} />
-                          <XAxis
-                            dataKey="alignedDay"
-                            stroke="#fb7185"
-                            tick={{ fontSize: 10 }}
-                            tickFormatter={(value: number) =>
-                              timeCorrelationAlignment === "ovulation"
-                                ? value === 0
-                                  ? "Ov"
-                                  : value > 0
-                                    ? `+${value}`
-                                    : String(value)
-                                : String(value)
-                            }
-                          />
-                          <YAxis
-                            domain={[0, "auto"]}
-                            stroke="#fb7185"
-                            tick={{ fontSize: 10 }}
-                            hide
-                          />
-                          {/* Fertile window area */}
-                          {timeCorrelationHeatStrips.ovulationDay !== null && (
-                            <ReferenceArea
-                              x1={timeCorrelationHeatStrips.ovulationDay - 5}
-                              x2={timeCorrelationHeatStrips.ovulationDay + 1}
-                              fill="url(#timeCorr-fertile-gradient)"
-                              fillOpacity={1}
-                            />
-                          )}
-                          {/* Bleeding area */}
-                          <Area
-                            type="stepAfter"
-                            dataKey="bleedingValue"
-                            fill="url(#timeCorr-bleeding-gradient)"
-                            stroke="#e8524a"
-                            strokeWidth={1}
-                            fillOpacity={1}
-                            isAnimationActive={false}
-                          />
-                          {/* Pain line */}
-                          <Line
-                            type="monotone"
-                            dataKey="painNRS"
-                            stroke="#a855f7"
-                            strokeWidth={2}
-                            dot={false}
-                            connectNulls
-                            isAnimationActive={false}
-                          />
-                          {/* Ovulation marker */}
-                          {timeCorrelationHeatStrips.ovulationDay !== null && (
-                            <ReferenceLine
-                              x={timeCorrelationHeatStrips.ovulationDay}
-                              stroke="#facc15"
-                              strokeDasharray="4 4"
-                              strokeWidth={2}
-                            />
-                          )}
-                        </ComposedChart>
-                      </ResponsiveContainer>
-                    </div>
-
-                    {/* Heat strips */}
+                    {/* Heat strips with integrated cycle data */}
                     <div className="overflow-x-auto rounded-2xl border border-rose-100 bg-white/80 p-4 shadow-sm">
                       {/* Day header */}
                       <div className="flex items-center gap-0.5 mb-2 sticky top-0 bg-white/80">
@@ -11115,6 +11062,54 @@ export default function HomePage() {
                                 : day}
                           </span>
                         ))}
+                      </div>
+
+                      {/* Blutung section - main chart with distinctive styling */}
+                      <div className="text-[10px] text-red-600 font-bold mb-1 mt-2">Blutung</div>
+                      <div className="flex items-center gap-0.5 mb-2 p-1.5 rounded-lg bg-red-50/50 border border-red-100">
+                        <span className="w-24 shrink-0 text-[10px] text-red-700 font-medium truncate">
+                          Periode
+                        </span>
+                        {timeCorrelationHeatStrips.dayRange.map((day) => {
+                          const dayData = timeCorrelationHeatStrips.topGraphData.find(
+                            (d) => d.alignedDay === day
+                          );
+                          const value = dayData?.bleedingValue ?? 0;
+                          const isOvulation = dayData?.isOvulation ?? false;
+                          const isFertile = dayData?.isFertile ?? false;
+                          // Color scale for bleeding (PBAC 0-100+)
+                          const bgColor =
+                            value === 0
+                              ? isFertile
+                                ? "#fdf2f8" // light pink for fertile window
+                                : "#f5f5f5"
+                              : value <= 5
+                                ? "#fee2e2"
+                                : value <= 15
+                                  ? "#fecaca"
+                                  : value <= 30
+                                    ? "#fca5a5"
+                                    : value <= 50
+                                      ? "#f87171"
+                                      : "#ef4444";
+                          return (
+                            <div
+                              key={day}
+                              className={cn(
+                                "h-6 w-5 shrink-0 rounded-sm relative",
+                                isOvulation && "ring-2 ring-amber-400 ring-offset-1"
+                              )}
+                              style={{ backgroundColor: bgColor }}
+                              title={`Tag ${day}: PBAC ${value.toFixed(0)}${isOvulation ? " (Eisprung)" : ""}${isFertile ? " (fruchtbar)" : ""}`}
+                            >
+                              {isOvulation && (
+                                <div className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-amber-600">
+                                  Ov
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
 
                       {/* Symptom rows */}
@@ -11158,6 +11153,35 @@ export default function HomePage() {
 
                       {/* Pain location groups */}
                       <div className="text-[10px] text-purple-500 font-medium mb-1">Schmerzorte</div>
+                      {/* Gesamt (total) row - max pain across all locations */}
+                      <div className="flex items-center gap-0.5 mb-1 p-1 rounded bg-purple-50/50 border border-purple-100">
+                        <span className="w-24 shrink-0 text-[10px] text-purple-700 font-bold truncate">
+                          Gesamt
+                        </span>
+                        {timeCorrelationHeatStrips.dayRange.map((day) => {
+                          const value = timeCorrelationHeatStrips.gesamtPainValues.get(day) ?? null;
+                          const bgColor =
+                            value === null
+                              ? "#f5f5f5"
+                              : value <= 2
+                                ? "#f3e8ff"
+                                : value <= 4
+                                  ? "#e9d5ff"
+                                  : value <= 6
+                                    ? "#d8b4fe"
+                                    : value <= 8
+                                      ? "#c084fc"
+                                      : "#a855f7";
+                          return (
+                            <div
+                              key={day}
+                              className="h-5 w-5 shrink-0 rounded-sm"
+                              style={{ backgroundColor: bgColor }}
+                              title={`Gesamt Tag ${day}: ${value !== null ? value.toFixed(1) : "–"}/10 (max)`}
+                            />
+                          );
+                        })}
+                      </div>
                       {timeCorrelationHeatStrips.locationGroups.map((group) => {
                         const isExpanded = expandedLocationGroups.has(group.id);
                         const hasData = Array.from(group.values.values()).some((v) => v !== null);
