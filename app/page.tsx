@@ -11066,7 +11066,7 @@ export default function HomePage() {
 
                       {/* Blutung section - main chart with distinctive styling */}
                       <div className="text-[10px] text-red-600 font-bold mb-1 mt-2">Blutung</div>
-                      <div className="flex items-center gap-0.5 mb-2 p-1.5 rounded-lg bg-red-50/50 border border-red-100">
+                      <div className="flex items-center gap-0.5 mb-0.5 -mx-1.5 px-1.5 py-1 rounded-lg bg-red-50/50 border border-red-100">
                         <span className="w-24 shrink-0 text-[10px] text-red-700 font-medium truncate">
                           Periode
                         </span>
@@ -11154,7 +11154,7 @@ export default function HomePage() {
                       {/* Pain location groups */}
                       <div className="text-[10px] text-purple-500 font-medium mb-1">Schmerzorte</div>
                       {/* Gesamt (total) row - max pain across all locations */}
-                      <div className="flex items-center gap-0.5 mb-1 p-1 rounded bg-purple-50/50 border border-purple-100">
+                      <div className="flex items-center gap-0.5 mb-0.5 -mx-1.5 px-1.5 py-0.5 rounded bg-purple-50/50 border border-purple-100">
                         <span className="w-24 shrink-0 text-[10px] text-purple-700 font-bold truncate">
                           Gesamt
                         </span>
@@ -11175,7 +11175,7 @@ export default function HomePage() {
                           return (
                             <div
                               key={day}
-                              className="h-5 w-5 shrink-0 rounded-sm"
+                              className="h-4 w-5 shrink-0 rounded-sm"
                               style={{ backgroundColor: bgColor }}
                               title={`Gesamt Tag ${day}: ${value !== null ? value.toFixed(1) : "–"}/10 (max)`}
                             />
