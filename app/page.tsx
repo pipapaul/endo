@@ -3272,6 +3272,7 @@ export default function HomePage() {
   const [analyticsActiveSection, setAnalyticsActiveSection] = useState<AnalyticsSectionKey>("progress");
   const [timeCorrelationAlignment, setTimeCorrelationAlignment] = useState<CycleAlignmentMode>("period");
   const [timeCorrelationView, setTimeCorrelationView] = useState<CycleViewMode>("last");
+  const [timeCorrelationCompact, setTimeCorrelationCompact] = useState(true);
   const [expandedLocationGroups, setExpandedLocationGroups] = useState<Set<string>>(new Set());
   const [dailyActiveCategory, setDailyActiveCategory] = useState<DailyCategoryId>("overview");
   const [persisted, setPersisted] = useState<boolean | null>(null);
@@ -11037,11 +11038,36 @@ export default function HomePage() {
                         </Button>
                       </div>
                     </div>
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-rose-600">
+                      <span>Größe</span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant={timeCorrelationCompact ? "secondary" : "ghost"}
+                          onClick={() => setTimeCorrelationCompact(true)}
+                        >
+                          Kompakt
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={!timeCorrelationCompact ? "secondary" : "ghost"}
+                          onClick={() => setTimeCorrelationCompact(false)}
+                        >
+                          Details
+                        </Button>
+                      </div>
+                    </div>
 
                     {/* Heat strips with integrated cycle data */}
-                    <div className="overflow-x-auto rounded-2xl border border-rose-100 bg-white/80 p-4 shadow-sm">
+                    <div className={cn(
+                      "overflow-x-auto rounded-2xl border border-rose-100 bg-white/80 shadow-sm",
+                      timeCorrelationCompact ? "p-2" : "p-4"
+                    )}>
                       {/* Day header */}
-                      <div className="flex items-center gap-0.5 mb-2 sticky top-0 bg-white/80">
+                      <div className={cn(
+                        "flex items-center mb-2 sticky top-0 bg-white/80",
+                        timeCorrelationCompact ? "gap-px" : "gap-0.5"
+                      )}>
                         <span className="w-24 shrink-0 text-[10px] font-medium text-rose-600">
                           {timeCorrelationAlignment === "period" ? "Tag" : "Ov±"}
                         </span>
@@ -11049,24 +11075,30 @@ export default function HomePage() {
                           <span
                             key={day}
                             className={cn(
-                              "w-5 shrink-0 text-center text-[9px]",
+                              "shrink-0 text-center",
+                              timeCorrelationCompact ? "w-2 text-[7px]" : "w-5 text-[9px]",
                               day === timeCorrelationHeatStrips.ovulationDay
                                 ? "font-bold text-amber-600"
                                 : "text-rose-400"
                             )}
                           >
-                            {timeCorrelationAlignment === "ovulation" && day === 0
-                              ? "Ov"
-                              : timeCorrelationAlignment === "ovulation" && day > 0
-                                ? `+${day}`
-                                : day}
+                            {timeCorrelationCompact
+                              ? (day === timeCorrelationHeatStrips.ovulationDay ? "•" : "")
+                              : timeCorrelationAlignment === "ovulation" && day === 0
+                                ? "Ov"
+                                : timeCorrelationAlignment === "ovulation" && day > 0
+                                  ? `+${day}`
+                                  : day}
                           </span>
                         ))}
                       </div>
 
                       {/* Blutung section - main chart with distinctive styling */}
                       <div className="text-[10px] text-red-600 font-bold mb-1 mt-2">Blutung</div>
-                      <div className="flex items-center gap-0.5 mb-0.5 -mx-1.5 px-1.5 py-1 rounded-lg bg-red-50/50 border border-red-100">
+                      <div className={cn(
+                        "flex items-center mb-0.5 -mx-1.5 px-1.5 rounded-lg bg-red-50/50 border border-red-100",
+                        timeCorrelationCompact ? "gap-px py-0.5" : "gap-0.5 py-1"
+                      )}>
                         <span className="w-24 shrink-0 text-[10px] text-red-700 font-medium truncate">
                           Periode
                         </span>
@@ -11096,13 +11128,15 @@ export default function HomePage() {
                             <div
                               key={day}
                               className={cn(
-                                "h-6 w-5 shrink-0 rounded-sm relative",
-                                isOvulation && "ring-2 ring-amber-400 ring-offset-1"
+                                "shrink-0 rounded-sm relative",
+                                timeCorrelationCompact ? "h-4 w-2" : "h-6 w-5",
+                                isOvulation && !timeCorrelationCompact && "ring-2 ring-amber-400 ring-offset-1",
+                                isOvulation && timeCorrelationCompact && "ring-1 ring-amber-400"
                               )}
                               style={{ backgroundColor: bgColor }}
                               title={`Tag ${day}: PBAC ${value.toFixed(0)}${isOvulation ? " (Eisprung)" : ""}${isFertile ? " (fruchtbar)" : ""}`}
                             >
-                              {isOvulation && (
+                              {isOvulation && !timeCorrelationCompact && (
                                 <div className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-amber-600">
                                   Ov
                                 </div>
@@ -11115,7 +11149,10 @@ export default function HomePage() {
                       {/* Symptom rows */}
                       <div className="text-[10px] text-rose-500 font-medium mb-1 mt-3">Symptome</div>
                       {timeCorrelationHeatStrips.symptomRows.map((row) => (
-                        <div key={row.key} className="flex items-center gap-0.5 mb-0.5">
+                        <div key={row.key} className={cn(
+                          "flex items-center mb-0.5",
+                          timeCorrelationCompact ? "gap-px" : "gap-0.5"
+                        )}>
                           <span
                             className="w-24 shrink-0 text-[10px] text-rose-600 truncate"
                             title={row.label}
@@ -11139,7 +11176,10 @@ export default function HomePage() {
                             return (
                               <div
                                 key={day}
-                                className="h-4 w-5 shrink-0 rounded-sm"
+                                className={cn(
+                                  "shrink-0 rounded-sm",
+                                  timeCorrelationCompact ? "h-3 w-2" : "h-4 w-5"
+                                )}
                                 style={{ backgroundColor: bgColor }}
                                 title={`${row.label} Tag ${day}: ${value !== null ? value.toFixed(1) : "–"}/10`}
                               />
@@ -11154,7 +11194,10 @@ export default function HomePage() {
                       {/* Pain location groups */}
                       <div className="text-[10px] text-purple-500 font-medium mb-1">Schmerzorte</div>
                       {/* Gesamt (total) row - max pain across all locations */}
-                      <div className="flex items-center gap-0.5 mb-0.5 -mx-1.5 px-1.5 py-0.5 rounded bg-purple-50/50 border border-purple-100">
+                      <div className={cn(
+                        "flex items-center mb-0.5 -mx-1.5 px-1.5 py-0.5 rounded bg-purple-50/50 border border-purple-100",
+                        timeCorrelationCompact ? "gap-px" : "gap-0.5"
+                      )}>
                         <span className="w-24 shrink-0 text-[10px] text-purple-700 font-bold truncate">
                           Gesamt
                         </span>
@@ -11175,7 +11218,10 @@ export default function HomePage() {
                           return (
                             <div
                               key={day}
-                              className="h-4 w-5 shrink-0 rounded-sm"
+                              className={cn(
+                                "shrink-0 rounded-sm",
+                                timeCorrelationCompact ? "h-3 w-2" : "h-4 w-5"
+                              )}
                               style={{ backgroundColor: bgColor }}
                               title={`Gesamt Tag ${day}: ${value !== null ? value.toFixed(1) : "–"}/10 (max)`}
                             />
@@ -11194,7 +11240,8 @@ export default function HomePage() {
                             {/* Group row */}
                             <div
                               className={cn(
-                                "flex items-center gap-0.5 mb-0.5",
+                                "flex items-center mb-0.5",
+                                timeCorrelationCompact ? "gap-px" : "gap-0.5",
                                 hasChildren && "cursor-pointer hover:bg-purple-50/50 -mx-1 px-1 rounded"
                               )}
                               onClick={() => {
@@ -11242,7 +11289,10 @@ export default function HomePage() {
                                 return (
                                   <div
                                     key={day}
-                                    className="h-4 w-5 shrink-0 rounded-sm"
+                                    className={cn(
+                                      "shrink-0 rounded-sm",
+                                      timeCorrelationCompact ? "h-3 w-2" : "h-4 w-5"
+                                    )}
                                     style={{ backgroundColor: bgColor }}
                                     title={`${group.label} Tag ${day}: ${value !== null ? value.toFixed(1) : "–"}/10`}
                                   />
@@ -11255,7 +11305,10 @@ export default function HomePage() {
                               group.children.map((child) => (
                                 <div
                                   key={child.id}
-                                  className="flex items-center gap-0.5 mb-0.5 ml-3"
+                                  className={cn(
+                                    "flex items-center mb-0.5 ml-3",
+                                    timeCorrelationCompact ? "gap-px" : "gap-0.5"
+                                  )}
                                 >
                                   <span
                                     className="w-21 shrink-0 text-[9px] text-purple-400 truncate"
@@ -11280,7 +11333,10 @@ export default function HomePage() {
                                     return (
                                       <div
                                         key={day}
-                                        className="h-3 w-5 shrink-0 rounded-sm"
+                                        className={cn(
+                                          "shrink-0 rounded-sm",
+                                          timeCorrelationCompact ? "h-2 w-2" : "h-3 w-5"
+                                        )}
                                         style={{ backgroundColor: bgColor }}
                                         title={`${child.label} Tag ${day}: ${value !== null ? value.toFixed(1) : "–"}/10`}
                                       />
