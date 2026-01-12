@@ -2353,9 +2353,9 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
 
   return (
     <section aria-label="Zyklusübersicht" className="relative">
-      {/* Tooltip rendered fixed at top of viewport to avoid clipping */}
+      {/* Tooltip rendered fixed at top of screen to avoid clipping */}
       {tooltipContent && (
-        <div className="fixed top-2 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
+        <div className="fixed top-0 left-1/2 -translate-x-1/2 z-50 pointer-events-none pt-2">
           {tooltipContent}
         </div>
       )}
