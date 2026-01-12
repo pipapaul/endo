@@ -7338,6 +7338,11 @@ export default function HomePage() {
       });
     }
 
+    // Sort cycle rows by date descending (newest first)
+    cycleBleedingRows.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+    cycleSymptomRows.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+    cycleGesamtRows.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+
     return {
       symptomRows,
       locationGroups,
