@@ -2203,7 +2203,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
         painTimeline: point.painTimeline ?? null,
         isFutureDay,
         // Negative value positions dots below the baseline (y=0) in painImpact axis
-        predictionDotY: -0.8,
+        predictionDotY: -1.1,
       };
     });
   }, [data.points, todayIso]);
