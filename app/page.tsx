@@ -2067,16 +2067,22 @@ const FertileWindowDot = ({ cx, cy, payload }: PredictionDotProps) => {
     return null;
   }
 
+  // Solid dots for mucus-validated predictions with sufficient confidence (>= 70%)
+  // Dashed dots for calculated predictions or low-confidence mucus
+  const isMucusValidated =
+    (payload.ovulationMethod === "mucus" || payload.ovulationMethod === "mucus_pain") &&
+    (payload.ovulationConfidence ?? 0) >= 70;
+
   return (
     <g>
       <circle
         cx={cx}
         cy={cy}
         r={5}
-        fill="#fdf2f8"
+        fill={isMucusValidated ? "#fce7f3" : "#fdf2f8"}
         stroke="#f472b6"
         strokeWidth={1.5}
-        strokeDasharray="2,2"
+        strokeDasharray={isMucusValidated ? undefined : "2,2"}
       />
     </g>
   );
