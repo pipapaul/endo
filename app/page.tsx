@@ -295,6 +295,270 @@ const findPeakMucusDayInCycle = (
   return lastPeakDay;
 };
 
+/**
+ * Result type for ovulation calculation
+ */
+type OvulationResult = {
+  ovulationDay: number;
+  confidence: number; // 0-100%
+  method: "mucus_pain" | "mucus" | "pain" | "personal_luteal" | "standard";
+  signals: {
+    peakMucusDay?: number;
+    ovulationPainDay?: number;
+    symptomPeakDay?: number;
+  };
+};
+
+/**
+ * Shared cycle ovulation data - single source of truth for all ovulation calculations.
+ * This data is computed once and consumed by cycleAnalysis, cycleOverview, and timeCorrelationData.
+ */
+type CycleOvulationData = {
+  /** All cycles with computed ovulation data */
+  cycles: Array<{
+    startDate: string;
+    endDate: string | null;
+    length: number;
+    isCompleted: boolean;
+    ovulationDay: number;
+    ovulationConfidence: number;
+    ovulationMethod: OvulationResult["method"];
+    entries: Array<{ cycleDay: number; entry: DailyEntry }>;
+  }>;
+  /** Personal luteal phase calculated from high-confidence cycles */
+  personalLutealPhase: number | null;
+  /** Map from cycle start date to ovulation data for quick lookup */
+  cycleOvulationMap: Map<string, { ovulationDay: number; cycleStart: string; cycleEnd: string | null }>;
+  /** Completed cycle results for weighted predictions */
+  completedCycleResults: Array<{
+    cycleLength: number;
+    ovulationDay: number;
+    confidence: number;
+    method: OvulationResult["method"];
+  }>;
+};
+
+/**
+ * Calculates personal average luteal phase length from completed cycles.
+ * Only uses cycles where ovulation was detected with confidence >= 70%.
+ * Returns null if insufficient data (< 2 qualifying cycles).
+ */
+const calculatePersonalLutealPhase = (
+  completedCycleResults: Array<{
+    cycleLength: number;
+    ovulationDay: number;
+    confidence: number;
+  }>
+): number | null => {
+  // Filter to high-confidence detections only
+  const qualifyingCycles = completedCycleResults.filter(
+    (c) => c.confidence >= 70
+  );
+
+  if (qualifyingCycles.length < 2) return null;
+
+  // Calculate luteal phase for each cycle
+  const lutealPhases = qualifyingCycles.map(
+    (c) => c.cycleLength - c.ovulationDay
+  );
+
+  // Return average, clamped to physiological range (10-16 days)
+  const avg = lutealPhases.reduce((a, b) => a + b, 0) / lutealPhases.length;
+  return Math.max(10, Math.min(16, Math.round(avg)));
+};
+
+/**
+ * Detects symptom patterns that may correlate with ovulation.
+ * Looks for fatigue/bloating spikes that often occur around ovulation.
+ * Returns the day with highest symptom score in the expected window.
+ */
+const detectSymptomPeak = (
+  cycleEntries: Array<{ entry: DailyEntry; cycleDay: number }>,
+  expectedOvulationWindow: { start: number; end: number }
+): { peakDay: number; score: number } | null => {
+  const windowEntries = cycleEntries.filter(
+    ({ cycleDay }) =>
+      cycleDay >= expectedOvulationWindow.start &&
+      cycleDay <= expectedOvulationWindow.end
+  );
+
+  if (windowEntries.length === 0) return null;
+
+  // Score each day based on ovulation-related symptoms
+  let maxScore = 0;
+  let peakDay: number | null = null;
+
+  for (const { entry, cycleDay } of windowEntries) {
+    let score = 0;
+
+    // Fatigue often increases around ovulation
+    if (entry.symptoms?.fatigue?.present) {
+      score += (entry.symptoms.fatigue.score ?? 5) / 10;
+    }
+
+    // Bloating is common around ovulation
+    if (entry.symptoms?.bloating?.present) {
+      score += (entry.symptoms.bloating.score ?? 5) / 10;
+    }
+
+    // Pelvic discomfort (non-menstrual) may indicate ovulation
+    if (entry.symptoms?.pelvicPainNonMenses?.present) {
+      score += (entry.symptoms.pelvicPainNonMenses.score ?? 5) / 10;
+    }
+
+    if (score > maxScore) {
+      maxScore = score;
+      peakDay = cycleDay;
+    }
+  }
+
+  // Only return if we found meaningful symptoms (score > 0.5)
+  return peakDay !== null && maxScore > 0.5 ? { peakDay, score: maxScore } : null;
+};
+
+/**
+ * Unified multi-signal ovulation calculator.
+ * Uses bleeding, mucus, pain, and symptoms to detect ovulation with confidence scoring.
+ * Both charts should use this function for consistent results.
+ */
+const calculateOvulationForCycle = (
+  cycleEntries: Array<{ entry: DailyEntry; cycleDay: number }>,
+  cycleStartDate: string,
+  cycleLength: number,
+  options: {
+    useBillingsMethod: boolean;
+    isCompletedCycle: boolean;
+    personalLutealPhase: number | null;
+  }
+): OvulationResult => {
+  const signals: OvulationResult["signals"] = {};
+
+  // 1. Peak mucus detection (Billings method)
+  if (options.useBillingsMethod) {
+    const entriesWithNullableCycleDay = cycleEntries.map((e) => ({
+      entry: e.entry,
+      cycleDay: e.cycleDay as number | null,
+    }));
+    const peakDay = findPeakMucusDayInCycle(
+      entriesWithNullableCycleDay,
+      cycleStartDate
+    );
+    if (peakDay !== null) signals.peakMucusDay = peakDay;
+  }
+
+  // 2. Ovulation pain detection (strongest pain day with intensity >= 3)
+  let strongestPainDay: number | null = null;
+  let strongestPainIntensity = 0;
+  for (const { entry, cycleDay } of cycleEntries) {
+    const intensity = entry.ovulationPain?.intensity ?? 0;
+    if (intensity > strongestPainIntensity && intensity >= 3) {
+      strongestPainIntensity = intensity;
+      strongestPainDay = cycleDay;
+    }
+  }
+  if (strongestPainDay !== null) {
+    signals.ovulationPainDay = strongestPainDay;
+  }
+
+  // 3. Symptom pattern detection (supporting evidence)
+  const lutealPhase = options.personalLutealPhase ?? 14;
+  const expectedOvulation = cycleLength - lutealPhase;
+  const symptomPeak = detectSymptomPeak(cycleEntries, {
+    start: Math.max(1, expectedOvulation - 5),
+    end: Math.min(cycleLength, expectedOvulation + 5),
+  });
+  if (symptomPeak) signals.symptomPeakDay = symptomPeak.peakDay;
+
+  // Priority-based calculation with cross-validation
+
+  // Priority 1: Peak mucus + Ovulation pain (cross-validated)
+  if (signals.peakMucusDay && signals.ovulationPainDay) {
+    const mucusOvulation = signals.peakMucusDay + 1;
+    // If pain is within ±2 days of mucus prediction, high confidence
+    if (Math.abs(mucusOvulation - signals.ovulationPainDay) <= 2) {
+      // Use mucus as primary, pain confirms
+      return {
+        ovulationDay: mucusOvulation,
+        confidence: 95,
+        method: "mucus_pain",
+        signals,
+      };
+    }
+    // If they disagree, trust mucus (more reliable)
+    return {
+      ovulationDay: mucusOvulation,
+      confidence: 80,
+      method: "mucus",
+      signals,
+    };
+  }
+
+  // Priority 2: Peak mucus only
+  if (signals.peakMucusDay) {
+    const mucusOvulation = signals.peakMucusDay + 1;
+    // Boost confidence if symptom peak agrees
+    const symptomsAgree =
+      signals.symptomPeakDay &&
+      Math.abs(mucusOvulation - signals.symptomPeakDay) <= 2;
+    return {
+      ovulationDay: mucusOvulation,
+      confidence: symptomsAgree ? 90 : 85,
+      method: "mucus",
+      signals,
+    };
+  }
+
+  // Priority 3: Ovulation pain only (high intensity)
+  if (signals.ovulationPainDay && strongestPainIntensity >= 5) {
+    // Boost confidence if symptom peak agrees
+    const symptomsAgree =
+      signals.symptomPeakDay &&
+      Math.abs(signals.ovulationPainDay - signals.symptomPeakDay) <= 2;
+    return {
+      ovulationDay: signals.ovulationPainDay,
+      confidence: symptomsAgree ? 75 : 70,
+      method: "pain",
+      signals,
+    };
+  }
+
+  // Priority 4: Personal luteal phase calculation
+  if (options.personalLutealPhase !== null) {
+    return {
+      ovulationDay: Math.round(cycleLength - options.personalLutealPhase),
+      confidence: 60,
+      method: "personal_luteal",
+      signals,
+    };
+  }
+
+  // Priority 5: Standard fallback (cycle length - 14)
+  return {
+    ovulationDay: Math.round(cycleLength - 14),
+    confidence: 50,
+    method: "standard",
+    signals,
+  };
+};
+
+/**
+ * Calculate fertility window from ovulation day
+ * Based on: sperm survival (5 days) + egg viability (1 day after ovulation)
+ */
+const calculateFertileWindow = (ovulationDay: number) => ({
+  fertileStart: Math.max(1, ovulationDay - 5),
+  fertileEnd: ovulationDay + 1,
+});
+
+/**
+ * Check if a cycle day falls within the fertile window
+ */
+const isFertileDay = (cycleDay: number, ovulationDay: number | null): boolean => {
+  if (ovulationDay === null) return false;
+  const { fertileStart, fertileEnd } = calculateFertileWindow(ovulationDay);
+  return cycleDay >= fertileStart && cycleDay <= fertileEnd;
+};
+
 const computeCycleDayForEntry = (
   state: CycleComputationState,
   entry: DailyEntry
@@ -3273,6 +3537,10 @@ export default function HomePage() {
   const [timeCorrelationAlignment, setTimeCorrelationAlignment] = useState<CycleAlignmentMode>("period");
   const [timeCorrelationView, setTimeCorrelationView] = useState<CycleViewMode>("last");
   const [expandedLocationGroups, setExpandedLocationGroups] = useState<Set<string>>(new Set());
+  const [bleedingCyclesExpanded, setBleedingCyclesExpanded] = useState(false);
+  const [symptomCyclesExpanded, setSymptomCyclesExpanded] = useState<Record<string, boolean>>({});
+  const [gesamtCyclesExpanded, setGesamtCyclesExpanded] = useState(false);
+  const [correlationTooltip, setCorrelationTooltip] = useState<{ day: number; label: string; value: string; details?: string } | null>(null);
   const [dailyActiveCategory, setDailyActiveCategory] = useState<DailyCategoryId>("overview");
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [persistWarning, setPersistWarning] = useState<string | null>(null);
@@ -3615,6 +3883,230 @@ export default function HomePage() {
     });
   }, [dailyEntriesForGraphs]);
 
+  // Cycle start dates - extracted early for use in prediction calculations
+  const cycleStartDates = useMemo(() => {
+    return annotatedDailyEntries
+      .filter(({ cycleDay, entry }) => cycleDay === 1 && entry.date <= today)
+      .map(({ entry }) => entry.date);
+  }, [annotatedDailyEntries, today]);
+
+  // Completed cycle lengths - for prediction calculations
+  const completedCycleLengths = useMemo(() => {
+    const lengths: number[] = [];
+    for (let index = 0; index < cycleStartDates.length - 1; index += 1) {
+      const current = parseIsoDate(cycleStartDates[index]);
+      const next = parseIsoDate(cycleStartDates[index + 1]);
+      if (!current || !next) {
+        continue;
+      }
+      const diffDays = Math.round((next.getTime() - current.getTime()) / MS_PER_DAY);
+      if (diffDays > 0) {
+        lengths.push(diffDays);
+      }
+    }
+    return lengths;
+  }, [cycleStartDates]);
+
+  // Shared cycle ovulation data - single source of truth for all ovulation calculations
+  // Computed once and consumed by cycleAnalysis, cycleOverview, and timeCorrelationData
+  const cycleOvulationData = useMemo((): CycleOvulationData | null => {
+    if (cycleStartDates.length === 0) return null;
+
+    // Build raw cycle data with entries
+    const rawCycles: Array<{
+      startDate: string;
+      endDate: string | null;
+      length: number;
+      isCompleted: boolean;
+      entries: Array<{ cycleDay: number; entry: DailyEntry }>;
+    }> = [];
+
+    for (let i = 0; i < cycleStartDates.length; i += 1) {
+      const cycleStart = cycleStartDates[i];
+      const cycleEnd = cycleStartDates[i + 1] ?? null;
+      const isCompleted = cycleEnd !== null;
+
+      const length = isCompleted
+        ? Math.round((new Date(cycleEnd).getTime() - new Date(cycleStart).getTime()) / MS_PER_DAY)
+        : annotatedDailyEntries.filter(({ entry }) => entry.date >= cycleStart).length || 14;
+
+      const entries = annotatedDailyEntries
+        .filter(({ entry, cycleDay }) => {
+          if (!cycleDay) return false;
+          if (entry.date < cycleStart) return false;
+          if (cycleEnd && entry.date >= cycleEnd) return false;
+          return true;
+        })
+        .map(({ entry, cycleDay }) => ({ cycleDay: cycleDay!, entry }));
+
+      rawCycles.push({
+        startDate: cycleStart,
+        endDate: cycleEnd,
+        length,
+        isCompleted,
+        entries,
+      });
+    }
+
+    // First pass: calculate ovulation for completed cycles without personal luteal phase
+    // This is needed to bootstrap the personal luteal phase calculation
+    const firstPassResults: Array<{
+      cycleLength: number;
+      ovulationDay: number;
+      confidence: number;
+      method: OvulationResult["method"];
+    }> = [];
+
+    for (const cycle of rawCycles) {
+      if (cycle.isCompleted) {
+        const result = calculateOvulationForCycle(
+          cycle.entries,
+          cycle.startDate,
+          cycle.length,
+          {
+            useBillingsMethod: featureFlags.billingMethod ?? false,
+            isCompletedCycle: true,
+            personalLutealPhase: null,
+          }
+        );
+        firstPassResults.push({
+          cycleLength: cycle.length,
+          ovulationDay: result.ovulationDay,
+          confidence: result.confidence,
+          method: result.method,
+        });
+      }
+    }
+
+    // Calculate personal luteal phase from high-confidence detections
+    const personalLutealPhase = calculatePersonalLutealPhase(firstPassResults);
+
+    // Second pass: build final cycle data with personal luteal phase
+    const cycles: CycleOvulationData["cycles"] = [];
+    const cycleOvulationMap = new Map<string, { ovulationDay: number; cycleStart: string; cycleEnd: string | null }>();
+    const completedCycleResults: CycleOvulationData["completedCycleResults"] = [];
+
+    for (const cycle of rawCycles) {
+      const result = calculateOvulationForCycle(
+        cycle.entries,
+        cycle.startDate,
+        cycle.length,
+        {
+          useBillingsMethod: featureFlags.billingMethod ?? false,
+          isCompletedCycle: cycle.isCompleted,
+          personalLutealPhase,
+        }
+      );
+
+      cycles.push({
+        startDate: cycle.startDate,
+        endDate: cycle.endDate,
+        length: cycle.length,
+        isCompleted: cycle.isCompleted,
+        ovulationDay: result.ovulationDay,
+        ovulationConfidence: result.confidence,
+        ovulationMethod: result.method,
+        entries: cycle.entries,
+      });
+
+      cycleOvulationMap.set(cycle.startDate, {
+        ovulationDay: result.ovulationDay,
+        cycleStart: cycle.startDate,
+        cycleEnd: cycle.endDate,
+      });
+
+      if (cycle.isCompleted) {
+        completedCycleResults.push({
+          cycleLength: cycle.length,
+          ovulationDay: result.ovulationDay,
+          confidence: result.confidence,
+          method: result.method,
+        });
+      }
+    }
+
+    return {
+      cycles,
+      personalLutealPhase,
+      cycleOvulationMap,
+      completedCycleResults,
+    };
+  }, [annotatedDailyEntries, cycleStartDates, featureFlags.billingMethod]);
+
+  // Consolidated cycle analysis - uses shared cycleOvulationData
+  const cycleAnalysis = useMemo(() => {
+    const todayDate = parseIsoDate(today);
+    if (!cycleOvulationData || completedCycleLengths.length === 0 || !todayDate) {
+      return null;
+    }
+
+    const recentLengths = completedCycleLengths.slice(-3);
+    const averageCycleLength = Math.round(
+      recentLengths.reduce((sum, v) => sum + v, 0) / recentLengths.length
+    );
+
+    if (!Number.isFinite(averageCycleLength) || averageCycleLength <= 14) {
+      return null;
+    }
+
+    // Use shared completed cycle results from cycleOvulationData
+    const { completedCycleResults, personalLutealPhase } = cycleOvulationData;
+
+    // Calculate predicted ovulation day using confidence-weighted average
+    // from recent cycles (last 3-6)
+    const recentResults = completedCycleResults.slice(-6);
+    let predictedOvulationDay: number;
+    let usingAdvancedMethod = false;
+
+    if (recentResults.length > 0) {
+      const totalWeight = recentResults.reduce((sum, r) => sum + r.confidence, 0);
+      const weightedSum = recentResults.reduce(
+        (sum, r) => sum + r.ovulationDay * r.confidence, 0
+      );
+      predictedOvulationDay = Math.round(weightedSum / totalWeight);
+
+      // Check if we're using advanced methods (mucus, pain, or personal luteal)
+      usingAdvancedMethod = recentResults.some(r =>
+        r.method === "mucus" || r.method === "mucus_pain" ||
+        r.method === "pain" || r.method === "personal_luteal"
+      );
+    } else {
+      // Fallback to standard calculation
+      predictedOvulationDay = averageCycleLength - 14;
+    }
+
+    const { fertileStart, fertileEnd } = calculateFertileWindow(predictedOvulationDay);
+    const lastCycleStartDate = cycleStartDates[cycleStartDates.length - 1];
+
+    // Current cycle position
+    const lastStart = parseIsoDate(lastCycleStartDate);
+    const currentCycleDay = lastStart
+      ? Math.floor((todayDate.getTime() - lastStart.getTime()) / MS_PER_DAY) + 1
+      : null;
+
+    const daysUntilOvulation = currentCycleDay !== null
+      ? predictedOvulationDay - currentCycleDay
+      : null;
+
+    return {
+      predictedOvulationDay,
+      fertileStart,
+      fertileEnd,
+      lastCycleStartDate,
+      averageCycleLength,
+      cycleCount: recentLengths.length,
+      currentCycleDay,
+      daysUntilOvulation,
+      isOvulationDay: currentCycleDay === predictedOvulationDay,
+      isInFertileWindow: currentCycleDay !== null &&
+        currentCycleDay >= fertileStart &&
+        currentCycleDay <= fertileEnd,
+      usingBillingsMethod: usingAdvancedMethod,
+      billingMethodEnabled: featureFlags.billingMethod ?? false,
+      personalLutealPhase,
+    };
+  }, [cycleOvulationData, cycleStartDates, completedCycleLengths, featureFlags.billingMethod, today]);
+
   const selectedCycleDay = useMemo(() => {
     if (!dailyDraft.date) return null;
     const entries = derivedDailyEntries.slice();
@@ -3650,100 +4142,60 @@ export default function HomePage() {
     const startDate = new Date(todayDate);
     startDate.setDate(startDate.getDate() - CYCLE_OVERVIEW_PAST_DAYS);
 
-    // Calculate prediction data for chart markers
-    // Uses cycle length method, enhanced with Billings method (cervix mucus) when enabled
-    const prediction = (() => {
-      // Calculate cycle start dates inline
-      const startDates = annotatedDailyEntries
-        .filter(({ cycleDay, entry }) => cycleDay === 1 && entry.date <= today)
-        .map(({ entry }) => entry.date);
+    // Use shared cycle ovulation map - create a local copy to handle ongoing cycle override
+    const localOvulationMap = new Map(cycleOvulationData?.cycleOvulationMap ?? []);
 
-      if (!startDates.length) {
-        return null;
+    // For ongoing cycle, override with cycleAnalysis prediction (weighted average)
+    // This ensures the current cycle uses the best prediction based on historical data
+    if (cycleStartDates.length > 0 && cycleOvulationData) {
+      const lastCycleStart = cycleStartDates[cycleStartDates.length - 1];
+      const lastCycleData = cycleOvulationData.cycles.find(c => c.startDate === lastCycleStart);
+
+      if (lastCycleData && !lastCycleData.isCompleted && cycleAnalysis?.predictedOvulationDay) {
+        localOvulationMap.set(lastCycleStart, {
+          ovulationDay: cycleAnalysis.predictedOvulationDay,
+          cycleStart: lastCycleStart,
+          cycleEnd: null,
+        });
       }
+    }
 
-      // Calculate completed cycle lengths inline
-      const lengths: number[] = [];
-      for (let i = 0; i < startDates.length - 1; i += 1) {
-        const current = parseIsoDate(startDates[i]);
-        const next = parseIsoDate(startDates[i + 1]);
-        if (!current || !next) continue;
-        const diffDays = Math.round((next.getTime() - current.getTime()) / MS_PER_DAY);
-        if (diffDays > 0) lengths.push(diffDays);
-      }
+    // Helper to get ovulation day for a specific date
+    const getOvulationForDate = (dateStr: string): number | null => {
+      // Find which cycle this date belongs to
+      for (let i = cycleStartDates.length - 1; i >= 0; i -= 1) {
+        const cycleStart = cycleStartDates[i];
+        const cycleEnd = cycleStartDates[i + 1] ?? null;
 
-      if (lengths.length === 0) {
-        return null;
-      }
-
-      const recentLengths = lengths.slice(-3);
-      const avgLength = Math.round(
-        recentLengths.reduce((sum, v) => sum + v, 0) / recentLengths.length
-      );
-      if (!Number.isFinite(avgLength) || avgLength <= 14) return null;
-
-      // Base prediction using standard luteal phase method
-      let ovulationDay = avgLength - 14;
-
-      // Enhanced prediction using Billings method (cervix mucus data)
-      // Scientific basis: Peak mucus (slippery + egg-white) indicates ovulation within 24-48 hours
-      // Reference: Billings et al., The Lancet, 1972; WHO multicenter study, 1981
-      if (featureFlags.billingMethod) {
-        // Analyze peak mucus days from completed cycles
-        const peakDays: number[] = [];
-        for (let i = 0; i < startDates.length - 1; i += 1) {
-          const cycleStart = startDates[i];
-          const cycleEnd = startDates[i + 1];
-
-          // Get entries for this cycle
-          const cycleEntries = annotatedDailyEntries.filter(({ entry }) =>
-            entry.date >= cycleStart && entry.date < cycleEnd
-          );
-
-          // Find peak mucus day in this cycle
-          const peakDay = findPeakMucusDayInCycle(cycleEntries, cycleStart);
-          if (peakDay !== null && peakDay > 0 && peakDay < avgLength) {
-            peakDays.push(peakDay);
-          }
-        }
-
-        // If we have mucus data from at least 2 cycles, use it to refine prediction
-        // Ovulation typically occurs on Peak Day or within 1-2 days after
-        if (peakDays.length >= 2) {
-          const avgPeakDay = Math.round(
-            peakDays.reduce((sum, v) => sum + v, 0) / peakDays.length
-          );
-          // Ovulation is typically on Peak Day + 1 (studies show 80% within ±1 day of Peak)
-          const mucusBasedOvulation = avgPeakDay + 1;
-
-          // Combine both methods: weighted average favoring mucus data when available
-          // Mucus data is more reliable as it reflects actual hormonal changes
-          ovulationDay = Math.round((mucusBasedOvulation * 2 + ovulationDay) / 3);
+        if (dateStr >= cycleStart && (cycleEnd === null || dateStr < cycleEnd)) {
+          const cycleData = localOvulationMap.get(cycleStart);
+          return cycleData?.ovulationDay ?? null;
         }
       }
+      return null;
+    };
 
-      const fertileStart = Math.max(1, ovulationDay - 5);
-      const fertileEnd = ovulationDay + 1;
-      const lastStart = startDates[startDates.length - 1];
-
-      return { ovulationDay, fertileStart, fertileEnd, lastStart };
-    })();
-
-    const getPredictionForCycleDay = (cycleDay: number | null) => {
-      if (!prediction || cycleDay === null) {
+    // Build prediction function using per-cycle ovulation
+    const getPredictionForDate = (dateStr: string, cycleDay: number | null) => {
+      if (cycleDay === null) {
         return { isPredictedOvulationDay: false, isInPredictedFertileWindow: false };
       }
+
+      const ovulationDay = getOvulationForDate(dateStr);
+      if (ovulationDay === null) {
+        return { isPredictedOvulationDay: false, isInPredictedFertileWindow: false };
+      }
+
       return {
-        isPredictedOvulationDay: cycleDay === prediction.ovulationDay,
-        isInPredictedFertileWindow:
-          cycleDay >= prediction.fertileStart && cycleDay <= prediction.fertileEnd,
+        isPredictedOvulationDay: cycleDay === ovulationDay,
+        isInPredictedFertileWindow: isFertileDay(cycleDay, ovulationDay),
       };
     };
 
     const pointsByDate = new Map<string, CycleOverviewPoint>();
     annotatedDailyEntries.forEach(({ entry, cycleDay }) => {
       const { isPredictedOvulationDay, isInPredictedFertileWindow } =
-        getPredictionForCycleDay(cycleDay);
+        getPredictionForDate(entry.date, cycleDay);
       const mucusScore = featureFlags.billingMethod
         ? scoreCervixMucusFertility(entry.cervixMucus)
         : null;
@@ -3782,15 +4234,25 @@ export default function HomePage() {
         let isPredictedOvulationDay = false;
         let isInPredictedFertileWindow = false;
 
-        if (prediction) {
-          const lastStartDate = parseIsoDate(prediction.lastStart);
-          if (lastStartDate) {
-            const diffMs = currentDate.getTime() - lastStartDate.getTime();
-            if (diffMs >= 0) {
-              const cycleDay = Math.floor(diffMs / MS_PER_DAY) + 1;
-              isPredictedOvulationDay = cycleDay === prediction.ovulationDay;
-              isInPredictedFertileWindow =
-                cycleDay >= prediction.fertileStart && cycleDay <= prediction.fertileEnd;
+        // Find which cycle this date belongs to and get its ovulation day
+        const ovulationDay = getOvulationForDate(iso);
+        if (ovulationDay !== null) {
+          // Calculate cycle day for this date
+          for (let i = cycleStartDates.length - 1; i >= 0; i -= 1) {
+            const cycleStart = cycleStartDates[i];
+            const cycleEnd = cycleStartDates[i + 1] ?? null;
+
+            if (iso >= cycleStart && (cycleEnd === null || iso < cycleEnd)) {
+              const cycleStartDate = parseIsoDate(cycleStart);
+              if (cycleStartDate) {
+                const diffMs = currentDate.getTime() - cycleStartDate.getTime();
+                if (diffMs >= 0) {
+                  const cycleDay = Math.floor(diffMs / MS_PER_DAY) + 1;
+                  isPredictedOvulationDay = cycleDay === ovulationDay;
+                  isInPredictedFertileWindow = isFertileDay(cycleDay, ovulationDay);
+                }
+              }
+              break;
             }
           }
         }
@@ -3819,7 +4281,7 @@ export default function HomePage() {
       points,
       todayIndex: CYCLE_OVERVIEW_PAST_DAYS, // Today is at this index (0-based)
     };
-  }, [annotatedDailyEntries, featureFlags.billingMethod, painShortcutTimelineByDate, today]);
+  }, [annotatedDailyEntries, cycleAnalysis, cycleOvulationData, cycleStartDates, featureFlags.billingMethod, painShortcutTimelineByDate, today]);
 
   const canGoToNextDay = useMemo(() => dailyDraft.date < today, [dailyDraft.date, today]);
 
@@ -5920,12 +6382,6 @@ export default function HomePage() {
     return null;
   }, [annotatedDailyEntries, today]);
 
-  const cycleStartDates = useMemo(() => {
-    return annotatedDailyEntries
-      .filter(({ cycleDay, entry }) => cycleDay === 1 && entry.date <= today)
-      .map(({ entry }) => entry.date);
-  }, [annotatedDailyEntries, today]);
-
   const menstruationComparison = useMemo(() => {
     if (!cycleStartDates.length) {
       return null;
@@ -6021,22 +6477,6 @@ export default function HomePage() {
     };
   }, [annotatedDailyEntries, cycleStartDates]);
 
-  const completedCycleLengths = useMemo(() => {
-    const lengths: number[] = [];
-    for (let index = 0; index < cycleStartDates.length - 1; index += 1) {
-      const current = parseIsoDate(cycleStartDates[index]);
-      const next = parseIsoDate(cycleStartDates[index + 1]);
-      if (!current || !next) {
-        continue;
-      }
-      const diffDays = Math.round((next.getTime() - current.getTime()) / MS_PER_DAY);
-      if (diffDays > 0) {
-        lengths.push(diffDays);
-      }
-    }
-    return lengths;
-  }, [cycleStartDates]);
-
   const hasActivePeriod = useMemo(() => {
     const todayEntry = annotatedDailyEntries.find(({ entry }) => entry.date === today);
     if (todayEntry) {
@@ -6100,115 +6540,28 @@ export default function HomePage() {
     todayDate,
   ]);
 
-  const ovulationPrediction = useMemo(() => {
-    if (completedCycleLengths.length === 0 || !cycleStartDates.length || !todayDate) {
-      return null;
-    }
-
-    const recentLengths = completedCycleLengths.slice(-3);
-    const averageCycleLength = Math.round(
-      recentLengths.reduce((sum, v) => sum + v, 0) / recentLengths.length
-    );
-
-    if (!Number.isFinite(averageCycleLength) || averageCycleLength <= 14) {
-      return null;
-    }
-
-    // Base prediction using standard luteal phase method
-    let predictedOvulationDay = averageCycleLength - 14;
-    let usingBillingsMethod = false;
-
-    // Enhanced prediction using Billings method when enabled
-    if (featureFlags.billingMethod) {
-      // Analyze peak mucus days from completed cycles
-      const peakDays: number[] = [];
-      for (let i = 0; i < cycleStartDates.length - 1; i += 1) {
-        const cycleStart = cycleStartDates[i];
-        const cycleEnd = cycleStartDates[i + 1];
-
-        // Get entries for this cycle
-        const cycleEntries = annotatedDailyEntries.filter(({ entry }) =>
-          entry.date >= cycleStart && entry.date < cycleEnd
-        );
-
-        // Find peak mucus day in this cycle
-        const peakDay = findPeakMucusDayInCycle(cycleEntries, cycleStart);
-        if (peakDay !== null && peakDay > 0 && peakDay < averageCycleLength) {
-          peakDays.push(peakDay);
-        }
-      }
-
-      // If we have mucus data from at least 2 cycles, use Billings method
-      if (peakDays.length >= 2) {
-        const avgPeakDay = Math.round(
-          peakDays.reduce((sum, v) => sum + v, 0) / peakDays.length
-        );
-        // Ovulation is typically on Peak Day + 1
-        const mucusBasedOvulation = avgPeakDay + 1;
-        // Combine both methods: weighted average favoring mucus data
-        predictedOvulationDay = Math.round((mucusBasedOvulation * 2 + predictedOvulationDay) / 3);
-        usingBillingsMethod = true;
-      }
-      // If Billings is ON but not enough data, use fallback (standard method)
-    }
-
-    const fertileWindowStart = Math.max(1, predictedOvulationDay - 5);
-    const fertileWindowEnd = predictedOvulationDay + 1;
-
-    const lastStartIso = cycleStartDates[cycleStartDates.length - 1];
-    const lastStartDate = parseIsoDate(lastStartIso);
-    if (!lastStartDate) {
-      return null;
-    }
-
-    const diffMs = todayDate.getTime() - lastStartDate.getTime();
-    if (diffMs < 0) {
-      return null;
-    }
-    const currentCycleDay = Math.floor(diffMs / MS_PER_DAY) + 1;
-    const daysUntilOvulation = predictedOvulationDay - currentCycleDay;
-    const isInFertileWindow =
-      currentCycleDay >= fertileWindowStart && currentCycleDay <= fertileWindowEnd;
-    const isOvulationDay = currentCycleDay === predictedOvulationDay;
-
-    return {
-      predictedOvulationDay,
-      fertileWindowStart,
-      fertileWindowEnd,
-      daysUntilOvulation,
-      isInFertileWindow,
-      isOvulationDay,
-      averageCycleLength,
-      cycleCount: recentLengths.length,
-      currentCycleDay,
-      lastCycleStartDate: lastStartIso,
-      usingBillingsMethod,
-      billingMethodEnabled: featureFlags.billingMethod ?? false,
-    };
-  }, [completedCycleLengths, cycleStartDates, todayDate, featureFlags.billingMethod, annotatedDailyEntries]);
-
   const ovulationBadgeLabel = useMemo(() => {
-    if (!ovulationPrediction) {
+    if (!cycleAnalysis) {
       return null;
     }
 
-    const { daysUntilOvulation, isOvulationDay, isInFertileWindow, cycleCount } = ovulationPrediction;
+    const { daysUntilOvulation, isOvulationDay, isInFertileWindow, cycleCount } = cycleAnalysis;
     const uncertaintyPrefix = cycleCount < 3 ? "~" : "";
 
     if (isOvulationDay) {
       return `${uncertaintyPrefix}Eisprung heute (geschätzt)`;
     }
 
-    if (daysUntilOvulation > 0 && daysUntilOvulation <= 7) {
+    if (daysUntilOvulation !== null && daysUntilOvulation > 0 && daysUntilOvulation <= 7) {
       return `${uncertaintyPrefix}Eisprung in ${daysUntilOvulation} ${daysUntilOvulation === 1 ? "Tag" : "Tagen"}`;
     }
 
-    if (isInFertileWindow && daysUntilOvulation < 0) {
+    if (isInFertileWindow && daysUntilOvulation !== null && daysUntilOvulation < 0) {
       return `${uncertaintyPrefix}Fruchtbares Fenster`;
     }
 
     return null;
-  }, [ovulationPrediction]);
+  }, [cycleAnalysis]);
 
   const todayCycleComparisonBadge = useMemo((): { label: string; className: string } | null => {
     if (!hasDailyEntryForToday) return null;
@@ -6363,64 +6716,24 @@ export default function HomePage() {
     };
   }, [derivedDailyEntries]);
 
-  // Time correlation graph data
+  // Time correlation graph data - uses shared cycleOvulationData
   const timeCorrelationData = useMemo(() => {
-    if (cycleStartDates.length === 0) return null;
+    if (!cycleOvulationData || cycleOvulationData.cycles.length === 0) return null;
 
     const MAX_CYCLES = 12;
-    const starts = [...cycleStartDates].sort().slice(-MAX_CYCLES);
-
-    // Build full cycle data
-    const cycles: Array<{
-      startDate: string;
-      endDate: string | null;
-      length: number;
-      ovulationDay: number | null;
-      entries: Array<{
-        cycleDay: number;
-        entry: DailyEntry;
-      }>;
-    }> = [];
-
-    starts.forEach((startDate, idx) => {
-      const nextStart = starts[idx + 1] ?? null;
-      const entries = annotatedDailyEntries.filter(({ entry, cycleDay }) => {
-        if (!cycleDay) return false;
-        if (entry.date < startDate) return false;
-        if (nextStart && entry.date >= nextStart) return false;
-        return true;
-      });
-
-      // Find confirmed ovulation (LH+)
-      let ovulationDay: number | null = null;
-      for (const { entry, cycleDay } of entries) {
-        if (entry.ovulation?.lhPositive && cycleDay) {
-          ovulationDay = cycleDay;
-          break;
-        }
-      }
-      // If no confirmed, use predicted from average cycle length
-      if (!ovulationDay && completedCycleLengths.length > 0) {
-        const recentLengths = completedCycleLengths.slice(-3);
-        const avgLength = recentLengths.reduce((a, b) => a + b, 0) / recentLengths.length;
-        ovulationDay = Math.round(avgLength - 14);
-      }
-
-      const length = nextStart
-        ? Math.round((new Date(nextStart).getTime() - new Date(startDate).getTime()) / MS_PER_DAY)
-        : entries.length;
-
-      cycles.push({
-        startDate,
-        endDate: nextStart,
-        length,
-        ovulationDay,
-        entries: entries.map(({ entry, cycleDay }) => ({ cycleDay: cycleDay!, entry })),
-      });
-    });
+    // Use the last MAX_CYCLES from the shared data
+    const cycles = cycleOvulationData.cycles.slice(-MAX_CYCLES).map(cycle => ({
+      startDate: cycle.startDate,
+      endDate: cycle.endDate,
+      length: cycle.length,
+      ovulationDay: cycle.ovulationDay,
+      ovulationConfidence: cycle.ovulationConfidence,
+      ovulationMethod: cycle.ovulationMethod,
+      entries: cycle.entries,
+    }));
 
     return cycles.length > 0 ? cycles : null;
-  }, [annotatedDailyEntries, cycleStartDates, completedCycleLengths]);
+  }, [cycleOvulationData]);
 
   // Aligned time correlation data based on selected mode
   const alignedTimeCorrelationData = useMemo(() => {
@@ -6541,11 +6854,18 @@ export default function HomePage() {
     ] as const;
 
     // Get target cycles based on view mode
+    // For "last" mode: show the most recent completed cycle, or ongoing if no completed cycles
     const targetCycles =
       timeCorrelationView === "last"
-        ? alignedTimeCorrelationData.length > 1
-          ? [alignedTimeCorrelationData[alignedTimeCorrelationData.length - 2]]
-          : alignedTimeCorrelationData.slice(-1)
+        ? (() => {
+            // Find the most recent completed cycle
+            const completedCycles = alignedTimeCorrelationData.filter(c => c.endDate !== null);
+            if (completedCycles.length > 0) {
+              return [completedCycles[completedCycles.length - 1]];
+            }
+            // If no completed cycles, show the ongoing one
+            return alignedTimeCorrelationData.slice(-1);
+          })()
         : alignedTimeCorrelationData;
 
     // Find day range across all target cycles
@@ -6803,8 +7123,8 @@ export default function HomePage() {
           bleedingValue: data && data.bleedingCount > 0 ? data.bleedingSum / data.bleedingCount : 0,
           painNRS: data && data.painCount > 0 ? data.painSum / data.painCount : null,
           impactNRS: data && data.impactCount > 0 ? data.impactSum / data.impactCount : null,
-          isOvulation: data ? data.ovulationCount > data.totalCycles / 2 : false,
-          isFertile: data ? data.fertileCount > data.totalCycles / 2 : false,
+          isOvulation: data ? data.ovulationCount >= data.totalCycles / 2 : false,
+          isFertile: data ? data.fertileCount >= data.totalCycles / 2 : false,
         });
       });
     } else {
@@ -6842,15 +7162,186 @@ export default function HomePage() {
     }
 
     // Find ovulation day for reference line
-    const ovulationDay =
-      timeCorrelationAlignment === "ovulation"
-        ? 0
-        : targetCycles[0]?.ovulationDay ?? null;
+    // In ovulation alignment: always day 0
+    // In period alignment with single cycle: use that cycle's ovulation day
+    // In period alignment with overlay: use confidence-weighted average
+    let ovulationDay: number | null;
+    if (timeCorrelationAlignment === "ovulation") {
+      ovulationDay = 0;
+    } else if (targetCycles.length === 1) {
+      ovulationDay = targetCycles[0]?.ovulationDay ?? null;
+    } else {
+      // Calculate confidence-weighted average ovulation day for overlay mode
+      let totalWeight = 0;
+      let weightedSum = 0;
+      targetCycles.forEach((cycle) => {
+        if (cycle.ovulationDay !== null) {
+          const weight = cycle.ovulationConfidence ?? 50;
+          weightedSum += cycle.ovulationDay * weight;
+          totalWeight += weight;
+        }
+      });
+      ovulationDay = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : null;
+    }
 
     const hasSymptomData = symptomRows.some((row) => Array.from(row.values.values()).some((v) => v !== null));
     const hasLocationData = locationGroups.some((group) =>
       Array.from(group.values.values()).some((v) => v !== null)
     );
+
+    // Calculate gesamt (total) pain as max across all locations per day
+    const gesamtPainValues = new Map<number, number | null>();
+    dayRange.forEach((day) => {
+      let maxPain: number | null = null;
+      locationGroups.forEach((group) => {
+        const groupValue = group.values.get(day);
+        if (groupValue !== null && groupValue !== undefined) {
+          maxPain = maxPain === null ? groupValue : Math.max(maxPain, groupValue);
+        }
+        group.children.forEach((child) => {
+          const childValue = child.values.get(day);
+          if (childValue !== null && childValue !== undefined) {
+            maxPain = maxPain === null ? childValue : Math.max(maxPain, childValue);
+          }
+        });
+      });
+      gesamtPainValues.set(day, maxPain);
+    });
+
+    // Build per-cycle bleeding data for expandable view
+    // Includes ALL days in dayRange with correct ovulation/fertility markers
+    const cycleBleedingRows: Array<{
+      cycleIndex: number;
+      startDate: string;
+      ovulationDay: number | null;
+      values: Map<number, { bleedingValue: number; isOvulation: boolean; isFertile: boolean }>;
+    }> = [];
+
+    if (timeCorrelationView === "overlay") {
+      targetCycles.forEach((cycle, idx) => {
+        const cycleOvulationDay = cycle.ovulationDay
+          ? timeCorrelationAlignment === "ovulation"
+            ? 0
+            : cycle.ovulationDay
+          : null;
+
+        // Calculate fertile window once for this cycle
+        const fertileStart = cycleOvulationDay !== null ? cycleOvulationDay - 5 : null;
+        const fertileEnd = cycleOvulationDay !== null ? cycleOvulationDay + 1 : null;
+
+        // Build a map of alignedDay -> entry for quick lookup
+        const entryByDay = new Map<number, DailyEntry>();
+        cycle.alignedEntries.forEach(({ alignedDay, entry }) => {
+          entryByDay.set(alignedDay, entry);
+        });
+
+        // Build values for ALL days in dayRange (not just days with entries)
+        const values = new Map<number, { bleedingValue: number; isOvulation: boolean; isFertile: boolean }>();
+        dayRange.forEach((day) => {
+          const entry = entryByDay.get(day);
+          const isOvulation = cycleOvulationDay !== null && day === cycleOvulationDay;
+          const isFertile = fertileStart !== null && fertileEnd !== null &&
+            day >= fertileStart && day <= fertileEnd;
+
+          values.set(day, {
+            bleedingValue: entry && hasBleedingForEntry(entry) ? entry.bleeding?.pbacScore ?? 5 : 0,
+            isOvulation,
+            isFertile,
+          });
+        });
+
+        cycleBleedingRows.push({
+          cycleIndex: idx + 1,
+          startDate: cycle.startDate,
+          ovulationDay: cycleOvulationDay,
+          values,
+        });
+      });
+    }
+
+    // Build per-cycle symptom data for expandable view
+    const cycleSymptomRows: Array<{
+      cycleIndex: number;
+      startDate: string;
+      symptomValues: Map<SymptomKey, Map<number, number | null>>;
+    }> = [];
+
+    if (timeCorrelationView === "overlay") {
+      targetCycles.forEach((cycle, idx) => {
+        const symptomValues = new Map<SymptomKey, Map<number, number | null>>();
+
+        SYMPTOM_KEYS.forEach((key) => {
+          const dayValues = new Map<number, number | null>();
+          dayRange.forEach((day) => dayValues.set(day, null));
+          symptomValues.set(key, dayValues);
+        });
+
+        cycle.alignedEntries.forEach(({ alignedDay, entry }) => {
+          SYMPTOM_KEYS.forEach((key) => {
+            const symptom = entry.symptoms?.[key];
+            if (symptom?.present) {
+              const value = typeof symptom.score === "number" ? symptom.score : 5;
+              symptomValues.get(key)!.set(alignedDay, value);
+            }
+          });
+        });
+
+        cycleSymptomRows.push({
+          cycleIndex: idx + 1,
+          startDate: cycle.startDate,
+          symptomValues,
+        });
+      });
+    }
+
+    // Build per-cycle Gesamt pain data for expandable view
+    const cycleGesamtRows: Array<{
+      cycleIndex: number;
+      startDate: string;
+      values: Map<number, number | null>;
+    }> = [];
+
+    if (timeCorrelationView === "overlay") {
+      targetCycles.forEach((cycle, idx) => {
+        const values = new Map<number, number | null>();
+        dayRange.forEach((day) => values.set(day, null));
+
+        cycle.alignedEntries.forEach(({ alignedDay, entry }) => {
+          // Collect max pain across all locations for this entry
+          let maxPain: number | null = null;
+
+          entry.painRegions?.forEach((region) => {
+            const intensity = typeof region.nrs === "number" ? region.nrs : entry.painNRS ?? 5;
+            maxPain = maxPain === null ? intensity : Math.max(maxPain, intensity);
+          });
+
+          entry.painMapRegionIds?.forEach(() => {
+            const intensity = entry.painNRS ?? 5;
+            maxPain = maxPain === null ? intensity : Math.max(maxPain, intensity);
+          });
+
+          entry.quickPainEvents?.forEach((event) => {
+            const intensity = event.intensity ?? entry.painNRS ?? 5;
+            maxPain = maxPain === null ? intensity : Math.max(maxPain, intensity);
+          });
+
+          if (maxPain !== null) {
+            values.set(alignedDay, maxPain);
+          }
+        });
+
+        cycleGesamtRows.push({
+          cycleIndex: idx + 1,
+          startDate: cycle.startDate,
+          values,
+        });
+      });
+    }
+
+    // Sort cycle rows by date descending (newest first)
+    cycleBleedingRows.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+    cycleSymptomRows.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+    cycleGesamtRows.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
 
     return {
       symptomRows,
@@ -6860,6 +7351,10 @@ export default function HomePage() {
       ovulationDay,
       cycleCount: targetCycles.length,
       hasData: hasSymptomData || hasLocationData,
+      gesamtPainValues,
+      cycleBleedingRows,
+      cycleSymptomRows,
+      cycleGesamtRows,
     };
   }, [alignedTimeCorrelationData, timeCorrelationAlignment, timeCorrelationView]);
 
@@ -8645,7 +9140,7 @@ export default function HomePage() {
                   {ovulationBadgeLabel ? (
                     <Badge
                       className="bg-yellow-100 text-yellow-800"
-                      title={`Basierend auf ${ovulationPrediction?.cycleCount ?? 0} ${ovulationPrediction?.cycleCount === 1 ? "Zyklus" : "Zyklen"}. Eisprung = Zykluslänge − 14 Tage.`}
+                      title={`Basierend auf ${cycleAnalysis?.cycleCount ?? 0} ${cycleAnalysis?.cycleCount === 1 ? "Zyklus" : "Zyklen"}. Eisprung = Zykluslänge − 14 Tage.`}
                     >
                       {ovulationBadgeLabel}
                     </Badge>
@@ -11010,146 +11505,268 @@ export default function HomePage() {
                         </Button>
                       </div>
                     </div>
-
-                    {/* Top graph - Cycle overview */}
-                    <div className="h-32 w-full overflow-hidden rounded-2xl border border-rose-100 bg-white/80 p-3 shadow-sm">
-                      <ResponsiveContainer>
-                        <ComposedChart
-                          data={timeCorrelationHeatStrips.topGraphData}
-                          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                    {/* Heat strips with integrated cycle data */}
+                    <div className="rounded-2xl border border-rose-100 bg-white/80 shadow-sm p-2">
+                      {/* Tooltip display */}
+                      {correlationTooltip && (
+                        <div
+                          className="mb-2 p-2 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800"
+                          onClick={() => setCorrelationTooltip(null)}
                         >
-                          <defs>
-                            <linearGradient id="timeCorr-bleeding-gradient" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="#e8524a" stopOpacity={0.5} />
-                              <stop offset="100%" stopColor="#e8524a" stopOpacity={0.1} />
-                            </linearGradient>
-                            <linearGradient id="timeCorr-fertile-gradient" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="#f472b6" stopOpacity={0.3} />
-                              <stop offset="100%" stopColor="#f472b6" stopOpacity={0.05} />
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#fecdd3" vertical={false} />
-                          <XAxis
-                            dataKey="alignedDay"
-                            stroke="#fb7185"
-                            tick={{ fontSize: 10 }}
-                            tickFormatter={(value: number) =>
-                              timeCorrelationAlignment === "ovulation"
-                                ? value === 0
-                                  ? "Ov"
-                                  : value > 0
-                                    ? `+${value}`
-                                    : String(value)
-                                : String(value)
-                            }
-                          />
-                          <YAxis
-                            domain={[0, "auto"]}
-                            stroke="#fb7185"
-                            tick={{ fontSize: 10 }}
-                            hide
-                          />
-                          {/* Fertile window area */}
-                          {timeCorrelationHeatStrips.ovulationDay !== null && (
-                            <ReferenceArea
-                              x1={timeCorrelationHeatStrips.ovulationDay - 5}
-                              x2={timeCorrelationHeatStrips.ovulationDay + 1}
-                              fill="url(#timeCorr-fertile-gradient)"
-                              fillOpacity={1}
-                            />
-                          )}
-                          {/* Bleeding area */}
-                          <Area
-                            type="stepAfter"
-                            dataKey="bleedingValue"
-                            fill="url(#timeCorr-bleeding-gradient)"
-                            stroke="#e8524a"
-                            strokeWidth={1}
-                            fillOpacity={1}
-                            isAnimationActive={false}
-                          />
-                          {/* Pain line */}
-                          <Line
-                            type="monotone"
-                            dataKey="painNRS"
-                            stroke="#a855f7"
-                            strokeWidth={2}
-                            dot={false}
-                            connectNulls
-                            isAnimationActive={false}
-                          />
-                          {/* Ovulation marker */}
-                          {timeCorrelationHeatStrips.ovulationDay !== null && (
-                            <ReferenceLine
-                              x={timeCorrelationHeatStrips.ovulationDay}
-                              stroke="#facc15"
-                              strokeDasharray="4 4"
-                              strokeWidth={2}
-                            />
-                          )}
-                        </ComposedChart>
-                      </ResponsiveContainer>
-                    </div>
-
-                    {/* Heat strips */}
-                    <div className="overflow-x-auto rounded-2xl border border-rose-100 bg-white/80 p-4 shadow-sm">
+                          <div className="font-medium">{correlationTooltip.label} · Tag {correlationTooltip.day}</div>
+                          <div>{correlationTooltip.value}</div>
+                          {correlationTooltip.details && <div className="text-rose-600 mt-0.5">{correlationTooltip.details}</div>}
+                        </div>
+                      )}
                       {/* Day header */}
-                      <div className="flex items-center gap-0.5 mb-2 sticky top-0 bg-white/80">
-                        <span className="w-24 shrink-0 text-[10px] font-medium text-rose-600">
+                      <div className="flex items-center mb-2 sticky top-0 bg-white/80">
+                        <span className="w-14 shrink-0 text-[9px] font-medium text-rose-600">
                           {timeCorrelationAlignment === "period" ? "Tag" : "Ov±"}
                         </span>
-                        {timeCorrelationHeatStrips.dayRange.map((day) => (
-                          <span
-                            key={day}
-                            className={cn(
-                              "w-5 shrink-0 text-center text-[9px]",
-                              day === timeCorrelationHeatStrips.ovulationDay
-                                ? "font-bold text-amber-600"
-                                : "text-rose-400"
-                            )}
-                          >
-                            {timeCorrelationAlignment === "ovulation" && day === 0
-                              ? "Ov"
-                              : timeCorrelationAlignment === "ovulation" && day > 0
-                                ? `+${day}`
-                                : day}
-                          </span>
-                        ))}
+                        <div className="flex flex-1 min-w-0">
+                          {timeCorrelationHeatStrips.dayRange.map((day) => {
+                            const isOvulation = day === timeCorrelationHeatStrips.ovulationDay;
+                            const showLabel = timeCorrelationAlignment === "period"
+                              ? day === 1 || day % 5 === 0
+                              : day === 0 || day % 5 === 0;
+                            return (
+                              <span
+                                key={day}
+                                className={cn(
+                                  "flex-1 min-w-0 text-center text-[6px]",
+                                  isOvulation
+                                    ? "font-bold text-amber-600"
+                                    : showLabel
+                                      ? "text-rose-500"
+                                      : "text-rose-300"
+                                )}
+                              >
+                                {isOvulation
+                                  ? "•"
+                                  : showLabel
+                                    ? (timeCorrelationAlignment === "ovulation" && day > 0 ? `+${day}` : day)
+                                    : ""}
+                              </span>
+                            );
+                          })}
+                        </div>
                       </div>
 
-                      {/* Symptom rows */}
-                      <div className="text-[10px] text-rose-500 font-medium mb-1 mt-3">Symptome</div>
-                      {timeCorrelationHeatStrips.symptomRows.map((row) => (
-                        <div key={row.key} className="flex items-center gap-0.5 mb-0.5">
-                          <span
-                            className="w-24 shrink-0 text-[10px] text-rose-600 truncate"
-                            title={row.label}
-                          >
-                            {row.label}
-                          </span>
+                      {/* Blutung section - main chart with distinctive styling */}
+                      <div className="text-[9px] text-red-600 font-bold mb-1 mt-2">Blutung</div>
+                      <div
+                        className={cn(
+                          "flex items-center mb-0.5",
+                          timeCorrelationView === "overlay" && "cursor-pointer hover:bg-red-50/50 rounded"
+                        )}
+                        onClick={() => {
+                          if (timeCorrelationView === "overlay") {
+                            setBleedingCyclesExpanded(!bleedingCyclesExpanded);
+                          }
+                        }}
+                      >
+                        <span className="w-14 shrink-0 text-[9px] text-red-700 font-medium truncate flex items-center gap-0.5">
+                          {timeCorrelationView === "overlay" && (
+                            <ChevronRight
+                              className={cn(
+                                "h-2.5 w-2.5 transition-transform shrink-0",
+                                bleedingCyclesExpanded && "rotate-90"
+                              )}
+                            />
+                          )}
+                          <span>{timeCorrelationView === "overlay" ? "Ø" : "Periode"}</span>
+                        </span>
+                        <div className="flex flex-1 min-w-0">
                           {timeCorrelationHeatStrips.dayRange.map((day) => {
-                            const value = row.values.get(day) ?? null;
+                            const dayData = timeCorrelationHeatStrips.topGraphData.find(
+                              (d) => d.alignedDay === day
+                            );
+                            const value = dayData?.bleedingValue ?? 0;
+                            const isOvulation = dayData?.isOvulation ?? false;
+                            const isFertile = dayData?.isFertile ?? false;
+                            // Color scale for bleeding (PBAC 0-100+)
                             const bgColor =
-                              value === null
-                                ? "#f5f5f5"
-                                : value <= 2
-                                  ? "#fce7f3"
-                                  : value <= 4
-                                    ? "#fbcfe8"
-                                    : value <= 6
-                                      ? "#f9a8d4"
-                                      : value <= 8
-                                        ? "#f472b6"
-                                        : "#ec4899";
+                              value === 0
+                                ? isFertile
+                                  ? "#dcfce7" // pale green for fertile window
+                                  : "#f5f5f5"
+                                : value <= 5
+                                  ? "#fee2e2"
+                                  : value <= 15
+                                    ? "#fecaca"
+                                    : value <= 30
+                                      ? "#fca5a5"
+                                      : value <= 50
+                                        ? "#f87171"
+                                        : "#ef4444";
                             return (
                               <div
                                 key={day}
-                                className="h-4 w-5 shrink-0 rounded-sm"
+                                className={cn(
+                                  "h-3 flex-1 min-w-0 rounded-[1px] cursor-pointer",
+                                  isOvulation && "ring-1 ring-amber-400"
+                                )}
                                 style={{ backgroundColor: bgColor }}
-                                title={`${row.label} Tag ${day}: ${value !== null ? value.toFixed(1) : "–"}/10`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCorrelationTooltip({
+                                    day,
+                                    label: timeCorrelationView === "overlay" ? "Periode (Ø)" : "Periode",
+                                    value: value > 0 ? `PBAC ${value.toFixed(0)}` : "Keine Blutung",
+                                    details: isOvulation ? "Eisprung" : isFertile ? "Fruchtbares Fenster" : undefined
+                                  });
+                                }}
                               />
                             );
                           })}
+                        </div>
+                      </div>
+                      {/* Expanded individual cycle rows */}
+                      {bleedingCyclesExpanded && timeCorrelationView === "overlay" &&
+                        timeCorrelationHeatStrips.cycleBleedingRows.map((cycle) => (
+                          <div key={cycle.cycleIndex} className="flex items-center mb-0.5 ml-2">
+                            <span className="w-12 shrink-0 text-[7px] text-red-400 truncate">
+                              {new Date(cycle.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}
+                            </span>
+                            <div className="flex flex-1 min-w-0">
+                              {timeCorrelationHeatStrips.dayRange.map((day) => {
+                                const dayData = cycle.values.get(day);
+                                const value = dayData?.bleedingValue ?? 0;
+                                const isOvulation = dayData?.isOvulation ?? false;
+                                const isFertile = dayData?.isFertile ?? false;
+                                const bgColor =
+                                  value === 0
+                                    ? isFertile
+                                      ? "#dcfce7"
+                                      : "#f5f5f5"
+                                    : value <= 5
+                                      ? "#fee2e2"
+                                      : value <= 15
+                                        ? "#fecaca"
+                                        : value <= 30
+                                          ? "#fca5a5"
+                                          : value <= 50
+                                            ? "#f87171"
+                                            : "#ef4444";
+                                return (
+                                  <div
+                                    key={day}
+                                    className={cn(
+                                      "h-2 flex-1 min-w-0 rounded-[1px] cursor-pointer",
+                                      isOvulation && "ring-1 ring-amber-400"
+                                    )}
+                                    style={{ backgroundColor: bgColor }}
+                                    onClick={() => setCorrelationTooltip({
+                                      day,
+                                      label: `Zyklus ${new Date(cycle.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}`,
+                                      value: value > 0 ? `PBAC ${value.toFixed(0)}` : "Keine Blutung",
+                                      details: isOvulation ? "Eisprung" : isFertile ? "Fruchtbares Fenster" : undefined
+                                    })}
+                                  />
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+
+                      {/* Symptom rows */}
+                      <div className="text-[9px] text-rose-500 font-medium mb-1 mt-3">Symptome</div>
+                      {timeCorrelationHeatStrips.symptomRows.map((row) => (
+                        <div key={row.key}>
+                          {/* Aggregate row */}
+                          <div
+                            className={cn(
+                              "flex items-center mb-0.5",
+                              timeCorrelationView === "overlay" && "cursor-pointer hover:bg-rose-50/50 rounded"
+                            )}
+                            onClick={() => {
+                              if (timeCorrelationView === "overlay") {
+                                setSymptomCyclesExpanded(prev => ({ ...prev, [row.key]: !prev[row.key] }));
+                              }
+                            }}
+                          >
+                            <span className="w-14 shrink-0 text-[8px] text-rose-600 truncate flex items-center gap-0.5">
+                              {timeCorrelationView === "overlay" && (
+                                <ChevronRight
+                                  className={cn(
+                                    "h-2.5 w-2.5 transition-transform shrink-0",
+                                    symptomCyclesExpanded[row.key] && "rotate-90"
+                                  )}
+                                />
+                              )}
+                              <span>{row.label}</span>
+                            </span>
+                            <div className="flex flex-1 min-w-0">
+                              {timeCorrelationHeatStrips.dayRange.map((day) => {
+                                const value = row.values.get(day) ?? null;
+                                const bgColor =
+                                  value === null
+                                    ? "#f5f5f5"
+                                    : value <= 2
+                                      ? "#fce7f3"
+                                      : value <= 4
+                                        ? "#fbcfe8"
+                                        : value <= 6
+                                          ? "#f9a8d4"
+                                          : value <= 8
+                                            ? "#f472b6"
+                                            : "#ec4899";
+                                return (
+                                  <div
+                                    key={day}
+                                    className="h-2.5 flex-1 min-w-0 rounded-[1px] cursor-pointer"
+                                    style={{ backgroundColor: bgColor }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setCorrelationTooltip({
+                                        day,
+                                        label: timeCorrelationView === "overlay" ? `${row.label} (Ø)` : row.label,
+                                        value: value !== null ? `${value.toFixed(1)}/10` : "Keine Daten"
+                                      });
+                                    }}
+                                  />
+                                );
+                              })}
+                            </div>
+                          </div>
+                          {/* Expanded individual cycle rows */}
+                          {symptomCyclesExpanded[row.key] && timeCorrelationView === "overlay" &&
+                            timeCorrelationHeatStrips.cycleSymptomRows.map((cycle) => (
+                              <div key={cycle.cycleIndex} className="flex items-center mb-0.5 ml-2">
+                                <span className="w-12 shrink-0 text-[7px] text-rose-400 truncate">
+                                  {new Date(cycle.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}
+                                </span>
+                                <div className="flex flex-1 min-w-0">
+                                  {timeCorrelationHeatStrips.dayRange.map((day) => {
+                                    const value = cycle.symptomValues.get(row.key as SymptomKey)?.get(day) ?? null;
+                                    const bgColor =
+                                      value === null
+                                        ? "#f5f5f5"
+                                        : value <= 2
+                                          ? "#fce7f3"
+                                          : value <= 4
+                                            ? "#fbcfe8"
+                                            : value <= 6
+                                              ? "#f9a8d4"
+                                              : value <= 8
+                                                ? "#f472b6"
+                                                : "#ec4899";
+                                    return (
+                                      <div
+                                        key={day}
+                                        className="h-2 flex-1 min-w-0 rounded-[1px] cursor-pointer"
+                                        style={{ backgroundColor: bgColor }}
+                                        onClick={() => setCorrelationTooltip({
+                                          day,
+                                          label: `${row.label} - ${new Date(cycle.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}`,
+                                          value: value !== null ? `${value.toFixed(1)}/10` : "Keine Daten"
+                                        })}
+                                      />
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
                         </div>
                       ))}
 
@@ -11157,7 +11774,103 @@ export default function HomePage() {
                       <div className="h-px bg-rose-100 my-2" />
 
                       {/* Pain location groups */}
-                      <div className="text-[10px] text-purple-500 font-medium mb-1">Schmerzorte</div>
+                      <div className="text-[9px] text-purple-500 font-medium mb-1">Schmerzorte</div>
+                      {/* Gesamt (total) row - max pain across all locations */}
+                      <div>
+                        <div
+                          className={cn(
+                            "flex items-center mb-0.5",
+                            timeCorrelationView === "overlay" && "cursor-pointer hover:bg-purple-50/50 rounded"
+                          )}
+                          onClick={() => {
+                            if (timeCorrelationView === "overlay") {
+                              setGesamtCyclesExpanded(!gesamtCyclesExpanded);
+                            }
+                          }}
+                        >
+                          <span className="w-14 shrink-0 text-[8px] text-purple-700 font-bold truncate flex items-center gap-0.5">
+                            {timeCorrelationView === "overlay" && (
+                              <ChevronRight
+                                className={cn(
+                                  "h-2.5 w-2.5 transition-transform shrink-0",
+                                  gesamtCyclesExpanded && "rotate-90"
+                                )}
+                              />
+                            )}
+                            <span>Gesamt</span>
+                          </span>
+                          <div className="flex flex-1 min-w-0">
+                            {timeCorrelationHeatStrips.dayRange.map((day) => {
+                              const value = timeCorrelationHeatStrips.gesamtPainValues.get(day) ?? null;
+                              const bgColor =
+                                value === null
+                                  ? "#f5f5f5"
+                                  : value <= 2
+                                    ? "#f3e8ff"
+                                    : value <= 4
+                                      ? "#e9d5ff"
+                                      : value <= 6
+                                        ? "#d8b4fe"
+                                        : value <= 8
+                                          ? "#c084fc"
+                                          : "#a855f7";
+                              return (
+                                <div
+                                  key={day}
+                                  className="h-2.5 flex-1 min-w-0 rounded-[1px] cursor-pointer"
+                                  style={{ backgroundColor: bgColor }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCorrelationTooltip({
+                                      day,
+                                      label: timeCorrelationView === "overlay" ? "Gesamt (Ø)" : "Gesamt",
+                                      value: value !== null ? `${value.toFixed(1)}/10 (max)` : "Keine Daten"
+                                    });
+                                  }}
+                                />
+                              );
+                            })}
+                          </div>
+                        </div>
+                        {/* Expanded individual cycle rows */}
+                        {gesamtCyclesExpanded && timeCorrelationView === "overlay" &&
+                          timeCorrelationHeatStrips.cycleGesamtRows.map((cycle) => (
+                            <div key={cycle.cycleIndex} className="flex items-center mb-0.5 ml-2">
+                              <span className="w-12 shrink-0 text-[7px] text-purple-400 truncate">
+                                {new Date(cycle.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}
+                              </span>
+                              <div className="flex flex-1 min-w-0">
+                                {timeCorrelationHeatStrips.dayRange.map((day) => {
+                                  const value = cycle.values.get(day) ?? null;
+                                  const bgColor =
+                                    value === null
+                                      ? "#f5f5f5"
+                                      : value <= 2
+                                        ? "#f3e8ff"
+                                        : value <= 4
+                                          ? "#e9d5ff"
+                                          : value <= 6
+                                            ? "#d8b4fe"
+                                            : value <= 8
+                                              ? "#c084fc"
+                                              : "#a855f7";
+                                  return (
+                                    <div
+                                      key={day}
+                                      className="h-2 flex-1 min-w-0 rounded-[1px] cursor-pointer"
+                                      style={{ backgroundColor: bgColor }}
+                                      onClick={() => setCorrelationTooltip({
+                                        day,
+                                        label: `Gesamt - ${new Date(cycle.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}`,
+                                        value: value !== null ? `${value.toFixed(1)}/10 (max)` : "Keine Daten"
+                                      })}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                      </div>
                       {timeCorrelationHeatStrips.locationGroups.map((group) => {
                         const isExpanded = expandedLocationGroups.has(group.id);
                         const hasData = Array.from(group.values.values()).some((v) => v !== null);
@@ -11170,8 +11883,8 @@ export default function HomePage() {
                             {/* Group row */}
                             <div
                               className={cn(
-                                "flex items-center gap-0.5 mb-0.5",
-                                hasChildren && "cursor-pointer hover:bg-purple-50/50 -mx-1 px-1 rounded"
+                                "flex items-center mb-0.5",
+                                hasChildren && "cursor-pointer hover:bg-purple-50/50 rounded"
                               )}
                               onClick={() => {
                                 if (hasChildren) {
@@ -11188,42 +11901,51 @@ export default function HomePage() {
                               }}
                             >
                               <span
-                                className="w-24 shrink-0 text-[10px] text-purple-600 truncate flex items-center gap-1"
+                                className="w-14 shrink-0 text-[8px] text-purple-600 truncate flex items-center gap-0.5"
                                 title={group.label}
                               >
                                 {hasChildren && (
                                   <ChevronRight
                                     className={cn(
-                                      "h-3 w-3 transition-transform shrink-0",
+                                      "h-2.5 w-2.5 transition-transform shrink-0",
                                       isExpanded && "rotate-90"
                                     )}
                                   />
                                 )}
-                                <span className={hasChildren ? "" : "ml-4"}>{group.label}</span>
+                                <span className={hasChildren ? "" : "ml-3"}>{group.label}</span>
                               </span>
-                              {timeCorrelationHeatStrips.dayRange.map((day) => {
-                                const value = group.values.get(day) ?? null;
-                                const bgColor =
-                                  value === null
-                                    ? "#f5f5f5"
-                                    : value <= 2
-                                      ? "#f3e8ff"
-                                      : value <= 4
-                                        ? "#e9d5ff"
-                                        : value <= 6
-                                          ? "#d8b4fe"
-                                          : value <= 8
-                                            ? "#c084fc"
-                                            : "#a855f7";
-                                return (
-                                  <div
-                                    key={day}
-                                    className="h-4 w-5 shrink-0 rounded-sm"
-                                    style={{ backgroundColor: bgColor }}
-                                    title={`${group.label} Tag ${day}: ${value !== null ? value.toFixed(1) : "–"}/10`}
-                                  />
-                                );
-                              })}
+                              <div className="flex flex-1 min-w-0">
+                                {timeCorrelationHeatStrips.dayRange.map((day) => {
+                                  const value = group.values.get(day) ?? null;
+                                  const bgColor =
+                                    value === null
+                                      ? "#f5f5f5"
+                                      : value <= 2
+                                        ? "#f3e8ff"
+                                        : value <= 4
+                                          ? "#e9d5ff"
+                                          : value <= 6
+                                            ? "#d8b4fe"
+                                            : value <= 8
+                                              ? "#c084fc"
+                                              : "#a855f7";
+                                  return (
+                                    <div
+                                      key={day}
+                                      className="h-2.5 flex-1 min-w-0 rounded-[1px] cursor-pointer"
+                                      style={{ backgroundColor: bgColor }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setCorrelationTooltip({
+                                          day,
+                                          label: group.label,
+                                          value: value !== null ? `${value.toFixed(1)}/10` : "Keine Daten"
+                                        });
+                                      }}
+                                    />
+                                  );
+                                })}
+                              </div>
                             </div>
 
                             {/* Expanded child rows */}
@@ -11231,37 +11953,40 @@ export default function HomePage() {
                               group.children.map((child) => (
                                 <div
                                   key={child.id}
-                                  className="flex items-center gap-0.5 mb-0.5 ml-3"
+                                  className="flex items-center mb-0.5 ml-2"
                                 >
-                                  <span
-                                    className="w-21 shrink-0 text-[9px] text-purple-400 truncate"
-                                    title={child.label}
-                                  >
+                                  <span className="w-12 shrink-0 text-[7px] text-purple-400 truncate">
                                     {child.label}
                                   </span>
-                                  {timeCorrelationHeatStrips.dayRange.map((day) => {
-                                    const value = child.values.get(day) ?? null;
-                                    const bgColor =
-                                      value === null
-                                        ? "#f5f5f5"
-                                        : value <= 2
-                                          ? "#f3e8ff"
-                                          : value <= 4
-                                            ? "#e9d5ff"
-                                            : value <= 6
-                                              ? "#d8b4fe"
-                                              : value <= 8
-                                                ? "#c084fc"
-                                                : "#a855f7";
-                                    return (
-                                      <div
-                                        key={day}
-                                        className="h-3 w-5 shrink-0 rounded-sm"
-                                        style={{ backgroundColor: bgColor }}
-                                        title={`${child.label} Tag ${day}: ${value !== null ? value.toFixed(1) : "–"}/10`}
-                                      />
-                                    );
-                                  })}
+                                  <div className="flex flex-1 min-w-0">
+                                    {timeCorrelationHeatStrips.dayRange.map((day) => {
+                                      const value = child.values.get(day) ?? null;
+                                      const bgColor =
+                                        value === null
+                                          ? "#f5f5f5"
+                                          : value <= 2
+                                            ? "#f3e8ff"
+                                            : value <= 4
+                                              ? "#e9d5ff"
+                                              : value <= 6
+                                                ? "#d8b4fe"
+                                                : value <= 8
+                                                  ? "#c084fc"
+                                                  : "#a855f7";
+                                      return (
+                                        <div
+                                          key={day}
+                                          className="h-2 flex-1 min-w-0 rounded-[1px] cursor-pointer"
+                                          style={{ backgroundColor: bgColor }}
+                                          onClick={() => setCorrelationTooltip({
+                                            day,
+                                            label: child.label,
+                                            value: value !== null ? `${value.toFixed(1)}/10` : "Keine Daten"
+                                          })}
+                                        />
+                                      );
+                                    })}
+                                  </div>
                                 </div>
                               ))}
                           </div>
