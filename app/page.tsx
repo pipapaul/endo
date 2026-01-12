@@ -310,6 +310,35 @@ type OvulationResult = {
 };
 
 /**
+ * Shared cycle ovulation data - single source of truth for all ovulation calculations.
+ * This data is computed once and consumed by cycleAnalysis, cycleOverview, and timeCorrelationData.
+ */
+type CycleOvulationData = {
+  /** All cycles with computed ovulation data */
+  cycles: Array<{
+    startDate: string;
+    endDate: string | null;
+    length: number;
+    isCompleted: boolean;
+    ovulationDay: number;
+    ovulationConfidence: number;
+    ovulationMethod: OvulationResult["method"];
+    entries: Array<{ cycleDay: number; entry: DailyEntry }>;
+  }>;
+  /** Personal luteal phase calculated from high-confidence cycles */
+  personalLutealPhase: number | null;
+  /** Map from cycle start date to ovulation data for quick lookup */
+  cycleOvulationMap: Map<string, { ovulationDay: number; cycleStart: string; cycleEnd: string | null }>;
+  /** Completed cycle results for weighted predictions */
+  completedCycleResults: Array<{
+    cycleLength: number;
+    ovulationDay: number;
+    confidence: number;
+    method: OvulationResult["method"];
+  }>;
+};
+
+/**
  * Calculates personal average luteal phase length from completed cycles.
  * Only uses cycles where ovulation was detected with confidence >= 70%.
  * Returns null if insufficient data (< 2 qualifying cycles).
@@ -3878,11 +3907,136 @@ export default function HomePage() {
     return lengths;
   }, [cycleStartDates]);
 
-  // Consolidated cycle analysis - single source of truth for ovulation/fertility predictions
-  // Uses unified multi-signal calculation for consistency with Zeit-Korrelation
+  // Shared cycle ovulation data - single source of truth for all ovulation calculations
+  // Computed once and consumed by cycleAnalysis, cycleOverview, and timeCorrelationData
+  const cycleOvulationData = useMemo((): CycleOvulationData | null => {
+    if (cycleStartDates.length === 0) return null;
+
+    // Build raw cycle data with entries
+    const rawCycles: Array<{
+      startDate: string;
+      endDate: string | null;
+      length: number;
+      isCompleted: boolean;
+      entries: Array<{ cycleDay: number; entry: DailyEntry }>;
+    }> = [];
+
+    for (let i = 0; i < cycleStartDates.length; i += 1) {
+      const cycleStart = cycleStartDates[i];
+      const cycleEnd = cycleStartDates[i + 1] ?? null;
+      const isCompleted = cycleEnd !== null;
+
+      const length = isCompleted
+        ? Math.round((new Date(cycleEnd).getTime() - new Date(cycleStart).getTime()) / MS_PER_DAY)
+        : annotatedDailyEntries.filter(({ entry }) => entry.date >= cycleStart).length || 14;
+
+      const entries = annotatedDailyEntries
+        .filter(({ entry, cycleDay }) => {
+          if (!cycleDay) return false;
+          if (entry.date < cycleStart) return false;
+          if (cycleEnd && entry.date >= cycleEnd) return false;
+          return true;
+        })
+        .map(({ entry, cycleDay }) => ({ cycleDay: cycleDay!, entry }));
+
+      rawCycles.push({
+        startDate: cycleStart,
+        endDate: cycleEnd,
+        length,
+        isCompleted,
+        entries,
+      });
+    }
+
+    // First pass: calculate ovulation for completed cycles without personal luteal phase
+    // This is needed to bootstrap the personal luteal phase calculation
+    const firstPassResults: Array<{
+      cycleLength: number;
+      ovulationDay: number;
+      confidence: number;
+      method: OvulationResult["method"];
+    }> = [];
+
+    for (const cycle of rawCycles) {
+      if (cycle.isCompleted) {
+        const result = calculateOvulationForCycle(
+          cycle.entries,
+          cycle.startDate,
+          cycle.length,
+          {
+            useBillingsMethod: featureFlags.billingMethod ?? false,
+            isCompletedCycle: true,
+            personalLutealPhase: null,
+          }
+        );
+        firstPassResults.push({
+          cycleLength: cycle.length,
+          ovulationDay: result.ovulationDay,
+          confidence: result.confidence,
+          method: result.method,
+        });
+      }
+    }
+
+    // Calculate personal luteal phase from high-confidence detections
+    const personalLutealPhase = calculatePersonalLutealPhase(firstPassResults);
+
+    // Second pass: build final cycle data with personal luteal phase
+    const cycles: CycleOvulationData["cycles"] = [];
+    const cycleOvulationMap = new Map<string, { ovulationDay: number; cycleStart: string; cycleEnd: string | null }>();
+    const completedCycleResults: CycleOvulationData["completedCycleResults"] = [];
+
+    for (const cycle of rawCycles) {
+      const result = calculateOvulationForCycle(
+        cycle.entries,
+        cycle.startDate,
+        cycle.length,
+        {
+          useBillingsMethod: featureFlags.billingMethod ?? false,
+          isCompletedCycle: cycle.isCompleted,
+          personalLutealPhase,
+        }
+      );
+
+      cycles.push({
+        startDate: cycle.startDate,
+        endDate: cycle.endDate,
+        length: cycle.length,
+        isCompleted: cycle.isCompleted,
+        ovulationDay: result.ovulationDay,
+        ovulationConfidence: result.confidence,
+        ovulationMethod: result.method,
+        entries: cycle.entries,
+      });
+
+      cycleOvulationMap.set(cycle.startDate, {
+        ovulationDay: result.ovulationDay,
+        cycleStart: cycle.startDate,
+        cycleEnd: cycle.endDate,
+      });
+
+      if (cycle.isCompleted) {
+        completedCycleResults.push({
+          cycleLength: cycle.length,
+          ovulationDay: result.ovulationDay,
+          confidence: result.confidence,
+          method: result.method,
+        });
+      }
+    }
+
+    return {
+      cycles,
+      personalLutealPhase,
+      cycleOvulationMap,
+      completedCycleResults,
+    };
+  }, [annotatedDailyEntries, cycleStartDates, featureFlags.billingMethod]);
+
+  // Consolidated cycle analysis - uses shared cycleOvulationData
   const cycleAnalysis = useMemo(() => {
     const todayDate = parseIsoDate(today);
-    if (cycleStartDates.length === 0 || completedCycleLengths.length === 0 || !todayDate) {
+    if (!cycleOvulationData || completedCycleLengths.length === 0 || !todayDate) {
       return null;
     }
 
@@ -3895,48 +4049,8 @@ export default function HomePage() {
       return null;
     }
 
-    // Build cycle results for all completed cycles using unified calculation
-    const completedCycleResults: Array<{
-      cycleLength: number;
-      ovulationDay: number;
-      confidence: number;
-      method: OvulationResult["method"];
-    }> = [];
-
-    for (let i = 0; i < cycleStartDates.length - 1; i += 1) {
-      const cycleStart = cycleStartDates[i];
-      const cycleEnd = cycleStartDates[i + 1];
-      const cycleLength = Math.round(
-        (new Date(cycleEnd).getTime() - new Date(cycleStart).getTime()) / MS_PER_DAY
-      );
-
-      const cycleEntries = annotatedDailyEntries
-        .filter(({ entry, cycleDay }) =>
-          entry.date >= cycleStart && entry.date < cycleEnd && cycleDay !== null
-        )
-        .map(({ entry, cycleDay }) => ({ entry, cycleDay: cycleDay! }));
-
-      const result = calculateOvulationForCycle(
-        cycleEntries,
-        cycleStart,
-        cycleLength,
-        {
-          useBillingsMethod: featureFlags.billingMethod ?? false,
-          isCompletedCycle: true,
-          personalLutealPhase: null, // First pass without personal data
-        }
-      );
-
-      completedCycleResults.push({
-        cycleLength,
-        ovulationDay: result.ovulationDay,
-        confidence: result.confidence,
-        method: result.method,
-      });
-    }
-
-    // Calculate personal luteal phase from high-confidence detections
-    const personalLutealPhase = calculatePersonalLutealPhase(completedCycleResults);
+    // Use shared completed cycle results from cycleOvulationData
+    const { completedCycleResults, personalLutealPhase } = cycleOvulationData;
 
     // Calculate predicted ovulation day using confidence-weighted average
     // from recent cycles (last 3-6)
@@ -3991,7 +4105,7 @@ export default function HomePage() {
       billingMethodEnabled: featureFlags.billingMethod ?? false,
       personalLutealPhase,
     };
-  }, [annotatedDailyEntries, cycleStartDates, completedCycleLengths, featureFlags.billingMethod, today]);
+  }, [cycleOvulationData, cycleStartDates, completedCycleLengths, featureFlags.billingMethod, today]);
 
   const selectedCycleDay = useMemo(() => {
     if (!dailyDraft.date) return null;
@@ -4028,70 +4142,18 @@ export default function HomePage() {
     const startDate = new Date(todayDate);
     startDate.setDate(startDate.getDate() - CYCLE_OVERVIEW_PAST_DAYS);
 
-    // Build per-cycle ovulation map for historical cycles (same calculation as Zeit-Korrelation)
-    // This ensures both charts show identical ovulation/fertility data
-    const cycleOvulationMap = new Map<string, { ovulationDay: number; cycleStart: string; cycleEnd: string | null }>();
+    // Use shared cycle ovulation map - create a local copy to handle ongoing cycle override
+    const localOvulationMap = new Map(cycleOvulationData?.cycleOvulationMap ?? []);
 
-    // First pass: calculate ovulation for completed cycles to get personal luteal phase
-    const completedCycleResults: Array<{
-      cycleLength: number;
-      ovulationDay: number;
-      confidence: number;
-    }> = [];
-
-    for (let i = 0; i < cycleStartDates.length - 1; i += 1) {
-      const cycleStart = cycleStartDates[i];
-      const cycleEnd = cycleStartDates[i + 1];
-      const cycleLength = Math.round(
-        (new Date(cycleEnd).getTime() - new Date(cycleStart).getTime()) / MS_PER_DAY
-      );
-
-      const cycleEntries = annotatedDailyEntries
-        .filter(({ entry, cycleDay }) =>
-          entry.date >= cycleStart && entry.date < cycleEnd && cycleDay !== null
-        )
-        .map(({ entry, cycleDay }) => ({ entry, cycleDay: cycleDay! }));
-
-      const result = calculateOvulationForCycle(
-        cycleEntries,
-        cycleStart,
-        cycleLength,
-        {
-          useBillingsMethod: featureFlags.billingMethod ?? false,
-          isCompletedCycle: true,
-          personalLutealPhase: null,
-        }
-      );
-
-      completedCycleResults.push({
-        cycleLength,
-        ovulationDay: result.ovulationDay,
-        confidence: result.confidence,
-      });
-
-      // Store ovulation day for all dates in this cycle
-      cycleOvulationMap.set(cycleStart, {
-        ovulationDay: result.ovulationDay,
-        cycleStart,
-        cycleEnd,
-      });
-    }
-
-    // Calculate personal luteal phase from completed cycles
-    const personalLutealPhase = calculatePersonalLutealPhase(completedCycleResults);
-
-    // Handle current/ongoing cycle (last cycle start with no end)
-    if (cycleStartDates.length > 0) {
+    // For ongoing cycle, override with cycleAnalysis prediction (weighted average)
+    // This ensures the current cycle uses the best prediction based on historical data
+    if (cycleStartDates.length > 0 && cycleOvulationData) {
       const lastCycleStart = cycleStartDates[cycleStartDates.length - 1];
-      const isOngoingCycle = !cycleStartDates.some((d, i) =>
-        i < cycleStartDates.length - 1 && cycleStartDates[i] === lastCycleStart
-      );
+      const lastCycleData = cycleOvulationData.cycles.find(c => c.startDate === lastCycleStart);
 
-      if (isOngoingCycle) {
-        // For ongoing cycle, use cycleAnalysis prediction (weighted average)
-        const ongoingOvulationDay = cycleAnalysis?.predictedOvulationDay ?? 14;
-        cycleOvulationMap.set(lastCycleStart, {
-          ovulationDay: ongoingOvulationDay,
+      if (lastCycleData && !lastCycleData.isCompleted && cycleAnalysis?.predictedOvulationDay) {
+        localOvulationMap.set(lastCycleStart, {
+          ovulationDay: cycleAnalysis.predictedOvulationDay,
           cycleStart: lastCycleStart,
           cycleEnd: null,
         });
@@ -4106,7 +4168,7 @@ export default function HomePage() {
         const cycleEnd = cycleStartDates[i + 1] ?? null;
 
         if (dateStr >= cycleStart && (cycleEnd === null || dateStr < cycleEnd)) {
-          const cycleData = cycleOvulationMap.get(cycleStart);
+          const cycleData = localOvulationMap.get(cycleStart);
           return cycleData?.ovulationDay ?? null;
         }
       }
@@ -4219,7 +4281,7 @@ export default function HomePage() {
       points,
       todayIndex: CYCLE_OVERVIEW_PAST_DAYS, // Today is at this index (0-based)
     };
-  }, [annotatedDailyEntries, cycleAnalysis, cycleStartDates, featureFlags.billingMethod, painShortcutTimelineByDate, today]);
+  }, [annotatedDailyEntries, cycleAnalysis, cycleOvulationData, cycleStartDates, featureFlags.billingMethod, painShortcutTimelineByDate, today]);
 
   const canGoToNextDay = useMemo(() => dailyDraft.date < today, [dailyDraft.date, today]);
 
@@ -6654,113 +6716,24 @@ export default function HomePage() {
     };
   }, [derivedDailyEntries]);
 
-  // Time correlation graph data - uses unified ovulation calculation
+  // Time correlation graph data - uses shared cycleOvulationData
   const timeCorrelationData = useMemo(() => {
-    if (cycleStartDates.length === 0) return null;
+    if (!cycleOvulationData || cycleOvulationData.cycles.length === 0) return null;
 
     const MAX_CYCLES = 12;
-    const starts = [...cycleStartDates].sort().slice(-MAX_CYCLES);
-
-    // Build full cycle data with entries
-    const rawCycles: Array<{
-      startDate: string;
-      endDate: string | null;
-      length: number;
-      entries: Array<{ cycleDay: number; entry: DailyEntry }>;
-    }> = [];
-
-    starts.forEach((startDate, idx) => {
-      const nextStart = starts[idx + 1] ?? null;
-      const entries = annotatedDailyEntries.filter(({ entry, cycleDay }) => {
-        if (!cycleDay) return false;
-        if (entry.date < startDate) return false;
-        if (nextStart && entry.date >= nextStart) return false;
-        return true;
-      });
-
-      const length = nextStart
-        ? Math.round((new Date(nextStart).getTime() - new Date(startDate).getTime()) / MS_PER_DAY)
-        : entries.length;
-
-      rawCycles.push({
-        startDate,
-        endDate: nextStart,
-        length,
-        entries: entries.map(({ entry, cycleDay }) => ({ cycleDay: cycleDay!, entry })),
-      });
-    });
-
-    // First pass: calculate ovulation for completed cycles without personal luteal phase
-    // This is needed to bootstrap the personal luteal phase calculation
-    const firstPassResults: Array<{
-      cycleLength: number;
-      ovulationDay: number;
-      confidence: number;
-    }> = [];
-
-    for (const cycle of rawCycles) {
-      if (cycle.endDate) {
-        // Completed cycle
-        const result = calculateOvulationForCycle(
-          cycle.entries,
-          cycle.startDate,
-          cycle.length,
-          {
-            useBillingsMethod: featureFlags.billingMethod ?? false,
-            isCompletedCycle: true,
-            personalLutealPhase: null,
-          }
-        );
-        firstPassResults.push({
-          cycleLength: cycle.length,
-          ovulationDay: result.ovulationDay,
-          confidence: result.confidence,
-        });
-      }
-    }
-
-    // Calculate personal luteal phase from high-confidence detections
-    const personalLutealPhase = calculatePersonalLutealPhase(firstPassResults);
-
-    // Second pass: build final cycle data with personal luteal phase
-    const cycles: Array<{
-      startDate: string;
-      endDate: string | null;
-      length: number;
-      ovulationDay: number | null;
-      ovulationConfidence: number;
-      ovulationMethod: OvulationResult["method"];
-      entries: Array<{ cycleDay: number; entry: DailyEntry }>;
-    }> = [];
-
-    for (const cycle of rawCycles) {
-      const isCompleted = cycle.endDate !== null;
-
-      // Use unified calculation for all cycles
-      const result = calculateOvulationForCycle(
-        cycle.entries,
-        cycle.startDate,
-        cycle.length,
-        {
-          useBillingsMethod: featureFlags.billingMethod ?? false,
-          isCompletedCycle: isCompleted,
-          personalLutealPhase: personalLutealPhase,
-        }
-      );
-
-      cycles.push({
-        startDate: cycle.startDate,
-        endDate: cycle.endDate,
-        length: cycle.length,
-        ovulationDay: result.ovulationDay,
-        ovulationConfidence: result.confidence,
-        ovulationMethod: result.method,
-        entries: cycle.entries,
-      });
-    }
+    // Use the last MAX_CYCLES from the shared data
+    const cycles = cycleOvulationData.cycles.slice(-MAX_CYCLES).map(cycle => ({
+      startDate: cycle.startDate,
+      endDate: cycle.endDate,
+      length: cycle.length,
+      ovulationDay: cycle.ovulationDay,
+      ovulationConfidence: cycle.ovulationConfidence,
+      ovulationMethod: cycle.ovulationMethod,
+      entries: cycle.entries,
+    }));
 
     return cycles.length > 0 ? cycles : null;
-  }, [annotatedDailyEntries, cycleStartDates, featureFlags.billingMethod]);
+  }, [cycleOvulationData]);
 
   // Aligned time correlation data based on selected mode
   const alignedTimeCorrelationData = useMemo(() => {
