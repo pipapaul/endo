@@ -2118,6 +2118,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
   const bleedingGradientId = useId();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showScrollToToday, setShowScrollToToday] = useState(false);
+  const [activeTooltipData, setActiveTooltipData] = useState<CycleOverviewChartPoint | null>(null);
   const todayIso = useMemo(() => formatDate(new Date()), []);
 
   // Calculate chart dimensions
@@ -2181,112 +2182,16 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
     });
   }, [data.points, todayIso]);
 
-  const renderTooltip = useCallback(
+  // Handle tooltip data updates from chart
+  const handleTooltipChange = useCallback(
     (props: TooltipContentProps<number, string>) => {
       if (!props.active || !props.payload?.length) {
+        setActiveTooltipData(null);
         return null;
       }
-
       const payload = props.payload[0].payload as CycleOverviewChartPoint;
-      const timeline = Array.isArray(payload.painTimeline) ? payload.painTimeline : null;
-      const hasTimeline = timeline ? timeline.some((segment) => segment.eventCount > 0) : false;
-
-      return (
-        <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-700 shadow-sm">
-          <p className="font-semibold text-gray-900 mb-2">{payload.dateLabel}</p>
-          <div className="space-y-1">
-            <p className="flex items-center gap-2">
-              <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: CATEGORY_COLORS.pain.saturated }} />
-              <span>Schmerz: {payload.painNRS}/10</span>
-            </p>
-            <p className="flex items-center gap-2">
-              <span className="inline-block w-2.5 h-0.5 rounded-full bg-amber-400" />
-              <span>Beeinträchtigung: {payload.impactNRS ?? "–"}/10</span>
-            </p>
-            <p className="flex items-center gap-2">
-              <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: CATEGORY_COLORS.bleeding.saturated }} />
-              <span>Blutung: {payload.bleedingLabel}</span>
-            </p>
-          </div>
-          {payload.isBleeding && payload.pbacEquivalent > 0 ? (
-            <p className="mt-1 ml-4 text-gray-500">PBAC-Äquivalent: {payload.pbacEquivalent}</p>
-          ) : null}
-          {payload.bleedingTrackingMethod && payload.isBleeding ? (
-            <p className="text-gray-400 text-[10px] ml-4">
-              ({getTrackingMethodLabel(payload.bleedingTrackingMethod)})
-            </p>
-          ) : null}
-          {(payload.ovulationPositive || payload.isPredictedOvulationDay) && (
-            <div className={cn(
-              "mt-2 px-2 py-1.5 rounded-md text-sm",
-              payload.ovulationConfidence === 100 || payload.ovulationPositive
-                ? "bg-yellow-100 border border-red-300"
-                : payload.ovulationConfidence !== null && payload.ovulationConfidence >= 90
-                  ? "bg-yellow-100 border border-yellow-400"
-                  : payload.ovulationConfidence !== null && payload.ovulationConfidence >= 61
-                    ? "bg-yellow-50 border border-yellow-300"
-                    : "bg-gray-50 border border-yellow-200"
-            )}>
-              <p className="font-medium text-yellow-800">
-                {payload.ovulationPositive ? "Eisprung bestätigt (LH+)" : "Eisprung"}
-              </p>
-              {!payload.ovulationPositive && payload.ovulationMethod && (
-                <p className="text-xs text-yellow-700 mt-0.5">
-                  <span className="font-medium">Methode:</span> {getOvulationMethodLabel(payload.ovulationMethod)}
-                </p>
-              )}
-              {payload.ovulationConfidence !== null && (
-                <p className="text-xs text-yellow-700">
-                  <span className="font-medium">Konfidenz:</span> {payload.ovulationConfidence}%
-                </p>
-              )}
-            </div>
-          )}
-          {payload.isInPredictedFertileWindow && !payload.isPredictedOvulationDay && !payload.ovulationPositive && (
-            <div className="mt-2 px-2 py-1.5 rounded-md bg-pink-50 border border-pink-200 text-sm">
-              <p className="font-medium text-pink-700">Fruchtbares Fenster</p>
-              <p className="text-xs text-pink-600">5 Tage vor bis 1 Tag nach Eisprung</p>
-            </div>
-          )}
-          {payload.mucusFertilityScore !== null && payload.mucusFertilityScore >= 3 ? (
-            <p className={cn(
-              "mt-1",
-              payload.mucusFertilityScore === 4 ? "font-medium text-green-700" : "text-green-600"
-            )}>
-              {payload.mucusFertilityScore === 4 ? "Cervixschleim: Peak (hohe Fruchtbarkeit)" : "Cervixschleim: Fruchtbar"}
-            </p>
-          ) : null}
-          {hasTimeline && timeline ? (
-            <div className="mt-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-purple-400">Schmerz-Tagesverlauf</p>
-              <div className="mt-1 flex items-end gap-0.5">
-                {timeline.map((segment, index) => {
-                  const height = 4 + (segment.maxIntensity / 10) * 14;
-                  const hasMultiple = segment.eventCount > 1;
-                  return (
-                    <span
-                      key={`pain-tooltip-bar-${payload.date}-${index}`}
-                      className="w-1.5 rounded-full"
-                      style={{
-                        height,
-                        backgroundColor: segment.eventCount > 0 ? CATEGORY_COLORS.pain.saturated : "#e5e7eb",
-                        backgroundImage: hasMultiple
-                          ? `repeating-linear-gradient(135deg, ${CATEGORY_COLORS.pain.saturated}, ${CATEGORY_COLORS.pain.saturated} 6px, #e9d5ff 6px, #e9d5ff 10px)`
-                          : undefined,
-                      }}
-                      title={
-                        segment.eventCount > 0
-                          ? `${segment.eventCount} Ereignis${segment.eventCount > 1 ? "se" : ""}`
-                          : undefined
-                      }
-                    />
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-        </div>
-      );
+      setActiveTooltipData(payload);
+      return null; // Return null - we render tooltip separately outside the chart container
     },
     []
   );
@@ -2342,8 +2247,118 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
     return null;
   }
 
+  // Render tooltip content
+  const tooltipContent = activeTooltipData ? (() => {
+    const payload = activeTooltipData;
+    const timeline = Array.isArray(payload.painTimeline) ? payload.painTimeline : null;
+    const hasTimeline = timeline ? timeline.some((segment) => segment.eventCount > 0) : false;
+
+    return (
+      <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-700 shadow-lg">
+        <p className="font-semibold text-gray-900 mb-2">{payload.dateLabel}</p>
+        <div className="space-y-1">
+          <p className="flex items-center gap-2">
+            <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: CATEGORY_COLORS.pain.saturated }} />
+            <span>Schmerz: {payload.painNRS}/10</span>
+          </p>
+          <p className="flex items-center gap-2">
+            <span className="inline-block w-2.5 h-0.5 rounded-full bg-amber-400" />
+            <span>Beeinträchtigung: {payload.impactNRS ?? "–"}/10</span>
+          </p>
+          <p className="flex items-center gap-2">
+            <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: CATEGORY_COLORS.bleeding.saturated }} />
+            <span>Blutung: {payload.bleedingLabel}</span>
+          </p>
+        </div>
+        {payload.isBleeding && payload.pbacEquivalent > 0 ? (
+          <p className="mt-1 ml-4 text-gray-500">PBAC-Äquivalent: {payload.pbacEquivalent}</p>
+        ) : null}
+        {payload.bleedingTrackingMethod && payload.isBleeding ? (
+          <p className="text-gray-400 text-[10px] ml-4">
+            ({getTrackingMethodLabel(payload.bleedingTrackingMethod)})
+          </p>
+        ) : null}
+        {(payload.ovulationPositive || payload.isPredictedOvulationDay) && (
+          <div className={cn(
+            "mt-2 px-2 py-1.5 rounded-md text-sm",
+            payload.ovulationConfidence === 100 || payload.ovulationPositive
+              ? "bg-yellow-100 border border-red-300"
+              : payload.ovulationConfidence !== null && payload.ovulationConfidence >= 90
+                ? "bg-yellow-100 border border-yellow-400"
+                : payload.ovulationConfidence !== null && payload.ovulationConfidence >= 61
+                  ? "bg-yellow-50 border border-yellow-300"
+                  : "bg-gray-50 border border-yellow-200"
+          )}>
+            <p className="font-medium text-yellow-800">
+              {payload.ovulationPositive ? "Eisprung bestätigt (LH+)" : "Eisprung"}
+            </p>
+            {!payload.ovulationPositive && payload.ovulationMethod && (
+              <p className="text-xs text-yellow-700 mt-0.5">
+                <span className="font-medium">Methode:</span> {getOvulationMethodLabel(payload.ovulationMethod)}
+              </p>
+            )}
+            {payload.ovulationConfidence !== null && (
+              <p className="text-xs text-yellow-700">
+                <span className="font-medium">Konfidenz:</span> {payload.ovulationConfidence}%
+              </p>
+            )}
+          </div>
+        )}
+        {payload.isInPredictedFertileWindow && !payload.isPredictedOvulationDay && !payload.ovulationPositive && (
+          <div className="mt-2 px-2 py-1.5 rounded-md bg-pink-50 border border-pink-200 text-sm">
+            <p className="font-medium text-pink-700">Fruchtbares Fenster</p>
+            <p className="text-xs text-pink-600">5 Tage vor bis 1 Tag nach Eisprung</p>
+          </div>
+        )}
+        {payload.mucusFertilityScore !== null && payload.mucusFertilityScore >= 3 ? (
+          <p className={cn(
+            "mt-1",
+            payload.mucusFertilityScore === 4 ? "font-medium text-green-700" : "text-green-600"
+          )}>
+            {payload.mucusFertilityScore === 4 ? "Cervixschleim: Peak (hohe Fruchtbarkeit)" : "Cervixschleim: Fruchtbar"}
+          </p>
+        ) : null}
+        {hasTimeline && timeline ? (
+          <div className="mt-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-purple-400">Schmerz-Tagesverlauf</p>
+            <div className="mt-1 flex items-end gap-0.5">
+              {timeline.map((segment, index) => {
+                const height = 4 + (segment.maxIntensity / 10) * 14;
+                const hasMultiple = segment.eventCount > 1;
+                return (
+                  <span
+                    key={`pain-tooltip-bar-${payload.date}-${index}`}
+                    className="w-1.5 rounded-full"
+                    style={{
+                      height,
+                      backgroundColor: segment.eventCount > 0 ? CATEGORY_COLORS.pain.saturated : "#e5e7eb",
+                      backgroundImage: hasMultiple
+                        ? `repeating-linear-gradient(135deg, ${CATEGORY_COLORS.pain.saturated}, ${CATEGORY_COLORS.pain.saturated} 6px, #e9d5ff 6px, #e9d5ff 10px)`
+                        : undefined,
+                    }}
+                    title={
+                      segment.eventCount > 0
+                        ? `${segment.eventCount} Ereignis${segment.eventCount > 1 ? "se" : ""}`
+                        : undefined
+                    }
+                  />
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  })() : null;
+
   return (
     <section aria-label="Zyklusübersicht" className="relative">
+      {/* Tooltip rendered fixed at top of screen to avoid clipping */}
+      {tooltipContent && (
+        <div className="fixed top-0 left-1/2 -translate-x-1/2 z-50 pointer-events-none pt-2">
+          {tooltipContent}
+        </div>
+      )}
       <div
         ref={scrollContainerRef}
         className="h-36 w-full overflow-x-auto sm:h-44 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent"
@@ -2380,7 +2395,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
             <YAxis yAxisId="painImpact" domain={[0, 10]} hide />
             <Tooltip
               cursor={{ stroke: "#9ca3af", strokeOpacity: 0.2, strokeWidth: 1 }}
-              content={renderTooltip}
+              content={handleTooltipChange}
             />
             {/* Simple mode uncertainty band - shows the range of possible values with blur */}
             <Area
