@@ -328,7 +328,7 @@ type CycleOvulationData = {
   /** Personal luteal phase calculated from high-confidence cycles */
   personalLutealPhase: number | null;
   /** Map from cycle start date to ovulation data for quick lookup */
-  cycleOvulationMap: Map<string, { ovulationDay: number; cycleStart: string; cycleEnd: string | null }>;
+  cycleOvulationMap: Map<string, { ovulationDay: number; cycleStart: string; cycleEnd: string | null; confidence: number; method: OvulationResult["method"] }>;
   /** Completed cycle results for weighted predictions */
   completedCycleResults: Array<{
     cycleLength: number;
@@ -1816,6 +1816,8 @@ type CycleOverviewPoint = {
   isPredictedOvulationDay: boolean;
   isInPredictedFertileWindow: boolean;
   mucusFertilityScore: number | null;
+  ovulationMethod: OvulationResult["method"] | null;
+  ovulationConfidence: number | null;
 };
 
 type CycleOverviewData = {
@@ -1964,31 +1966,57 @@ const CycleStartDrop = ({ cx, cy }: DotProps) => {
   );
 };
 
-const OvulationMarkerDot = ({ cx, cy }: DotProps) => {
-  if (typeof cx !== "number" || typeof cy !== "number") {
-    return null;
-  }
-
-  return (
-    <g>
-      <circle cx={cx} cy={cy} r={6} fill="#fef08a" stroke="#ca8a04" strokeWidth={1.5} />
-      <circle cx={cx} cy={cy} r={2} fill="#fde047" />
-    </g>
-  );
-};
-
 type PredictionDotProps = DotProps & { payload?: CycleOverviewChartPoint };
 
-const PredictedOvulationDot = ({ cx, cy, payload }: PredictionDotProps) => {
+/**
+ * Unified ovulation dot with 4 confidence levels:
+ * - < 61%: Yellow dashed ring (empty)
+ * - 61-90%: Yellow solid ring (empty)
+ * - 90-99%: Yellow filled dot
+ * - 100%: Yellow filled dot with red ring (LH+ confirmed)
+ */
+const OvulationConfidenceDot = ({ cx, cy, payload }: PredictionDotProps) => {
   if (
     typeof cx !== "number" ||
     typeof cy !== "number" ||
-    !payload?.isPredictedOvulationDay ||
-    payload?.ovulationPositive
+    (!payload?.isPredictedOvulationDay && !payload?.ovulationPositive)
   ) {
     return null;
   }
 
+  const confidence = payload?.ovulationConfidence ?? 50;
+
+  // 100% - LH+ confirmed: Yellow filled dot with red ring
+  if (confidence === 100 || payload?.ovulationPositive) {
+    return (
+      <g>
+        <circle cx={cx} cy={cy} r={7} fill="none" stroke="#ef4444" strokeWidth={2} />
+        <circle cx={cx} cy={cy} r={5} fill="#fef08a" stroke="#ca8a04" strokeWidth={1.5} />
+        <circle cx={cx} cy={cy} r={2} fill="#fde047" />
+      </g>
+    );
+  }
+
+  // 90-99%: Yellow filled dot
+  if (confidence >= 90) {
+    return (
+      <g>
+        <circle cx={cx} cy={cy} r={6} fill="#fef08a" stroke="#ca8a04" strokeWidth={1.5} />
+        <circle cx={cx} cy={cy} r={2} fill="#fde047" />
+      </g>
+    );
+  }
+
+  // 61-90%: Yellow solid ring (empty)
+  if (confidence >= 61) {
+    return (
+      <g>
+        <circle cx={cx} cy={cy} r={6} fill="#fefce8" stroke="#eab308" strokeWidth={1.5} />
+      </g>
+    );
+  }
+
+  // < 61%: Yellow dashed ring (empty)
   return (
     <g>
       <circle
@@ -2000,18 +2028,21 @@ const PredictedOvulationDot = ({ cx, cy, payload }: PredictionDotProps) => {
         strokeWidth={1.5}
         strokeDasharray="3,2"
       />
-      <text
-        x={cx}
-        y={cy + 3}
-        textAnchor="middle"
-        fontSize={9}
-        fill="#ca8a04"
-        fontWeight="bold"
-      >
-        ?
-      </text>
     </g>
   );
+};
+
+/**
+ * Get human-readable label for ovulation detection method
+ */
+const getOvulationMethodLabel = (method: OvulationResult["method"]): string => {
+  switch (method) {
+    case "mucus_pain": return "Zervixschleim + Mittelschmerz";
+    case "mucus": return "Zervixschleim (Billings)";
+    case "pain": return "Mittelschmerz";
+    case "personal_luteal": return "Persönliche Lutealphase";
+    case "standard": return "Standardberechnung";
+  }
 };
 
 const FertileWindowDot = ({ cx, cy, payload }: PredictionDotProps) => {
@@ -2185,14 +2216,38 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               ({getTrackingMethodLabel(payload.bleedingTrackingMethod)})
             </p>
           ) : null}
-          {payload.ovulationPositive ? (
-            <p className="font-medium text-yellow-700 mt-1">Eisprung bestätigt (LH+)</p>
-          ) : payload.isPredictedOvulationDay ? (
-            <p className="text-yellow-600 mt-1">Eisprung geschätzt</p>
-          ) : null}
-          {payload.isInPredictedFertileWindow && !payload.isPredictedOvulationDay && !payload.ovulationPositive ? (
-            <p className="text-pink-600 mt-1">Fruchtbares Fenster (geschätzt)</p>
-          ) : null}
+          {(payload.ovulationPositive || payload.isPredictedOvulationDay) && (
+            <div className={cn(
+              "mt-2 px-2 py-1.5 rounded-md text-sm",
+              payload.ovulationConfidence === 100 || payload.ovulationPositive
+                ? "bg-yellow-100 border border-red-300"
+                : payload.ovulationConfidence !== null && payload.ovulationConfidence >= 90
+                  ? "bg-yellow-100 border border-yellow-400"
+                  : payload.ovulationConfidence !== null && payload.ovulationConfidence >= 61
+                    ? "bg-yellow-50 border border-yellow-300"
+                    : "bg-gray-50 border border-yellow-200"
+            )}>
+              <p className="font-medium text-yellow-800">
+                {payload.ovulationPositive ? "Eisprung bestätigt (LH+)" : "Eisprung"}
+              </p>
+              {!payload.ovulationPositive && payload.ovulationMethod && (
+                <p className="text-xs text-yellow-700 mt-0.5">
+                  <span className="font-medium">Methode:</span> {getOvulationMethodLabel(payload.ovulationMethod)}
+                </p>
+              )}
+              {payload.ovulationConfidence !== null && (
+                <p className="text-xs text-yellow-700">
+                  <span className="font-medium">Konfidenz:</span> {payload.ovulationConfidence}%
+                </p>
+              )}
+            </div>
+          )}
+          {payload.isInPredictedFertileWindow && !payload.isPredictedOvulationDay && !payload.ovulationPositive && (
+            <div className="mt-2 px-2 py-1.5 rounded-md bg-pink-50 border border-pink-200 text-sm">
+              <p className="font-medium text-pink-700">Fruchtbares Fenster</p>
+              <p className="text-xs text-pink-600">5 Tage vor bis 1 Tag nach Eisprung</p>
+            </div>
+          )}
           {payload.mucusFertilityScore !== null && payload.mucusFertilityScore >= 3 ? (
             <p className={cn(
               "mt-1",
@@ -2388,7 +2443,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               dataKey="painValue"
               yAxisId="painImpact"
               stroke="none"
-              dot={<PredictedOvulationDot />}
+              dot={<OvulationConfidenceDot />}
               activeDot={false}
               isAnimationActive={false}
               legendType="none"
@@ -3983,7 +4038,7 @@ export default function HomePage() {
 
     // Second pass: build final cycle data with personal luteal phase
     const cycles: CycleOvulationData["cycles"] = [];
-    const cycleOvulationMap = new Map<string, { ovulationDay: number; cycleStart: string; cycleEnd: string | null }>();
+    const cycleOvulationMap = new Map<string, { ovulationDay: number; cycleStart: string; cycleEnd: string | null; confidence: number; method: OvulationResult["method"] }>();
     const completedCycleResults: CycleOvulationData["completedCycleResults"] = [];
 
     for (const cycle of rawCycles) {
@@ -4013,6 +4068,8 @@ export default function HomePage() {
         ovulationDay: result.ovulationDay,
         cycleStart: cycle.startDate,
         cycleEnd: cycle.endDate,
+        confidence: result.confidence,
+        method: result.method,
       });
 
       if (cycle.isCompleted) {
@@ -4156,12 +4213,14 @@ export default function HomePage() {
           ovulationDay: cycleAnalysis.predictedOvulationDay,
           cycleStart: lastCycleStart,
           cycleEnd: null,
+          confidence: lastCycleData.ovulationConfidence,
+          method: lastCycleData.ovulationMethod,
         });
       }
     }
 
-    // Helper to get ovulation day for a specific date
-    const getOvulationForDate = (dateStr: string): number | null => {
+    // Helper to get ovulation data for a specific date
+    const getOvulationDataForDate = (dateStr: string): { ovulationDay: number; confidence: number; method: OvulationResult["method"] } | null => {
       // Find which cycle this date belongs to
       for (let i = cycleStartDates.length - 1; i >= 0; i -= 1) {
         const cycleStart = cycleStartDates[i];
@@ -4169,7 +4228,14 @@ export default function HomePage() {
 
         if (dateStr >= cycleStart && (cycleEnd === null || dateStr < cycleEnd)) {
           const cycleData = localOvulationMap.get(cycleStart);
-          return cycleData?.ovulationDay ?? null;
+          if (cycleData) {
+            return {
+              ovulationDay: cycleData.ovulationDay,
+              confidence: cycleData.confidence,
+              method: cycleData.method,
+            };
+          }
+          return null;
         }
       }
       return null;
@@ -4178,27 +4244,31 @@ export default function HomePage() {
     // Build prediction function using per-cycle ovulation
     const getPredictionForDate = (dateStr: string, cycleDay: number | null) => {
       if (cycleDay === null) {
-        return { isPredictedOvulationDay: false, isInPredictedFertileWindow: false };
+        return { isPredictedOvulationDay: false, isInPredictedFertileWindow: false, ovulationMethod: null as OvulationResult["method"] | null, ovulationConfidence: null as number | null };
       }
 
-      const ovulationDay = getOvulationForDate(dateStr);
-      if (ovulationDay === null) {
-        return { isPredictedOvulationDay: false, isInPredictedFertileWindow: false };
+      const ovulationData = getOvulationDataForDate(dateStr);
+      if (ovulationData === null) {
+        return { isPredictedOvulationDay: false, isInPredictedFertileWindow: false, ovulationMethod: null as OvulationResult["method"] | null, ovulationConfidence: null as number | null };
       }
 
       return {
-        isPredictedOvulationDay: cycleDay === ovulationDay,
-        isInPredictedFertileWindow: isFertileDay(cycleDay, ovulationDay),
+        isPredictedOvulationDay: cycleDay === ovulationData.ovulationDay,
+        isInPredictedFertileWindow: isFertileDay(cycleDay, ovulationData.ovulationDay),
+        ovulationMethod: ovulationData.method,
+        ovulationConfidence: ovulationData.confidence,
       };
     };
 
     const pointsByDate = new Map<string, CycleOverviewPoint>();
     annotatedDailyEntries.forEach(({ entry, cycleDay }) => {
-      const { isPredictedOvulationDay, isInPredictedFertileWindow } =
+      const { isPredictedOvulationDay, isInPredictedFertileWindow, ovulationMethod, ovulationConfidence } =
         getPredictionForDate(entry.date, cycleDay);
       const mucusScore = featureFlags.billingMethod
         ? scoreCervixMucusFertility(entry.cervixMucus)
         : null;
+      // If LH+ confirmed, set confidence to 100%
+      const isLhConfirmed = Boolean(entry.ovulation?.lhPositive);
       pointsByDate.set(entry.date, {
         date: entry.date,
         cycleDay: cycleDay ?? null,
@@ -4216,6 +4286,8 @@ export default function HomePage() {
         isPredictedOvulationDay,
         isInPredictedFertileWindow,
         mucusFertilityScore: mucusScore,
+        ovulationMethod: isLhConfirmed ? null : ovulationMethod,
+        ovulationConfidence: isLhConfirmed ? 100 : ovulationConfidence,
       });
     });
 
@@ -4233,10 +4305,12 @@ export default function HomePage() {
         // For dates without entries, calculate prediction from date position
         let isPredictedOvulationDay = false;
         let isInPredictedFertileWindow = false;
+        let ovulationMethod: OvulationResult["method"] | null = null;
+        let ovulationConfidence: number | null = null;
 
-        // Find which cycle this date belongs to and get its ovulation day
-        const ovulationDay = getOvulationForDate(iso);
-        if (ovulationDay !== null) {
+        // Find which cycle this date belongs to and get its ovulation data
+        const ovulationData = getOvulationDataForDate(iso);
+        if (ovulationData !== null) {
           // Calculate cycle day for this date
           for (let i = cycleStartDates.length - 1; i >= 0; i -= 1) {
             const cycleStart = cycleStartDates[i];
@@ -4248,8 +4322,10 @@ export default function HomePage() {
                 const diffMs = currentDate.getTime() - cycleStartDate.getTime();
                 if (diffMs >= 0) {
                   const cycleDay = Math.floor(diffMs / MS_PER_DAY) + 1;
-                  isPredictedOvulationDay = cycleDay === ovulationDay;
-                  isInPredictedFertileWindow = isFertileDay(cycleDay, ovulationDay);
+                  isPredictedOvulationDay = cycleDay === ovulationData.ovulationDay;
+                  isInPredictedFertileWindow = isFertileDay(cycleDay, ovulationData.ovulationDay);
+                  ovulationMethod = ovulationData.method;
+                  ovulationConfidence = ovulationData.confidence;
                 }
               }
               break;
@@ -4272,6 +4348,8 @@ export default function HomePage() {
           isPredictedOvulationDay,
           isInPredictedFertileWindow,
           mucusFertilityScore: null,
+          ovulationMethod,
+          ovulationConfidence,
         });
       }
     }
