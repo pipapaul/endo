@@ -1985,25 +1985,27 @@ type PredictionDotProps = DotProps & { payload?: CycleOverviewChartPoint };
  * - 61-90%: Yellow solid ring (empty)
  * - 90-99%: Yellow filled dot
  * - 100%: Yellow filled dot with red ring (LH+ confirmed)
+ * Positioned in dedicated prediction row between dates and chart baseline
  */
-const OvulationConfidenceDot = ({ cx, cy, payload }: PredictionDotProps) => {
+const OvulationConfidenceDot = ({ cx, payload }: PredictionDotProps) => {
   if (
     typeof cx !== "number" ||
-    typeof cy !== "number" ||
     (!payload?.isPredictedOvulationDay && !payload?.ovulationPositive)
   ) {
     return null;
   }
 
   const confidence = payload?.ovulationConfidence ?? 50;
+  // Use fixed Y position in prediction row
+  const dotY = 118;
 
   // 100% - LH+ confirmed: Yellow filled dot with red ring
   if (confidence === 100 || payload?.ovulationPositive) {
     return (
       <g>
-        <circle cx={cx} cy={cy} r={7} fill="none" stroke="#ef4444" strokeWidth={2} />
-        <circle cx={cx} cy={cy} r={5} fill="#fef08a" stroke="#ca8a04" strokeWidth={1.5} />
-        <circle cx={cx} cy={cy} r={2} fill="#fde047" />
+        <circle cx={cx} cy={dotY} r={5} fill="none" stroke="#ef4444" strokeWidth={1.5} />
+        <circle cx={cx} cy={dotY} r={3.5} fill="#fef08a" stroke="#ca8a04" strokeWidth={1} />
+        <circle cx={cx} cy={dotY} r={1.5} fill="#fde047" />
       </g>
     );
   }
@@ -2012,8 +2014,8 @@ const OvulationConfidenceDot = ({ cx, cy, payload }: PredictionDotProps) => {
   if (confidence >= 90) {
     return (
       <g>
-        <circle cx={cx} cy={cy} r={6} fill="#fef08a" stroke="#ca8a04" strokeWidth={1.5} />
-        <circle cx={cx} cy={cy} r={2} fill="#fde047" />
+        <circle cx={cx} cy={dotY} r={4} fill="#fef08a" stroke="#ca8a04" strokeWidth={1} />
+        <circle cx={cx} cy={dotY} r={1.5} fill="#fde047" />
       </g>
     );
   }
@@ -2022,7 +2024,7 @@ const OvulationConfidenceDot = ({ cx, cy, payload }: PredictionDotProps) => {
   if (confidence >= 61) {
     return (
       <g>
-        <circle cx={cx} cy={cy} r={6} fill="#fefce8" stroke="#eab308" strokeWidth={1.5} />
+        <circle cx={cx} cy={dotY} r={4} fill="#fefce8" stroke="#eab308" strokeWidth={1} />
       </g>
     );
   }
@@ -2032,12 +2034,12 @@ const OvulationConfidenceDot = ({ cx, cy, payload }: PredictionDotProps) => {
     <g>
       <circle
         cx={cx}
-        cy={cy}
-        r={6}
+        cy={dotY}
+        r={4}
         fill="#fefce8"
         stroke="#eab308"
-        strokeWidth={1.5}
-        strokeDasharray="3,2"
+        strokeWidth={1}
+        strokeDasharray="2,1"
       />
     </g>
   );
@@ -2056,10 +2058,12 @@ const getOvulationMethodLabel = (method: OvulationResult["method"]): string => {
   }
 };
 
-const FertileWindowDot = ({ cx, cy, payload }: PredictionDotProps) => {
+// Fixed Y position for prediction indicator row (between dates and chart baseline)
+const PREDICTION_DOT_Y = 118;
+
+const FertileWindowDot = ({ cx, payload }: PredictionDotProps) => {
   if (
     typeof cx !== "number" ||
-    typeof cy !== "number" ||
     !payload?.isInPredictedFertileWindow ||
     payload?.isPredictedOvulationDay ||
     payload?.ovulationPositive
@@ -2077,12 +2081,12 @@ const FertileWindowDot = ({ cx, cy, payload }: PredictionDotProps) => {
     <g>
       <circle
         cx={cx}
-        cy={cy}
-        r={5}
+        cy={PREDICTION_DOT_Y}
+        r={3}
         fill={isMucusValidated ? "#fce7f3" : "#fdf2f8"}
         stroke="#f472b6"
-        strokeWidth={1.5}
-        strokeDasharray={isMucusValidated ? undefined : "2,2"}
+        strokeWidth={1}
+        strokeDasharray={isMucusValidated ? undefined : "2,1"}
       />
     </g>
   );
@@ -2093,10 +2097,9 @@ const FertileWindowDot = ({ cx, cy, payload }: PredictionDotProps) => {
  * Only shown when Billings method is enabled and score >= 3 (high fertility)
  * Uses dashed stroke when insufficient history (< 2 completed cycles with mucus)
  */
-const MucusFertilityDot = ({ cx, cy, payload }: PredictionDotProps) => {
+const MucusFertilityDot = ({ cx, payload }: PredictionDotProps) => {
   if (
     typeof cx !== "number" ||
-    typeof cy !== "number" ||
     !payload?.mucusFertilityScore ||
     payload.mucusFertilityScore < 3
   ) {
@@ -2115,23 +2118,23 @@ const MucusFertilityDot = ({ cx, cy, payload }: PredictionDotProps) => {
       {isPeakFertility && hasEnoughHistory && (
         <circle
           cx={cx}
-          cy={cy - 12}
-          r={6}
+          cy={PREDICTION_DOT_Y}
+          r={5}
           fill="#dcfce7"
           stroke="#22c55e"
-          strokeWidth={1}
+          strokeWidth={0.5}
           opacity={0.5}
         />
       )}
       {/* Main indicator */}
       <circle
         cx={cx}
-        cy={cy - 12}
-        r={isPeakFertility ? 4 : 3}
+        cy={PREDICTION_DOT_Y}
+        r={isPeakFertility ? 3.5 : 3}
         fill={hasEnoughHistory ? (isPeakFertility ? "#22c55e" : "#86efac") : "#f0fdf4"}
         stroke={isPeakFertility ? "#15803d" : "#22c55e"}
-        strokeWidth={1.5}
-        strokeDasharray={hasEnoughHistory ? undefined : "2,2"}
+        strokeWidth={1}
+        strokeDasharray={hasEnoughHistory ? undefined : "2,1"}
       />
     </g>
   );
@@ -2333,14 +2336,31 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
             <p className="text-xs text-pink-600">5 Tage vor bis 1 Tag nach Eisprung</p>
           </div>
         )}
-        {payload.mucusFertilityScore !== null && payload.mucusFertilityScore >= 3 ? (
-          <p className={cn(
-            "mt-1",
-            payload.mucusFertilityScore === 4 ? "font-medium text-green-700" : "text-green-600"
-          )}>
-            {payload.mucusFertilityScore === 4 ? "Cervixschleim: Peak (hohe Fruchtbarkeit)" : "Cervixschleim: Fruchtbar"}
-          </p>
-        ) : null}
+        {payload.mucusFertilityScore !== null && payload.mucusFertilityScore >= 3 ? (() => {
+          const isMucusValidated =
+            (payload.ovulationMethod === "mucus" || payload.ovulationMethod === "mucus_pain") &&
+            (payload.ovulationConfidence ?? 0) >= 70;
+          return (
+            <div className={cn(
+              "mt-2 px-2 py-1.5 rounded-md text-sm",
+              isMucusValidated
+                ? (payload.mucusFertilityScore === 4 ? "bg-green-100 border border-green-300" : "bg-green-50 border border-green-200")
+                : "bg-gray-50 border border-green-200"
+            )}>
+              <p className={cn(
+                "font-medium",
+                isMucusValidated ? "text-green-700" : "text-green-600"
+              )}>
+                {payload.mucusFertilityScore === 4 ? "Cervixschleim: Peak" : "Cervixschleim: Fruchtbar"}
+              </p>
+              {!isMucusValidated && (
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Noch nicht validiert (min. 2 Zyklen nötig)
+                </p>
+              )}
+            </div>
+          );
+        })() : null}
         {hasTimeline && timeline ? (
           <div className="mt-2">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-purple-400">Schmerz-Tagesverlauf</p>
