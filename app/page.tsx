@@ -6854,11 +6854,18 @@ export default function HomePage() {
     ] as const;
 
     // Get target cycles based on view mode
+    // For "last" mode: show the most recent completed cycle, or ongoing if no completed cycles
     const targetCycles =
       timeCorrelationView === "last"
-        ? alignedTimeCorrelationData.length > 1
-          ? [alignedTimeCorrelationData[alignedTimeCorrelationData.length - 2]]
-          : alignedTimeCorrelationData.slice(-1)
+        ? (() => {
+            // Find the most recent completed cycle
+            const completedCycles = alignedTimeCorrelationData.filter(c => c.endDate !== null);
+            if (completedCycles.length > 0) {
+              return [completedCycles[completedCycles.length - 1]];
+            }
+            // If no completed cycles, show the ongoing one
+            return alignedTimeCorrelationData.slice(-1);
+          })()
         : alignedTimeCorrelationData;
 
     // Find day range across all target cycles
@@ -7116,8 +7123,8 @@ export default function HomePage() {
           bleedingValue: data && data.bleedingCount > 0 ? data.bleedingSum / data.bleedingCount : 0,
           painNRS: data && data.painCount > 0 ? data.painSum / data.painCount : null,
           impactNRS: data && data.impactCount > 0 ? data.impactSum / data.impactCount : null,
-          isOvulation: data ? data.ovulationCount > data.totalCycles / 2 : false,
-          isFertile: data ? data.fertileCount > data.totalCycles / 2 : false,
+          isOvulation: data ? data.ovulationCount >= data.totalCycles / 2 : false,
+          isFertile: data ? data.fertileCount >= data.totalCycles / 2 : false,
         });
       });
     } else {
@@ -7155,10 +7162,27 @@ export default function HomePage() {
     }
 
     // Find ovulation day for reference line
-    const ovulationDay =
-      timeCorrelationAlignment === "ovulation"
-        ? 0
-        : targetCycles[0]?.ovulationDay ?? null;
+    // In ovulation alignment: always day 0
+    // In period alignment with single cycle: use that cycle's ovulation day
+    // In period alignment with overlay: use confidence-weighted average
+    let ovulationDay: number | null;
+    if (timeCorrelationAlignment === "ovulation") {
+      ovulationDay = 0;
+    } else if (targetCycles.length === 1) {
+      ovulationDay = targetCycles[0]?.ovulationDay ?? null;
+    } else {
+      // Calculate confidence-weighted average ovulation day for overlay mode
+      let totalWeight = 0;
+      let weightedSum = 0;
+      targetCycles.forEach((cycle) => {
+        if (cycle.ovulationDay !== null) {
+          const weight = cycle.ovulationConfidence ?? 50;
+          weightedSum += cycle.ovulationDay * weight;
+          totalWeight += weight;
+        }
+      });
+      ovulationDay = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : null;
+    }
 
     const hasSymptomData = symptomRows.some((row) => Array.from(row.values.values()).some((v) => v !== null));
     const hasLocationData = locationGroups.some((group) =>
