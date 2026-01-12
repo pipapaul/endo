@@ -2202,8 +2202,8 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
         isCurrentDay: point.date === todayIso,
         painTimeline: point.painTimeline ?? null,
         isFutureDay,
-        // Constant value for prediction dot row positioning
-        predictionDotY: 0.5,
+        // Constant value for prediction dot row positioning (higher value = closer to baseline)
+        predictionDotY: 3.2,
       };
     });
   }, [data.points, todayIso]);
@@ -2408,7 +2408,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
       >
         <div style={{ width: `${chartWidthMultiplier * 100}%`, minWidth: "100%", height: "100%" }}>
           <ResponsiveContainer>
-            <ComposedChart data={chartPoints} margin={{ top: 8, right: 16, bottom: 24, left: 0 }}>
+            <ComposedChart data={chartPoints} margin={{ top: 8, right: 16, bottom: 16, left: 0 }}>
             <defs>
               <linearGradient id={bleedingGradientId} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={CATEGORY_COLORS.bleeding.saturated} stopOpacity={0.45} />
@@ -2436,8 +2436,8 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
             />
             <YAxis yAxisId="pbac" domain={[0, 120]} hide />
             <YAxis yAxisId="painImpact" domain={[0, 10]} hide />
-            {/* Y-axis for prediction dots - positioned below the main chart area */}
-            <YAxis yAxisId="predictions" domain={[0, 1]} hide />
+            {/* Y-axis for prediction dots - positioned just below the main chart baseline */}
+            <YAxis yAxisId="predictions" domain={[0, 4]} hide />
             <Tooltip
               cursor={{ stroke: "#9ca3af", strokeOpacity: 0.2, strokeWidth: 1 }}
               content={handleTooltipChange}
