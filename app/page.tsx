@@ -2434,8 +2434,8 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               }
               minTickGap={6}
             />
-            <YAxis yAxisId="pbac" domain={[0, 120]} hide />
-            {/* Extended domain to include space below baseline for prediction dots */}
+            {/* Extended domains to include space below baseline for prediction dots */}
+            <YAxis yAxisId="pbac" domain={[-18, 120]} hide />
             <YAxis yAxisId="painImpact" domain={[-1.5, 10]} hide />
             <Tooltip
               cursor={{ stroke: "#9ca3af", strokeOpacity: 0.2, strokeWidth: 1 }}
