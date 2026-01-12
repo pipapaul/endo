@@ -1987,25 +1987,24 @@ type PredictionDotProps = DotProps & { payload?: CycleOverviewChartPoint };
  * - 100%: Yellow filled dot with red ring (LH+ confirmed)
  * Positioned in dedicated prediction row between dates and chart baseline
  */
-const OvulationConfidenceDot = ({ cx, payload }: PredictionDotProps) => {
+const OvulationConfidenceDot = ({ cx, cy, payload }: PredictionDotProps) => {
   if (
     typeof cx !== "number" ||
+    typeof cy !== "number" ||
     (!payload?.isPredictedOvulationDay && !payload?.ovulationPositive)
   ) {
     return null;
   }
 
   const confidence = payload?.ovulationConfidence ?? 50;
-  // Use fixed Y position in prediction row
-  const dotY = 118;
 
   // 100% - LH+ confirmed: Yellow filled dot with red ring
   if (confidence === 100 || payload?.ovulationPositive) {
     return (
       <g>
-        <circle cx={cx} cy={dotY} r={5} fill="none" stroke="#ef4444" strokeWidth={1.5} />
-        <circle cx={cx} cy={dotY} r={3.5} fill="#fef08a" stroke="#ca8a04" strokeWidth={1} />
-        <circle cx={cx} cy={dotY} r={1.5} fill="#fde047" />
+        <circle cx={cx} cy={cy} r={5} fill="none" stroke="#ef4444" strokeWidth={1.5} />
+        <circle cx={cx} cy={cy} r={3.5} fill="#fef08a" stroke="#ca8a04" strokeWidth={1} />
+        <circle cx={cx} cy={cy} r={1.5} fill="#fde047" />
       </g>
     );
   }
@@ -2014,8 +2013,8 @@ const OvulationConfidenceDot = ({ cx, payload }: PredictionDotProps) => {
   if (confidence >= 90) {
     return (
       <g>
-        <circle cx={cx} cy={dotY} r={4} fill="#fef08a" stroke="#ca8a04" strokeWidth={1} />
-        <circle cx={cx} cy={dotY} r={1.5} fill="#fde047" />
+        <circle cx={cx} cy={cy} r={4} fill="#fef08a" stroke="#ca8a04" strokeWidth={1} />
+        <circle cx={cx} cy={cy} r={1.5} fill="#fde047" />
       </g>
     );
   }
@@ -2024,7 +2023,7 @@ const OvulationConfidenceDot = ({ cx, payload }: PredictionDotProps) => {
   if (confidence >= 61) {
     return (
       <g>
-        <circle cx={cx} cy={dotY} r={4} fill="#fefce8" stroke="#eab308" strokeWidth={1} />
+        <circle cx={cx} cy={cy} r={4} fill="#fefce8" stroke="#eab308" strokeWidth={1} />
       </g>
     );
   }
@@ -2034,7 +2033,7 @@ const OvulationConfidenceDot = ({ cx, payload }: PredictionDotProps) => {
     <g>
       <circle
         cx={cx}
-        cy={dotY}
+        cy={cy}
         r={4}
         fill="#fefce8"
         stroke="#eab308"
@@ -2058,12 +2057,10 @@ const getOvulationMethodLabel = (method: OvulationResult["method"]): string => {
   }
 };
 
-// Fixed Y position for prediction indicator row (between dates and chart baseline)
-const PREDICTION_DOT_Y = 118;
-
-const FertileWindowDot = ({ cx, payload }: PredictionDotProps) => {
+const FertileWindowDot = ({ cx, cy, payload }: PredictionDotProps) => {
   if (
     typeof cx !== "number" ||
+    typeof cy !== "number" ||
     !payload?.isInPredictedFertileWindow ||
     payload?.isPredictedOvulationDay ||
     payload?.ovulationPositive
@@ -2081,7 +2078,7 @@ const FertileWindowDot = ({ cx, payload }: PredictionDotProps) => {
     <g>
       <circle
         cx={cx}
-        cy={PREDICTION_DOT_Y}
+        cy={cy}
         r={3}
         fill={isMucusValidated ? "#fce7f3" : "#fdf2f8"}
         stroke="#f472b6"
@@ -2097,9 +2094,10 @@ const FertileWindowDot = ({ cx, payload }: PredictionDotProps) => {
  * Only shown when Billings method is enabled and score >= 3 (high fertility)
  * Uses dashed stroke when insufficient history (< 2 completed cycles with mucus)
  */
-const MucusFertilityDot = ({ cx, payload }: PredictionDotProps) => {
+const MucusFertilityDot = ({ cx, cy, payload }: PredictionDotProps) => {
   if (
     typeof cx !== "number" ||
+    typeof cy !== "number" ||
     !payload?.mucusFertilityScore ||
     payload.mucusFertilityScore < 3
   ) {
@@ -2118,7 +2116,7 @@ const MucusFertilityDot = ({ cx, payload }: PredictionDotProps) => {
       {isPeakFertility && hasEnoughHistory && (
         <circle
           cx={cx}
-          cy={PREDICTION_DOT_Y}
+          cy={cy}
           r={5}
           fill="#dcfce7"
           stroke="#22c55e"
@@ -2129,7 +2127,7 @@ const MucusFertilityDot = ({ cx, payload }: PredictionDotProps) => {
       {/* Main indicator */}
       <circle
         cx={cx}
-        cy={PREDICTION_DOT_Y}
+        cy={cy}
         r={isPeakFertility ? 3.5 : 3}
         fill={hasEnoughHistory ? (isPeakFertility ? "#22c55e" : "#86efac") : "#f0fdf4"}
         stroke={isPeakFertility ? "#15803d" : "#22c55e"}
@@ -2204,6 +2202,8 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
         isCurrentDay: point.date === todayIso,
         painTimeline: point.painTimeline ?? null,
         isFutureDay,
+        // Constant value for prediction dot row positioning
+        predictionDotY: 0.5,
       };
     });
   }, [data.points, todayIso]);
@@ -2408,7 +2408,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
       >
         <div style={{ width: `${chartWidthMultiplier * 100}%`, minWidth: "100%", height: "100%" }}>
           <ResponsiveContainer>
-            <ComposedChart data={chartPoints} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+            <ComposedChart data={chartPoints} margin={{ top: 8, right: 16, bottom: 24, left: 0 }}>
             <defs>
               <linearGradient id={bleedingGradientId} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={CATEGORY_COLORS.bleeding.saturated} stopOpacity={0.45} />
@@ -2436,6 +2436,8 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
             />
             <YAxis yAxisId="pbac" domain={[0, 120]} hide />
             <YAxis yAxisId="painImpact" domain={[0, 10]} hide />
+            {/* Y-axis for prediction dots - positioned below the main chart area */}
+            <YAxis yAxisId="predictions" domain={[0, 1]} hide />
             <Tooltip
               cursor={{ stroke: "#9ca3af", strokeOpacity: 0.2, strokeWidth: 1 }}
               content={handleTooltipChange}
@@ -2486,10 +2488,11 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               name="Schmerz"
               isAnimationActive={false}
             />
+            {/* Prediction indicators - positioned in dedicated row below chart */}
             <Line
               type="monotone"
-              dataKey="painValue"
-              yAxisId="painImpact"
+              dataKey="predictionDotY"
+              yAxisId="predictions"
               stroke="none"
               dot={<FertileWindowDot />}
               activeDot={false}
@@ -2498,8 +2501,8 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
             />
             <Line
               type="monotone"
-              dataKey="painValue"
-              yAxisId="painImpact"
+              dataKey="predictionDotY"
+              yAxisId="predictions"
               stroke="none"
               dot={<OvulationConfidenceDot />}
               activeDot={false}
@@ -2508,8 +2511,8 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
             />
             <Line
               type="monotone"
-              dataKey="painValue"
-              yAxisId="painImpact"
+              dataKey="predictionDotY"
+              yAxisId="predictions"
               stroke="none"
               dot={<MucusFertilityDot />}
               activeDot={false}
