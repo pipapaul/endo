@@ -4179,6 +4179,40 @@ export default function HomePage() {
     };
   }, [cycleOvulationData, cycleStartDates, completedCycleLengths, featureFlags.billingMethod, today]);
 
+  // Billings method progress tracking - shows user how much data is needed for confident predictions
+  const billingsProgress = useMemo(() => {
+    if (!featureFlags.billingMethod || !cycleOvulationData) {
+      return null;
+    }
+
+    // Count completed cycles that have cervix mucus data
+    const completedCyclesWithMucus = cycleOvulationData.cycles.filter(cycle => {
+      if (!cycle.isCompleted) return false;
+      return cycle.entries.some(({ entry }) =>
+        entry.cervixMucus?.observation || entry.cervixMucus?.appearance
+      );
+    }).length;
+
+    // Count days with mucus observations in current cycle
+    const currentCycle = cycleOvulationData.cycles.find(c => !c.isCompleted);
+    const daysWithMucusInCurrentCycle = currentCycle
+      ? currentCycle.entries.filter(({ entry }) =>
+          entry.cervixMucus?.observation || entry.cervixMucus?.appearance
+        ).length
+      : 0;
+
+    // Need 2 completed cycles with mucus data for improved predictions
+    const cyclesNeeded = 2;
+    const hasEnoughData = completedCyclesWithMucus >= cyclesNeeded;
+
+    return {
+      completedCyclesWithMucus,
+      cyclesNeeded,
+      daysWithMucusInCurrentCycle,
+      hasEnoughData,
+    };
+  }, [featureFlags.billingMethod, cycleOvulationData]);
+
   const selectedCycleDay = useMemo(() => {
     if (!dailyDraft.date) return null;
     const entries = derivedDailyEntries.slice();
@@ -9240,6 +9274,14 @@ export default function HomePage() {
                   ) : null}
                 </div>
                 {infoMessage && <p className="text-sm font-medium text-rose-600">{infoMessage}</p>}
+                {billingsProgress && !billingsProgress.hasEnoughData && (
+                  <p className="text-[11px] text-gray-400">
+                    Billings: {billingsProgress.completedCyclesWithMucus}/{billingsProgress.cyclesNeeded} Zyklen
+                    {billingsProgress.daysWithMucusInCurrentCycle > 0 && (
+                      <span> · {billingsProgress.daysWithMucusInCurrentCycle} {billingsProgress.daysWithMucusInCurrentCycle === 1 ? "Tag" : "Tage"} aktuell</span>
+                    )}
+                  </p>
+                )}
               </header>
               {cycleOverview ? <CycleOverviewMiniChart data={cycleOverview} /> : null}
               <div className="flex flex-wrap items-center gap-2 sm:gap-3">
