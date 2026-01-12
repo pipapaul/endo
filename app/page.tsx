@@ -429,6 +429,8 @@ const calculateOvulationForCycle = (
     useBillingsMethod: boolean;
     isCompletedCycle: boolean;
     personalLutealPhase: number | null;
+    /** Number of completed cycles with mucus data - needed for confidence calculation */
+    completedCyclesWithMucus?: number;
   }
 ): OvulationResult => {
   const signals: OvulationResult["signals"] = {};
@@ -470,6 +472,8 @@ const calculateOvulationForCycle = (
   if (symptomPeak) signals.symptomPeakDay = symptomPeak.peakDay;
 
   // Priority-based calculation with cross-validation
+  // Mucus-based confidence requires >= 2 completed cycles with mucus data for full confidence
+  const hasEnoughMucusHistory = (options.completedCyclesWithMucus ?? 0) >= 2;
 
   // Priority 1: Peak mucus + Ovulation pain (cross-validated)
   if (signals.peakMucusDay && signals.ovulationPainDay) {
@@ -477,17 +481,19 @@ const calculateOvulationForCycle = (
     // If pain is within ±2 days of mucus prediction, high confidence
     if (Math.abs(mucusOvulation - signals.ovulationPainDay) <= 2) {
       // Use mucus as primary, pain confirms
+      // Reduce confidence if insufficient mucus history (65% instead of 95%)
       return {
         ovulationDay: mucusOvulation,
-        confidence: 95,
+        confidence: hasEnoughMucusHistory ? 95 : 65,
         method: "mucus_pain",
         signals,
       };
     }
     // If they disagree, trust mucus (more reliable)
+    // Reduce confidence if insufficient mucus history (55% instead of 80%)
     return {
       ovulationDay: mucusOvulation,
-      confidence: 80,
+      confidence: hasEnoughMucusHistory ? 80 : 55,
       method: "mucus",
       signals,
     };
@@ -500,9 +506,14 @@ const calculateOvulationForCycle = (
     const symptomsAgree =
       signals.symptomPeakDay &&
       Math.abs(mucusOvulation - signals.symptomPeakDay) <= 2;
+    // Without enough history, mucus-only predictions get lower confidence (55-60% instead of 85-90%)
+    // This reflects that we're still learning the user's patterns
+    const baseConfidence = hasEnoughMucusHistory
+      ? (symptomsAgree ? 90 : 85)
+      : (symptomsAgree ? 60 : 55);
     return {
       ovulationDay: mucusOvulation,
-      confidence: symptomsAgree ? 90 : 85,
+      confidence: baseConfidence,
       method: "mucus",
       signals,
     };
@@ -4018,6 +4029,15 @@ export default function HomePage() {
       });
     }
 
+    // Count completed cycles with mucus data for confidence calculation
+    // Billings method requires >= 2 completed cycles with mucus for full confidence
+    const completedCyclesWithMucus = rawCycles.filter(cycle => {
+      if (!cycle.isCompleted) return false;
+      return cycle.entries.some(({ entry }) =>
+        entry.cervixMucus?.observation || entry.cervixMucus?.appearance
+      );
+    }).length;
+
     // First pass: calculate ovulation for completed cycles without personal luteal phase
     // This is needed to bootstrap the personal luteal phase calculation
     const firstPassResults: Array<{
@@ -4037,6 +4057,7 @@ export default function HomePage() {
             useBillingsMethod: featureFlags.billingMethod ?? false,
             isCompletedCycle: true,
             personalLutealPhase: null,
+            completedCyclesWithMucus,
           }
         );
         firstPassResults.push({
@@ -4065,6 +4086,7 @@ export default function HomePage() {
           useBillingsMethod: featureFlags.billingMethod ?? false,
           isCompletedCycle: cycle.isCompleted,
           personalLutealPhase,
+          completedCyclesWithMucus,
         }
       );
 
