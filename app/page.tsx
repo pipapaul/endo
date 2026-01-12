@@ -2091,6 +2091,7 @@ const FertileWindowDot = ({ cx, cy, payload }: PredictionDotProps) => {
 /**
  * Mucus fertility indicator dot - shows peak fertility mucus observations
  * Only shown when Billings method is enabled and score >= 3 (high fertility)
+ * Uses dashed stroke when insufficient history (< 2 completed cycles with mucus)
  */
 const MucusFertilityDot = ({ cx, cy, payload }: PredictionDotProps) => {
   if (
@@ -2103,11 +2104,15 @@ const MucusFertilityDot = ({ cx, cy, payload }: PredictionDotProps) => {
   }
 
   const isPeakFertility = payload.mucusFertilityScore === 4;
+  // Check if we have enough mucus history (confidence >= 70% indicates sufficient data)
+  const hasEnoughHistory =
+    (payload.ovulationMethod === "mucus" || payload.ovulationMethod === "mucus_pain") &&
+    (payload.ovulationConfidence ?? 0) >= 70;
 
   return (
     <g>
-      {/* Outer glow for peak fertility */}
-      {isPeakFertility && (
+      {/* Outer glow for peak fertility - only when validated */}
+      {isPeakFertility && hasEnoughHistory && (
         <circle
           cx={cx}
           cy={cy - 12}
@@ -2123,9 +2128,10 @@ const MucusFertilityDot = ({ cx, cy, payload }: PredictionDotProps) => {
         cx={cx}
         cy={cy - 12}
         r={isPeakFertility ? 4 : 3}
-        fill={isPeakFertility ? "#22c55e" : "#86efac"}
+        fill={hasEnoughHistory ? (isPeakFertility ? "#22c55e" : "#86efac") : "#f0fdf4"}
         stroke={isPeakFertility ? "#15803d" : "#22c55e"}
         strokeWidth={1.5}
+        strokeDasharray={hasEnoughHistory ? undefined : "2,2"}
       />
     </g>
   );
