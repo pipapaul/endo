@@ -4329,7 +4329,7 @@ export default function HomePage() {
         isBleeding: hasBleedingForEntry(entry),
         bleedingTrackingMethod: entry.extendedPbacData?.trackingMethod ?? null,
         simpleBleedingIntensity: entry.simpleBleedingIntensity ?? null,
-        ovulationPositive: Boolean(entry.ovulation?.lhPositive || entry.ovulationPain?.intensity),
+        ovulationPositive: Boolean(entry.ovulation?.lhPositive),
         ovulationPainIntensity: entry.ovulationPain?.intensity ?? null,
         painTimeline: null,
         isPredictedOvulationDay,
