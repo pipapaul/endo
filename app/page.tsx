@@ -4314,12 +4314,25 @@ export default function HomePage() {
       const lastCycleData = cycleOvulationData.cycles.find(c => c.startDate === lastCycleStart);
 
       if (lastCycleData && !lastCycleData.isCompleted && cycleAnalysis?.predictedOvulationDay) {
+        // When using weighted prediction, only attribute detected method (mucus_pain, pain, mucus)
+        // if the predicted day aligns with detected signals (within ±2 days).
+        // Otherwise, the method should reflect historical prediction, not current cycle signals.
+        const detectedDay = lastCycleData.ovulationDay;
+        const predictedDay = cycleAnalysis.predictedOvulationDay;
+        const daysMatch = Math.abs(detectedDay - predictedDay) <= 2;
+
+        // Use detected method only if predicted day aligns with detected signals
+        // Otherwise fall back to standard/personal_luteal based on how prediction was made
+        const effectiveMethod = daysMatch
+          ? lastCycleData.ovulationMethod
+          : (cycleAnalysis.personalLutealPhase !== null ? "personal_luteal" : "standard");
+
         localOvulationMap.set(lastCycleStart, {
-          ovulationDay: cycleAnalysis.predictedOvulationDay,
+          ovulationDay: predictedDay,
           cycleStart: lastCycleStart,
           cycleEnd: null,
           confidence: lastCycleData.ovulationConfidence,
-          method: lastCycleData.ovulationMethod,
+          method: effectiveMethod,
         });
       }
     }
