@@ -307,6 +307,13 @@ type OvulationResult = {
     ovulationPainDay?: number;
     symptomPeakDay?: number;
   };
+  /** Individual signal predictions with their implied ovulation days */
+  signalPredictions?: {
+    mucus?: { ovulationDay: number; confidence: number };
+    pain?: { ovulationDay: number; confidence: number };
+    luteal?: { ovulationDay: number; confidence: number };
+    standard: { ovulationDay: number; confidence: number };
+  };
 };
 
 /**
@@ -323,12 +330,20 @@ type CycleOvulationData = {
     ovulationDay: number;
     ovulationConfidence: number;
     ovulationMethod: OvulationResult["method"];
+    signalPredictions?: OvulationResult["signalPredictions"];
     entries: Array<{ cycleDay: number; entry: DailyEntry }>;
   }>;
   /** Personal luteal phase calculated from high-confidence cycles */
   personalLutealPhase: number | null;
   /** Map from cycle start date to ovulation data for quick lookup */
-  cycleOvulationMap: Map<string, { ovulationDay: number; cycleStart: string; cycleEnd: string | null; confidence: number; method: OvulationResult["method"] }>;
+  cycleOvulationMap: Map<string, {
+    ovulationDay: number;
+    cycleStart: string;
+    cycleEnd: string | null;
+    confidence: number;
+    method: OvulationResult["method"];
+    signalPredictions?: OvulationResult["signalPredictions"];
+  }>;
   /** Completed cycle results for weighted predictions */
   completedCycleResults: Array<{
     cycleLength: number;
@@ -475,6 +490,39 @@ const calculateOvulationForCycle = (
   // Mucus-based confidence requires >= 2 completed cycles with mucus data for full confidence
   const hasEnoughMucusHistory = (options.completedCyclesWithMucus ?? 0) >= 2;
 
+  // Build individual signal predictions for multi-signal display
+  const standardOvulation = Math.round(cycleLength - 14);
+  const lutealOvulation = options.personalLutealPhase !== null
+    ? Math.round(cycleLength - options.personalLutealPhase)
+    : null;
+
+  const signalPredictions: OvulationResult["signalPredictions"] = {
+    standard: { ovulationDay: standardOvulation, confidence: 50 },
+  };
+
+  if (signals.peakMucusDay) {
+    const mucusOvulation = signals.peakMucusDay + 1;
+    signalPredictions.mucus = {
+      ovulationDay: mucusOvulation,
+      confidence: hasEnoughMucusHistory ? 85 : 55,
+    };
+  }
+
+  if (signals.ovulationPainDay && strongestPainIntensity >= 3) {
+    signalPredictions.pain = {
+      ovulationDay: signals.ovulationPainDay,
+      // Higher confidence for higher intensity pain
+      confidence: strongestPainIntensity >= 5 ? 70 : 55,
+    };
+  }
+
+  if (lutealOvulation !== null) {
+    signalPredictions.luteal = {
+      ovulationDay: lutealOvulation,
+      confidence: 60,
+    };
+  }
+
   // Priority 1: Peak mucus + Ovulation pain (cross-validated)
   if (signals.peakMucusDay && signals.ovulationPainDay) {
     const mucusOvulation = signals.peakMucusDay + 1;
@@ -487,6 +535,7 @@ const calculateOvulationForCycle = (
         confidence: hasEnoughMucusHistory ? 95 : 65,
         method: "mucus_pain",
         signals,
+        signalPredictions,
       };
     }
     // If they disagree, trust mucus (more reliable)
@@ -496,6 +545,7 @@ const calculateOvulationForCycle = (
       confidence: hasEnoughMucusHistory ? 80 : 55,
       method: "mucus",
       signals,
+      signalPredictions,
     };
   }
 
@@ -516,6 +566,7 @@ const calculateOvulationForCycle = (
       confidence: baseConfidence,
       method: "mucus",
       signals,
+      signalPredictions,
     };
   }
 
@@ -530,6 +581,7 @@ const calculateOvulationForCycle = (
       confidence: symptomsAgree ? 75 : 70,
       method: "pain",
       signals,
+      signalPredictions,
     };
   }
 
@@ -540,6 +592,7 @@ const calculateOvulationForCycle = (
       confidence: 60,
       method: "personal_luteal",
       signals,
+      signalPredictions,
     };
   }
 
@@ -549,6 +602,7 @@ const calculateOvulationForCycle = (
     confidence: 50,
     method: "standard",
     signals,
+    signalPredictions,
   };
 };
 
@@ -1618,7 +1672,12 @@ const restoreDailyCategorySnapshot = (
       }
       if (snapshot.featureFlags) {
         Object.entries(snapshot.featureFlags).forEach(([key, value]) => {
-          nextFeatureFlags[key as keyof FeatureFlags] = Boolean(value);
+          // Handle non-boolean feature flags (like ovulationPredictionStyle)
+          if (key === "ovulationPredictionStyle") {
+            nextFeatureFlags.ovulationPredictionStyle = (typeof value === "string" ? value : undefined) as "single" | "multi_signal" | undefined;
+          } else {
+            (nextFeatureFlags as Record<string, boolean>)[key] = Boolean(value);
+          }
         });
       }
       break;
@@ -1761,7 +1820,12 @@ const restoreDailyCategorySnapshot = (
       }
       if (snapshot.featureFlags) {
         Object.entries(snapshot.featureFlags).forEach(([key, value]) => {
-          nextFeatureFlags[key as keyof FeatureFlags] = Boolean(value);
+          // Handle non-boolean feature flags (like ovulationPredictionStyle)
+          if (key === "ovulationPredictionStyle") {
+            nextFeatureFlags.ovulationPredictionStyle = (typeof value === "string" ? value : undefined) as "single" | "multi_signal" | undefined;
+          } else {
+            (nextFeatureFlags as Record<string, boolean>)[key] = Boolean(value);
+          }
         });
       }
       break;
@@ -1799,7 +1863,12 @@ const restoreDailyCategorySnapshot = (
 
   if (snapshot.featureFlags && categoryId !== "symptoms" && categoryId !== "bowelBladder") {
     Object.entries(snapshot.featureFlags).forEach(([key, value]) => {
-      nextFeatureFlags[key as keyof FeatureFlags] = Boolean(value);
+      // Handle non-boolean feature flags (like ovulationPredictionStyle)
+          if (key === "ovulationPredictionStyle") {
+            nextFeatureFlags.ovulationPredictionStyle = (typeof value === "string" ? value : undefined) as "single" | "multi_signal" | undefined;
+          } else {
+            (nextFeatureFlags as Record<string, boolean>)[key] = Boolean(value);
+          }
     });
   }
 
@@ -1829,6 +1898,8 @@ type CycleOverviewPoint = {
   mucusFertilityScore: number | null;
   ovulationMethod: OvulationResult["method"] | null;
   ovulationConfidence: number | null;
+  /** Individual signal predictions for multi-signal display mode */
+  signalPredictions?: OvulationResult["signalPredictions"];
 };
 
 type CycleOverviewData = {
@@ -2045,6 +2116,94 @@ const OvulationConfidenceDot = ({ cx, cy, payload }: PredictionDotProps) => {
 };
 
 /**
+ * Multi-signal ovulation display - shows individual signal predictions as separate markers.
+ * Each signal type gets its own colored indicator:
+ * - Green: Mucus (Billings method)
+ * - Orange: Ovulation pain (Mittelschmerz)
+ * - Blue: Historical/luteal phase prediction
+ * - Gray: Standard calculation (cycle length - 14)
+ *
+ * When signals cluster together, the user can see agreement.
+ * When signals are spread apart, the user can see uncertainty/conflict.
+ */
+const MultiSignalOvulationDot = ({ cx, cy, payload }: PredictionDotProps) => {
+  if (
+    typeof cx !== "number" ||
+    typeof cy !== "number" ||
+    !payload?.signalPredictions ||
+    !payload?.cycleDay
+  ) {
+    return null;
+  }
+
+  const { signalPredictions } = payload;
+  const cycleDay = payload.cycleDay;
+  const signals: Array<{ type: "mucus" | "pain" | "luteal" | "standard"; day: number; confidence: number }> = [];
+
+  // Collect all signals
+  if (signalPredictions.mucus) {
+    signals.push({ type: "mucus", day: signalPredictions.mucus.ovulationDay, confidence: signalPredictions.mucus.confidence });
+  }
+  if (signalPredictions.pain) {
+    signals.push({ type: "pain", day: signalPredictions.pain.ovulationDay, confidence: signalPredictions.pain.confidence });
+  }
+  if (signalPredictions.luteal) {
+    signals.push({ type: "luteal", day: signalPredictions.luteal.ovulationDay, confidence: signalPredictions.luteal.confidence });
+  }
+  if (signalPredictions.standard) {
+    signals.push({ type: "standard", day: signalPredictions.standard.ovulationDay, confidence: signalPredictions.standard.confidence });
+  }
+
+  // Only render signals that predict THIS day
+  const signalsForThisDay = signals.filter(s => s.day === cycleDay);
+  if (signalsForThisDay.length === 0) return null;
+
+  // Color map for signal types
+  const colors: Record<string, { fill: string; stroke: string }> = {
+    mucus: { fill: "#dcfce7", stroke: "#16a34a" },    // Green
+    pain: { fill: "#ffedd5", stroke: "#ea580c" },     // Orange
+    luteal: { fill: "#dbeafe", stroke: "#2563eb" },   // Blue
+    standard: { fill: "#f3f4f6", stroke: "#6b7280" }, // Gray
+  };
+
+  // Position signals vertically if multiple predict this day
+  // Stack them from bottom (standard) to top (mucus) with 6px spacing
+  const yOffsets = signalsForThisDay.map((_, i) => (signalsForThisDay.length - 1 - i) * -6);
+
+  return (
+    <g>
+      {signalsForThisDay.map((signal, index) => {
+        const color = colors[signal.type];
+        const yOffset = yOffsets[index];
+        const isHighConfidence = signal.confidence >= 70;
+        return (
+          <g key={signal.type}>
+            <circle
+              cx={cx}
+              cy={cy + yOffset}
+              r={isHighConfidence ? 4 : 3}
+              fill={color.fill}
+              stroke={color.stroke}
+              strokeWidth={isHighConfidence ? 1.5 : 1}
+              strokeDasharray={signal.confidence < 60 ? "2,1" : undefined}
+            />
+            {/* Small inner dot for high confidence */}
+            {isHighConfidence && (
+              <circle
+                cx={cx}
+                cy={cy + yOffset}
+                r={1.5}
+                fill={color.stroke}
+              />
+            )}
+          </g>
+        );
+      })}
+    </g>
+  );
+};
+
+/**
  * Get human-readable label for ovulation detection method
  */
 const getOvulationMethodLabel = (method: OvulationResult["method"]): string => {
@@ -2138,7 +2297,13 @@ const MucusFertilityDot = ({ cx, cy, payload }: PredictionDotProps) => {
   );
 };
 
-const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
+const CycleOverviewMiniChart = ({
+  data,
+  predictionStyle = "single",
+}: {
+  data: CycleOverviewData;
+  predictionStyle?: "single" | "multi_signal";
+}) => {
   const bleedingGradientId = useId();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showScrollToToday, setShowScrollToToday] = useState(false);
@@ -2498,16 +2663,32 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               isAnimationActive={false}
               legendType="none"
             />
-            <Line
-              type="monotone"
-              dataKey="predictionDotY"
-              yAxisId="painImpact"
-              stroke="none"
-              dot={<OvulationConfidenceDot />}
-              activeDot={false}
-              isAnimationActive={false}
-              legendType="none"
-            />
+            {/* Single-point ovulation prediction (default style) */}
+            {predictionStyle === "single" && (
+              <Line
+                type="monotone"
+                dataKey="predictionDotY"
+                yAxisId="painImpact"
+                stroke="none"
+                dot={<OvulationConfidenceDot />}
+                activeDot={false}
+                isAnimationActive={false}
+                legendType="none"
+              />
+            )}
+            {/* Multi-signal ovulation display (shows individual signal predictions) */}
+            {predictionStyle === "multi_signal" && (
+              <Line
+                type="monotone"
+                dataKey="predictionDotY"
+                yAxisId="painImpact"
+                stroke="none"
+                dot={<MultiSignalOvulationDot />}
+                activeDot={false}
+                isAnimationActive={false}
+                legendType="none"
+              />
+            )}
             <Line
               type="monotone"
               dataKey="predictionDotY"
@@ -4108,7 +4289,7 @@ export default function HomePage() {
 
     // Second pass: build final cycle data with personal luteal phase
     const cycles: CycleOvulationData["cycles"] = [];
-    const cycleOvulationMap = new Map<string, { ovulationDay: number; cycleStart: string; cycleEnd: string | null; confidence: number; method: OvulationResult["method"] }>();
+    const cycleOvulationMap: CycleOvulationData["cycleOvulationMap"] = new Map();
     const completedCycleResults: CycleOvulationData["completedCycleResults"] = [];
 
     for (const cycle of rawCycles) {
@@ -4132,6 +4313,7 @@ export default function HomePage() {
         ovulationDay: result.ovulationDay,
         ovulationConfidence: result.confidence,
         ovulationMethod: result.method,
+        signalPredictions: result.signalPredictions,
         entries: cycle.entries,
       });
 
@@ -4141,6 +4323,7 @@ export default function HomePage() {
         cycleEnd: cycle.endDate,
         confidence: result.confidence,
         method: result.method,
+        signalPredictions: result.signalPredictions,
       });
 
       if (cycle.isCompleted) {
@@ -4333,12 +4516,18 @@ export default function HomePage() {
           cycleEnd: null,
           confidence: lastCycleData.ovulationConfidence,
           method: effectiveMethod,
+          signalPredictions: lastCycleData.signalPredictions,
         });
       }
     }
 
     // Helper to get ovulation data for a specific date
-    const getOvulationDataForDate = (dateStr: string): { ovulationDay: number; confidence: number; method: OvulationResult["method"] } | null => {
+    const getOvulationDataForDate = (dateStr: string): {
+      ovulationDay: number;
+      confidence: number;
+      method: OvulationResult["method"];
+      signalPredictions?: OvulationResult["signalPredictions"];
+    } | null => {
       // Find which cycle this date belongs to
       for (let i = cycleStartDates.length - 1; i >= 0; i -= 1) {
         const cycleStart = cycleStartDates[i];
@@ -4351,6 +4540,7 @@ export default function HomePage() {
               ovulationDay: cycleData.ovulationDay,
               confidence: cycleData.confidence,
               method: cycleData.method,
+              signalPredictions: cycleData.signalPredictions,
             };
           }
           return null;
@@ -4362,12 +4552,24 @@ export default function HomePage() {
     // Build prediction function using per-cycle ovulation
     const getPredictionForDate = (dateStr: string, cycleDay: number | null) => {
       if (cycleDay === null) {
-        return { isPredictedOvulationDay: false, isInPredictedFertileWindow: false, ovulationMethod: null as OvulationResult["method"] | null, ovulationConfidence: null as number | null };
+        return {
+          isPredictedOvulationDay: false,
+          isInPredictedFertileWindow: false,
+          ovulationMethod: null as OvulationResult["method"] | null,
+          ovulationConfidence: null as number | null,
+          signalPredictions: undefined as OvulationResult["signalPredictions"] | undefined,
+        };
       }
 
       const ovulationData = getOvulationDataForDate(dateStr);
       if (ovulationData === null) {
-        return { isPredictedOvulationDay: false, isInPredictedFertileWindow: false, ovulationMethod: null as OvulationResult["method"] | null, ovulationConfidence: null as number | null };
+        return {
+          isPredictedOvulationDay: false,
+          isInPredictedFertileWindow: false,
+          ovulationMethod: null as OvulationResult["method"] | null,
+          ovulationConfidence: null as number | null,
+          signalPredictions: undefined as OvulationResult["signalPredictions"] | undefined,
+        };
       }
 
       return {
@@ -4375,12 +4577,13 @@ export default function HomePage() {
         isInPredictedFertileWindow: isFertileDay(cycleDay, ovulationData.ovulationDay),
         ovulationMethod: ovulationData.method,
         ovulationConfidence: ovulationData.confidence,
+        signalPredictions: ovulationData.signalPredictions,
       };
     };
 
     const pointsByDate = new Map<string, CycleOverviewPoint>();
     annotatedDailyEntries.forEach(({ entry, cycleDay }) => {
-      const { isPredictedOvulationDay, isInPredictedFertileWindow, ovulationMethod, ovulationConfidence } =
+      const { isPredictedOvulationDay, isInPredictedFertileWindow, ovulationMethod, ovulationConfidence, signalPredictions } =
         getPredictionForDate(entry.date, cycleDay);
       const mucusScore = featureFlags.billingMethod
         ? scoreCervixMucusFertility(entry.cervixMucus)
@@ -4406,6 +4609,7 @@ export default function HomePage() {
         mucusFertilityScore: mucusScore,
         ovulationMethod: isLhConfirmed ? null : ovulationMethod,
         ovulationConfidence: isLhConfirmed ? 100 : ovulationConfidence,
+        signalPredictions,
       });
     });
 
@@ -4425,6 +4629,7 @@ export default function HomePage() {
         let isInPredictedFertileWindow = false;
         let ovulationMethod: OvulationResult["method"] | null = null;
         let ovulationConfidence: number | null = null;
+        let signalPredictions: OvulationResult["signalPredictions"] | undefined;
 
         // Find which cycle this date belongs to and get its ovulation data
         const ovulationData = getOvulationDataForDate(iso);
@@ -4444,6 +4649,7 @@ export default function HomePage() {
                   isInPredictedFertileWindow = isFertileDay(cycleDay, ovulationData.ovulationDay);
                   ovulationMethod = ovulationData.method;
                   ovulationConfidence = ovulationData.confidence;
+                  signalPredictions = ovulationData.signalPredictions;
                 }
               }
               break;
@@ -4468,6 +4674,7 @@ export default function HomePage() {
           mucusFertilityScore: null,
           ovulationMethod,
           ovulationConfidence,
+          signalPredictions,
         });
       }
     }
@@ -9189,7 +9396,7 @@ export default function HomePage() {
             )}
 
             {settingsPage === "ovulation" && (
-              <div>
+              <div className="space-y-4">
                 <h3 className="text-lg font-semibold text-rose-900 mb-4">Eisprungsbestimmung</h3>
                 <div className="flex items-start justify-between gap-4 rounded-xl border border-rose-100 bg-rose-50/50 p-4">
                   <div className="flex-1">
@@ -9203,6 +9410,39 @@ export default function HomePage() {
                       setFeatureFlags((prev) => ({ ...prev, billingMethod: checked }))
                     }
                   />
+                </div>
+
+                <div className="rounded-xl border border-rose-100 bg-rose-50/50 p-4">
+                  <p className="font-medium text-rose-900 mb-2">Vorhersage-Anzeige</p>
+                  <p className="text-sm text-rose-600 mb-3">Wähle, wie die Eisprung-Vorhersage dargestellt wird.</p>
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setFeatureFlags((prev) => ({ ...prev, ovulationPredictionStyle: "single" }))}
+                      className={cn(
+                        "w-full text-left px-3 py-2 rounded-lg border transition-colors",
+                        (featureFlags.ovulationPredictionStyle ?? "single") === "single"
+                          ? "border-rose-400 bg-rose-100"
+                          : "border-rose-200 bg-white hover:bg-rose-50"
+                      )}
+                    >
+                      <p className="font-medium text-rose-900">Einzelner Punkt</p>
+                      <p className="text-xs text-rose-600">Zeigt einen einzelnen Vorhersagepunkt mit Konfidenz-Indikator</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFeatureFlags((prev) => ({ ...prev, ovulationPredictionStyle: "multi_signal" }))}
+                      className={cn(
+                        "w-full text-left px-3 py-2 rounded-lg border transition-colors",
+                        featureFlags.ovulationPredictionStyle === "multi_signal"
+                          ? "border-rose-400 bg-rose-100"
+                          : "border-rose-200 bg-white hover:bg-rose-50"
+                      )}
+                    >
+                      <p className="font-medium text-rose-900">Multi-Signal</p>
+                      <p className="text-xs text-rose-600">Zeigt alle Signale einzeln (Schleim, Schmerz, Historie) zur besseren Übersicht</p>
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -9352,7 +9592,12 @@ export default function HomePage() {
                   </p>
                 )}
               </header>
-              {cycleOverview ? <CycleOverviewMiniChart data={cycleOverview} /> : null}
+              {cycleOverview ? (
+                <CycleOverviewMiniChart
+                  data={cycleOverview}
+                  predictionStyle={featureFlags.ovulationPredictionStyle ?? "single"}
+                />
+              ) : null}
               <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                 <div
                   role="group"

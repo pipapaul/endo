@@ -7,6 +7,8 @@ export interface FeatureFlags {
   moduleHeadache?: boolean;
   moduleDizziness?: boolean;
   billingMethod?: boolean;
+  /** Ovulation prediction display style: "single" (default) or "multi_signal" */
+  ovulationPredictionStyle?: "single" | "multi_signal";
 }
 
 export type PainGranularity = "tag" | "dritteltag";
