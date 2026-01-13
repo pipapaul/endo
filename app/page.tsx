@@ -1983,7 +1983,7 @@ type PredictionDotProps = DotProps & { payload?: CycleOverviewChartPoint };
 
 /**
  * Predicted bleeding drop for future days
- * Small red drop with opacity based on expected bleeding intensity (0-1)
+ * Minimalist red drop with opacity based on expected bleeding intensity (0-1)
  * Positioned in the prediction row below the chart
  */
 const PredictedBleedingDrop = ({ cx, cy, payload }: PredictionDotProps) => {
@@ -1999,22 +1999,19 @@ const PredictedBleedingDrop = ({ cx, cy, payload }: PredictionDotProps) => {
   }
 
   const intensity = payload.predictedBleedingIntensity;
-  // Scale opacity: minimum 0.25 for visibility, max 0.9
-  const opacity = 0.25 + intensity * 0.65;
+  // Scale opacity: minimum 0.3 for visibility, max 0.95
+  const opacity = 0.3 + intensity * 0.65;
 
-  const topY = cy - 3;
-  const bottomY = cy + 4;
+  // Drop shape with point at top
+  const topY = cy - 4;
+  const bottomY = cy + 3;
 
   return (
-    <g opacity={opacity}>
-      <path
-        d={`M ${cx} ${topY} C ${cx + 3} ${topY + 1.5}, ${cx + 2.5} ${cy + 1.5}, ${cx} ${bottomY} C ${cx - 2.5} ${cy + 1.5}, ${cx - 3} ${topY + 1.5}, ${cx} ${topY} Z`}
-        fill="#ef4444"
-        stroke="#b91c1c"
-        strokeWidth={0.75}
-      />
-      <circle cx={cx} cy={topY + 1.5} r={0.9} fill="#fca5a5" />
-    </g>
+    <path
+      d={`M ${cx} ${topY} C ${cx + 3} ${bottomY - 1}, ${cx + 3} ${bottomY}, ${cx} ${bottomY} C ${cx - 3} ${bottomY}, ${cx - 3} ${bottomY - 1}, ${cx} ${topY} Z`}
+      fill="#ef4444"
+      opacity={opacity}
+    />
   );
 };
 
