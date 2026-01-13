@@ -1829,6 +1829,8 @@ type CycleOverviewPoint = {
   mucusFertilityScore: number | null;
   ovulationMethod: OvulationResult["method"] | null;
   ovulationConfidence: number | null;
+  // Predicted bleeding for future days (0-1 opacity based on expected intensity)
+  predictedBleedingIntensity: number | null;
 };
 
 type CycleOverviewData = {
@@ -1978,6 +1980,43 @@ const CycleStartDrop = ({ cx, cy }: DotProps) => {
 };
 
 type PredictionDotProps = DotProps & { payload?: CycleOverviewChartPoint };
+
+/**
+ * Predicted bleeding drop for future days
+ * Small red drop with opacity based on expected bleeding intensity (0-1)
+ * Positioned in the prediction row below the chart
+ */
+const PredictedBleedingDrop = ({ cx, cy, payload }: PredictionDotProps) => {
+  if (
+    typeof cx !== "number" ||
+    typeof cy !== "number" ||
+    !payload?.isFutureDay ||
+    payload?.predictedBleedingIntensity === null ||
+    payload?.predictedBleedingIntensity === undefined ||
+    payload.predictedBleedingIntensity <= 0
+  ) {
+    return null;
+  }
+
+  const intensity = payload.predictedBleedingIntensity;
+  // Scale opacity: minimum 0.25 for visibility, max 0.9
+  const opacity = 0.25 + intensity * 0.65;
+
+  const topY = cy - 3;
+  const bottomY = cy + 4;
+
+  return (
+    <g opacity={opacity}>
+      <path
+        d={`M ${cx} ${topY} C ${cx + 3} ${topY + 1.5}, ${cx + 2.5} ${cy + 1.5}, ${cx} ${bottomY} C ${cx - 2.5} ${cy + 1.5}, ${cx - 3} ${topY + 1.5}, ${cx} ${topY} Z`}
+        fill="#ef4444"
+        stroke="#b91c1c"
+        strokeWidth={0.75}
+      />
+      <circle cx={cx} cy={topY + 1.5} r={0.9} fill="#fca5a5" />
+    </g>
+  );
+};
 
 /**
  * Unified ovulation dot with 4 confidence levels:
@@ -2514,6 +2553,16 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               yAxisId="painImpact"
               stroke="none"
               dot={<MucusFertilityDot />}
+              activeDot={false}
+              isAnimationActive={false}
+              legendType="none"
+            />
+            <Line
+              type="monotone"
+              dataKey="predictionDotY"
+              yAxisId="painImpact"
+              stroke="none"
+              dot={<PredictedBleedingDrop />}
               activeDot={false}
               isAnimationActive={false}
               legendType="none"
@@ -4304,6 +4353,54 @@ export default function HomePage() {
     const startDate = new Date(todayDate);
     startDate.setDate(startDate.getDate() - CYCLE_OVERVIEW_PAST_DAYS);
 
+    // Calculate average cycle length for future projections
+    const recentCycleLengths = completedCycleLengths.slice(-3);
+    const avgCycleLength = recentCycleLengths.length > 0
+      ? Math.round(recentCycleLengths.reduce((a, b) => a + b, 0) / recentCycleLengths.length)
+      : 28;
+
+    // Calculate average bleeding pattern from completed cycles
+    // Maps cycle day -> average intensity (0-1 scale)
+    const bleedingPatternByDay = new Map<number, { totalIntensity: number; count: number }>();
+    if (cycleOvulationData) {
+      for (const cycle of cycleOvulationData.cycles) {
+        if (!cycle.isCompleted) continue;
+        for (const { cycleDay, entry } of cycle.entries) {
+          if (hasBleedingForEntry(entry)) {
+            // Get PBAC score or estimate from simple intensity
+            let intensity = 0;
+            if (entry.extendedPbacData?.trackingMethod === "pbac_extended") {
+              intensity = entry.extendedPbacData.totalPbacEquivalentScore ?? 0;
+            } else if (entry.bleeding?.pbacScore != null) {
+              intensity = entry.bleeding.pbacScore;
+            } else if (entry.simpleBleedingIntensity) {
+              intensity = getSimpleBleedingPbacEquivalent(entry.simpleBleedingIntensity);
+            } else {
+              intensity = 10; // Default moderate bleeding
+            }
+            // Normalize to 0-1 scale (assuming max PBAC of ~100)
+            const normalizedIntensity = Math.min(1, intensity / 80);
+            const existing = bleedingPatternByDay.get(cycleDay) ?? { totalIntensity: 0, count: 0 };
+            bleedingPatternByDay.set(cycleDay, {
+              totalIntensity: existing.totalIntensity + normalizedIntensity,
+              count: existing.count + 1,
+            });
+          }
+        }
+      }
+    }
+    // Convert to average intensities
+    const avgBleedingByDay = new Map<number, number>();
+    for (const [day, data] of bleedingPatternByDay) {
+      avgBleedingByDay.set(day, data.totalIntensity / data.count);
+    }
+
+    // Helper to get predicted bleeding intensity for a future cycle day
+    const getPredictedBleedingIntensity = (cycleDay: number): number | null => {
+      if (avgBleedingByDay.size === 0) return null;
+      return avgBleedingByDay.get(cycleDay) ?? null;
+    };
+
     // Use shared cycle ovulation map - create a local copy to handle ongoing cycle override
     const localOvulationMap = new Map(cycleOvulationData?.cycleOvulationMap ?? []);
 
@@ -4411,17 +4508,29 @@ export default function HomePage() {
         mucusFertilityScore: mucusScore,
         ovulationMethod: isLhConfirmed ? null : ovulationMethod,
         ovulationConfidence: isLhConfirmed ? 100 : ovulationConfidence,
+        predictedBleedingIntensity: null, // Not a future day
       });
     });
 
     const points: CycleOverviewPoint[] = [];
     const totalDays = CYCLE_OVERVIEW_PAST_DAYS + CYCLE_OVERVIEW_FUTURE_DAYS + 1; // +1 for today
+    const todayIso = formatDate(todayDate);
+
+    // Get last cycle start for calculating future cycles
+    const lastCycleStart = cycleStartDates.length > 0 ? cycleStartDates[cycleStartDates.length - 1] : null;
+    const lastCycleStartDate = lastCycleStart ? parseIsoDate(lastCycleStart) : null;
+
+    // Calculate predicted ovulation day for current/future cycles
+    const predictedOvulationDay = cycleAnalysis?.predictedOvulationDay ?? Math.round(avgCycleLength - 14);
+
     for (let dayOffset = 0; dayOffset < totalDays; dayOffset += 1) {
       const currentDate = new Date(startDate);
       currentDate.setDate(startDate.getDate() + dayOffset);
       const iso = formatDate(currentDate);
+      const isFutureDay = iso > todayIso;
       const existing = pointsByDate.get(iso);
       const timeline = painShortcutTimelineByDate[iso] ?? null;
+
       if (existing) {
         points.push({ ...existing, painTimeline: timeline });
       } else {
@@ -4430,8 +4539,10 @@ export default function HomePage() {
         let isInPredictedFertileWindow = false;
         let ovulationMethod: OvulationResult["method"] | null = null;
         let ovulationConfidence: number | null = null;
+        let predictedBleedingIntensity: number | null = null;
+        let futureCycleDay: number | null = null;
 
-        // Find which cycle this date belongs to and get its ovulation data
+        // First check if this date is within a known cycle
         const ovulationData = getOvulationDataForDate(iso);
         if (ovulationData !== null) {
           // Calculate cycle day for this date
@@ -4445,20 +4556,45 @@ export default function HomePage() {
                 const diffMs = currentDate.getTime() - cycleStartDate.getTime();
                 if (diffMs >= 0) {
                   const cycleDay = Math.floor(diffMs / MS_PER_DAY) + 1;
+                  futureCycleDay = cycleDay;
                   isPredictedOvulationDay = cycleDay === ovulationData.ovulationDay;
                   isInPredictedFertileWindow = isFertileDay(cycleDay, ovulationData.ovulationDay);
                   ovulationMethod = ovulationData.method;
                   ovulationConfidence = ovulationData.confidence;
+
+                  // For future days, add bleeding prediction
+                  if (isFutureDay) {
+                    predictedBleedingIntensity = getPredictedBleedingIntensity(cycleDay);
+                  }
                 }
               }
               break;
             }
           }
+        } else if (isFutureDay && lastCycleStartDate && avgCycleLength > 0) {
+          // This date is beyond the current cycle - project future cycles
+          const daysSinceLastCycleStart = Math.floor(
+            (currentDate.getTime() - lastCycleStartDate.getTime()) / MS_PER_DAY
+          );
+
+          // Calculate which future cycle this belongs to and the cycle day
+          const cyclesAhead = Math.floor(daysSinceLastCycleStart / avgCycleLength);
+          const cycleDay = (daysSinceLastCycleStart % avgCycleLength) + 1;
+          futureCycleDay = cycleDay;
+
+          // Apply predictions for future cycles
+          isPredictedOvulationDay = cycleDay === predictedOvulationDay;
+          isInPredictedFertileWindow = isFertileDay(cycleDay, predictedOvulationDay);
+          ovulationMethod = "standard";
+          ovulationConfidence = cyclesAhead === 0 ? 50 : 40; // Lower confidence for cycles further ahead
+
+          // Add bleeding prediction based on average pattern
+          predictedBleedingIntensity = getPredictedBleedingIntensity(cycleDay);
         }
 
         points.push({
           date: iso,
-          cycleDay: null,
+          cycleDay: futureCycleDay,
           painNRS: 0,
           impactNRS: null,
           pbacScore: null,
@@ -4473,6 +4609,7 @@ export default function HomePage() {
           mucusFertilityScore: null,
           ovulationMethod,
           ovulationConfidence,
+          predictedBleedingIntensity,
         });
       }
     }
@@ -4482,7 +4619,7 @@ export default function HomePage() {
       points,
       todayIndex: CYCLE_OVERVIEW_PAST_DAYS, // Today is at this index (0-based)
     };
-  }, [annotatedDailyEntries, cycleAnalysis, cycleOvulationData, cycleStartDates, featureFlags.billingMethod, painShortcutTimelineByDate, today]);
+  }, [annotatedDailyEntries, completedCycleLengths, cycleAnalysis, cycleOvulationData, cycleStartDates, featureFlags.billingMethod, painShortcutTimelineByDate, today]);
 
   const canGoToNextDay = useMemo(() => dailyDraft.date < today, [dailyDraft.date, today]);
 
