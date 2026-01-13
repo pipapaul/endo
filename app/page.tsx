@@ -2117,7 +2117,7 @@ const OvulationConfidenceDot = ({ cx, cy, payload }: PredictionDotProps) => {
 
 /**
  * Multi-signal ovulation display - shows individual signal predictions as separate markers.
- * Each signal type gets its own colored indicator:
+ * Each signal type gets its own colored indicator with opacity based on confidence:
  * - Green: Mucus (Billings method)
  * - Orange: Ovulation pain (Mittelschmerz)
  * - Blue: Historical/luteal phase prediction
@@ -2158,49 +2158,50 @@ const MultiSignalOvulationDot = ({ cx, cy, payload }: PredictionDotProps) => {
   const signalsForThisDay = signals.filter(s => s.day === cycleDay);
   if (signalsForThisDay.length === 0) return null;
 
-  // Color map for signal types
-  const colors: Record<string, { fill: string; stroke: string }> = {
-    mucus: { fill: "#dcfce7", stroke: "#16a34a" },    // Green
-    pain: { fill: "#ffedd5", stroke: "#ea580c" },     // Orange
-    luteal: { fill: "#dbeafe", stroke: "#2563eb" },   // Blue
-    standard: { fill: "#f3f4f6", stroke: "#6b7280" }, // Gray
+  // Color map for signal types (solid colors, opacity applied separately)
+  const colors: Record<string, string> = {
+    mucus: "#16a34a",    // Green
+    pain: "#ea580c",     // Orange
+    luteal: "#2563eb",   // Blue
+    standard: "#6b7280", // Gray
   };
 
   // Position signals vertically if multiple predict this day
-  // Stack them from bottom (standard) to top (mucus) with 6px spacing
-  const yOffsets = signalsForThisDay.map((_, i) => (signalsForThisDay.length - 1 - i) * -6);
+  // Stack them from bottom (standard) to top (mucus) with 5px spacing
+  const yOffsets = signalsForThisDay.map((_, i) => (signalsForThisDay.length - 1 - i) * -5);
 
   return (
     <g>
       {signalsForThisDay.map((signal, index) => {
         const color = colors[signal.type];
         const yOffset = yOffsets[index];
-        const isHighConfidence = signal.confidence >= 70;
+        // Map confidence (50-100%) to opacity (0.3-1.0)
+        const opacity = 0.3 + (signal.confidence / 100) * 0.7;
         return (
-          <g key={signal.type}>
-            <circle
-              cx={cx}
-              cy={cy + yOffset}
-              r={isHighConfidence ? 4 : 3}
-              fill={color.fill}
-              stroke={color.stroke}
-              strokeWidth={isHighConfidence ? 1.5 : 1}
-              strokeDasharray={signal.confidence < 60 ? "2,1" : undefined}
-            />
-            {/* Small inner dot for high confidence */}
-            {isHighConfidence && (
-              <circle
-                cx={cx}
-                cy={cy + yOffset}
-                r={1.5}
-                fill={color.stroke}
-              />
-            )}
-          </g>
+          <circle
+            key={signal.type}
+            cx={cx}
+            cy={cy + yOffset}
+            r={3.5}
+            fill={color}
+            opacity={opacity}
+          />
         );
       })}
     </g>
   );
+};
+
+/**
+ * Get label for signal type in multi-signal display
+ */
+const getSignalTypeLabel = (type: "mucus" | "pain" | "luteal" | "standard"): string => {
+  switch (type) {
+    case "mucus": return "Zervixschleim";
+    case "pain": return "Mittelschmerz";
+    case "luteal": return "Pers. Lutealphase";
+    case "standard": return "Standard";
+  }
 };
 
 /**
@@ -2483,12 +2484,39 @@ const CycleOverviewMiniChart = ({
             <p className="font-medium text-yellow-800">
               {payload.ovulationPositive ? "Eisprung bestätigt (LH+)" : "Eisprung"}
             </p>
-            {!payload.ovulationPositive && payload.ovulationMethod && (
+            {/* Multi-signal mode: show individual signal predictions */}
+            {!payload.ovulationPositive && predictionStyle === "multi_signal" && payload.signalPredictions && payload.cycleDay ? (() => {
+              const signals: Array<{ type: "mucus" | "pain" | "luteal" | "standard"; day: number; confidence: number }> = [];
+              if (payload.signalPredictions.mucus) signals.push({ type: "mucus", day: payload.signalPredictions.mucus.ovulationDay, confidence: payload.signalPredictions.mucus.confidence });
+              if (payload.signalPredictions.pain) signals.push({ type: "pain", day: payload.signalPredictions.pain.ovulationDay, confidence: payload.signalPredictions.pain.confidence });
+              if (payload.signalPredictions.luteal) signals.push({ type: "luteal", day: payload.signalPredictions.luteal.ovulationDay, confidence: payload.signalPredictions.luteal.confidence });
+              if (payload.signalPredictions.standard) signals.push({ type: "standard", day: payload.signalPredictions.standard.ovulationDay, confidence: payload.signalPredictions.standard.confidence });
+              const signalsForThisDay = signals.filter(s => s.day === payload.cycleDay);
+              const signalColors: Record<string, string> = {
+                mucus: "#16a34a", pain: "#ea580c", luteal: "#2563eb", standard: "#6b7280",
+              };
+              return signalsForThisDay.length > 0 ? (
+                <div className="mt-1.5 space-y-0.5">
+                  <p className="text-[10px] font-medium text-yellow-600 uppercase">Signale für diesen Tag:</p>
+                  {signalsForThisDay.map(signal => (
+                    <p key={signal.type} className="text-xs text-yellow-700 flex items-center gap-1.5">
+                      <span
+                        className="inline-block w-2 h-2 rounded-full"
+                        style={{ backgroundColor: signalColors[signal.type], opacity: 0.3 + (signal.confidence / 100) * 0.7 }}
+                      />
+                      <span>{getSignalTypeLabel(signal.type)}: {signal.confidence}%</span>
+                    </p>
+                  ))}
+                </div>
+              ) : null;
+            })() : null}
+            {/* Single mode: show combined method and confidence */}
+            {!payload.ovulationPositive && predictionStyle !== "multi_signal" && payload.ovulationMethod && (
               <p className="text-xs text-yellow-700 mt-0.5">
                 <span className="font-medium">Methode:</span> {getOvulationMethodLabel(payload.ovulationMethod)}
               </p>
             )}
-            {payload.ovulationConfidence !== null && (
+            {!payload.ovulationPositive && predictionStyle !== "multi_signal" && payload.ovulationConfidence !== null && (
               <p className="text-xs text-yellow-700">
                 <span className="font-medium">Konfidenz:</span> {payload.ovulationConfidence}%
               </p>
