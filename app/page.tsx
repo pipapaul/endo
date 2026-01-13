@@ -449,12 +449,16 @@ const calculateOvulationForCycle = (
   }
 
   // 2. Ovulation pain detection (strongest pain day with intensity >= 3)
+  // Also require painNRS >= 3 to ensure the pain is visible on the chart
+  // This prevents predictions based on "invisible" ovulation pain data
   let strongestPainDay: number | null = null;
   let strongestPainIntensity = 0;
   for (const { entry, cycleDay } of cycleEntries) {
-    const intensity = entry.ovulationPain?.intensity ?? 0;
-    if (intensity > strongestPainIntensity && intensity >= 3) {
-      strongestPainIntensity = intensity;
+    const ovulationPainIntensity = entry.ovulationPain?.intensity ?? 0;
+    const generalPain = entry.painNRS ?? 0;
+    // Require both ovulation pain AND visible general pain
+    if (ovulationPainIntensity > strongestPainIntensity && ovulationPainIntensity >= 3 && generalPain >= 3) {
+      strongestPainIntensity = ovulationPainIntensity;
       strongestPainDay = cycleDay;
     }
   }
