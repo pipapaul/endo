@@ -2131,7 +2131,8 @@ const MultiSignalOvulationDot = ({ cx, cy, payload }: PredictionDotProps) => {
     typeof cx !== "number" ||
     typeof cy !== "number" ||
     !payload?.signalPredictions ||
-    !payload?.cycleDay
+    payload?.cycleDay === null ||
+    payload?.cycleDay === undefined
   ) {
     return null;
   }
@@ -2485,7 +2486,7 @@ const CycleOverviewMiniChart = ({
               {payload.ovulationPositive ? "Eisprung bestätigt (LH+)" : "Eisprung"}
             </p>
             {/* Multi-signal mode: show individual signal predictions */}
-            {!payload.ovulationPositive && predictionStyle === "multi_signal" && payload.signalPredictions && payload.cycleDay ? (() => {
+            {!payload.ovulationPositive && predictionStyle === "multi_signal" && payload.signalPredictions && payload.cycleDay !== null && payload.cycleDay !== undefined ? (() => {
               const signals: Array<{ type: "mucus" | "pain" | "luteal" | "standard"; day: number; confidence: number }> = [];
               if (payload.signalPredictions.mucus) signals.push({ type: "mucus", day: payload.signalPredictions.mucus.ovulationDay, confidence: payload.signalPredictions.mucus.confidence });
               if (payload.signalPredictions.pain) signals.push({ type: "pain", day: payload.signalPredictions.pain.ovulationDay, confidence: payload.signalPredictions.pain.confidence });
@@ -4658,6 +4659,7 @@ export default function HomePage() {
         let ovulationMethod: OvulationResult["method"] | null = null;
         let ovulationConfidence: number | null = null;
         let signalPredictions: OvulationResult["signalPredictions"] | undefined;
+        let calculatedCycleDay: number | null = null;
 
         // Find which cycle this date belongs to and get its ovulation data
         const ovulationData = getOvulationDataForDate(iso);
@@ -4672,9 +4674,9 @@ export default function HomePage() {
               if (cycleStartDate) {
                 const diffMs = currentDate.getTime() - cycleStartDate.getTime();
                 if (diffMs >= 0) {
-                  const cycleDay = Math.floor(diffMs / MS_PER_DAY) + 1;
-                  isPredictedOvulationDay = cycleDay === ovulationData.ovulationDay;
-                  isInPredictedFertileWindow = isFertileDay(cycleDay, ovulationData.ovulationDay);
+                  calculatedCycleDay = Math.floor(diffMs / MS_PER_DAY) + 1;
+                  isPredictedOvulationDay = calculatedCycleDay === ovulationData.ovulationDay;
+                  isInPredictedFertileWindow = isFertileDay(calculatedCycleDay, ovulationData.ovulationDay);
                   ovulationMethod = ovulationData.method;
                   ovulationConfidence = ovulationData.confidence;
                   signalPredictions = ovulationData.signalPredictions;
@@ -4687,7 +4689,7 @@ export default function HomePage() {
 
         points.push({
           date: iso,
-          cycleDay: null,
+          cycleDay: calculatedCycleDay,
           painNRS: 0,
           impactNRS: null,
           pbacScore: null,
