@@ -476,21 +476,21 @@ const calculateOvulationForCycle = (
   const hasEnoughMucusHistory = (options.completedCyclesWithMucus ?? 0) >= 2;
 
   // Priority 1: Peak mucus + Ovulation pain (cross-validated)
+  // Only claim cross-validation if we have enough history to trust mucus data
   if (signals.peakMucusDay && signals.ovulationPainDay) {
     const mucusOvulation = signals.peakMucusDay + 1;
-    // If pain is within ±2 days of mucus prediction, high confidence
+    // If pain is within ±2 days of mucus prediction, cross-validated
     if (Math.abs(mucusOvulation - signals.ovulationPainDay) <= 2) {
-      // Use mucus as primary, pain confirms
-      // Reduce confidence if insufficient mucus history (65% instead of 95%)
+      // Only use "mucus_pain" method if we have enough history to trust the cross-validation
+      // Otherwise just report as "mucus" since we can't reliably claim cross-validation yet
       return {
         ovulationDay: mucusOvulation,
         confidence: hasEnoughMucusHistory ? 95 : 65,
-        method: "mucus_pain",
+        method: hasEnoughMucusHistory ? "mucus_pain" : "mucus",
         signals,
       };
     }
     // If they disagree, trust mucus (more reliable)
-    // Reduce confidence if insufficient mucus history (55% instead of 80%)
     return {
       ovulationDay: mucusOvulation,
       confidence: hasEnoughMucusHistory ? 80 : 55,
