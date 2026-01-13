@@ -2528,6 +2528,31 @@ const CycleOverviewMiniChart = ({
           <div className="mt-2 px-2 py-1.5 rounded-md bg-pink-50 border border-pink-200 text-sm">
             <p className="font-medium text-pink-700">Fruchtbares Fenster</p>
             <p className="text-xs text-pink-600">5 Tage vor bis 1 Tag nach Eisprung</p>
+            {/* Multi-signal mode: show all signal predictions in fertile window */}
+            {predictionStyle === "multi_signal" && payload.signalPredictions && payload.cycleDay !== null && payload.cycleDay !== undefined ? (() => {
+              const signals: Array<{ type: "mucus" | "pain" | "luteal" | "standard"; day: number; confidence: number }> = [];
+              if (payload.signalPredictions.mucus) signals.push({ type: "mucus", day: payload.signalPredictions.mucus.ovulationDay, confidence: payload.signalPredictions.mucus.confidence });
+              if (payload.signalPredictions.pain) signals.push({ type: "pain", day: payload.signalPredictions.pain.ovulationDay, confidence: payload.signalPredictions.pain.confidence });
+              if (payload.signalPredictions.luteal) signals.push({ type: "luteal", day: payload.signalPredictions.luteal.ovulationDay, confidence: payload.signalPredictions.luteal.confidence });
+              if (payload.signalPredictions.standard) signals.push({ type: "standard", day: payload.signalPredictions.standard.ovulationDay, confidence: payload.signalPredictions.standard.confidence });
+              const signalColors: Record<string, string> = {
+                mucus: "#16a34a", pain: "#ea580c", luteal: "#2563eb", standard: "#6b7280",
+              };
+              return signals.length > 0 ? (
+                <div className="mt-1.5 pt-1.5 border-t border-pink-200 space-y-0.5">
+                  <p className="text-[10px] font-medium text-pink-500 uppercase">Eisprung-Signale:</p>
+                  {signals.map(signal => (
+                    <p key={signal.type} className="text-xs text-pink-600 flex items-center gap-1.5">
+                      <span
+                        className="inline-block w-2 h-2 rounded-full"
+                        style={{ backgroundColor: signalColors[signal.type], opacity: 0.3 + (signal.confidence / 100) * 0.7 }}
+                      />
+                      <span>{getSignalTypeLabel(signal.type)}: Tag {signal.day} ({signal.confidence}%)</span>
+                    </p>
+                  ))}
+                </div>
+              ) : null;
+            })() : null}
           </div>
         )}
         {payload.mucusFertilityScore !== null && payload.mucusFertilityScore >= 3 ? (() => {
