@@ -2155,9 +2155,16 @@ const MultiSignalOvulationDot = ({ cx, cy, payload }: PredictionDotProps) => {
     signals.push({ type: "standard", day: signalPredictions.standard.ovulationDay, confidence: signalPredictions.standard.confidence });
   }
 
-  // Only render signals that predict THIS day
+  // Render signals that predict THIS day
   const signalsForThisDay = signals.filter(s => s.day === cycleDay);
-  if (signalsForThisDay.length === 0) return null;
+
+  // If this is the predicted ovulation day but no individual signals match exactly,
+  // show all signals (this happens when the combined weighted prediction differs from individual signals)
+  const signalsToRender = signalsForThisDay.length > 0
+    ? signalsForThisDay
+    : (payload.isPredictedOvulationDay ? signals : []);
+
+  if (signalsToRender.length === 0) return null;
 
   // Color map for signal types (solid colors, opacity applied separately)
   const colors: Record<string, string> = {
@@ -2169,11 +2176,11 @@ const MultiSignalOvulationDot = ({ cx, cy, payload }: PredictionDotProps) => {
 
   // Position signals vertically if multiple predict this day
   // Stack them from bottom (standard) to top (mucus) with 5px spacing
-  const yOffsets = signalsForThisDay.map((_, i) => (signalsForThisDay.length - 1 - i) * -5);
+  const yOffsets = signalsToRender.map((_, i) => (signalsToRender.length - 1 - i) * -5);
 
   return (
     <g>
-      {signalsForThisDay.map((signal, index) => {
+      {signalsToRender.map((signal, index) => {
         const color = colors[signal.type];
         const yOffset = yOffsets[index];
         // Map confidence (50-100%) to opacity (0.3-1.0)
@@ -2493,19 +2500,27 @@ const CycleOverviewMiniChart = ({
               if (payload.signalPredictions.luteal) signals.push({ type: "luteal", day: payload.signalPredictions.luteal.ovulationDay, confidence: payload.signalPredictions.luteal.confidence });
               if (payload.signalPredictions.standard) signals.push({ type: "standard", day: payload.signalPredictions.standard.ovulationDay, confidence: payload.signalPredictions.standard.confidence });
               const signalsForThisDay = signals.filter(s => s.day === payload.cycleDay);
+              // Show all signals if none match this exact day (combined prediction differs from individual signals)
+              const signalsToShow = signalsForThisDay.length > 0 ? signalsForThisDay : signals;
               const signalColors: Record<string, string> = {
                 mucus: "#16a34a", pain: "#ea580c", luteal: "#2563eb", standard: "#6b7280",
               };
-              return signalsForThisDay.length > 0 ? (
+              return signalsToShow.length > 0 ? (
                 <div className="mt-1.5 space-y-0.5">
-                  <p className="text-[10px] font-medium text-yellow-600 uppercase">Signale für diesen Tag:</p>
-                  {signalsForThisDay.map(signal => (
+                  <p className="text-[10px] font-medium text-yellow-600 uppercase">
+                    {signalsForThisDay.length > 0 ? "Signale für diesen Tag:" : "Eisprung-Signale:"}
+                  </p>
+                  {signalsToShow.map(signal => (
                     <p key={signal.type} className="text-xs text-yellow-700 flex items-center gap-1.5">
                       <span
                         className="inline-block w-2 h-2 rounded-full"
                         style={{ backgroundColor: signalColors[signal.type], opacity: 0.3 + (signal.confidence / 100) * 0.7 }}
                       />
-                      <span>{getSignalTypeLabel(signal.type)}: {signal.confidence}%</span>
+                      <span>
+                        {getSignalTypeLabel(signal.type)}
+                        {signalsForThisDay.length === 0 && `: Tag ${signal.day}`}
+                        {` (${signal.confidence}%)`}
+                      </span>
                     </p>
                   ))}
                 </div>
