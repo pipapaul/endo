@@ -416,6 +416,41 @@ const detectSymptomPeak = (
   return peakDay !== null && maxScore > 0.5 ? { peakDay, score: maxScore } : null;
 };
 
+const clampScore = (value: number | undefined | null): number | null => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+  return Math.max(0, Math.min(10, Math.round(value)));
+};
+
+const computeMaxPainIntensity = (entry: DailyEntry, extraPain?: number | null): number | null => {
+  const intensities: number[] = [];
+  const generalPain = clampScore(entry.painNRS);
+  if (generalPain !== null) {
+    intensities.push(generalPain);
+  }
+  (entry.painRegions ?? []).forEach((region) => {
+    const regionScore = clampScore(region?.nrs);
+    if (regionScore !== null) {
+      intensities.push(regionScore);
+    }
+  });
+  (entry.quickPainEvents ?? []).forEach((event) => {
+    const eventScore = clampScore(event?.intensity);
+    if (eventScore !== null) {
+      intensities.push(eventScore);
+    }
+  });
+  const shortcutPain = clampScore(extraPain);
+  if (shortcutPain !== null) {
+    intensities.push(shortcutPain);
+  }
+  if (!intensities.length) {
+    return null;
+  }
+  return Math.max(...intensities);
+};
+
 /**
  * Unified multi-signal ovulation calculator.
  * Uses bleeding, mucus, pain, and symptoms to detect ovulation with confidence scoring.
@@ -449,15 +484,17 @@ const calculateOvulationForCycle = (
   }
 
   // 2. Ovulation pain detection (strongest pain day with intensity >= 3)
-  // Also require painNRS >= 3 to ensure the pain is visible on the chart
+  // Also require visible pain on chart >= 3 to ensure the pain is actually shown
+  // This uses computeMaxPainIntensity which considers painNRS, painRegions, and quickPainEvents
   // This prevents predictions based on "invisible" ovulation pain data
   let strongestPainDay: number | null = null;
   let strongestPainIntensity = 0;
   for (const { entry, cycleDay } of cycleEntries) {
     const ovulationPainIntensity = entry.ovulationPain?.intensity ?? 0;
-    const generalPain = entry.painNRS ?? 0;
-    // Require both ovulation pain AND visible general pain
-    if (ovulationPainIntensity > strongestPainIntensity && ovulationPainIntensity >= 3 && generalPain >= 3) {
+    // Use the same logic as the chart to determine visible pain
+    const visiblePain = computeMaxPainIntensity(entry) ?? 0;
+    // Require both ovulation pain AND visible pain on chart
+    if (ovulationPainIntensity > strongestPainIntensity && ovulationPainIntensity >= 3 && visiblePain >= 3) {
       strongestPainIntensity = ovulationPainIntensity;
       strongestPainDay = cycleDay;
     }
@@ -908,41 +945,6 @@ const BODY_REGION_GROUPS: { id: string; label: string; regions: BodyRegion[] }[]
 const ABDOMEN_REGION_IDS = new Set(
   (BODY_REGION_GROUPS.find((group) => group.id === "abdomen")?.regions ?? []).map((region) => region.id)
 );
-
-const clampScore = (value: number | undefined | null): number | null => {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return null;
-  }
-  return Math.max(0, Math.min(10, Math.round(value)));
-};
-
-const computeMaxPainIntensity = (entry: DailyEntry, extraPain?: number | null): number | null => {
-  const intensities: number[] = [];
-  const generalPain = clampScore(entry.painNRS);
-  if (generalPain !== null) {
-    intensities.push(generalPain);
-  }
-  (entry.painRegions ?? []).forEach((region) => {
-    const regionScore = clampScore(region?.nrs);
-    if (regionScore !== null) {
-      intensities.push(regionScore);
-    }
-  });
-  (entry.quickPainEvents ?? []).forEach((event) => {
-    const eventScore = clampScore(event?.intensity);
-    if (eventScore !== null) {
-      intensities.push(eventScore);
-    }
-  });
-  const shortcutPain = clampScore(extraPain);
-  if (shortcutPain !== null) {
-    intensities.push(shortcutPain);
-  }
-  if (!intensities.length) {
-    return null;
-  }
-  return Math.max(...intensities);
-};
 
 const computePelvicPainOutsidePeriodIntensity = (entry: DailyEntry): number | null => {
   const pelvicScores = (entry.painRegions ?? [])
