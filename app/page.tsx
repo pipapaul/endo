@@ -4307,20 +4307,38 @@ export default function HomePage() {
     // Use shared cycle ovulation map - create a local copy to handle ongoing cycle override
     const localOvulationMap = new Map(cycleOvulationData?.cycleOvulationMap ?? []);
 
-    // For ongoing cycle, override with cycleAnalysis prediction (weighted average)
-    // This ensures the current cycle uses the best prediction based on historical data
+    // For ongoing cycle, use signal-based predictions when available
+    // Only fall back to cycleAnalysis weighted average if no strong signals exist
     if (cycleStartDates.length > 0 && cycleOvulationData) {
       const lastCycleStart = cycleStartDates[cycleStartDates.length - 1];
       const lastCycleData = cycleOvulationData.cycles.find(c => c.startDate === lastCycleStart);
 
-      if (lastCycleData && !lastCycleData.isCompleted && cycleAnalysis?.predictedOvulationDay) {
-        localOvulationMap.set(lastCycleStart, {
-          ovulationDay: cycleAnalysis.predictedOvulationDay,
-          cycleStart: lastCycleStart,
-          cycleEnd: null,
-          confidence: lastCycleData.ovulationConfidence,
-          method: lastCycleData.ovulationMethod,
-        });
+      if (lastCycleData && !lastCycleData.isCompleted) {
+        // Check if current cycle has signal-based method (mucus, pain, or mucus_pain)
+        const hasSignalBasedMethod = lastCycleData.ovulationMethod === "mucus" ||
+          lastCycleData.ovulationMethod === "mucus_pain" ||
+          lastCycleData.ovulationMethod === "pain";
+
+        if (hasSignalBasedMethod) {
+          // Use the signal-based prediction - method and ovulationDay are already consistent
+          localOvulationMap.set(lastCycleStart, {
+            ovulationDay: lastCycleData.ovulationDay,
+            cycleStart: lastCycleStart,
+            cycleEnd: null,
+            confidence: lastCycleData.ovulationConfidence,
+            method: lastCycleData.ovulationMethod,
+          });
+        } else if (cycleAnalysis?.predictedOvulationDay) {
+          // No signals in current cycle - use weighted average from history
+          // Method stays as standard/personal_luteal (whatever was calculated)
+          localOvulationMap.set(lastCycleStart, {
+            ovulationDay: cycleAnalysis.predictedOvulationDay,
+            cycleStart: lastCycleStart,
+            cycleEnd: null,
+            confidence: lastCycleData.ovulationConfidence,
+            method: lastCycleData.ovulationMethod,
+          });
+        }
       }
     }
 
