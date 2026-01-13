@@ -4544,34 +4544,48 @@ export default function HomePage() {
 
         // First check if this date is within a known cycle
         const ovulationData = getOvulationDataForDate(iso);
-        if (ovulationData !== null) {
-          // Calculate cycle day for this date
-          for (let i = cycleStartDates.length - 1; i >= 0; i -= 1) {
-            const cycleStart = cycleStartDates[i];
-            const cycleEnd = cycleStartDates[i + 1] ?? null;
+        let handledByCurrentCycle = false;
 
-            if (iso >= cycleStart && (cycleEnd === null || iso < cycleEnd)) {
-              const cycleStartDate = parseIsoDate(cycleStart);
-              if (cycleStartDate) {
-                const diffMs = currentDate.getTime() - cycleStartDate.getTime();
-                if (diffMs >= 0) {
-                  const cycleDay = Math.floor(diffMs / MS_PER_DAY) + 1;
-                  futureCycleDay = cycleDay;
-                  isPredictedOvulationDay = cycleDay === ovulationData.ovulationDay;
-                  isInPredictedFertileWindow = isFertileDay(cycleDay, ovulationData.ovulationDay);
-                  ovulationMethod = ovulationData.method;
-                  ovulationConfidence = ovulationData.confidence;
+        if (ovulationData !== null && lastCycleStartDate) {
+          // Calculate days since last cycle start
+          const daysSinceLastCycleStart = Math.floor(
+            (currentDate.getTime() - lastCycleStartDate.getTime()) / MS_PER_DAY
+          );
 
-                  // For future days, add bleeding prediction
-                  if (isFutureDay) {
-                    predictedBleedingIntensity = getPredictedBleedingIntensity(cycleDay);
+          // Only use current cycle data if we're within expected cycle length
+          // Otherwise, fall through to future cycle projection
+          if (daysSinceLastCycleStart < avgCycleLength) {
+            // Calculate cycle day for this date
+            for (let i = cycleStartDates.length - 1; i >= 0; i -= 1) {
+              const cycleStart = cycleStartDates[i];
+              const cycleEnd = cycleStartDates[i + 1] ?? null;
+
+              if (iso >= cycleStart && (cycleEnd === null || iso < cycleEnd)) {
+                const cycleStartDate = parseIsoDate(cycleStart);
+                if (cycleStartDate) {
+                  const diffMs = currentDate.getTime() - cycleStartDate.getTime();
+                  if (diffMs >= 0) {
+                    const cycleDay = Math.floor(diffMs / MS_PER_DAY) + 1;
+                    futureCycleDay = cycleDay;
+                    isPredictedOvulationDay = cycleDay === ovulationData.ovulationDay;
+                    isInPredictedFertileWindow = isFertileDay(cycleDay, ovulationData.ovulationDay);
+                    ovulationMethod = ovulationData.method;
+                    ovulationConfidence = ovulationData.confidence;
+
+                    // For future days, add bleeding prediction
+                    if (isFutureDay) {
+                      predictedBleedingIntensity = getPredictedBleedingIntensity(cycleDay);
+                    }
+                    handledByCurrentCycle = true;
                   }
                 }
+                break;
               }
-              break;
             }
           }
-        } else if (isFutureDay && lastCycleStartDate && avgCycleLength > 0) {
+        }
+
+        if (!handledByCurrentCycle && isFutureDay && lastCycleStartDate && avgCycleLength > 0) {
           // This date is beyond the current cycle - project future cycles
           const daysSinceLastCycleStart = Math.floor(
             (currentDate.getTime() - lastCycleStartDate.getTime()) / MS_PER_DAY
