@@ -783,6 +783,7 @@ type DailyCategoryId =
   | "medication"
   | "sleep"
   | "bowelBladder"
+  | "mood"
   | "notes"
   | "optional";
 
@@ -794,6 +795,7 @@ const DAILY_CATEGORY_KEYS: Exclude<DailyCategoryId, "overview">[] = [
   "medication",
   "sleep",
   "bowelBladder",
+  "mood",
   "notes",
   "optional",
 ];
@@ -812,6 +814,7 @@ const CATEGORY_COLORS: Record<
   medication: { saturated: "#0ea5e9", pastel: "#edf5fc", border: "rgba(14, 165, 233, 0.25)" },
   sleep: { saturated: "#8b5cf6", pastel: "#f3f0fa", border: "rgba(139, 92, 246, 0.25)" },
   bowelBladder: { saturated: "#ec4899", pastel: "#fcf0f4", border: "rgba(236, 72, 153, 0.25)" },
+  mood: { saturated: "#10b981", pastel: "#ecfdf5", border: "rgba(16, 185, 129, 0.25)" },
   notes: { saturated: "#f97316", pastel: "#faf4ed", border: "rgba(249, 115, 22, 0.25)" },
   optional: { saturated: "#f59e0b", pastel: "#fef7e8", border: "rgba(245, 158, 11, 0.25)" },
   cervixMucus: { saturated: "#14b8a6", pastel: "#e8f6f1", border: "rgba(20, 184, 166, 0.25)" },
@@ -1265,6 +1268,7 @@ type TrackableDailyCategoryId =
   | "medication"
   | "sleep"
   | "bowelBladder"
+  | "mood"
   | "notes"
   | "optional";
 
@@ -1276,6 +1280,7 @@ const TRACKED_DAILY_CATEGORY_IDS: TrackableDailyCategoryId[] = [
   "medication",
   "sleep",
   "bowelBladder",
+  "mood",
   "notes",
   "optional",
 ];
@@ -1831,6 +1836,8 @@ type CycleOverviewPoint = {
   ovulationConfidence: number | null;
   // Predicted bleeding for future days (0-1 opacity based on expected intensity)
   predictedBleedingIntensity: number | null;
+  // Mood: 1=sehr schlecht, 2=eher schlecht, 3=eher gut, 4=sehr gut
+  mood: 1 | 2 | 3 | 4 | null;
 };
 
 type CycleOverviewData = {
@@ -2013,6 +2020,32 @@ const PredictedBleedingDrop = ({ cx, cy, payload }: PredictionDotProps) => {
       opacity={opacity}
     />
   );
+};
+
+/**
+ * Mood indicator dot in the prediction row
+ * Colors: 1=red (sehr schlecht), 2=orange (eher schlecht), 3=lime (eher gut), 4=green (sehr gut)
+ */
+const MoodDot = ({ cx, cy, payload }: PredictionDotProps) => {
+  if (
+    typeof cx !== "number" ||
+    typeof cy !== "number" ||
+    payload?.mood === null ||
+    payload?.mood === undefined
+  ) {
+    return null;
+  }
+
+  const moodColors: Record<1 | 2 | 3 | 4, string> = {
+    1: "#ef4444", // red - sehr schlecht
+    2: "#f97316", // orange - eher schlecht
+    3: "#84cc16", // lime - eher gut
+    4: "#22c55e", // green - sehr gut
+  };
+
+  const color = moodColors[payload.mood];
+
+  return <circle cx={cx} cy={cy + 6} r={3} fill={color} />;
 };
 
 /**
@@ -2426,6 +2459,21 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
             </div>
           </div>
         ) : null}
+        {payload.mood !== null && payload.mood !== undefined ? (() => {
+          const moodLabels: Record<1 | 2 | 3 | 4, { emoji: string; label: string; color: string }> = {
+            1: { emoji: "😢", label: "Sehr schlecht", color: "#ef4444" },
+            2: { emoji: "😕", label: "Eher schlecht", color: "#f97316" },
+            3: { emoji: "🙂", label: "Eher gut", color: "#84cc16" },
+            4: { emoji: "😊", label: "Sehr gut", color: "#22c55e" },
+          };
+          const moodInfo = moodLabels[payload.mood];
+          return (
+            <p className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">
+              <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: moodInfo.color }} />
+              <span>Stimmung: {moodInfo.emoji} {moodInfo.label}</span>
+            </p>
+          );
+        })() : null}
       </div>
     );
   })() : null;
@@ -2560,6 +2608,16 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               yAxisId="painImpact"
               stroke="none"
               dot={<PredictedBleedingDrop />}
+              activeDot={false}
+              isAnimationActive={false}
+              legendType="none"
+            />
+            <Line
+              type="monotone"
+              dataKey="predictionDotY"
+              yAxisId="painImpact"
+              stroke="none"
+              dot={<MoodDot />}
               activeDot={false}
               isAnimationActive={false}
               legendType="none"
@@ -4506,6 +4564,7 @@ export default function HomePage() {
         ovulationMethod: isLhConfirmed ? null : ovulationMethod,
         ovulationConfidence: isLhConfirmed ? 100 : ovulationConfidence,
         predictedBleedingIntensity: null, // Not a future day
+        mood: entry.mood ?? null,
       });
     });
 
@@ -4621,6 +4680,7 @@ export default function HomePage() {
           ovulationMethod,
           ovulationConfidence,
           predictedBleedingIntensity,
+          mood: null,
         });
       }
     }
@@ -4725,6 +4785,7 @@ export default function HomePage() {
       medication: "Medikation",
       sleep: "Schlaf",
       bowelBladder: "Darm & Blase",
+      mood: "Stimmung",
       notes: "Notizen",
       optional: "Optionale Werte",
     };
@@ -7859,6 +7920,7 @@ export default function HomePage() {
       medication: TERMS.meds.label,
       sleep: "Schlaf",
       bowelBladder: "Darm & Blase",
+      mood: "Stimmung",
       notes: "Notizen & Tags",
       optional: "Optionale Werte (Hilfsmittel nötig)",
     }),
@@ -11363,6 +11425,52 @@ export default function HomePage() {
                     className="hidden"
                   />
                   {renderIssuesForPath("urinaryOpt.present")}
+                </Section>
+              </div>
+
+              <div className={cn("space-y-6", dailyActiveCategory === "mood" ? "" : "hidden")}>
+                <Section
+                  title="Stimmung"
+                  description={TERMS.mood.help}
+                  sectionType="mood"
+                >
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { value: 1, emoji: "😢", label: "Sehr schlecht" },
+                      { value: 2, emoji: "😕", label: "Eher schlecht" },
+                      { value: 3, emoji: "🙂", label: "Eher gut" },
+                      { value: 4, emoji: "😊", label: "Sehr gut" },
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() =>
+                          setDailyDraft((prev) => ({
+                            ...prev,
+                            mood: option.value as 1 | 2 | 3 | 4,
+                          }))
+                        }
+                        className={cn(
+                          "flex flex-col items-center gap-2 rounded-lg border-2 p-4 transition-all",
+                          dailyDraft.mood === option.value
+                            ? "border-emerald-500 bg-emerald-50"
+                            : "border-gray-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/50"
+                        )}
+                      >
+                        <span className="text-3xl">{option.emoji}</span>
+                        <span className="text-sm font-medium text-gray-700">{option.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {dailyDraft.mood && (
+                    <button
+                      type="button"
+                      onClick={() => setDailyDraft((prev) => ({ ...prev, mood: undefined }))}
+                      className="mt-2 text-sm text-gray-500 hover:text-gray-700"
+                    >
+                      Auswahl zurücksetzen
+                    </button>
+                  )}
                 </Section>
               </div>
 

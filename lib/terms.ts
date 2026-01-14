@@ -138,6 +138,11 @@ export const TERMS = {
   },
   notesTags: { label: "Schlagworte/Trigger", help: "Kurze Begriffe für Muster & Filter" },
   notesFree: { label: "Notizen", help: "Freier Text für Besonderheiten" },
+  mood: {
+    label: "Stimmung",
+    tech: "Affect/Mood Rating",
+    help: "Wie war deine Stimmung heute insgesamt?",
+  },
   urinaryOpt: {
     present: {
       label: "Blasensymptome heute?",
