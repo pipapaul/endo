@@ -121,6 +121,9 @@ export interface DailyEntry {
 
   notesTags?: string[];
   notesFree?: string;
+
+  // Mood tracking: 1=sehr schlecht, 2=eher schlecht, 3=eher gut, 4=sehr gut
+  mood?: 1 | 2 | 3 | 4;
 }
 
 export interface WeeklyEntry {
