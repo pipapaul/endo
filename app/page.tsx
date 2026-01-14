@@ -30,6 +30,7 @@ import {
   Scatter,
   ReferenceLine,
   ReferenceArea,
+  Customized,
 } from "recharts";
 import type { DotProps, TooltipProps, TooltipContentProps } from "recharts";
 import {
@@ -1943,6 +1944,7 @@ type CycleOverviewChartPoint = CycleOverviewPoint & {
   impactValue: number | null;
   isCurrentDay: boolean;
   isFutureDay: boolean;
+  predictionDotY: number;
 };
 
 type PainDotProps = DotProps & { payload?: CycleOverviewChartPoint };
@@ -2023,30 +2025,72 @@ const PredictedBleedingDrop = ({ cx, cy, payload }: PredictionDotProps) => {
   );
 };
 
+const MOOD_COLORS: Record<1 | 2 | 3 | 4, string> = {
+  1: "#ef4444", // red - sehr schlecht
+  2: "#f97316", // orange - eher schlecht
+  3: "#84cc16", // lime - eher gut
+  4: "#22c55e", // green - sehr gut
+};
+
 /**
- * Mood indicator dot in the prediction row
+ * Mood line - draws continuous horizontal colored line segments for each day with mood data
  * Colors: 1=red (sehr schlecht), 2=orange (eher schlecht), 3=lime (eher gut), 4=green (sehr gut)
+ * Uses Customized component to access chart coordinate system
  */
-const MoodDot = ({ cx, cy, payload }: PredictionDotProps) => {
-  if (
-    typeof cx !== "number" ||
-    typeof cy !== "number" ||
-    payload?.mood === null ||
-    payload?.mood === undefined
-  ) {
+const MoodLine = (props: {
+  formattedGraphicalItems?: Array<{
+    props?: { points?: Array<{ x: number; y: number; payload?: CycleOverviewChartPoint }> };
+  }>;
+}) => {
+  // Get points from the first Line component (predictionDotY line)
+  const lineItem = props.formattedGraphicalItems?.find(
+    (item) => item.props?.points?.some((p) => p.payload?.predictionDotY !== undefined)
+  );
+  const points = lineItem?.props?.points;
+
+  if (!points || points.length === 0) {
     return null;
   }
 
-  const moodColors: Record<1 | 2 | 3 | 4, string> = {
-    1: "#ef4444", // red - sehr schlecht
-    2: "#f97316", // orange - eher schlecht
-    3: "#84cc16", // lime - eher gut
-    4: "#22c55e", // green - sehr gut
-  };
+  // Calculate the spacing between points
+  const pointSpacing = points.length > 1 ? (points[1]?.x ?? 0) - (points[0]?.x ?? 0) : 0;
+  const halfSpacing = pointSpacing / 2;
 
-  const color = moodColors[payload.mood];
+  // Get base Y position from predictionDotY and offset down for mood line
+  const baseY = points[0]?.y ?? 0;
+  const lineY = baseY + 8;
 
-  return <circle cx={cx} cy={cy + 6} r={3} fill={color} />;
+  const segments: Array<{ x1: number; x2: number; color: string }> = [];
+
+  points.forEach((chartPoint) => {
+    const mood = chartPoint.payload?.mood;
+    if (mood === null || mood === undefined) return;
+
+    const color = MOOD_COLORS[mood];
+    const x1 = chartPoint.x - halfSpacing;
+    const x2 = chartPoint.x + halfSpacing;
+
+    segments.push({ x1, x2, color });
+  });
+
+  if (segments.length === 0) return null;
+
+  return (
+    <g>
+      {segments.map((segment, index) => (
+        <line
+          key={`mood-segment-${index}`}
+          x1={segment.x1}
+          y1={lineY}
+          x2={segment.x2}
+          y2={lineY}
+          stroke={segment.color}
+          strokeWidth={2}
+          strokeLinecap="butt"
+        />
+      ))}
+    </g>
+  );
 };
 
 /**
@@ -2613,16 +2657,7 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
               isAnimationActive={false}
               legendType="none"
             />
-            <Line
-              type="monotone"
-              dataKey="predictionDotY"
-              yAxisId="painImpact"
-              stroke="none"
-              dot={<MoodDot />}
-              activeDot={false}
-              isAnimationActive={false}
-              legendType="none"
-            />
+            <Customized component={MoodLine} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
