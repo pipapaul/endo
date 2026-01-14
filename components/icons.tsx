@@ -210,3 +210,29 @@ export function OptionalValuesIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+export function MoodIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 96.91 96.91"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      focusable="false"
+      {...props}
+    >
+      <circle cx="48.45" cy="48.45" r="48.45" fill="#fff" />
+      <circle cx="48.45" cy="48.45" r="48.45" fill="currentColor" fillOpacity={0.2} />
+      {/* Smiley face */}
+      <circle cx="36" cy="40" r="4" fill="currentColor" fillOpacity={0.7} />
+      <circle cx="61" cy="40" r="4" fill="currentColor" fillOpacity={0.7} />
+      <path
+        d="M32 56 c 8 12, 25 12, 33 0"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="4"
+        strokeLinecap="round"
+        strokeOpacity={0.7}
+      />
+    </svg>
+  );
+}

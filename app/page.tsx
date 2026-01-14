@@ -95,6 +95,7 @@ import {
   BauchIcon,
   CervixMucusIcon,
   MedicationIcon,
+  MoodIcon,
   NotesTagsIcon,
   OptionalValuesIcon,
   PainIcon,
@@ -8432,6 +8433,12 @@ export default function HomePage() {
         title: "Darm & Blase",
         description: "Verdauung & Blase im Blick behalten",
         icon: BauchIcon,
+      },
+      {
+        id: "mood" as const,
+        title: "Stimmung",
+        description: TERMS.mood.help,
+        icon: MoodIcon,
       },
       {
         id: "notes" as const,
