@@ -8815,6 +8815,71 @@ export default function HomePage() {
     setPbacCounts,
   ]);
 
+  // Handler for "Fertig" button in sticky action bar - saves and returns to overview
+  const handleFinishCategory = useCallback(() => {
+    if (dailyActiveCategory === "overview") return;
+
+    // Save the current category snapshot
+    const categoryId = dailyActiveCategory as TrackableDailyCategoryId;
+    if (isTrackedDailyCategory(categoryId)) {
+      const snapshot = extractDailyCategorySnapshot(dailyDraft, categoryId, featureFlags, pbacCounts);
+      if (snapshot) {
+        const snapshotString = JSON.stringify(snapshot);
+        setDailyCategorySnapshots((prev) => ({ ...prev, [categoryId]: snapshotString }));
+      }
+      setDailyCategoryDirtyState((prev) => {
+        if (!prev[categoryId]) return prev;
+        const next = { ...prev };
+        delete next[categoryId];
+        return next;
+      });
+    }
+    setDailyActiveCategory("overview");
+  }, [dailyActiveCategory, dailyDraft, featureFlags, pbacCounts]);
+
+  // Handler for "Verwerfen" button in sticky action bar - discards and returns to overview
+  const handleDiscardCategory = useCallback(() => {
+    if (dailyActiveCategory === "overview") return;
+
+    const categoryId = dailyActiveCategory as TrackableDailyCategoryId;
+    if (isTrackedDailyCategory(categoryId)) {
+      const snapshotString = dailyCategorySnapshots[categoryId];
+      if (snapshotString) {
+        const snapshot = JSON.parse(snapshotString) as CategorySnapshot;
+        const restored = restoreDailyCategorySnapshot(
+          dailyDraft,
+          featureFlags,
+          pbacCounts,
+          categoryId,
+          snapshot
+        );
+        setDailyDraft(restored.entry);
+        setFeatureFlags(restored.featureFlags);
+        setPbacCounts(restored.pbacCounts);
+      }
+      setDailyCategoryDirtyState((prev) => {
+        if (!prev[categoryId]) return prev;
+        const next = { ...prev };
+        delete next[categoryId];
+        return next;
+      });
+    }
+    setDailyActiveCategory("overview");
+  }, [dailyActiveCategory, dailyCategorySnapshots, dailyDraft, featureFlags, pbacCounts, setDailyDraft, setFeatureFlags, setPbacCounts]);
+
+  // Count of categories with data for the action bar
+  const completedCategoriesCount = useMemo(() => {
+    return DAILY_CATEGORY_KEYS.filter((key) => dailyCategoryCompletion[key]).length;
+  }, [dailyCategoryCompletion]);
+
+  // Check if current category has unsaved changes
+  const currentCategoryHasChanges = useMemo(() => {
+    if (dailyActiveCategory === "overview") return false;
+    const categoryId = dailyActiveCategory as TrackableDailyCategoryId;
+    if (!isTrackedDailyCategory(categoryId)) return false;
+    return dailyCategoryDirtyState[categoryId] ?? false;
+  }, [dailyActiveCategory, dailyCategoryDirtyState]);
+
   const dailyCategorySummaries = useMemo(
     () => {
       const entry = dailyDraft;
@@ -9289,16 +9354,11 @@ export default function HomePage() {
                 onClick={() => {
                   if (activeView === "daily") {
                     if (dailyActiveCategory !== "overview") {
-                      if (
-                        isTrackedDailyCategory(dailyActiveCategory) &&
-                        dailyCategoryDirtyState[dailyActiveCategory]
-                      ) {
-                        setPendingCategoryConfirm(dailyActiveCategory);
-                        return;
-                      }
+                      // Just go back to overview - sticky bar handles save/discard
                       setDailyActiveCategory("overview");
                       return;
                     }
+                    // From overview, go to home
                     if (isDailyDirty) {
                       setPendingOverviewConfirm({ action: "go-home" });
                       return;
@@ -9845,7 +9905,7 @@ export default function HomePage() {
           ) : (
             <div className="flex flex-col gap-6">
               <Tabs defaultValue="daily" value={currentDataView} className="w-full">
-                <TabsContent value="daily" className="space-y-6">
+                <TabsContent value="daily" className="space-y-6 pb-24">
                   <SectionScopeContext.Provider value={resolvedDailyScopeKey}>
           <Section
             title="Tagescheck-in"
@@ -10118,37 +10178,25 @@ export default function HomePage() {
                     })}
                   </div>
                 </div>
-                <p className="text-xs text-rose-600">
-                  Es werden nur Daten von den gelb markierten Bereichen gespeichert.
-                </p>
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button type="button" onClick={() => handleDailySubmit()} disabled={!isDailyDirty}>
-                    Tagesdaten speichern
-                  </Button>
-                  {(draftStatus || dailySaveNotice) && (
-                    <div className="flex items-center gap-2">
-                      {draftStatus && (
-                        <span
-                          className={cn(
-                            "text-sm",
-                            draftStatus === "Wiederhergestellt" ? "text-sky-600" : "text-emerald-600"
-                          )}
-                        >
-                          {draftStatus}
-                        </span>
-                      )}
-                      {dailySaveNotice && (
-                        <span className="text-sm text-amber-600">{dailySaveNotice}</span>
-                      )}
-                    </div>
-                  )}
-                  <div className="flex flex-wrap items-center gap-2">
-                    {[3, 6, 12].map((months) => (
-                      <Button key={months} type="button" variant="outline" onClick={() => handleReportDownload(months)}>
-                        {months} Monate PDF
-                      </Button>
-                    ))}
+                {(draftStatus || dailySaveNotice) && (
+                  <div className="flex items-center gap-2 text-sm">
+                    {draftStatus && (
+                      <span className={draftStatus === "Wiederhergestellt" ? "text-sky-600" : "text-emerald-600"}>
+                        {draftStatus}
+                      </span>
+                    )}
+                    {dailySaveNotice && (
+                      <span className="text-emerald-600">{dailySaveNotice}</span>
+                    )}
                   </div>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-rose-500">PDF-Export:</span>
+                  {[3, 6, 12].map((months) => (
+                    <Button key={months} type="button" variant="outline" size="sm" onClick={() => handleReportDownload(months)}>
+                      {months} Monate
+                    </Button>
+                  ))}
                 </div>
               </div>
               <div className={cn("space-y-6", dailyActiveCategory === "cervixMucus" ? "" : "hidden")}>
@@ -11710,6 +11758,57 @@ export default function HomePage() {
               </div>
             </div>
           </Section>
+
+          {/* Sticky Action Bar */}
+          <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-rose-200 bg-white/95 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] backdrop-blur supports-[backdrop-filter]:bg-white/85">
+            <div className="mx-auto max-w-5xl px-4 py-3" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
+              {dailyActiveCategory === "overview" ? (
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2 text-sm text-rose-600">
+                    {completedCategoriesCount > 0 ? (
+                      <>
+                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+                        <span>{completedCategoriesCount} {completedCategoriesCount === 1 ? "Bereich" : "Bereiche"} ausgefüllt</span>
+                      </>
+                    ) : (
+                      <span className="text-rose-400">Noch keine Daten erfasst</span>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={() => handleDailySubmit()}
+                    disabled={!isDailyDirty}
+                    className="min-w-[140px]"
+                  >
+                    Tag speichern
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-4">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={handleDiscardCategory}
+                    className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                  >
+                    {currentCategoryHasChanges ? "Verwerfen" : "Zurück"}
+                  </Button>
+                  <div className="flex items-center gap-2">
+                    {currentCategoryHasChanges && (
+                      <span className="inline-block h-2 w-2 rounded-full bg-amber-500" title="Ungespeicherte Änderungen" />
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={handleFinishCategory}
+                    className="min-w-[100px]"
+                  >
+                    Fertig
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
                   </SectionScopeContext.Provider>
                 </TabsContent>
         <TabsContent value="analytics" className="space-y-6">
