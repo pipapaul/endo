@@ -50,6 +50,7 @@ import {
   Settings,
   ShieldCheck,
   Smartphone,
+  Trash2,
   Upload,
   TrendingUp,
   X,
@@ -3687,6 +3688,9 @@ export default function HomePage() {
     useState<TrackableDailyCategoryId | null>(null);
   const [pendingOverviewConfirm, setPendingOverviewConfirm] =
     useState<PendingOverviewConfirm | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmStep, setDeleteConfirmStep] = useState<1 | 2>(1);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const heartGradientReactId = useId();
   const heartGradientId = useMemo(
     () => `heart-gradient-${heartGradientReactId.replace(/:/g, "")}`,
@@ -5909,6 +5913,34 @@ export default function HomePage() {
       .finally(() => {
         input.value = "";
       });
+  };
+
+  const handleDeleteAllData = async () => {
+    // Clear all persistent data
+    setDailyEntries([]);
+    setMonthlyEntries([]);
+    setFeatureFlags({});
+    setSectionCompletionState({});
+    setDismissedCheckIns([]);
+    setCustomRescueMeds([]);
+    setDailyDraft(createEmptyDailyEntry(today));
+    setLastSavedDailySnapshot(createEmptyDailyEntry(today));
+    setMonthlyDraft(createEmptyMonthlyEntry(currentMonth));
+    setPbacCounts(createEmptyPbacCounts());
+
+    // Clear weekly reports from IndexedDB
+    try {
+      await replaceWeeklyReports([]);
+      refreshWeeklyReports();
+    } catch (err) {
+      console.error("Failed to clear weekly reports:", err);
+    }
+
+    // Reset UI state
+    setShowDeleteConfirm(false);
+    setDeleteConfirmStep(1);
+    setDeleteConfirmText("");
+    setInfoMessage("Alle Daten wurden gelöscht.");
   };
 
   const handleInstallClick = () => {
@@ -9862,6 +9894,18 @@ export default function HomePage() {
                         <Upload className="h-4 w-4" /> Daten importieren
                         <input type="file" accept="application/json" className="hidden" onChange={handleBackupImport} />
                       </label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
+                        onClick={() => {
+                          setShowDeleteConfirm(true);
+                          setDeleteConfirmStep(1);
+                          setDeleteConfirmText("");
+                        }}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" /> Daten löschen
+                      </Button>
                     </div>
                   </div>
                   {storageStatusMessages.length > 0 && (
@@ -13775,7 +13819,7 @@ export default function HomePage() {
               <h2 className="text-lg font-semibold text-rose-900">Änderungen übernehmen?</h2>
               <p className="text-sm text-rose-700">
                 {pendingCategoryTitle
-                  ? `In „${pendingCategoryTitle}“ wurden Änderungen vorgenommen.`
+                  ? `In „${pendingCategoryTitle}" wurden Änderungen vorgenommen.`
                   : "Es liegen Änderungen vor."}
                 {" "}Möchtest du sie speichern oder verwerfen?
               </p>
@@ -13795,6 +13839,107 @@ export default function HomePage() {
                 Speichern
               </Button>
             </div>
+          </div>
+        </div>
+      ) : null}
+      {showDeleteConfirm ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-rose-950/40 px-4 py-6">
+          <div
+            className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Alle Daten löschen"
+          >
+            {deleteConfirmStep === 1 ? (
+              <>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+                      <Trash2 className="h-6 w-6 text-red-600" />
+                    </div>
+                    <h2 className="text-lg font-semibold text-gray-900">Alle Daten löschen?</h2>
+                  </div>
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                    <p className="font-medium">Warnung: Diese Aktion kann nicht rückgängig gemacht werden!</p>
+                    <p className="mt-1 text-red-700">
+                      Alle Tageseinträge, Monatseinträge, Wochenberichte und Einstellungen werden unwiderruflich gelöscht.
+                    </p>
+                  </div>
+                  <p className="text-sm text-gray-600">
+                    Wir empfehlen, vor dem Löschen einen Backup zu exportieren.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setShowDeleteConfirm(false);
+                      setDeleteConfirmStep(1);
+                    }}
+                    className="sm:w-auto"
+                  >
+                    Abbrechen
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleBackupExport}
+                    className="sm:w-auto"
+                  >
+                    <Download className="mr-2 h-4 w-4" /> Backup erstellen
+                  </Button>
+                  <Button
+                    variant="default"
+                    onClick={() => setDeleteConfirmStep(2)}
+                    className="sm:w-auto bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    Weiter
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+                      <AlertTriangle className="h-6 w-6 text-red-600" />
+                    </div>
+                    <h2 className="text-lg font-semibold text-gray-900">Bestätigung erforderlich</h2>
+                  </div>
+                  <p className="text-sm text-gray-600">
+                    Um fortzufahren, gib bitte <span className="font-mono font-semibold text-red-600">LÖSCHEN</span> ein:
+                  </p>
+                  <input
+                    type="text"
+                    value={deleteConfirmText}
+                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                    placeholder="LÖSCHEN"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-center font-mono text-lg tracking-widest focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-200"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setDeleteConfirmStep(1);
+                      setDeleteConfirmText("");
+                    }}
+                    className="sm:w-auto"
+                  >
+                    Zurück
+                  </Button>
+                  <Button
+                    variant="default"
+                    onClick={handleDeleteAllData}
+                    disabled={deleteConfirmText !== "LÖSCHEN"}
+                    className="sm:w-auto bg-red-600 hover:bg-red-700 text-white disabled:bg-gray-300 disabled:text-gray-500"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" /> Endgültig löschen
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       ) : null}
