@@ -4370,6 +4370,105 @@ export default function HomePage() {
     };
   }, [cycleOvulationData, cycleStartDates, completedCycleLengths, featureFlags.billingMethod, today]);
 
+  // Mood pattern awareness - analyze mood by cycle phase for gentle awareness
+  const moodPhaseAwareness = useMemo(() => {
+    if (!cycleOvulationData || !cycleAnalysis) return null;
+
+    // Collect mood data by cycle phase
+    // Phases: menstrual (days 1-5), follicular (6 to ovulation-1), ovulatory (ovulation ± 1), luteal (ovulation+2 to end)
+    const phaseData: Record<string, { sum: number; count: number; cyclesWithData: Set<number> }> = {
+      menstrual: { sum: 0, count: 0, cyclesWithData: new Set() },
+      follicular: { sum: 0, count: 0, cyclesWithData: new Set() },
+      ovulatory: { sum: 0, count: 0, cyclesWithData: new Set() },
+      luteal: { sum: 0, count: 0, cyclesWithData: new Set() },
+    };
+
+    const avgOvulationDay = cycleAnalysis.predictedOvulationDay;
+
+    cycleOvulationData.cycles.forEach((cycle, cycleIdx) => {
+      cycle.entries.forEach(({ cycleDay, entry }) => {
+        if (typeof entry.mood !== "number") return;
+
+        let phase: string;
+        if (cycleDay <= 5) {
+          phase = "menstrual";
+        } else if (cycleDay < avgOvulationDay - 1) {
+          phase = "follicular";
+        } else if (cycleDay >= avgOvulationDay - 1 && cycleDay <= avgOvulationDay + 1) {
+          phase = "ovulatory";
+        } else {
+          phase = "luteal";
+        }
+
+        phaseData[phase].sum += entry.mood;
+        phaseData[phase].count += 1;
+        phaseData[phase].cyclesWithData.add(cycleIdx);
+      });
+    });
+
+    // Calculate averages
+    const phaseAverages: Record<string, number | null> = {};
+    let totalMoodEntries = 0;
+    let cyclesWithMoodData = new Set<number>();
+
+    Object.entries(phaseData).forEach(([phase, data]) => {
+      phaseAverages[phase] = data.count > 0 ? data.sum / data.count : null;
+      totalMoodEntries += data.count;
+      data.cyclesWithData.forEach(idx => cyclesWithMoodData.add(idx));
+    });
+
+    // Need at least 2 cycles with mood data and 10+ total entries for meaningful insights
+    const hasEnoughData = cyclesWithMoodData.size >= 2 && totalMoodEntries >= 10;
+    if (!hasEnoughData) return null;
+
+    // Find current phase
+    const currentCycleDay = cycleAnalysis.currentCycleDay;
+    if (currentCycleDay === null) return null;
+
+    let currentPhase: string;
+    let currentPhaseLabel: string;
+    if (currentCycleDay <= 5) {
+      currentPhase = "menstrual";
+      currentPhaseLabel = "Menstruationsphase";
+    } else if (currentCycleDay < avgOvulationDay - 1) {
+      currentPhase = "follicular";
+      currentPhaseLabel = "Follikelphase";
+    } else if (currentCycleDay >= avgOvulationDay - 1 && currentCycleDay <= avgOvulationDay + 1) {
+      currentPhase = "ovulatory";
+      currentPhaseLabel = "Eisprungphase";
+    } else {
+      currentPhase = "luteal";
+      currentPhaseLabel = "Lutealphase";
+    }
+
+    const currentPhaseAvg = phaseAverages[currentPhase];
+    if (currentPhaseAvg === null) return null;
+
+    // Calculate overall average
+    const overallSum = Object.values(phaseData).reduce((s, d) => s + d.sum, 0);
+    const overallCount = Object.values(phaseData).reduce((c, d) => c + d.count, 0);
+    const overallAvg = overallCount > 0 ? overallSum / overallCount : null;
+
+    if (overallAvg === null) return null;
+
+    // Determine if current phase is notably different from average
+    const deviation = currentPhaseAvg - overallAvg;
+    const isLower = deviation < -0.3; // Notably lower (more than 0.3 points on 1-4 scale)
+    const isHigher = deviation > 0.3; // Notably higher
+
+    if (!isLower && !isHigher) return null;
+
+    return {
+      currentPhase,
+      currentPhaseLabel,
+      currentPhaseAvg,
+      overallAvg,
+      isLower,
+      isHigher,
+      cyclesAnalyzed: cyclesWithMoodData.size,
+    };
+  }, [cycleOvulationData, cycleAnalysis]);
+
   // Billings method progress tracking - shows user how much data is needed for confident predictions
   const billingsProgress = useMemo(() => {
     if (!featureFlags.billingMethod || !cycleOvulationData) {
@@ -7360,6 +7459,9 @@ export default function HomePage() {
     const symptomData = new Map<SymptomKey, Map<number, { sum: number; count: number }>>();
     SYMPTOM_KEYS.forEach((key) => symptomData.set(key, new Map()));
 
+    // Aggregate data for mood
+    const moodData = new Map<number, { sum: number; count: number }>();
+
     // Aggregate data for location groups and individual regions
     const locationGroupData = new Map<string, Map<number, { sum: number; count: number }>>();
     const individualLocationData = new Map<string, Map<number, { sum: number; count: number }>>();
@@ -7386,6 +7488,15 @@ export default function HomePage() {
             dayMap.set(alignedDay, current);
           }
         });
+
+        // Mood (scale 1-4, convert to 0-10 for consistent heat map)
+        if (typeof entry.mood === "number") {
+          const moodNormalized = ((entry.mood - 1) / 3) * 10; // 1->0, 2->3.33, 3->6.67, 4->10
+          const current = moodData.get(alignedDay) ?? { sum: 0, count: 0 };
+          current.sum += moodNormalized;
+          current.count += 1;
+          moodData.set(alignedDay, current);
+        }
 
         // Pain locations from painRegions, painMapRegionIds, and quickPainEvents
         const locationIntensities = new Map<string, number>();
@@ -7437,6 +7548,14 @@ export default function HomePage() {
         });
       });
     });
+
+    // Build mood row
+    const moodValues = new Map<number, number | null>();
+    dayRange.forEach((day) => {
+      const data = moodData.get(day);
+      moodValues.set(day, data ? data.sum / data.count : null);
+    });
+    const hasMoodData = Array.from(moodValues.values()).some((v) => v !== null);
 
     // Build symptom rows
     const symptomRows: Array<{
@@ -7819,11 +7938,13 @@ export default function HomePage() {
       topGraphData,
       ovulationDay,
       cycleCount: targetCycles.length,
-      hasData: hasSymptomData || hasLocationData,
+      hasData: hasSymptomData || hasLocationData || hasMoodData,
       gesamtPainValues,
       cycleBleedingRows,
       cycleSymptomRows,
       cycleGesamtRows,
+      moodValues,
+      hasMoodData,
     };
   }, [alignedTimeCorrelationData, timeCorrelationAlignment, timeCorrelationView]);
 
@@ -9679,6 +9800,16 @@ export default function HomePage() {
                       title={`Basierend auf ${cycleAnalysis?.cycleCount ?? 0} ${cycleAnalysis?.cycleCount === 1 ? "Zyklus" : "Zyklen"}. Eisprung = Zykluslänge − 14 Tage.`}
                     >
                       {ovulationBadgeLabel}
+                    </Badge>
+                  ) : null}
+                  {moodPhaseAwareness ? (
+                    <Badge
+                      className={moodPhaseAwareness.isLower ? "bg-blue-100 text-blue-800" : "bg-green-100 text-green-800"}
+                      title={`Basierend auf ${moodPhaseAwareness.cyclesAnalyzed} Zyklen mit Stimmungsdaten. Durchschnitt in dieser Phase: ${moodPhaseAwareness.currentPhaseAvg.toFixed(1)}, gesamt: ${moodPhaseAwareness.overallAvg.toFixed(1)}.`}
+                    >
+                      {moodPhaseAwareness.isLower
+                        ? `Stimmung in ${moodPhaseAwareness.currentPhaseLabel} oft niedriger`
+                        : `Stimmung in ${moodPhaseAwareness.currentPhaseLabel} oft besser`}
                     </Badge>
                   ) : null}
                 </div>
@@ -12410,6 +12541,57 @@ export default function HomePage() {
                             ))}
                         </div>
                       ))}
+
+                      {/* Mood row */}
+                      {timeCorrelationHeatStrips.hasMoodData && (
+                        <>
+                          <div className="text-[9px] text-emerald-600 font-medium mb-1 mt-3">Stimmung</div>
+                          <div className="flex items-center mb-0.5">
+                            <span className="w-14 shrink-0 text-[8px] text-emerald-600 truncate">
+                              Stimmung
+                            </span>
+                            <div className="flex flex-1 min-w-0">
+                              {timeCorrelationHeatStrips.dayRange.map((day) => {
+                                const value = timeCorrelationHeatStrips.moodValues.get(day) ?? null;
+                                // Mood uses green gradient (inverted - higher is better)
+                                const bgColor =
+                                  value === null
+                                    ? "#f5f5f5"
+                                    : value >= 8
+                                      ? "#22c55e" // sehr gut (green)
+                                      : value >= 5
+                                        ? "#84cc16" // eher gut (lime)
+                                        : value >= 3
+                                          ? "#f97316" // eher schlecht (orange)
+                                          : "#ef4444"; // sehr schlecht (red)
+                                return (
+                                  <div
+                                    key={day}
+                                    className="h-2.5 flex-1 min-w-0 rounded-[1px] cursor-pointer"
+                                    style={{ backgroundColor: bgColor }}
+                                    onClick={() => {
+                                      const moodLabel = value === null
+                                        ? "Keine Daten"
+                                        : value >= 8
+                                          ? "Sehr gut"
+                                          : value >= 5
+                                            ? "Eher gut"
+                                            : value >= 3
+                                              ? "Eher schlecht"
+                                              : "Sehr schlecht";
+                                      setCorrelationTooltip({
+                                        day,
+                                        label: timeCorrelationView === "overlay" ? "Stimmung (Ø)" : "Stimmung",
+                                        value: value !== null ? moodLabel : "Keine Daten"
+                                      });
+                                    }}
+                                  />
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </>
+                      )}
 
                       {/* Separator */}
                       <div className="h-px bg-rose-100 my-2" />
