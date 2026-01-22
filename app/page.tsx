@@ -54,6 +54,7 @@ import {
   Upload,
   TrendingUp,
   X,
+  Sparkles,
 } from "lucide-react";
 import InfoTip from "@/components/InfoTip";
 import { Labeled } from "@/components/Labeled";
@@ -821,6 +822,30 @@ const CATEGORY_COLORS: Record<
   optional: { saturated: "#f59e0b", pastel: "#fef7e8", border: "rgba(245, 158, 11, 0.25)" },
   cervixMucus: { saturated: "#14b8a6", pastel: "#e8f6f1", border: "rgba(20, 184, 166, 0.25)" },
 };
+
+/**
+ * Wizard mode step configuration for guided daily check-in.
+ * Each step corresponds to a core daily category (excludes optional/cervixMucus).
+ */
+type WizardStepId = "pain" | "symptoms" | "bleeding" | "medication" | "sleep" | "bowelBladder" | "mood" | "notes";
+
+interface WizardStep {
+  id: WizardStepId;
+  title: string;
+  question: string;
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+}
+
+const WIZARD_STEPS: WizardStep[] = [
+  { id: "pain", title: "Schmerzen", question: "Hattest du heute Schmerzen?", icon: PainIcon },
+  { id: "symptoms", title: "Symptome", question: "Hattest du heute Symptome?", icon: SymptomsIcon },
+  { id: "bleeding", title: "Blutung", question: "Hattest du heute eine Blutung?", icon: PeriodIcon },
+  { id: "medication", title: "Medikamente", question: "Hast du heute Medikamente genommen?", icon: MedicationIcon },
+  { id: "sleep", title: "Schlaf", question: "Wie hast du letzte Nacht geschlafen?", icon: SleepIcon },
+  { id: "bowelBladder", title: "Verdauung", question: "Wie war deine Verdauung heute?", icon: BauchIcon },
+  { id: "mood", title: "Stimmung", question: "Wie war deine Stimmung heute?", icon: MoodIcon },
+  { id: "notes", title: "Notizen", question: "Möchtest du Notizen oder Tags hinzufügen?", icon: NotesTagsIcon },
+];
 
 const isTrackedDailyCategory = (
   categoryId: DailyCategoryId
@@ -3792,6 +3817,8 @@ export default function HomePage() {
   const [gesamtCyclesExpanded, setGesamtCyclesExpanded] = useState(false);
   const [correlationTooltip, setCorrelationTooltip] = useState<{ day: number; label: string; value: string; details?: string } | null>(null);
   const [dailyActiveCategory, setDailyActiveCategory] = useState<DailyCategoryId>("overview");
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardStep, setWizardStep] = useState(0);
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [persistWarning, setPersistWarning] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
@@ -9761,6 +9788,586 @@ export default function HomePage() {
           </div>
         </div>
       )}
+      {/* Daily Check-in Wizard Mode */}
+      {wizardOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex flex-col bg-white"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Schnell-Check Assistent"
+        >
+          {/* Wizard Header */}
+          <header className="border-b border-rose-100 bg-white px-4 py-3">
+            <div className="mx-auto flex max-w-lg items-center justify-between">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (wizardStep > 0) {
+                    setWizardStep((s) => s - 1);
+                  } else {
+                    setWizardOpen(false);
+                  }
+                }}
+                className="text-rose-600 hover:text-rose-800"
+              >
+                <ChevronLeft className="mr-1 h-4 w-4" />
+                {wizardStep > 0 ? "Zurück" : "Abbrechen"}
+              </Button>
+              <span className="text-sm font-medium text-rose-600">
+                {wizardStep + 1} von {WIZARD_STEPS.length}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setWizardOpen(false)}
+                className="text-rose-400 hover:text-rose-600"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            {/* Progress bar */}
+            <div className="mx-auto mt-3 max-w-lg">
+              <div className="h-1.5 overflow-hidden rounded-full bg-rose-100">
+                <div
+                  className="h-full bg-rose-500 transition-all duration-300"
+                  style={{ width: `${((wizardStep + 1) / WIZARD_STEPS.length) * 100}%` }}
+                />
+              </div>
+            </div>
+          </header>
+
+          {/* Wizard Content */}
+          <main className="flex-1 overflow-auto">
+            <div className="mx-auto max-w-lg px-4 py-6">
+              {(() => {
+                const currentStep = WIZARD_STEPS[wizardStep];
+                if (!currentStep) return null;
+
+                const StepIcon = currentStep.icon;
+                const goNext = () => {
+                  if (wizardStep < WIZARD_STEPS.length - 1) {
+                    setWizardStep((s) => s + 1);
+                  } else {
+                    setWizardOpen(false);
+                  }
+                };
+
+                // Common header for all steps
+                const stepHeader = (
+                  <div className="mb-6 text-center">
+                    <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full" style={{ backgroundColor: CATEGORY_COLORS[currentStep.id]?.pastel }}>
+                      <StepIcon className="h-8 w-8" style={{ color: CATEGORY_COLORS[currentStep.id]?.saturated }} />
+                    </div>
+                    <h2 className="text-xl font-semibold text-rose-900">{currentStep.title}</h2>
+                    <p className="mt-1 text-rose-600">{currentStep.question}</p>
+                  </div>
+                );
+
+                // Step-specific content
+                switch (currentStep.id) {
+                  case "pain": {
+                    const existingPainEvents = dailyDraft.quickPainEvents ?? [];
+                    const hasPainData = existingPainEvents.length > 0 || (dailyDraft.painRegions?.length ?? 0) > 0;
+
+                    if (hasPainData) {
+                      return (
+                        <div>
+                          {stepHeader}
+                          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                            <p className="text-sm font-medium text-amber-800">
+                              Du hast heute bereits {existingPainEvents.length} Schmerzereignis{existingPainEvents.length !== 1 ? "se" : ""} erfasst.
+                            </p>
+                            {existingPainEvents.slice(0, 3).map((event, i) => (
+                              <p key={event.id} className="mt-1 text-xs text-amber-700">
+                                • {getRegionLabel(event.regionId)} – Intensität {event.intensity}/10
+                              </p>
+                            ))}
+                            {existingPainEvents.length > 3 && (
+                              <p className="mt-1 text-xs text-amber-600">
+                                ... und {existingPainEvents.length - 3} weitere
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex flex-col gap-3">
+                            <Button
+                              onClick={() => {
+                                setWizardOpen(false);
+                                setDailyActiveCategory("pain");
+                                setActiveView("daily");
+                              }}
+                              className="w-full bg-rose-600 text-white hover:bg-rose-500"
+                            >
+                              Weitere hinzufügen
+                            </Button>
+                            <Button variant="outline" onClick={goNext} className="w-full border-rose-200 text-rose-700">
+                              Das ist alles
+                            </Button>
+                            <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                              Überspringen
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div>
+                        {stepHeader}
+                        <div className="flex flex-col gap-3">
+                          <Button
+                            onClick={() => {
+                              setWizardOpen(false);
+                              setDailyActiveCategory("pain");
+                              setActiveView("daily");
+                            }}
+                            className="w-full bg-rose-600 text-white hover:bg-rose-500"
+                          >
+                            Ja, Schmerzen eintragen
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              updateQuickPainEventsForDate(dailyDraft.date, () => []);
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                painRegions: [],
+                                painMapRegionIds: [],
+                                painQuality: [],
+                                painNRS: 0,
+                                impactNRS: 0,
+                              }));
+                              goNext();
+                            }}
+                            className="w-full border-rose-200 text-rose-700"
+                          >
+                            Nein, keine Schmerzen
+                          </Button>
+                          <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                            Überspringen
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  case "symptoms": {
+                    const symptomKeys: SymptomKey[] = ["fatigue", "bloating", "dysmenorrhea", "pelvicPainNonMenses", "dyschezia"];
+                    const symptomLabels: Record<string, string> = {
+                      fatigue: "Müdigkeit / Erschöpfung",
+                      bloating: "Blähungen",
+                      dysmenorrhea: "Regelschmerzen",
+                      pelvicPainNonMenses: "Beckenschmerzen",
+                      dyschezia: "Schmerzen beim Stuhlgang",
+                    };
+
+                    return (
+                      <div>
+                        {stepHeader}
+                        <div className="mb-4 space-y-2">
+                          {symptomKeys.map((key) => {
+                            const isActive = dailyDraft.symptoms?.[key]?.present ?? false;
+                            return (
+                              <button
+                                key={key}
+                                type="button"
+                                onClick={() => {
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    symptoms: {
+                                      ...prev.symptoms,
+                                      [key]: { present: !isActive },
+                                    },
+                                  }));
+                                }}
+                                className={cn(
+                                  "flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition",
+                                  isActive
+                                    ? "border-rose-300 bg-rose-50 text-rose-800"
+                                    : "border-rose-100 bg-white text-rose-700 hover:border-rose-200"
+                                )}
+                              >
+                                <span className="font-medium">{symptomLabels[key]}</span>
+                                {isActive && <CheckCircle2 className="h-5 w-5 text-rose-500" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="flex flex-col gap-3">
+                          <Button onClick={goNext} className="w-full bg-rose-600 text-white hover:bg-rose-500">
+                            Weiter
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setDailyDraft((prev) => {
+                                const cleared: DailyEntry["symptoms"] = {};
+                                symptomKeys.forEach((key) => {
+                                  cleared[key] = { present: false };
+                                });
+                                return { ...prev, symptoms: cleared };
+                              });
+                              goNext();
+                            }}
+                            className="w-full border-rose-200 text-rose-700"
+                          >
+                            Keine Symptome
+                          </Button>
+                          <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                            Überspringen
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  case "bleeding": {
+                    const hasPbacData = Object.values(pbacCounts).some((v) => v > 0);
+                    const hasBleedingData = hasPbacData || dailyDraft.bleeding?.isBleeding;
+
+                    if (hasBleedingData) {
+                      const totalItems = Object.values(pbacCounts).reduce((a, b) => a + b, 0);
+                      return (
+                        <div>
+                          {stepHeader}
+                          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                            <p className="text-sm font-medium text-amber-800">
+                              Du hast heute bereits Blutungsdaten erfasst.
+                            </p>
+                            {totalItems > 0 && (
+                              <p className="mt-1 text-xs text-amber-700">
+                                • {totalItems} Produkt{totalItems !== 1 ? "e" : ""} dokumentiert
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex flex-col gap-3">
+                            <Button
+                              onClick={() => {
+                                setWizardOpen(false);
+                                setDailyActiveCategory("bleeding");
+                                setActiveView("daily");
+                              }}
+                              className="w-full bg-rose-600 text-white hover:bg-rose-500"
+                            >
+                              Mehr hinzufügen
+                            </Button>
+                            <Button variant="outline" onClick={goNext} className="w-full border-rose-200 text-rose-700">
+                              Das ist alles
+                            </Button>
+                            <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                              Überspringen
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div>
+                        {stepHeader}
+                        <div className="flex flex-col gap-3">
+                          <Button
+                            onClick={() => {
+                              setWizardOpen(false);
+                              setDailyActiveCategory("bleeding");
+                              setActiveView("daily");
+                            }}
+                            className="w-full bg-rose-600 text-white hover:bg-rose-500"
+                          >
+                            Ja, Blutung eintragen
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setPbacCounts(createEmptyPbacCounts());
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                bleeding: { isBleeding: false, clots: false, flooding: false },
+                              }));
+                              goNext();
+                            }}
+                            className="w-full border-rose-200 text-rose-700"
+                          >
+                            Nein, keine Blutung
+                          </Button>
+                          <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                            Überspringen
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  case "medication": {
+                    const hasMeds = (dailyDraft.rescueMeds?.length ?? 0) > 0;
+
+                    if (hasMeds) {
+                      return (
+                        <div>
+                          {stepHeader}
+                          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                            <p className="text-sm font-medium text-amber-800">
+                              Du hast heute bereits {dailyDraft.rescueMeds?.length} Medikament{(dailyDraft.rescueMeds?.length ?? 0) !== 1 ? "e" : ""} erfasst.
+                            </p>
+                          </div>
+                          <div className="flex flex-col gap-3">
+                            <Button
+                              onClick={() => {
+                                setWizardOpen(false);
+                                setDailyActiveCategory("medication");
+                                setActiveView("daily");
+                              }}
+                              className="w-full bg-rose-600 text-white hover:bg-rose-500"
+                            >
+                              Weitere hinzufügen
+                            </Button>
+                            <Button variant="outline" onClick={goNext} className="w-full border-rose-200 text-rose-700">
+                              Das ist alles
+                            </Button>
+                            <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                              Überspringen
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div>
+                        {stepHeader}
+                        <div className="flex flex-col gap-3">
+                          <Button
+                            onClick={() => {
+                              setWizardOpen(false);
+                              setDailyActiveCategory("medication");
+                              setActiveView("daily");
+                            }}
+                            className="w-full bg-rose-600 text-white hover:bg-rose-500"
+                          >
+                            Ja, Medikamente eintragen
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setDailyDraft((prev) => ({ ...prev, rescueMeds: [] }));
+                              goNext();
+                            }}
+                            className="w-full border-rose-200 text-rose-700"
+                          >
+                            Nein, keine Medikamente
+                          </Button>
+                          <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                            Überspringen
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  case "sleep": {
+                    const sleepQualityOptions = [
+                      { value: 1, label: "Sehr schlecht", emoji: "😫" },
+                      { value: 2, label: "Schlecht", emoji: "😕" },
+                      { value: 3, label: "Okay", emoji: "😐" },
+                      { value: 4, label: "Gut", emoji: "🙂" },
+                      { value: 5, label: "Sehr gut", emoji: "😴" },
+                    ];
+                    const currentSleepQuality = dailyDraft.sleep?.quality;
+
+                    return (
+                      <div>
+                        {stepHeader}
+                        <div className="mb-4 grid grid-cols-5 gap-2">
+                          {sleepQualityOptions.map((opt) => {
+                            const isSelected = currentSleepQuality === opt.value;
+                            return (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                onClick={() => {
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    sleep: { ...prev.sleep, quality: opt.value },
+                                  }));
+                                }}
+                                className={cn(
+                                  "flex flex-col items-center gap-1 rounded-xl border p-3 transition",
+                                  isSelected
+                                    ? "border-rose-300 bg-rose-50"
+                                    : "border-rose-100 hover:border-rose-200"
+                                )}
+                              >
+                                <span className="text-2xl">{opt.emoji}</span>
+                                <span className="text-[10px] text-rose-600">{opt.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="flex flex-col gap-3">
+                          <Button
+                            onClick={goNext}
+                            disabled={!currentSleepQuality}
+                            className="w-full bg-rose-600 text-white hover:bg-rose-500 disabled:opacity-50"
+                          >
+                            Weiter
+                          </Button>
+                          <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                            Überspringen
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  case "bowelBladder": {
+                    // Bristol scale: 1-2 = constipation, 3-4 = normal, 5-7 = diarrhea
+                    const giOptions = [
+                      { bristolType: 4, label: "Normal", description: "Alles in Ordnung" },
+                      { bristolType: 1, label: "Verstopfung", description: "Hart, schwer auszuscheiden" },
+                      { bristolType: 6, label: "Durchfall", description: "Weich bis flüssig" },
+                    ];
+                    const currentBristol = dailyDraft.gi?.bristolType;
+
+                    return (
+                      <div>
+                        {stepHeader}
+                        <div className="mb-4 space-y-2">
+                          {giOptions.map((opt) => {
+                            const isSelected = currentBristol === opt.bristolType;
+                            return (
+                              <button
+                                key={opt.bristolType}
+                                type="button"
+                                onClick={() => {
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    gi: { bristolType: opt.bristolType as 1 | 2 | 3 | 4 | 5 | 6 | 7 },
+                                  }));
+                                }}
+                                className={cn(
+                                  "flex w-full flex-col items-start rounded-xl border px-4 py-3 text-left transition",
+                                  isSelected
+                                    ? "border-rose-300 bg-rose-50 text-rose-800"
+                                    : "border-rose-100 bg-white text-rose-700 hover:border-rose-200"
+                                )}
+                              >
+                                <div className="flex w-full items-center justify-between">
+                                  <span className="font-medium">{opt.label}</span>
+                                  {isSelected && <CheckCircle2 className="h-5 w-5 text-rose-500" />}
+                                </div>
+                                <span className="text-xs text-rose-500">{opt.description}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="flex flex-col gap-3">
+                          <Button
+                            onClick={goNext}
+                            disabled={!currentBristol}
+                            className="w-full bg-rose-600 text-white hover:bg-rose-500 disabled:opacity-50"
+                          >
+                            Weiter
+                          </Button>
+                          <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                            Überspringen
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  case "mood": {
+                    const moodOptions = [
+                      { value: 1, label: "Sehr schlecht", emoji: "😢" },
+                      { value: 2, label: "Schlecht", emoji: "😕" },
+                      { value: 3, label: "Gut", emoji: "🙂" },
+                      { value: 4, label: "Sehr gut", emoji: "😊" },
+                    ];
+
+                    return (
+                      <div>
+                        {stepHeader}
+                        <div className="mb-4 grid grid-cols-4 gap-2">
+                          {moodOptions.map((opt) => {
+                            const isSelected = dailyDraft.mood === opt.value;
+                            return (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                onClick={() => {
+                                  setDailyDraft((prev) => ({ ...prev, mood: opt.value as 1 | 2 | 3 | 4 }));
+                                  // Auto-advance after mood selection
+                                  setTimeout(goNext, 300);
+                                }}
+                                className={cn(
+                                  "flex flex-col items-center gap-1 rounded-xl border p-4 transition",
+                                  isSelected
+                                    ? "border-rose-300 bg-rose-50"
+                                    : "border-rose-100 hover:border-rose-200"
+                                )}
+                              >
+                                <span className="text-3xl">{opt.emoji}</span>
+                                <span className="text-xs text-rose-600">{opt.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="flex flex-col gap-3">
+                          <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                            Überspringen
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  case "notes": {
+                    const hasNotes = (dailyDraft.notesTags?.length ?? 0) > 0 || (dailyDraft.notesFree?.length ?? 0) > 0;
+
+                    return (
+                      <div>
+                        {stepHeader}
+                        <div className="flex flex-col gap-3">
+                          <Button
+                            onClick={() => {
+                              setWizardOpen(false);
+                              setDailyActiveCategory("notes");
+                              setActiveView("daily");
+                            }}
+                            className="w-full bg-rose-600 text-white hover:bg-rose-500"
+                          >
+                            Ja, Notizen hinzufügen
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setWizardOpen(false);
+                              // Show completion message or go to overview
+                            }}
+                            className="w-full border-rose-200 text-rose-700"
+                          >
+                            {hasNotes ? "Fertig" : "Nein, fertig!"}
+                          </Button>
+                        </div>
+                        {wizardStep === WIZARD_STEPS.length - 1 && (
+                          <p className="mt-4 text-center text-sm text-rose-500">
+                            Deine Eingaben wurden automatisch gespeichert.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  default:
+                    return null;
+                }
+              })()}
+            </div>
+          </main>
+        </div>
+      )}
       <SectionCompletionContext.Provider value={sectionCompletionContextValue}>
         {detailToolbar}
         <main
@@ -9940,6 +10547,22 @@ export default function HomePage() {
                         Heute erledigt
                       </span>
                     )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      manualDailySelectionRef.current = false;
+                      if (dailyDraft.date !== today) {
+                        selectDailyDate(today);
+                      }
+                      setWizardStep(0);
+                      setWizardOpen(true);
+                    }}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border-rose-200 bg-white/80 px-4 py-2.5 text-sm font-medium text-rose-700 transition hover:border-rose-300 hover:bg-rose-50"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Schnell-Check
                   </Button>
                 </div>
                 <Button

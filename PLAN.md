@@ -1,210 +1,355 @@
-# Daily Check-in UX Improvement Plan
+# Daily Check-in Wizard Mode Implementation Plan
 
-## Current Pain Points
+## Overview
 
-### 1. Navigation Friction
-- **Problem**: User enters a category (e.g., "Stimmung") and must click "Zurück" button in the header to return to overview
-- **Issue**: Back button is at top, content is in middle/bottom - requires scrolling or reaching up
-- **Issue**: No clear "done" action when finishing a category
-
-### 2. Save/Revert Confusion
-- **Problem**: Save button ("Tagesdaten speichern") only visible in overview, not in individual categories
-- **Problem**: When leaving a category with changes, a modal asks "Speichern oder verwerfen?" - confusing because user might not realize they need to save
-- **Problem**: The global save in overview saves ALL categories at once, but user edited only one category
-- **Problem**: "Wiederhergestellt" and status messages scattered, not always visible
-
-### 3. Mental Model Mismatch
-- **Problem**: User thinks: "I filled out mood, I'm done with mood" - but data isn't saved until they go back to overview AND click save
-- **Problem**: Categories feel like separate forms, but they share a single save action
+Add an alternative "Wizard Mode" for the daily check-in that guides users through simple questions for each module sequentially. This complements the existing overview-based entry system.
 
 ---
 
-## Proposed Solutions
+## User Flow
 
-### Option A: Sticky Bottom Action Bar (Recommended)
+### Entry Point
+- New button below the existing "Täglicher Check-in" button on home screen
+- Label: "Schnell-Check" or "Geführter Check-in"
+- Distinct visual style (outline/secondary) to differentiate from main button
 
-Add a persistent bottom bar that shows current state and provides context-aware actions.
-
-**In Category View:**
+### Wizard Flow
 ```
-┌─────────────────────────────────────────────┐
-│  [Verwerfen]        ●        [Fertig ✓]     │
-└─────────────────────────────────────────────┘
+[Start] → Pain → Symptoms → Bleeding → Medication → Sleep → Bowel/Bladder → Mood → Notes → [Summary/Done]
 ```
-- "Fertig" saves the current category and returns to overview
-- Dot indicator shows unsaved changes (amber) or saved (green)
-- "Verwerfen" discards and returns to overview
 
-**In Overview:**
-```
-┌─────────────────────────────────────────────┐
-│  3 Bereiche ausgefüllt    [Tag speichern]   │
-└─────────────────────────────────────────────┘
-```
-- Shows count of categories with data
-- Clear primary action to save everything
+- Each step shows a simple question with clear answer options
+- Skip option always available ("Überspringen" or "Keine Angabe")
+- Progress indicator at top (e.g., "3 von 8" or dots)
+- Back navigation to previous question
 
-**Benefits:**
-- Always visible, no scrolling needed
-- Thumb-friendly on mobile (bottom of screen)
-- Clear state indication
-- Reduces clicks: one tap to finish category
+### Modules Included (Core Only)
+1. **Pain** - "Hattest du heute Schmerzen?"
+2. **Symptoms** - "Hattest du heute Symptome?"
+3. **Bleeding** - "Hattest du heute eine Blutung?"
+4. **Medication** - "Hast du heute Medikamente genommen?"
+5. **Sleep** - "Wie hast du geschlafen?"
+6. **Bowel/Bladder** - "Wie war dein Verdauung heute?"
+7. **Mood** - "Wie war deine Stimmung heute?"
+8. **Notes** - "Möchtest du Notizen oder Tags hinzufügen?"
+
+### Excluded from Wizard
+- **Optional Values** - Too specialized, users can add via normal check-in
+- **Cervix Mucus** - Only for Billings method users, can add via normal check-in
 
 ---
 
-### Option B: Auto-Save with Visual Feedback
+## Integration with Existing Data
 
-- Auto-save changes after short delay (1-2 seconds of inactivity)
-- Show persistent toast/indicator: "Gespeichert ✓" or "Speichert..."
-- Remove explicit save buttons entirely
-- Back button just navigates, no confirmation needed
+### Quick Tracker Awareness
+The wizard should detect and acknowledge existing data from quick trackers:
 
-**Benefits:**
-- Zero friction - just enter data and leave
-- Modern UX pattern (like Google Docs)
-- No lost data
+**Pain (quickPainEvents)**:
+```
+"Du hast heute bereits [N] Schmerzereignis(se) erfasst:
+ • [Region] - Intensität [X]/10
+ • [Region] - Intensität [Y]/10
 
-**Drawbacks:**
-- Users might accidentally save unwanted data
-- Need to add undo functionality
-- More complex state management
+Möchtest du weitere Schmerzen hinzufügen oder ist das alles für heute?"
+
+[Weitere hinzufügen] [Das ist alles] [Überspringen]
+```
+
+**Bleeding (pbacCounts)**:
+```
+"Du hast heute bereits Blutungsdaten erfasst:
+ • [N] × [Produkt]
+
+Möchtest du weitere Produkte hinzufügen oder ist das alles?"
+
+[Weitere hinzufügen] [Das ist alles] [Überspringen]
+```
+
+### Pre-filled Data Detection
+For each module, check if data already exists in `dailyDraft`:
+- If yes: Show summary and ask "Möchtest du das ändern?"
+- If no: Show the question normally
 
 ---
 
-### Option C: Per-Category Save Buttons
+## Question Design per Module
 
-Add a "Speichern & Zurück" button at the bottom of each category section.
+### 1. Pain Module
+**Initial Question**: "Hattest du heute Schmerzen?"
+- [Ja] → Goes to pain detail entry (simplified body map + intensity)
+- [Nein] → Triggers `handleQuickNoPain()` equivalent, moves to next
+- [Überspringen] → Moves to next without recording
 
-**Benefits:**
-- Simple to implement
-- Clear action per category
+**If existing quickPainEvents**:
+- Show summary of existing events
+- [Weitere hinzufügen] → Pain detail entry
+- [Das ist alles] → Mark complete, next
+- [Überspringen] → Next without changes
 
-**Drawbacks:**
-- Still requires scrolling in long categories
-- Doesn't solve overview save confusion
+**Detail Entry** (if "Ja"):
+- Simplified body region picker (main regions only)
+- Intensity slider (0-10)
+- Optional: Pain qualities (checkboxes)
+- [Fertig] → Save and next
+
+### 2. Symptoms Module
+**Question**: "Hattest du heute eines dieser Symptome?"
+- Show toggleable list of main symptoms:
+  - Müdigkeit/Erschöpfung
+  - Blähungen
+  - Übelkeit
+  - Dysmenorrhoe
+  - Beckenschmerzen
+- [Keine Symptome] → Triggers quick action, next
+- [Fertig] → Save selections, next
+- [Überspringen] → Next
+
+### 3. Bleeding Module
+**Initial Question**: "Hattest du heute eine Blutung?"
+- [Ja] → Simple intensity picker
+- [Nein] → Triggers `handleQuickNoBleeding()` equivalent, next
+- [Überspringen] → Next
+
+**If existing pbacCounts**:
+- Show summary: "Du hast X Produkte erfasst"
+- [Mehr hinzufügen] → Product picker
+- [Das ist alles] → Next
+- [Überspringen] → Next
+
+**Detail Entry** (if "Ja"):
+- Simple intensity: Leicht / Mittel / Stark
+- Or product-based if user prefers PBAC
+
+### 4. Medication Module
+**Question**: "Hast du heute Schmerzmittel oder andere Medikamente genommen?"
+- [Ja] → Medication entry (simplified)
+- [Nein] → Triggers quick action, next
+- [Überspringen] → Next
+
+**Detail Entry**:
+- Quick select from recent/common medications
+- Dosage input
+- [Fertig] → Save and next
+
+### 5. Sleep Module
+**Question**: "Wie hast du letzte Nacht geschlafen?"
+- Visual scale or emoji picker:
+  - 😫 Sehr schlecht
+  - 😕 Schlecht
+  - 😐 Okay
+  - 🙂 Gut
+  - 😴 Sehr gut
+- Optional: Hours input
+- [Überspringen] → Next
+
+### 6. Bowel/Bladder Module
+**Question**: "Hattest du heute Verdauungsbeschwerden?"
+- [Ja] → Detail entry
+- [Nein] → Mark normal, next
+- [Überspringen] → Next
+
+**Detail Entry**:
+- Bristol scale visual picker (optional)
+- Common issues: Durchfall, Verstopfung, Blähungen, Krämpfe
+
+### 7. Mood Module
+**Question**: "Wie war deine Stimmung heute?"
+- 4 emoji buttons (existing UI):
+  - 😢 Sehr schlecht (1)
+  - 😕 Schlecht (2)
+  - 🙂 Gut (3)
+  - 😊 Sehr gut (4)
+- [Überspringen] → Next
+
+### 8. Notes Module
+**Question**: "Möchtest du Notizen oder Tags hinzufügen?"
+- [Ja] → Tag picker + text input
+- [Nein] → Next/Finish
+- [Überspringen] → Finish
 
 ---
 
-### Option D: Swipe/Carousel Navigation
+## UI/UX Design
 
-- Swipe left/right to navigate between categories
-- Bottom dots indicate position (like onboarding flows)
-- Auto-advance to next category after selection (for simple inputs like mood)
+### Wizard Container
+```tsx
+<div className="fixed inset-0 z-50 bg-white flex flex-col">
+  {/* Header with progress */}
+  <header className="px-4 py-3 border-b">
+    <div className="flex items-center justify-between">
+      <Button variant="ghost" onClick={handleBack}>
+        <ChevronLeft /> Zurück
+      </Button>
+      <span className="text-sm text-rose-600">
+        {currentStep} von {totalSteps}
+      </span>
+      <Button variant="ghost" onClick={handleClose}>
+        Abbrechen
+      </Button>
+    </div>
+    {/* Progress bar */}
+    <div className="mt-2 h-1 bg-rose-100 rounded-full">
+      <div
+        className="h-full bg-rose-500 rounded-full transition-all"
+        style={{ width: `${(currentStep / totalSteps) * 100}%` }}
+      />
+    </div>
+  </header>
 
-**Benefits:**
-- Very fast for quick check-ins
-- Gamified, engaging feel
-- Natural flow through all categories
+  {/* Question content */}
+  <main className="flex-1 overflow-auto p-4">
+    {/* Current step content */}
+  </main>
 
-**Drawbacks:**
-- Major UX redesign
-- May not work well for complex categories (pain with body map)
-- Forces linear navigation
+  {/* Bottom actions */}
+  <footer className="px-4 py-3 border-t bg-white">
+    {/* Context-aware buttons */}
+  </footer>
+</div>
+```
+
+### Visual Style
+- Clean, minimal design
+- Large touch targets
+- Clear visual hierarchy
+- Consistent button placement
+- Smooth transitions between steps
+
+### Progress Indicator Options
+1. **Numbered**: "3 von 8"
+2. **Dots**: ○ ○ ● ○ ○ ○ ○ ○
+3. **Bar**: Progress bar (recommended)
+4. **Icons**: Category icons showing completion state
 
 ---
 
-## Recommendation
+## State Management
 
-**Implement Option A (Sticky Bottom Bar)** with these specifics:
+### Wizard State
+```tsx
+interface WizardState {
+  isOpen: boolean;
+  currentStep: number;
+  completedSteps: Set<number>;
+  skippedSteps: Set<number>;
+}
 
-### Design Details
-
-1. **Sticky bar height**: 60px + safe-area-inset-bottom for iOS
-2. **Visual design**: White/rose-50 background, subtle top border, slight shadow
-3. **State indicator**: Small colored dot or text showing status
-
-### In Category View:
+const [wizardState, setWizardState] = useState<WizardState>({
+  isOpen: false,
+  currentStep: 0,
+  completedSteps: new Set(),
+  skippedSteps: new Set(),
+});
 ```
-┌───────────────────────────────────────────────────┐
-│                                                   │
-│  [Verwerfen]                      [Fertig ✓]      │
-│                                                   │
-└───────────────────────────────────────────────────┘
-```
-- Left: "Verwerfen" (ghost/outline button) - discards changes, returns to overview
-- Right: "Fertig" (primary button) - saves & returns to overview
-- If no changes: Only show "Zurück zur Übersicht" centered
 
-### In Overview:
+### Step Configuration
+```tsx
+const WIZARD_STEPS = [
+  { id: "pain", title: "Schmerzen", question: "Hattest du heute Schmerzen?" },
+  { id: "symptoms", title: "Symptome", question: "Hattest du heute Symptome?" },
+  { id: "bleeding", title: "Blutung", question: "Hattest du heute eine Blutung?" },
+  { id: "medication", title: "Medikamente", question: "Hast du Medikamente genommen?" },
+  { id: "sleep", title: "Schlaf", question: "Wie hast du geschlafen?" },
+  { id: "bowelBladder", title: "Verdauung", question: "Wie war deine Verdauung?" },
+  { id: "mood", title: "Stimmung", question: "Wie war deine Stimmung?" },
+  { id: "notes", title: "Notizen", question: "Möchtest du Notizen hinzufügen?" },
+] as const;
 ```
-┌───────────────────────────────────────────────────┐
-│                                                   │
-│  ● 3 Bereiche            [Tag speichern]          │
-│                                                   │
-└───────────────────────────────────────────────────┘
-```
-- Left: Status text showing how many categories have data
-- Right: Primary save button (disabled if nothing to save)
-- Green dot if already saved for today, amber if unsaved changes
 
-### Behavior Changes:
-1. **"Fertig" button**: Saves current category AND returns to overview (one tap)
-2. **Remove confirmation modal**: The sticky bar makes state obvious
-3. **Header back button**: Pure navigation (no prompts), goes to overview
-4. **Auto-scroll**: When entering a category, scroll to top
-
-### Quick Wins to Include:
-- Haptic feedback on save (mobile)
-- Success animation/toast when saving
-- Keyboard shortcuts for power users (Cmd+S to save, Esc to go back)
+### Data Flow
+1. Wizard opens → Load current `dailyDraft` for selected date
+2. Each step → Update `dailyDraft` via existing `setDailyDraft()`
+3. Data persists automatically (existing localStorage mechanism)
+4. Wizard close → Data already saved, mark categories complete
 
 ---
 
 ## Implementation Steps
 
-1. Create `DailyActionBar` component with context-aware rendering
-2. Add fixed positioning at bottom of daily check-in view
-3. Add padding-bottom to content area to prevent overlap
-4. Update save logic to work from within categories
-5. Simplify/remove confirmation dialogs
-6. Update back button to be purely navigational
-7. Add safe-area-inset support for iOS notch/home indicator
-8. Test thoroughly on mobile viewports
+### Phase 1: Core Wizard Infrastructure
+1. Create `DailyWizard` component with step navigation
+2. Add wizard state management
+3. Create step container with progress indicator
+4. Add open/close handlers
+5. Add "Schnell-Check" button to home screen
+
+### Phase 2: Individual Step Components
+6. Create `WizardStepPain` with existing data detection
+7. Create `WizardStepSymptoms` with toggle list
+8. Create `WizardStepBleeding` with quick tracker awareness
+9. Create `WizardStepMedication` with medication picker
+10. Create `WizardStepSleep` with quality scale
+11. Create `WizardStepBowelBladder` with Bristol picker
+12. Create `WizardStepMood` with emoji buttons
+13. Create `WizardStepNotes` with tags/text
+
+### Phase 3: Integration & Polish
+14. Integrate with existing `dailyDraft` updates
+15. Add transition animations between steps
+16. Add haptic feedback (mobile)
+17. Test existing data detection for all quick trackers
+18. Add summary screen at end (optional)
+
+### Phase 4: Edge Cases
+19. Handle date changes during wizard
+20. Handle external data updates (if app is open elsewhere)
+21. Test with various feature flag combinations
+22. Accessibility audit (keyboard nav, screen readers)
 
 ---
 
-## Technical Notes
+## Component Structure
 
-```tsx
-// Component structure
-const DailyActionBar = () => {
-  const isInCategory = dailyActiveCategory !== "overview";
-  const hasUnsavedChanges = isDailyDirty;
-
-  return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-rose-100 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 pb-[env(safe-area-inset-bottom)]">
-      <div className="flex items-center justify-between px-4 py-3">
-        {isInCategory ? (
-          <>
-            <Button variant="ghost" onClick={handleDiscard}>Verwerfen</Button>
-            <Button onClick={handleFinishCategory}>Fertig</Button>
-          </>
-        ) : (
-          <>
-            <span className="text-sm text-rose-600">
-              {completedCount} Bereiche ausgefüllt
-            </span>
-            <Button onClick={handleDailySubmit} disabled={!hasUnsavedChanges}>
-              Tag speichern
-            </Button>
-          </>
-        )}
-      </div>
-    </div>
-  );
-};
+```
+components/
+  daily-wizard/
+    DailyWizard.tsx           # Main wizard container
+    WizardProgress.tsx        # Progress bar/indicator
+    WizardStep.tsx            # Generic step wrapper
+    steps/
+      WizardStepPain.tsx
+      WizardStepSymptoms.tsx
+      WizardStepBleeding.tsx
+      WizardStepMedication.tsx
+      WizardStepSleep.tsx
+      WizardStepBowelBladder.tsx
+      WizardStepMood.tsx
+      WizardStepNotes.tsx
 ```
 
+Or integrate directly in `app/page.tsx` if preferred for consistency with existing code.
+
 ---
 
-## Alternative: Hybrid Approach
+## Open Questions
 
-Combine Option A with elements of Option D:
+1. **Summary Screen**: Show a summary of all entered data at the end before closing?
+   - Pro: User can review everything
+   - Con: Extra step, might feel redundant
 
-1. Sticky bottom bar (always visible)
-2. Add category navigation arrows in the bar: `[←] Fertig [→]`
-3. Arrows navigate to prev/next category
-4. "Fertig" saves current and returns to overview
-5. Visual indicator shows which categories are complete
+2. **Edit from Summary**: Allow jumping back to specific steps from summary?
+   - Pro: Easy corrections
+   - Con: More complex navigation
 
-This allows both quick sequential entry AND random access via overview.
+3. **Auto-advance**: Automatically move to next step after selection (like mood)?
+   - Pro: Faster for simple inputs
+   - Con: Might feel rushed, harder to correct
+
+4. **Partial Completion**: What if user closes wizard midway?
+   - Data is already saved via dailyDraft auto-persistence
+   - Categories with data will show as partially complete
+
+5. **Daily vs. Wizard Mode Preference**: Remember user's preferred mode?
+   - Could store in settings
+   - Or just offer both buttons always
+
+---
+
+## Estimated Scope
+
+- **Core wizard infrastructure**: ~200 lines
+- **8 step components**: ~100 lines each = ~800 lines
+- **Integration & state**: ~150 lines
+- **Total new code**: ~1,150 lines
+
+This can be implemented incrementally, starting with the infrastructure and 2-3 core steps, then adding remaining steps.
