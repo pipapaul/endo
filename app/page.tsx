@@ -133,6 +133,8 @@ import {
   type TrackingMethod,
 } from "@/lib/pbac";
 import { ExtendedBleedingEntryForm } from "@/components/home/ExtendedBleedingEntry";
+import { BristolScalePicker, type BristolType } from "@/components/home/BristolScalePicker";
+import { SleepQualityPicker } from "@/components/home/SleepQualityPicker";
 import {
   type ColorScheme,
   getColorSchemeName,
@@ -3827,6 +3829,8 @@ export default function HomePage() {
   const [wizardPainQualities, setWizardPainQualities] = useState<PainQuality[]>([]);
   // Wizard medication entry state
   const [wizardMedName, setWizardMedName] = useState("");
+  const [wizardMedDose, setWizardMedDose] = useState<number | undefined>(undefined);
+  const [wizardMedTime, setWizardMedTime] = useState<string | undefined>(undefined);
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [persistWarning, setPersistWarning] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
@@ -9874,6 +9878,8 @@ export default function HomePage() {
                   setWizardPainIntensity(5);
                   setWizardPainQualities([]);
                   setWizardMedName("");
+                  setWizardMedDose(undefined);
+                  setWizardMedTime(undefined);
                   if (wizardStep < WIZARD_STEPS.length - 1) {
                     setWizardStep((s) => s + 1);
                   } else {
@@ -10185,12 +10191,72 @@ export default function HomePage() {
                               </div>
                             );
                           })}
+                          {/* Dizziness - shown if feature flag active */}
+                          {activeDizziness && (() => {
+                            const isDizzinessActive = dailyDraft.dizzinessOpt?.present ?? false;
+                            const dizzinessScore = dailyDraft.dizzinessOpt?.nrs ?? 0;
+                            return (
+                              <div className="overflow-hidden rounded-xl border border-rose-100 bg-white">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDailyDraft((prev) => ({
+                                      ...prev,
+                                      dizzinessOpt: isDizzinessActive
+                                        ? { present: false }
+                                        : { present: true, nrs: 5, orthostatic: false },
+                                    }));
+                                  }}
+                                  className={cn(
+                                    "flex w-full items-center justify-between px-4 py-3 text-left transition",
+                                    isDizzinessActive ? "bg-rose-50" : "hover:bg-rose-50/50"
+                                  )}
+                                >
+                                  <span className={cn("font-medium", isDizzinessActive ? "text-rose-800" : "text-rose-700")}>
+                                    Schwindel
+                                  </span>
+                                  {isDizzinessActive ? (
+                                    <CheckCircle2 className="h-5 w-5 text-rose-500" />
+                                  ) : (
+                                    <div className="h-5 w-5 rounded-full border-2 border-rose-200" />
+                                  )}
+                                </button>
+                                {isDizzinessActive && (
+                                  <div className="border-t border-rose-100 bg-rose-50/50 px-4 py-3">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs text-rose-600">Stärke</span>
+                                      <span className="text-sm font-bold text-rose-700">{dizzinessScore}/10</span>
+                                    </div>
+                                    <input
+                                      type="range"
+                                      min="0"
+                                      max="10"
+                                      step="1"
+                                      value={dizzinessScore}
+                                      onChange={(e) => {
+                                        setDailyDraft((prev) => ({
+                                          ...prev,
+                                          dizzinessOpt: {
+                                            ...prev.dizzinessOpt,
+                                            present: true,
+                                            nrs: Number(e.target.value),
+                                            orthostatic: prev.dizzinessOpt?.orthostatic ?? false,
+                                          },
+                                        }));
+                                      }}
+                                      className="mt-1 h-2 w-full cursor-pointer appearance-none rounded-lg bg-rose-100 accent-rose-500"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                         <div className="flex flex-col gap-3">
                           <Button onClick={goNext} className="w-full bg-rose-600 text-white hover:bg-rose-500">
-                            {activeSymptoms.length > 0 ? `Weiter (${activeSymptoms.length} ausgewählt)` : "Weiter"}
+                            {activeSymptoms.length > 0 || (activeDizziness && dailyDraft.dizzinessOpt?.present) ? `Weiter (${activeSymptoms.length + (activeDizziness && dailyDraft.dizzinessOpt?.present ? 1 : 0)} ausgewählt)` : "Weiter"}
                           </Button>
-                          {activeSymptoms.length === 0 && (
+                          {activeSymptoms.length === 0 && !(activeDizziness && dailyDraft.dizzinessOpt?.present) && (
                             <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
                               Überspringen
                             </Button>
@@ -10358,41 +10424,101 @@ export default function HomePage() {
                     // Sub-step: entry mode for adding medication
                     if (wizardSubStep === "entry") {
                       const commonMeds = ["Ibuprofen", "Paracetamol", "Naproxen", "Buscopan", "Aspirin"];
+                      const hasSelectedMed = wizardMedName.trim().length > 0;
 
+                      // Step 1: Select medication name
+                      if (!hasSelectedMed) {
+                        return (
+                          <div>
+                            <div className="mb-4 text-center">
+                              <h2 className="text-lg font-semibold text-rose-900">Medikament hinzufügen</h2>
+                              <p className="mt-1 text-sm text-rose-600">Wähle oder gib ein Medikament ein</p>
+                            </div>
+                            <div className="space-y-4">
+                              <div>
+                                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-rose-400">Schnellauswahl</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {commonMeds.map((med) => (
+                                    <button
+                                      key={med}
+                                      type="button"
+                                      onClick={() => setWizardMedName(med)}
+                                      className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-sm font-medium text-rose-600 transition hover:border-rose-300 hover:bg-rose-50"
+                                    >
+                                      {med}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="text-center text-xs text-rose-400">oder</div>
+                              <div>
+                                <input
+                                  type="text"
+                                  placeholder="Anderes Medikament eingeben..."
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" && e.currentTarget.value.trim()) {
+                                      setWizardMedName(e.currentTarget.value.trim());
+                                    }
+                                  }}
+                                  onBlur={(e) => {
+                                    if (e.currentTarget.value.trim()) {
+                                      setWizardMedName(e.currentTarget.value.trim());
+                                    }
+                                  }}
+                                  className="w-full rounded-xl border border-rose-200 px-4 py-3 text-rose-800 placeholder-rose-300 focus:border-rose-400 focus:outline-none focus:ring-1 focus:ring-rose-400"
+                                />
+                              </div>
+                            </div>
+                            <div className="mt-6">
+                              <Button
+                                variant="ghost"
+                                onClick={() => {
+                                  setWizardMedName("");
+                                  setWizardMedDose(undefined);
+                                  setWizardMedTime(undefined);
+                                  setWizardSubStep("question");
+                                }}
+                                className="w-full text-rose-400"
+                              >
+                                Abbrechen
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // Step 2: Add optional dose and time
                       return (
                         <div>
                           <div className="mb-4 text-center">
-                            <h2 className="text-lg font-semibold text-rose-900">Medikament hinzufügen</h2>
+                            <h2 className="text-lg font-semibold text-rose-900">{wizardMedName}</h2>
+                            <p className="mt-1 text-sm text-rose-600">Optionale Details hinzufügen</p>
                           </div>
                           <div className="space-y-4">
+                            {/* Dose input */}
                             <div>
-                              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-rose-400">Schnellauswahl</p>
-                              <div className="flex flex-wrap gap-2">
-                                {commonMeds.map((med) => (
-                                  <button
-                                    key={med}
-                                    type="button"
-                                    onClick={() => {
-                                      setDailyDraft((prev) => ({
-                                        ...prev,
-                                        rescueMeds: [...(prev.rescueMeds ?? []), { name: med }],
-                                      }));
-                                      setWizardSubStep("question");
-                                    }}
-                                    className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-sm font-medium text-rose-600 transition hover:border-rose-300 hover:bg-rose-50"
-                                  >
-                                    {med}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                            <div className="text-center text-xs text-rose-400">oder</div>
-                            <div>
+                              <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-rose-400">
+                                Dosis (mg) – optional
+                              </label>
                               <input
-                                type="text"
-                                placeholder="Anderes Medikament"
-                                value={wizardMedName}
-                                onChange={(e) => setWizardMedName(e.target.value)}
+                                type="number"
+                                min={0}
+                                step={1}
+                                placeholder="z.B. 400"
+                                value={wizardMedDose ?? ""}
+                                onChange={(e) => setWizardMedDose(e.target.value ? Number(e.target.value) : undefined)}
+                                className="w-full rounded-xl border border-rose-200 px-4 py-3 text-rose-800 placeholder-rose-300 focus:border-rose-400 focus:outline-none focus:ring-1 focus:ring-rose-400"
+                              />
+                            </div>
+                            {/* Time input */}
+                            <div>
+                              <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-rose-400">
+                                Uhrzeit – optional
+                              </label>
+                              <input
+                                type="time"
+                                value={wizardMedTime ?? ""}
+                                onChange={(e) => setWizardMedTime(e.target.value || undefined)}
                                 className="w-full rounded-xl border border-rose-200 px-4 py-3 text-rose-800 placeholder-rose-300 focus:border-rose-400 focus:outline-none focus:ring-1 focus:ring-rose-400"
                               />
                             </div>
@@ -10400,24 +10526,39 @@ export default function HomePage() {
                           <div className="mt-6 flex flex-col gap-3">
                             <Button
                               onClick={() => {
-                                if (wizardMedName.trim()) {
-                                  setDailyDraft((prev) => ({
-                                    ...prev,
-                                    rescueMeds: [...(prev.rescueMeds ?? []), { name: wizardMedName.trim() }],
-                                  }));
-                                }
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  rescueMeds: [
+                                    ...(prev.rescueMeds ?? []),
+                                    {
+                                      name: wizardMedName.trim(),
+                                      ...(wizardMedDose !== undefined && { doseMg: wizardMedDose }),
+                                      ...(wizardMedTime !== undefined && { time: wizardMedTime }),
+                                    },
+                                  ],
+                                }));
                                 setWizardMedName("");
+                                setWizardMedDose(undefined);
+                                setWizardMedTime(undefined);
                                 setWizardSubStep("question");
                               }}
-                              disabled={!wizardMedName.trim()}
-                              className="w-full bg-rose-600 text-white hover:bg-rose-500 disabled:opacity-50"
+                              className="w-full bg-rose-600 text-white hover:bg-rose-500"
                             >
-                              Hinzufügen
+                              {wizardMedDose || wizardMedTime ? "Mit Details speichern" : "Ohne Details speichern"}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              onClick={() => setWizardMedName("")}
+                              className="w-full border-rose-200 text-rose-700"
+                            >
+                              Anderes Medikament
                             </Button>
                             <Button
                               variant="ghost"
                               onClick={() => {
                                 setWizardMedName("");
+                                setWizardMedDose(undefined);
+                                setWizardMedTime(undefined);
                                 setWizardSubStep("question");
                               }}
                               className="w-full text-rose-400"
@@ -10490,49 +10631,112 @@ export default function HomePage() {
                   }
 
                   case "sleep": {
-                    const sleepQualityOptions = [
-                      { value: 1, label: "Sehr schlecht", emoji: "😫" },
-                      { value: 2, label: "Schlecht", emoji: "😕" },
-                      { value: 3, label: "Okay", emoji: "😐" },
-                      { value: 4, label: "Gut", emoji: "🙂" },
-                      { value: 5, label: "Sehr gut", emoji: "😴" },
-                    ];
                     const currentSleepQuality = dailyDraft.sleep?.quality;
+                    const currentHours = dailyDraft.sleep?.hours;
+                    const currentAwakenings = dailyDraft.sleep?.awakenings;
 
                     return (
                       <div>
                         {stepHeader}
-                        <div className="mb-4 grid grid-cols-5 gap-2">
-                          {sleepQualityOptions.map((opt) => {
-                            const isSelected = currentSleepQuality === opt.value;
-                            return (
+                        <div className="space-y-5">
+                          {/* Sleep quality emoji picker */}
+                          <div>
+                            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-rose-400">Schlafqualität</p>
+                            <SleepQualityPicker
+                              value={currentSleepQuality}
+                              onChange={(value) => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  sleep: { ...prev.sleep, quality: value },
+                                }));
+                              }}
+                            />
+                          </div>
+
+                          {/* Hours slider */}
+                          <div>
+                            <div className="mb-2 flex items-center justify-between">
+                              <span className="text-xs font-medium uppercase tracking-wide text-rose-400">Stunden geschlafen</span>
+                              <span className="text-sm font-bold text-rose-600">{currentHours ?? "–"} h</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="0"
+                              max="12"
+                              step="0.5"
+                              value={currentHours ?? 7}
+                              onChange={(e) => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  sleep: { ...prev.sleep, hours: Number(e.target.value) },
+                                }));
+                              }}
+                              className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-rose-100 accent-rose-500"
+                            />
+                            <div className="mt-1 flex justify-between text-xs text-rose-400">
+                              <span>0</span>
+                              <span>12</span>
+                            </div>
+                          </div>
+
+                          {/* Awakenings stepper */}
+                          <div>
+                            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-rose-400">Nachts aufgewacht</p>
+                            <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDailyDraft((prev) => ({
+                                      ...prev,
+                                      sleep: { ...prev.sleep, awakenings: Math.max(0, (prev.sleep?.awakenings ?? 0) - 1) },
+                                    }));
+                                  }}
+                                  className="flex h-10 w-10 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50"
+                                >
+                                  <Minus className="h-4 w-4" />
+                                </button>
+                                <span className="w-8 text-center text-lg font-bold text-rose-700">
+                                  {currentAwakenings ?? 0}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDailyDraft((prev) => ({
+                                      ...prev,
+                                      sleep: { ...prev.sleep, awakenings: (prev.sleep?.awakenings ?? 0) + 1 },
+                                    }));
+                                  }}
+                                  className="flex h-10 w-10 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50"
+                                >
+                                  <Plus className="h-4 w-4" />
+                                </button>
+                              </div>
                               <button
-                                key={opt.value}
                                 type="button"
                                 onClick={() => {
                                   setDailyDraft((prev) => ({
                                     ...prev,
-                                    sleep: { ...prev.sleep, quality: opt.value },
+                                    sleep: { ...prev.sleep, awakenings: 0 },
                                   }));
                                 }}
                                 className={cn(
-                                  "flex flex-col items-center gap-1 rounded-xl border p-3 transition",
-                                  isSelected
-                                    ? "border-rose-300 bg-rose-50"
-                                    : "border-rose-100 hover:border-rose-200"
+                                  "rounded-full border px-3 py-1.5 text-sm font-medium transition",
+                                  currentAwakenings === 0
+                                    ? "border-rose-400 bg-rose-100 text-rose-800"
+                                    : "border-rose-200 bg-white text-rose-600 hover:border-rose-300"
                                 )}
                               >
-                                <span className="text-2xl">{opt.emoji}</span>
-                                <span className="text-[10px] text-rose-600">{opt.label}</span>
+                                Nie
                               </button>
-                            );
-                          })}
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex flex-col gap-3">
+
+                        <div className="mt-6 flex flex-col gap-3">
                           <Button
                             onClick={goNext}
-                            disabled={!currentSleepQuality}
-                            className="w-full bg-rose-600 text-white hover:bg-rose-500 disabled:opacity-50"
+                            className="w-full bg-rose-600 text-white hover:bg-rose-500"
                           >
                             Weiter
                           </Button>
@@ -10545,44 +10749,21 @@ export default function HomePage() {
                   }
 
                   case "bowelBladder": {
-                    const giOptions = [
-                      { bristolType: 4, label: "Normal", description: "Alles in Ordnung" },
-                      { bristolType: 1, label: "Verstopfung", description: "Hart, schwer auszuscheiden" },
-                      { bristolType: 6, label: "Durchfall", description: "Weich bis flüssig" },
-                    ];
                     const currentBristol = dailyDraft.gi?.bristolType;
 
                     return (
                       <div>
                         {stepHeader}
-                        <div className="mb-4 space-y-2">
-                          {giOptions.map((opt) => {
-                            const isSelected = currentBristol === opt.bristolType;
-                            return (
-                              <button
-                                key={opt.bristolType}
-                                type="button"
-                                onClick={() => {
-                                  setDailyDraft((prev) => ({
-                                    ...prev,
-                                    gi: { bristolType: opt.bristolType as 1 | 2 | 3 | 4 | 5 | 6 | 7 },
-                                  }));
-                                }}
-                                className={cn(
-                                  "flex w-full flex-col items-start rounded-xl border px-4 py-3 text-left transition",
-                                  isSelected
-                                    ? "border-rose-300 bg-rose-50 text-rose-800"
-                                    : "border-rose-100 bg-white text-rose-700 hover:border-rose-200"
-                                )}
-                              >
-                                <div className="flex w-full items-center justify-between">
-                                  <span className="font-medium">{opt.label}</span>
-                                  {isSelected && <CheckCircle2 className="h-5 w-5 text-rose-500" />}
-                                </div>
-                                <span className="text-xs text-rose-500">{opt.description}</span>
-                              </button>
-                            );
-                          })}
+                        <div className="mb-4">
+                          <BristolScalePicker
+                            value={currentBristol as BristolType | undefined}
+                            onChange={(value) => {
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                gi: { bristolType: value },
+                              }));
+                            }}
+                          />
                         </div>
                         <div className="flex flex-col gap-3">
                           <Button
@@ -12362,67 +12543,121 @@ export default function HomePage() {
                 </Section>
               </div>
 
-              <div className={cn("space-y-6", dailyActiveCategory === "sleep" ? "" : "hidden")}> 
+              <div className={cn("space-y-6", dailyActiveCategory === "sleep" ? "" : "hidden")}>
                 <Section
                   title="Schlaf"
-                  description="Kurzabfrage ohne Hilfsmittel"
+                  description="Wie hast du geschlafen?"
                   sectionType="sleep"
                 >
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <TermField termKey="sleep_hours" htmlFor="sleep-hours">
-                      <Input
-                        id="sleep-hours"
-                        type="number"
-                        min={0}
-                        max={24}
-                        step={0.25}
-                        value={dailyDraft.sleep?.hours ?? ""}
-                        onChange={(event) =>
-                          setDailyDraft((prev) => ({
-                            ...prev,
-                            sleep: { ...(prev.sleep ?? {}), hours: event.target.value ? Number(event.target.value) : undefined },
-                          }))
-                        }
-                      />
-                      {renderIssuesForPath("sleep.hours")}
-                    </TermField>
-                    <div>
-                      <ScoreInput
-                        id="sleep-quality"
-                        label={TERMS.sleep_quality.label}
-                        termKey="sleep_quality"
-                        value={dailyDraft.sleep?.quality ?? 0}
-                        onChange={(value) =>
-                          setDailyDraft((prev) => ({
-                            ...prev,
-                            sleep: {
-                              ...(prev.sleep ?? {}),
-                              quality: Math.max(0, Math.min(10, Math.round(value))),
-                            },
-                          }))
-                        }
-                      />
-                      {renderIssuesForPath("sleep.quality")}
+                  <div className="space-y-6">
+                    {/* Sleep Quality - Emoji Picker */}
+                    <div className="space-y-3">
+                      <TermField termKey="sleep_quality">
+                        <SleepQualityPicker
+                          value={dailyDraft.sleep?.quality}
+                          onChange={(value) =>
+                            setDailyDraft((prev) => ({
+                              ...prev,
+                              sleep: { ...(prev.sleep ?? {}), quality: value },
+                            }))
+                          }
+                          use10Scale
+                        />
+                        {renderIssuesForPath("sleep.quality")}
+                      </TermField>
                     </div>
-                    <TermField termKey="awakenings" htmlFor="sleep-awakenings">
-                      <Input
-                        id="sleep-awakenings"
-                        type="number"
-                        min={0}
-                        step={1}
-                        value={dailyDraft.sleep?.awakenings ?? ""}
-                        onChange={(event) =>
-                          setDailyDraft((prev) => ({
-                            ...prev,
-                            sleep: {
-                              ...(prev.sleep ?? {}),
-                              awakenings: event.target.value ? Number(event.target.value) : undefined,
-                            },
-                          }))
-                        }
-                      />
-                      {renderIssuesForPath("sleep.awakenings")}
-                    </TermField>
+
+                    {/* Hours and Awakenings in a row */}
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {/* Hours Slept */}
+                      <div className="space-y-2">
+                        <TermField termKey="sleep_hours">
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="range"
+                              min={0}
+                              max={12}
+                              step={0.5}
+                              value={dailyDraft.sleep?.hours ?? 7}
+                              onChange={(e) =>
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  sleep: { ...(prev.sleep ?? {}), hours: Number(e.target.value) },
+                                }))
+                              }
+                              className="h-2 flex-1 cursor-pointer appearance-none rounded-lg bg-rose-200 accent-rose-500"
+                            />
+                            <span className="w-12 text-right font-medium text-rose-700">
+                              {dailyDraft.sleep?.hours ?? 7}h
+                            </span>
+                          </div>
+                          {renderIssuesForPath("sleep.hours")}
+                        </TermField>
+                      </div>
+
+                      {/* Awakenings with stepper */}
+                      <div className="space-y-2">
+                        <TermField termKey="awakenings">
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 w-8 border-rose-200 p-0"
+                              onClick={() =>
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  sleep: {
+                                    ...(prev.sleep ?? {}),
+                                    awakenings: Math.max(0, (prev.sleep?.awakenings ?? 0) - 1),
+                                  },
+                                }))
+                              }
+                            >
+                              -
+                            </Button>
+                            <span className="w-8 text-center font-medium text-rose-700">
+                              {dailyDraft.sleep?.awakenings ?? 0}
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 w-8 border-rose-200 p-0"
+                              onClick={() =>
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  sleep: {
+                                    ...(prev.sleep ?? {}),
+                                    awakenings: (prev.sleep?.awakenings ?? 0) + 1,
+                                  },
+                                }))
+                              }
+                            >
+                              +
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className={cn(
+                                "ml-2 text-xs",
+                                dailyDraft.sleep?.awakenings === 0 ? "text-rose-500" : "text-rose-400"
+                              )}
+                              onClick={() =>
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  sleep: { ...(prev.sleep ?? {}), awakenings: 0 },
+                                }))
+                              }
+                            >
+                              Nie
+                            </Button>
+                          </div>
+                          {renderIssuesForPath("sleep.awakenings")}
+                        </TermField>
+                      </div>
+                    </div>
                   </div>
                 </Section>
               </div>
@@ -12488,29 +12723,16 @@ export default function HomePage() {
                         ) : null}
                       </div>
                       <TermField termKey="bristol">
-                        <Select
-                          value={dailyDraft.gi?.bristolType ? String(dailyDraft.gi.bristolType) : ""}
-                          onValueChange={(value) =>
+                        <BristolScalePicker
+                          value={dailyDraft.gi?.bristolType as BristolType | undefined}
+                          onChange={(value) =>
                             setDailyDraft((prev) => ({
                               ...prev,
-                              gi: {
-                                ...(prev.gi ?? {}),
-                                bristolType: value ? (Number(value) as 1 | 2 | 3 | 4 | 5 | 6 | 7) : undefined,
-                              },
+                              gi: { ...(prev.gi ?? {}), bristolType: value },
                             }))
                           }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Auswählen" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {BRISTOL_TYPES.map((item) => (
-                              <SelectItem key={item.value} value={String(item.value)}>
-                                {item.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          compact
+                        />
                         {renderIssuesForPath("gi.bristolType")}
                       </TermField>
                     </div>
@@ -12751,11 +12973,43 @@ export default function HomePage() {
                   sectionType="notes"
                 >
                   <div className="grid gap-3">
+                    {/* Quick preset tags */}
+                    <div>
+                      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-rose-400">Schnell-Tags</p>
+                      <div className="flex flex-wrap gap-2">
+                        {["Stress", "Sport", "Alkohol", "Koffein", "Schlafmangel", "Reisen"].map((tag) => {
+                          const isSelected = dailyDraft.notesTags?.includes(tag);
+                          return (
+                            <button
+                              key={tag}
+                              type="button"
+                              onClick={() => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  notesTags: isSelected
+                                    ? (prev.notesTags ?? []).filter((t) => t !== tag)
+                                    : [...(prev.notesTags ?? []), tag],
+                                }));
+                              }}
+                              className={cn(
+                                "rounded-full border px-3 py-1.5 text-sm font-medium transition",
+                                isSelected
+                                  ? "border-rose-300 bg-rose-100 text-rose-700"
+                                  : "border-rose-200 bg-white text-rose-600 hover:border-rose-300"
+                              )}
+                            >
+                              {tag}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    {/* Custom tag input */}
                     <TermField termKey="notesTags" htmlFor="notes-tag-input">
                       <div className="flex flex-wrap gap-2">
                         <Input
                           id="notes-tag-input"
-                          placeholder="Neuer Tag"
+                          placeholder="Eigener Tag"
                           value={notesTagDraft}
                           onChange={(event) => setNotesTagDraft(event.target.value)}
                         />

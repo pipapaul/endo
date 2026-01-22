@@ -1,355 +1,252 @@
-# Daily Check-in Wizard Mode Implementation Plan
+# Daily Check-in & Wizard Parity Plan
 
-## Overview
-
-Add an alternative "Wizard Mode" for the daily check-in that guides users through simple questions for each module sequentially. This complements the existing overview-based entry system.
-
----
-
-## User Flow
-
-### Entry Point
-- New button below the existing "Täglicher Check-in" button on home screen
-- Label: "Schnell-Check" or "Geführter Check-in"
-- Distinct visual style (outline/secondary) to differentiate from main button
-
-### Wizard Flow
-```
-[Start] → Pain → Symptoms → Bleeding → Medication → Sleep → Bowel/Bladder → Mood → Notes → [Summary/Done]
-```
-
-- Each step shows a simple question with clear answer options
-- Skip option always available ("Überspringen" or "Keine Angabe")
-- Progress indicator at top (e.g., "3 von 8" or dots)
-- Back navigation to previous question
-
-### Modules Included (Core Only)
-1. **Pain** - "Hattest du heute Schmerzen?"
-2. **Symptoms** - "Hattest du heute Symptome?"
-3. **Bleeding** - "Hattest du heute eine Blutung?"
-4. **Medication** - "Hast du heute Medikamente genommen?"
-5. **Sleep** - "Wie hast du geschlafen?"
-6. **Bowel/Bladder** - "Wie war dein Verdauung heute?"
-7. **Mood** - "Wie war deine Stimmung heute?"
-8. **Notes** - "Möchtest du Notizen oder Tags hinzufügen?"
-
-### Excluded from Wizard
-- **Optional Values** - Too specialized, users can add via normal check-in
-- **Cervix Mucus** - Only for Billings method users, can add via normal check-in
+## Goal
+Ensure the wizard and daily check-in collect **identical data** while improving UX in both. The wizard should be a faster path to the same data, not a shortcut that records less.
 
 ---
 
-## Integration with Existing Data
-
-### Quick Tracker Awareness
-The wizard should detect and acknowledge existing data from quick trackers:
-
-**Pain (quickPainEvents)**:
-```
-"Du hast heute bereits [N] Schmerzereignis(se) erfasst:
- • [Region] - Intensität [X]/10
- • [Region] - Intensität [Y]/10
-
-Möchtest du weitere Schmerzen hinzufügen oder ist das alles für heute?"
-
-[Weitere hinzufügen] [Das ist alles] [Überspringen]
-```
-
-**Bleeding (pbacCounts)**:
-```
-"Du hast heute bereits Blutungsdaten erfasst:
- • [N] × [Produkt]
-
-Möchtest du weitere Produkte hinzufügen oder ist das alles?"
-
-[Weitere hinzufügen] [Das ist alles] [Überspringen]
-```
-
-### Pre-filled Data Detection
-For each module, check if data already exists in `dailyDraft`:
-- If yes: Show summary and ask "Möchtest du das ändern?"
-- If no: Show the question normally
-
----
-
-## Question Design per Module
+## Current Gaps (Wizard Missing Data)
 
 ### 1. Pain Module
-**Initial Question**: "Hattest du heute Schmerzen?"
-- [Ja] → Goes to pain detail entry (simplified body map + intensity)
-- [Nein] → Triggers `handleQuickNoPain()` equivalent, moves to next
-- [Überspringen] → Moves to next without recording
-
-**If existing quickPainEvents**:
-- Show summary of existing events
-- [Weitere hinzufügen] → Pain detail entry
-- [Das ist alles] → Mark complete, next
-- [Überspringen] → Next without changes
-
-**Detail Entry** (if "Ja"):
-- Simplified body region picker (main regions only)
-- Intensity slider (0-10)
-- Optional: Pain qualities (checkboxes)
-- [Fertig] → Save and next
+| Field | Daily Check-in | Wizard | Action |
+|-------|---------------|--------|--------|
+| painRegions (regionId, nrs, qualities) | ✅ | ✅ | Parity ✓ |
+| impactNRS (overall impact 0-10) | ✅ | ❌ | Add to wizard |
+| ovulationPain (side, intensity) | ✅ | ❌ | Add optional question |
+| deepDyspareunia | ✅ (in pain section) | ⚠️ (in symptoms) | Move to symptoms in both |
 
 ### 2. Symptoms Module
-**Question**: "Hattest du heute eines dieser Symptome?"
-- Show toggleable list of main symptoms:
-  - Müdigkeit/Erschöpfung
-  - Blähungen
-  - Übelkeit
-  - Dysmenorrhoe
-  - Beckenschmerzen
-- [Keine Symptome] → Triggers quick action, next
-- [Fertig] → Save selections, next
-- [Überspringen] → Next
+| Field | Daily Check-in | Wizard | Action |
+|-------|---------------|--------|--------|
+| fatigue, bloating | ✅ Base | ✅ | Keep |
+| dysmenorrhea, pelvicPainNonMenses, dyschezia, deepDyspareunia, dysuria | ⚠️ Separate modules | ✅ | Consolidate in daily check-in |
+| dizzinessOpt (present, nrs, orthostatic) | ✅ Feature-gated | ❌ | Add to wizard if flag active |
 
 ### 3. Bleeding Module
-**Initial Question**: "Hattest du heute eine Blutung?"
-- [Ja] → Simple intensity picker
-- [Nein] → Triggers `handleQuickNoBleeding()` equivalent, next
-- [Überspringen] → Next
+| Field | Daily Check-in | Wizard | Action |
+|-------|---------------|--------|--------|
+| simpleBleedingIntensity | ✅ | ✅ | Parity ✓ |
+| clots, flooding | ✅ | ✅ | Parity ✓ |
+| PBAC product tracking | ✅ | ❌ | **Do not add** - too complex for wizard |
 
-**If existing pbacCounts**:
-- Show summary: "Du hast X Produkte erfasst"
-- [Mehr hinzufügen] → Product picker
-- [Das ist alles] → Next
-- [Überspringen] → Next
-
-**Detail Entry** (if "Ja"):
-- Simple intensity: Leicht / Mittel / Stark
-- Or product-based if user prefers PBAC
+**Decision**: Wizard uses simple intensity mode. Users needing PBAC tracking use daily check-in. This is acceptable.
 
 ### 4. Medication Module
-**Question**: "Hast du heute Schmerzmittel oder andere Medikamente genommen?"
-- [Ja] → Medication entry (simplified)
-- [Nein] → Triggers quick action, next
-- [Überspringen] → Next
-
-**Detail Entry**:
-- Quick select from recent/common medications
-- Dosage input
-- [Fertig] → Save and next
+| Field | Daily Check-in | Wizard | Action |
+|-------|---------------|--------|--------|
+| name | ✅ | ✅ | Parity ✓ |
+| doseMg | ✅ | ❌ | Add optional field |
+| time | ✅ | ❌ | Add optional field |
 
 ### 5. Sleep Module
-**Question**: "Wie hast du letzte Nacht geschlafen?"
-- Visual scale or emoji picker:
-  - 😫 Sehr schlecht
-  - 😕 Schlecht
-  - 😐 Okay
-  - 🙂 Gut
-  - 😴 Sehr gut
-- Optional: Hours input
-- [Überspringen] → Next
+| Field | Daily Check-in | Wizard | Action |
+|-------|---------------|--------|--------|
+| quality (0-10 in check-in, 1-5 emoji in wizard) | ⚠️ Different scales | ⚠️ | Unify to same scale |
+| hours | ✅ | ❌ | Add to wizard |
+| awakenings | ✅ | ❌ | Add to wizard |
 
 ### 6. Bowel/Bladder Module
-**Question**: "Hattest du heute Verdauungsbeschwerden?"
-- [Ja] → Detail entry
-- [Nein] → Mark normal, next
-- [Überspringen] → Next
-
-**Detail Entry**:
-- Bristol scale visual picker (optional)
-- Common issues: Durchfall, Verstopfung, Blähungen, Krämpfe
+| Field | Daily Check-in | Wizard | Action |
+|-------|---------------|--------|--------|
+| Bristol type (1-7 dropdown) | ✅ All 7 | ⚠️ Only 1,4,6 | **Fix wizard to use full scale** |
+| urinary.freqPerDay | ✅ | ❌ | Add optional |
+| urinary.urgency | ✅ | ❌ | Add optional |
+| dyschezia (present, score) | ✅ | ⚠️ In symptoms | Keep in symptoms for both |
+| dysuria (present, score) | ✅ | ⚠️ In symptoms | Keep in symptoms for both |
 
 ### 7. Mood Module
-**Question**: "Wie war deine Stimmung heute?"
-- 4 emoji buttons (existing UI):
-  - 😢 Sehr schlecht (1)
-  - 😕 Schlecht (2)
-  - 🙂 Gut (3)
-  - 😊 Sehr gut (4)
-- [Überspringen] → Next
+- **Already at parity** - both use 1-4 scale
 
 ### 8. Notes Module
-**Question**: "Möchtest du Notizen oder Tags hinzufügen?"
-- [Ja] → Tag picker + text input
-- [Nein] → Next/Finish
-- [Überspringen] → Finish
+| Field | Daily Check-in | Wizard | Action |
+|-------|---------------|--------|--------|
+| notesTags | ✅ Custom only | ✅ Preset + custom | Add presets to daily check-in |
+| notesFree | ✅ | ✅ | Parity ✓ |
 
 ---
 
-## UI/UX Design
+## UX Improvements for Daily Check-in
 
-### Wizard Container
-```tsx
-<div className="fixed inset-0 z-50 bg-white flex flex-col">
-  {/* Header with progress */}
-  <header className="px-4 py-3 border-b">
-    <div className="flex items-center justify-between">
-      <Button variant="ghost" onClick={handleBack}>
-        <ChevronLeft /> Zurück
-      </Button>
-      <span className="text-sm text-rose-600">
-        {currentStep} von {totalSteps}
-      </span>
-      <Button variant="ghost" onClick={handleClose}>
-        Abbrechen
-      </Button>
-    </div>
-    {/* Progress bar */}
-    <div className="mt-2 h-1 bg-rose-100 rounded-full">
-      <div
-        className="h-full bg-rose-500 rounded-full transition-all"
-        style={{ width: `${(currentStep / totalSteps) * 100}%` }}
-      />
-    </div>
-  </header>
+### Sleep Module (Currently Cluttered)
 
-  {/* Question content */}
-  <main className="flex-1 overflow-auto p-4">
-    {/* Current step content */}
-  </main>
+**Current Issues:**
+- Three separate input fields in a grid layout
+- 0-10 slider for quality is granular but not intuitive
+- No visual feedback for sleep quality level
 
-  {/* Bottom actions */}
-  <footer className="px-4 py-3 border-t bg-white">
-    {/* Context-aware buttons */}
-  </footer>
-</div>
+**Proposed Improvements:**
+```
+┌─────────────────────────────────────────┐
+│ Schlafqualität                          │
+│                                         │
+│   😫    😕    😐    🙂    😴           │
+│  Sehr  Schlecht Okay  Gut  Sehr        │
+│ schlecht              gut              │
+│                                         │
+│ ─────────────────────────────────────── │
+│                                         │
+│ Stunden geschlafen                      │
+│ [  7.5  ] ◀─────●─────▶                │
+│           0           12               │
+│                                         │
+│ Aufgewacht in der Nacht                 │
+│ [  -  ] 0 [ + ]    oder [ Nie ]        │
+│                                         │
+└─────────────────────────────────────────┘
 ```
 
-### Visual Style
-- Clean, minimal design
-- Large touch targets
-- Clear visual hierarchy
-- Consistent button placement
-- Smooth transitions between steps
+- **Replace 0-10 slider** with 5-level emoji picker (matches wizard)
+- **Map to values**: 1=2, 2=4, 3=6, 4=8, 5=10 for data compatibility
+- **Hours**: Keep slider but with cleaner visual
+- **Awakenings**: Use stepper buttons or quick "Nie" option
 
-### Progress Indicator Options
-1. **Numbered**: "3 von 8"
-2. **Dots**: ○ ○ ● ○ ○ ○ ○ ○
-3. **Bar**: Progress bar (recommended)
-4. **Icons**: Category icons showing completion state
+### Bowel/Bladder Module (Currently Cluttered)
 
----
+**Current Issues:**
+- Bristol scale dropdown with 7 technical options is intimidating
+- Multiple sub-sections for GI, urinary, optional urinary
+- Too many inputs visible at once
 
-## State Management
-
-### Wizard State
-```tsx
-interface WizardState {
-  isOpen: boolean;
-  currentStep: number;
-  completedSteps: Set<number>;
-  skippedSteps: Set<number>;
-}
-
-const [wizardState, setWizardState] = useState<WizardState>({
-  isOpen: false,
-  currentStep: 0,
-  completedSteps: new Set(),
-  skippedSteps: new Set(),
-});
+**Proposed Improvements:**
+```
+┌─────────────────────────────────────────┐
+│ Stuhlgang heute?                        │
+│                                         │
+│   ○ Ja    ○ Nein                        │
+│                                         │
+│ [If Ja:]                                │
+│ Wie war die Konsistenz?                 │
+│                                         │
+│ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
+│ │ 💎       │ │ 🥜       │ │ 🌭       │  │
+│ │ Hart     │ │ Klumpig  │ │ Wurstform│  │
+│ │ (1-2)    │ │ (3)      │ │ Normal   │  │
+│ │          │ │          │ │ (4)      │  │
+│ └──────────┘ └──────────┘ └──────────┘  │
+│                                         │
+│ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
+│ │ 🧈       │ │ 💧       │ │ 🌊       │  │
+│ │ Weich    │ │ Breiig   │ │ Flüssig  │  │
+│ │ (5)      │ │ (6)      │ │ (7)      │  │
+│ └──────────┘ └──────────┘ └──────────┘  │
+│                                         │
+│ ─────────────────────────────────────── │
+│                                         │
+│ Schmerzen beim Stuhlgang?               │
+│   [ ] Ja  → Stärke: ●────────── 5/10    │
+│                                         │
+│ ─────────────────────────────────────── │
+│                                         │
+│ Blase & Wasserlassen      [Optional ▼]  │
+│   [Collapsed by default, expand for     │
+│    frequency, urgency, etc.]            │
+│                                         │
+└─────────────────────────────────────────┘
 ```
 
-### Step Configuration
-```tsx
-const WIZARD_STEPS = [
-  { id: "pain", title: "Schmerzen", question: "Hattest du heute Schmerzen?" },
-  { id: "symptoms", title: "Symptome", question: "Hattest du heute Symptome?" },
-  { id: "bleeding", title: "Blutung", question: "Hattest du heute eine Blutung?" },
-  { id: "medication", title: "Medikamente", question: "Hast du Medikamente genommen?" },
-  { id: "sleep", title: "Schlaf", question: "Wie hast du geschlafen?" },
-  { id: "bowelBladder", title: "Verdauung", question: "Wie war deine Verdauung?" },
-  { id: "mood", title: "Stimmung", question: "Wie war deine Stimmung?" },
-  { id: "notes", title: "Notizen", question: "Möchtest du Notizen hinzufügen?" },
-] as const;
-```
-
-### Data Flow
-1. Wizard opens → Load current `dailyDraft` for selected date
-2. Each step → Update `dailyDraft` via existing `setDailyDraft()`
-3. Data persists automatically (existing localStorage mechanism)
-4. Wizard close → Data already saved, mark categories complete
+- **Visual Bristol scale**: Replace dropdown with visual card selection
+- **Group into 3 categories**: Hart/Klumpig (1-3), Normal (4), Weich/Breiig/Flüssig (5-7)
+- **Question-based flow**: "Stuhlgang heute?" → "Wie war die Konsistenz?"
+- **Collapsible urinary section**: Most users don't need detailed urinary tracking
 
 ---
 
-## Implementation Steps
+## Implementation Plan
 
-### Phase 1: Core Wizard Infrastructure
-1. Create `DailyWizard` component with step navigation
-2. Add wizard state management
-3. Create step container with progress indicator
-4. Add open/close handlers
-5. Add "Schnell-Check" button to home screen
+### Phase 1: Unify Data Collection (Wizard → Daily Check-in Parity)
 
-### Phase 2: Individual Step Components
-6. Create `WizardStepPain` with existing data detection
-7. Create `WizardStepSymptoms` with toggle list
-8. Create `WizardStepBleeding` with quick tracker awareness
-9. Create `WizardStepMedication` with medication picker
-10. Create `WizardStepSleep` with quality scale
-11. Create `WizardStepBowelBladder` with Bristol picker
-12. Create `WizardStepMood` with emoji buttons
-13. Create `WizardStepNotes` with tags/text
+#### 1.1 Sleep Module - Unify Scale
+- Change daily check-in from 0-10 slider to 1-5 emoji picker
+- Store as quality value 1-5 (breaking change or map to 0-10?)
+- Add hours and awakenings to wizard
 
-### Phase 3: Integration & Polish
-14. Integrate with existing `dailyDraft` updates
-15. Add transition animations between steps
-16. Add haptic feedback (mobile)
-17. Test existing data detection for all quick trackers
-18. Add summary screen at end (optional)
+#### 1.2 Bowel/Bladder - Full Bristol in Wizard
+- Replace wizard's 3-option (1,4,6) with full 7-type visual picker
+- Use same visual picker in daily check-in
 
-### Phase 4: Edge Cases
-19. Handle date changes during wizard
-20. Handle external data updates (if app is open elsewhere)
-21. Test with various feature flag combinations
-22. Accessibility audit (keyboard nav, screen readers)
+#### 1.3 Medication - Add Dose/Time to Wizard
+- Add optional "Dosis" and "Uhrzeit" fields after medication selection
+- Make them skippable (user can just tap "Fertig")
 
----
+#### 1.4 Pain - Add Impact to Wizard
+- After adding pain entries, ask: "Wie stark beeinträchtigen dich die Schmerzen heute?"
+- Add impactNRS slider (0-10)
 
-## Component Structure
+### Phase 2: UX Improvements (Both Modules)
 
-```
-components/
-  daily-wizard/
-    DailyWizard.tsx           # Main wizard container
-    WizardProgress.tsx        # Progress bar/indicator
-    WizardStep.tsx            # Generic step wrapper
-    steps/
-      WizardStepPain.tsx
-      WizardStepSymptoms.tsx
-      WizardStepBleeding.tsx
-      WizardStepMedication.tsx
-      WizardStepSleep.tsx
-      WizardStepBowelBladder.tsx
-      WizardStepMood.tsx
-      WizardStepNotes.tsx
-```
+#### 2.1 Sleep Module Redesign
+- Implement emoji picker for both
+- Add visual slider for hours
+- Add stepper for awakenings with "Nie" quick option
 
-Or integrate directly in `app/page.tsx` if preferred for consistency with existing code.
+#### 2.2 Bowel/Bladder Redesign
+- Create visual Bristol scale component
+- Reorganize into question-based flow
+- Make urinary section collapsible
+
+#### 2.3 Notes - Add Presets to Daily Check-in
+- Add same preset tags as wizard to daily check-in
+- Keep ability to add custom tags
+
+### Phase 3: Symptom Consolidation
+
+#### 3.1 Consolidate Symptoms
+- Move all symptom tracking to symptoms module
+- Same symptom list in wizard and daily check-in:
+  - fatigue, bloating, dysmenorrhea, pelvicPainNonMenses, dyschezia, deepDyspareunia, dysuria
+- Add dizziness if feature flag active
+- Each with present toggle + score slider
 
 ---
 
-## Open Questions
+## Data Compatibility Considerations
 
-1. **Summary Screen**: Show a summary of all entered data at the end before closing?
-   - Pro: User can review everything
-   - Con: Extra step, might feel redundant
+### Sleep Quality Scale Change
+**Option A**: Map 5-level to 0-10
+- 1 (Sehr schlecht) → 2
+- 2 (Schlecht) → 4
+- 3 (Okay) → 6
+- 4 (Gut) → 8
+- 5 (Sehr gut) → 10
 
-2. **Edit from Summary**: Allow jumping back to specific steps from summary?
-   - Pro: Easy corrections
-   - Con: More complex navigation
+**Option B**: Change data model to 1-5
+- Requires migration of existing data
+- Cleaner going forward
 
-3. **Auto-advance**: Automatically move to next step after selection (like mood)?
-   - Pro: Faster for simple inputs
-   - Con: Might feel rushed, harder to correct
+**Recommendation**: Option A (mapping) - maintains backward compatibility
 
-4. **Partial Completion**: What if user closes wizard midway?
-   - Data is already saved via dailyDraft auto-persistence
-   - Categories with data will show as partially complete
-
-5. **Daily vs. Wizard Mode Preference**: Remember user's preferred mode?
-   - Could store in settings
-   - Or just offer both buttons always
+### Bristol Scale
+No change needed - full 1-7 scale in both, just better UI
 
 ---
 
-## Estimated Scope
+## Summary of Changes
 
-- **Core wizard infrastructure**: ~200 lines
-- **8 step components**: ~100 lines each = ~800 lines
-- **Integration & state**: ~150 lines
-- **Total new code**: ~1,150 lines
+### Wizard Additions (to match daily check-in)
+1. ✅ Pain: Add impactNRS question after pain entries
+2. ✅ Sleep: Add hours and awakenings inputs
+3. ✅ Bowel/Bladder: Full 7-type Bristol scale
+4. ✅ Medication: Add optional dose and time fields
+5. ✅ Dizziness: Add if feature flag active (in symptoms step)
 
-This can be implemented incrementally, starting with the infrastructure and 2-3 core steps, then adding remaining steps.
+### Daily Check-in Improvements
+1. ✅ Sleep: Replace 0-10 slider with emoji picker, cleaner layout
+2. ✅ Bowel/Bladder: Visual Bristol scale, question-based flow, collapsible urinary
+3. ✅ Notes: Add preset quick-tags like wizard
+4. ✅ Symptoms: Consolidate all symptom tracking in one place
+
+### Unchanged (Already at Parity)
+- Mood module
+- Bleeding simple mode (PBAC stays daily check-in only)
+- Pain region/intensity/qualities
+
+---
+
+## Files Modified
+- `app/page.tsx` - Main component with both wizard and daily check-in
+  - Integrated BristolScalePicker and SleepQualityPicker components
+  - Added preset quick-tags to daily check-in notes section
+  - Added dizziness to wizard symptoms step (when feature flag active)
+- Created new components:
+  - `components/home/BristolScalePicker.tsx` - Visual 7-type Bristol scale with categories
+  - `components/home/SleepQualityPicker.tsx` - 5-level emoji picker with 0-10 scale mapping
