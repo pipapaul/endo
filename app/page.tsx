@@ -10137,15 +10137,12 @@ export default function HomePage() {
                   }
 
                   case "symptoms": {
-                    const symptomKeys: SymptomKey[] = ["fatigue", "bloating", "dysmenorrhea", "pelvicPainNonMenses", "dyschezia", "deepDyspareunia", "dysuria"];
+                    // Only non-pain symptoms - pain-related symptoms are covered by pain map
+                    // and contextual sections (bowel/bladder) in daily check-in
+                    const symptomKeys: SymptomKey[] = ["fatigue", "bloating"];
                     const symptomLabels: Record<string, string> = {
                       fatigue: "Müdigkeit / Erschöpfung",
                       bloating: "Blähbauch",
-                      dysmenorrhea: "Regelschmerzen",
-                      pelvicPainNonMenses: "Beckenschmerzen",
-                      dyschezia: "Schmerzen beim Stuhlgang",
-                      deepDyspareunia: "Schmerzen beim Sex",
-                      dysuria: "Schmerzen beim Wasserlassen",
                     };
                     const activeSymptoms = symptomKeys.filter((key) => dailyDraft.symptoms?.[key]?.present);
 
