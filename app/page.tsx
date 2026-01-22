@@ -10097,6 +10097,66 @@ export default function HomePage() {
                             ))}
                           </div>
                         )}
+
+                        {/* Deep dyspareunia - pain during sex */}
+                        {(() => {
+                          const deepDyspareuniaActive = dailyDraft.symptoms?.deepDyspareunia?.present ?? false;
+                          return (
+                            <div className="mb-4 overflow-hidden rounded-xl border border-rose-100 bg-white">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    symptoms: {
+                                      ...prev.symptoms,
+                                      deepDyspareunia: deepDyspareuniaActive ? { present: false } : { present: true, score: 5 },
+                                    },
+                                  }));
+                                }}
+                                className={cn(
+                                  "flex w-full items-center justify-between px-4 py-3 text-left transition",
+                                  deepDyspareuniaActive ? "bg-rose-50" : "hover:bg-rose-50/50"
+                                )}
+                              >
+                                <span className={cn("font-medium", deepDyspareuniaActive ? "text-rose-800" : "text-rose-700")}>
+                                  Schmerzen beim Sex
+                                </span>
+                                {deepDyspareuniaActive ? (
+                                  <CheckCircle2 className="h-5 w-5 text-rose-500" />
+                                ) : (
+                                  <div className="h-5 w-5 rounded-full border-2 border-rose-200" />
+                                )}
+                              </button>
+                              {deepDyspareuniaActive && (
+                                <div className="border-t border-rose-100 bg-rose-50/50 px-4 py-3">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs text-rose-600">Stärke</span>
+                                    <span className="text-sm font-bold text-rose-700">{dailyDraft.symptoms?.deepDyspareunia?.score ?? 5}/10</span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min="0"
+                                    max="10"
+                                    step="1"
+                                    value={dailyDraft.symptoms?.deepDyspareunia?.score ?? 5}
+                                    onChange={(e) => {
+                                      setDailyDraft((prev) => ({
+                                        ...prev,
+                                        symptoms: {
+                                          ...prev.symptoms,
+                                          deepDyspareunia: { present: true, score: Number(e.target.value) },
+                                        },
+                                      }));
+                                    }}
+                                    className="mt-1 h-2 w-full cursor-pointer appearance-none rounded-lg bg-rose-100 accent-rose-500"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
                         <div className="flex flex-col gap-3">
                           <Button
                             onClick={() => setWizardSubStep("entry")}
@@ -10882,28 +10942,142 @@ export default function HomePage() {
 
                   case "bowelBladder": {
                     const currentBristol = dailyDraft.gi?.bristolType;
+                    const dyscheziaActive = dailyDraft.symptoms?.dyschezia?.present ?? false;
+                    const dysuriaActive = dailyDraft.symptoms?.dysuria?.present ?? false;
+                    const hasAnyData = currentBristol || dyscheziaActive || dysuriaActive;
 
                     return (
                       <div>
                         {stepHeader}
-                        <div className="mb-4">
-                          <BristolScalePicker
-                            value={currentBristol as BristolType | undefined}
-                            onChange={(value) => {
-                              setDailyDraft((prev) => ({
-                                ...prev,
-                                gi: { bristolType: value },
-                              }));
-                            }}
-                          />
+                        <div className="mb-4 space-y-4">
+                          {/* Bristol scale */}
+                          <div>
+                            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-rose-400">Stuhlkonsistenz</p>
+                            <BristolScalePicker
+                              value={currentBristol as BristolType | undefined}
+                              onChange={(value) => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  gi: { bristolType: value },
+                                }));
+                              }}
+                            />
+                          </div>
+
+                          {/* Dyschezia - painful bowel movements */}
+                          <div className="overflow-hidden rounded-xl border border-rose-100 bg-white">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  symptoms: {
+                                    ...prev.symptoms,
+                                    dyschezia: dyscheziaActive ? { present: false } : { present: true, score: 5 },
+                                  },
+                                }));
+                              }}
+                              className={cn(
+                                "flex w-full items-center justify-between px-4 py-3 text-left transition",
+                                dyscheziaActive ? "bg-rose-50" : "hover:bg-rose-50/50"
+                              )}
+                            >
+                              <span className={cn("font-medium", dyscheziaActive ? "text-rose-800" : "text-rose-700")}>
+                                Schmerzen beim Stuhlgang
+                              </span>
+                              {dyscheziaActive ? (
+                                <CheckCircle2 className="h-5 w-5 text-rose-500" />
+                              ) : (
+                                <div className="h-5 w-5 rounded-full border-2 border-rose-200" />
+                              )}
+                            </button>
+                            {dyscheziaActive && (
+                              <div className="border-t border-rose-100 bg-rose-50/50 px-4 py-3">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs text-rose-600">Stärke</span>
+                                  <span className="text-sm font-bold text-rose-700">{dailyDraft.symptoms?.dyschezia?.score ?? 5}/10</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="10"
+                                  step="1"
+                                  value={dailyDraft.symptoms?.dyschezia?.score ?? 5}
+                                  onChange={(e) => {
+                                    setDailyDraft((prev) => ({
+                                      ...prev,
+                                      symptoms: {
+                                        ...prev.symptoms,
+                                        dyschezia: { present: true, score: Number(e.target.value) },
+                                      },
+                                    }));
+                                  }}
+                                  className="mt-1 h-2 w-full cursor-pointer appearance-none rounded-lg bg-rose-100 accent-rose-500"
+                                />
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Dysuria - painful urination */}
+                          <div className="overflow-hidden rounded-xl border border-rose-100 bg-white">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  symptoms: {
+                                    ...prev.symptoms,
+                                    dysuria: dysuriaActive ? { present: false } : { present: true, score: 5 },
+                                  },
+                                }));
+                              }}
+                              className={cn(
+                                "flex w-full items-center justify-between px-4 py-3 text-left transition",
+                                dysuriaActive ? "bg-rose-50" : "hover:bg-rose-50/50"
+                              )}
+                            >
+                              <span className={cn("font-medium", dysuriaActive ? "text-rose-800" : "text-rose-700")}>
+                                Schmerzen beim Wasserlassen
+                              </span>
+                              {dysuriaActive ? (
+                                <CheckCircle2 className="h-5 w-5 text-rose-500" />
+                              ) : (
+                                <div className="h-5 w-5 rounded-full border-2 border-rose-200" />
+                              )}
+                            </button>
+                            {dysuriaActive && (
+                              <div className="border-t border-rose-100 bg-rose-50/50 px-4 py-3">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs text-rose-600">Stärke</span>
+                                  <span className="text-sm font-bold text-rose-700">{dailyDraft.symptoms?.dysuria?.score ?? 5}/10</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="10"
+                                  step="1"
+                                  value={dailyDraft.symptoms?.dysuria?.score ?? 5}
+                                  onChange={(e) => {
+                                    setDailyDraft((prev) => ({
+                                      ...prev,
+                                      symptoms: {
+                                        ...prev.symptoms,
+                                        dysuria: { present: true, score: Number(e.target.value) },
+                                      },
+                                    }));
+                                  }}
+                                  className="mt-1 h-2 w-full cursor-pointer appearance-none rounded-lg bg-rose-100 accent-rose-500"
+                                />
+                              </div>
+                            )}
+                          </div>
                         </div>
                         <div className="flex flex-col gap-3">
                           <Button
                             onClick={goNext}
-                            disabled={!currentBristol}
-                            className="w-full bg-rose-600 text-white hover:bg-rose-500 disabled:opacity-50"
+                            className="w-full bg-rose-600 text-white hover:bg-rose-500"
                           >
-                            Weiter
+                            {hasAnyData ? "Weiter" : "Weiter ohne Angabe"}
                           </Button>
                           <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
                             Überspringen
