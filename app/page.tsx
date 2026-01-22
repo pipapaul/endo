@@ -828,9 +828,9 @@ const CATEGORY_COLORS: Record<
 
 /**
  * Wizard mode step configuration for guided daily check-in.
- * Each step corresponds to a core daily category (excludes optional/cervixMucus).
+ * cervixMucus is conditionally included when Billings method is enabled.
  */
-type WizardStepId = "pain" | "symptoms" | "bleeding" | "medication" | "sleep" | "bowelBladder" | "mood" | "notes";
+type WizardStepId = "pain" | "symptoms" | "bleeding" | "cervixMucus" | "medication" | "sleep" | "bowelBladder" | "mood" | "notes";
 
 interface WizardStep {
   id: WizardStepId;
@@ -839,7 +839,7 @@ interface WizardStep {
   icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
 }
 
-const WIZARD_STEPS: WizardStep[] = [
+const WIZARD_STEPS_BASE: WizardStep[] = [
   { id: "pain", title: "Schmerzen", question: "Hattest du heute Schmerzen?", icon: PainIcon },
   { id: "symptoms", title: "Symptome", question: "Hattest du heute Symptome?", icon: SymptomsIcon },
   { id: "bleeding", title: "Blutung", question: "Hattest du heute eine Blutung?", icon: PeriodIcon },
@@ -849,6 +849,14 @@ const WIZARD_STEPS: WizardStep[] = [
   { id: "mood", title: "Stimmung", question: "Wie war deine Stimmung heute?", icon: MoodIcon },
   { id: "notes", title: "Notizen", question: "Möchtest du Notizen oder Tags hinzufügen?", icon: NotesTagsIcon },
 ];
+
+/** Cervix mucus step - only included when Billings method is enabled */
+const WIZARD_STEP_CERVIX_MUCUS: WizardStep = {
+  id: "cervixMucus",
+  title: "Cervixschleim",
+  question: "Wie war dein Zervixschleim heute?",
+  icon: CervixMucusIcon,
+};
 
 const isTrackedDailyCategory = (
   categoryId: DailyCategoryId
@@ -3831,6 +3839,19 @@ export default function HomePage() {
   const [wizardMedName, setWizardMedName] = useState("");
   const [wizardMedDose, setWizardMedDose] = useState<number | undefined>(undefined);
   const [wizardMedTime, setWizardMedTime] = useState<string | undefined>(undefined);
+
+  // Compute wizard steps - includes cervixMucus when Billings method is enabled
+  const wizardSteps = useMemo<WizardStep[]>(() => {
+    if (featureFlags.billingMethod) {
+      // Insert cervixMucus after bleeding step
+      const bleedingIndex = WIZARD_STEPS_BASE.findIndex((s) => s.id === "bleeding");
+      const steps = [...WIZARD_STEPS_BASE];
+      steps.splice(bleedingIndex + 1, 0, WIZARD_STEP_CERVIX_MUCUS);
+      return steps;
+    }
+    return WIZARD_STEPS_BASE;
+  }, [featureFlags.billingMethod]);
+
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [persistWarning, setPersistWarning] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
@@ -9834,7 +9855,7 @@ export default function HomePage() {
                 {wizardSubStep === "entry" ? "Zurück" : wizardStep > 0 ? "Zurück" : "Abbrechen"}
               </Button>
               <span className="text-sm font-medium text-rose-600">
-                {wizardStep + 1} von {WIZARD_STEPS.length}
+                {wizardStep + 1} von {wizardSteps.length}
               </span>
               <Button
                 type="button"
@@ -9858,7 +9879,7 @@ export default function HomePage() {
               <div className="h-1.5 overflow-hidden rounded-full bg-rose-100">
                 <div
                   className="h-full bg-rose-500 transition-all duration-300"
-                  style={{ width: `${((wizardStep + 1) / WIZARD_STEPS.length) * 100}%` }}
+                  style={{ width: `${((wizardStep + 1) / wizardSteps.length) * 100}%` }}
                 />
               </div>
             </div>
@@ -9868,7 +9889,7 @@ export default function HomePage() {
           <main className="flex-1 overflow-auto">
             <div className="mx-auto max-w-lg px-4 py-6">
               {(() => {
-                const currentStep = WIZARD_STEPS[wizardStep];
+                const currentStep = wizardSteps[wizardStep];
                 if (!currentStep) return null;
 
                 const StepIcon = currentStep.icon;
@@ -9880,7 +9901,7 @@ export default function HomePage() {
                   setWizardMedName("");
                   setWizardMedDose(undefined);
                   setWizardMedTime(undefined);
-                  if (wizardStep < WIZARD_STEPS.length - 1) {
+                  if (wizardStep < wizardSteps.length - 1) {
                     setWizardStep((s) => s + 1);
                   } else {
                     setWizardOpen(false);
@@ -10272,11 +10293,6 @@ export default function HomePage() {
 
                     // Sub-step: entry mode for adding bleeding
                     if (wizardSubStep === "entry") {
-                      const intensityOptions: { value: SimpleBleedingIntensity; label: string; description: string }[] = [
-                        { value: "light", label: "Leicht", description: "Slipeinlage reicht" },
-                        { value: "medium", label: "Mittel", description: "Normale Binde/Tampon" },
-                        { value: "heavy", label: "Stark", description: "Häufiger Wechsel nötig" },
-                      ];
                       const currentIntensity = dailyDraft.simpleBleedingIntensity;
 
                       return (
@@ -10285,17 +10301,17 @@ export default function HomePage() {
                             <h2 className="text-lg font-semibold text-rose-900">Wie stark ist die Blutung?</h2>
                           </div>
                           <div className="mb-4 space-y-2">
-                            {intensityOptions.map((opt) => {
-                              const isSelected = currentIntensity === opt.value;
+                            {SIMPLE_BLEEDING_INTENSITIES.filter((i) => i.id !== "none").map((intensity) => {
+                              const isSelected = currentIntensity === intensity.id;
                               return (
                                 <button
-                                  key={opt.value}
+                                  key={intensity.id}
                                   type="button"
                                   onClick={() => {
                                     setDailyDraft((prev) => ({
                                       ...prev,
                                       bleeding: { ...prev.bleeding, isBleeding: true },
-                                      simpleBleedingIntensity: opt.value,
+                                      simpleBleedingIntensity: intensity.id,
                                     }));
                                   }}
                                   className={cn(
@@ -10306,10 +10322,10 @@ export default function HomePage() {
                                   )}
                                 >
                                   <div className="flex w-full items-center justify-between">
-                                    <span className="font-medium">{opt.label}</span>
+                                    <span className="font-medium">{intensity.label}</span>
                                     {isSelected && <CheckCircle2 className="h-5 w-5 text-rose-500" />}
                                   </div>
-                                  <span className="text-xs text-rose-500">{opt.description}</span>
+                                  <span className="text-xs text-rose-500">{intensity.description}</span>
                                 </button>
                               );
                             })}
@@ -10366,7 +10382,7 @@ export default function HomePage() {
                             <p className="text-sm font-medium text-rose-800">Heutige Blutung dokumentiert</p>
                             {dailyDraft.simpleBleedingIntensity && (
                               <p className="mt-1 text-xs text-rose-600">
-                                Stärke: {dailyDraft.simpleBleedingIntensity === "light" ? "Leicht" : dailyDraft.simpleBleedingIntensity === "medium" ? "Mittel" : "Stark"}
+                                Stärke: {getSimpleBleedingIntensityDefinition(dailyDraft.simpleBleedingIntensity)?.label ?? dailyDraft.simpleBleedingIntensity}
                               </p>
                             )}
                             {(dailyDraft.bleeding?.clots || dailyDraft.bleeding?.flooding) && (
@@ -10407,6 +10423,125 @@ export default function HomePage() {
                               className="w-full border-rose-200 text-rose-700"
                             >
                               Nein, keine Blutung
+                            </Button>
+                          )}
+                          <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                            Überspringen
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  case "cervixMucus": {
+                    const hasMucusData = dailyDraft.cervixMucus?.observation || dailyDraft.cervixMucus?.appearance;
+                    const observationOptions = [
+                      { value: "dry" as const, label: "Trocken", description: "Kein feuchtes Gefühl" },
+                      { value: "moist" as const, label: "Feucht", description: "Leicht feucht" },
+                      { value: "wet" as const, label: "Nass", description: "Deutlich feucht" },
+                      { value: "slippery" as const, label: "Glitschig", description: "Sehr feucht, rutschig" },
+                    ];
+                    const appearanceOptions = [
+                      { value: "none" as const, label: "Nichts", description: "Kein sichtbarer Schleim" },
+                      { value: "sticky" as const, label: "Klebrig", description: "Zäh, klebt zwischen Fingern" },
+                      { value: "creamy" as const, label: "Cremig", description: "Wie Lotion" },
+                      { value: "eggWhite" as const, label: "Spinnbar", description: "Wie Eiweiß, dehnbar" },
+                    ];
+
+                    return (
+                      <div>
+                        {stepHeader}
+                        <div className="mb-4 space-y-4">
+                          <div>
+                            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-rose-400">Empfindung</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              {observationOptions.map((opt) => {
+                                const isSelected = dailyDraft.cervixMucus?.observation === opt.value;
+                                return (
+                                  <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() => {
+                                      setDailyDraft((prev) => ({
+                                        ...prev,
+                                        cervixMucus: {
+                                          ...(prev.cervixMucus ?? {}),
+                                          observation: isSelected ? undefined : opt.value,
+                                        },
+                                      }));
+                                    }}
+                                    className={cn(
+                                      "flex flex-col items-start rounded-xl border px-3 py-2 text-left transition",
+                                      isSelected
+                                        ? "border-rose-300 bg-rose-50 text-rose-800"
+                                        : "border-rose-100 bg-white text-rose-700 hover:border-rose-200"
+                                    )}
+                                  >
+                                    <span className="font-medium">{opt.label}</span>
+                                    <span className="text-[10px] text-rose-500">{opt.description}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                          <div>
+                            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-rose-400">Aussehen</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              {appearanceOptions.map((opt) => {
+                                const isSelected = dailyDraft.cervixMucus?.appearance === opt.value;
+                                return (
+                                  <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() => {
+                                      setDailyDraft((prev) => ({
+                                        ...prev,
+                                        cervixMucus: {
+                                          ...(prev.cervixMucus ?? {}),
+                                          appearance: isSelected ? undefined : opt.value,
+                                        },
+                                      }));
+                                    }}
+                                    className={cn(
+                                      "flex flex-col items-start rounded-xl border px-3 py-2 text-left transition",
+                                      isSelected
+                                        ? "border-rose-300 bg-rose-50 text-rose-800"
+                                        : "border-rose-100 bg-white text-rose-700 hover:border-rose-200"
+                                    )}
+                                  >
+                                    <span className="font-medium">{opt.label}</span>
+                                    <span className="text-[10px] text-rose-500">{opt.description}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                        {hasMucusData && (
+                          <div className="mb-4 rounded-xl border border-teal-200 bg-teal-50/50 p-3">
+                            <p className="text-xs text-teal-700">
+                              {dailyDraft.cervixMucus?.observation && `Empfindung: ${observationOptions.find((o) => o.value === dailyDraft.cervixMucus?.observation)?.label}`}
+                              {dailyDraft.cervixMucus?.observation && dailyDraft.cervixMucus?.appearance && " · "}
+                              {dailyDraft.cervixMucus?.appearance && `Aussehen: ${appearanceOptions.find((o) => o.value === dailyDraft.cervixMucus?.appearance)?.label}`}
+                            </p>
+                          </div>
+                        )}
+                        <div className="flex flex-col gap-3">
+                          <Button onClick={goNext} className="w-full bg-rose-600 text-white hover:bg-rose-500">
+                            {hasMucusData ? "Weiter" : "Weiter ohne Angabe"}
+                          </Button>
+                          {hasMucusData && (
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  cervixMucus: undefined,
+                                }));
+                              }}
+                              className="w-full border-rose-200 text-rose-700"
+                            >
+                              Zurücksetzen
                             </Button>
                           )}
                           <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
