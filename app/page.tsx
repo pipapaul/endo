@@ -858,6 +858,33 @@ const WIZARD_STEP_CERVIX_MUCUS: WizardStep = {
   icon: CervixMucusIcon,
 };
 
+/**
+ * Micro-question configuration for wizard steps.
+ * Steps with micro-questions will be broken into focused sub-questions.
+ */
+interface MicroQuestion {
+  id: string;
+  question: string;
+  subtext?: string;
+}
+
+type MicroQuestionsConfig = Partial<Record<WizardStepId, MicroQuestion[]>>;
+
+const MICRO_QUESTIONS: MicroQuestionsConfig = {
+  bowelBladder: [
+    { id: "bristol", question: "Wie war deine Verdauung heute?", subtext: "Stuhlkonsistenz nach Bristol-Skala" },
+    { id: "dyschezia", question: "Hattest du schmerzhaften Stuhlgang?", subtext: "Druck oder Schmerzen beim Toilettengang" },
+    { id: "dysuria", question: "Hattest du Beschwerden beim Wasserlassen?", subtext: "Brennen oder Schmerzen" },
+    { id: "urinary", question: "Wie war dein Harndrang heute?", subtext: "Toilettengänge und Drang" },
+    { id: "urinaryOpt", question: "Hattest du Episoden von Dranginkontinenz?", subtext: "Ungewollter Urinverlust bei starkem Harndrang" },
+  ],
+  sleep: [
+    { id: "quality", question: "Wie hast du letzte Nacht geschlafen?", subtext: "Schlafqualität" },
+    { id: "hours", question: "Wie viele Stunden hast du geschlafen?" },
+    { id: "awakenings", question: "Wie oft bist du nachts aufgewacht?" },
+  ],
+};
+
 const isTrackedDailyCategory = (
   categoryId: DailyCategoryId
 ): categoryId is TrackableDailyCategoryId =>
@@ -3831,6 +3858,7 @@ export default function HomePage() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardStep, setWizardStep] = useState(0);
   const [wizardSubStep, setWizardSubStep] = useState<"question" | "entry">("question");
+  const [wizardMicroStep, setWizardMicroStep] = useState(0);
   // Wizard pain entry state
   const [wizardPainRegion, setWizardPainRegion] = useState<string | null>(null);
   const [wizardPainIntensity, setWizardPainIntensity] = useState(5);
@@ -3839,6 +3867,10 @@ export default function HomePage() {
   const [wizardMedName, setWizardMedName] = useState("");
   const [wizardMedDose, setWizardMedDose] = useState<number | undefined>(undefined);
   const [wizardMedTime, setWizardMedTime] = useState<string | undefined>(undefined);
+  // Wizard pain time of day state
+  const [wizardPainTimesOfDay, setWizardPainTimesOfDay] = useState<PainTimeOfDay[]>([]);
+  // Wizard urinary opt state (for yes/no flow)
+  const [wizardUrinaryOptActive, setWizardUrinaryOptActive] = useState<boolean | null>(null);
 
   // Compute wizard steps - includes cervixMucus when Billings method is enabled
   const wizardSteps = useMemo<WizardStep[]>(() => {
@@ -9837,14 +9869,53 @@ export default function HomePage() {
                 variant="ghost"
                 size="sm"
                 onClick={() => {
+                  const currentStepId = wizardSteps[wizardStep]?.id;
+                  const microQuestions = currentStepId ? MICRO_QUESTIONS[currentStepId] : undefined;
+
+                  // Get active micro-questions for current step
+                  const getActiveMicrosForStep = (stepId: WizardStepId) => {
+                    const micros = MICRO_QUESTIONS[stepId];
+                    if (!micros) return [];
+                    return micros.filter((mq) => {
+                      if (mq.id === "urinaryOpt" && !activeUrinary) return false;
+                      return true;
+                    });
+                  };
+
                   if (wizardSubStep === "entry") {
                     setWizardSubStep("question");
                     setWizardPainRegion(null);
                     setWizardPainIntensity(5);
                     setWizardPainQualities([]);
+                  } else if (microQuestions && wizardMicroStep > 0) {
+                    // Go to previous micro-question
+                    const activeMicros = getActiveMicrosForStep(currentStepId);
+                    const currentMicro = microQuestions[wizardMicroStep];
+                    const currentActiveIndex = activeMicros.findIndex((m) => m.id === currentMicro?.id);
+                    if (currentActiveIndex > 0) {
+                      const prevActiveMicro = activeMicros[currentActiveIndex - 1];
+                      const prevIndex = microQuestions.findIndex((m) => m.id === prevActiveMicro.id);
+                      setWizardMicroStep(prevIndex);
+                    } else {
+                      setWizardMicroStep(0);
+                    }
                   } else if (wizardStep > 0) {
+                    // Go to previous step
+                    const prevStepId = wizardSteps[wizardStep - 1]?.id;
+                    const prevMicros = prevStepId ? getActiveMicrosForStep(prevStepId) : [];
                     setWizardStep((s) => s - 1);
                     setWizardSubStep("question");
+                    // Set to last micro-question of previous step
+                    if (prevMicros.length > 0 && prevStepId) {
+                      const allPrevMicros = MICRO_QUESTIONS[prevStepId];
+                      if (allPrevMicros) {
+                        const lastActiveMicro = prevMicros[prevMicros.length - 1];
+                        const lastIndex = allPrevMicros.findIndex((m) => m.id === lastActiveMicro.id);
+                        setWizardMicroStep(lastIndex);
+                      }
+                    } else {
+                      setWizardMicroStep(0);
+                    }
                   } else {
                     setWizardOpen(false);
                   }
@@ -9852,7 +9923,7 @@ export default function HomePage() {
                 className="text-rose-600 hover:text-rose-800"
               >
                 <ChevronLeft className="mr-1 h-4 w-4" />
-                {wizardSubStep === "entry" ? "Zurück" : wizardStep > 0 ? "Zurück" : "Abbrechen"}
+                {wizardSubStep === "entry" ? "Zurück" : (wizardStep > 0 || wizardMicroStep > 0) ? "Zurück" : "Abbrechen"}
               </Button>
               <span className="text-sm font-medium text-rose-600">
                 {wizardStep + 1} von {wizardSteps.length}
@@ -9864,10 +9935,13 @@ export default function HomePage() {
                 onClick={() => {
                   setWizardOpen(false);
                   setWizardSubStep("question");
+                  setWizardMicroStep(0);
                   setWizardPainRegion(null);
                   setWizardPainIntensity(5);
                   setWizardPainQualities([]);
+                  setWizardPainTimesOfDay([]);
                   setWizardMedName("");
+                  setWizardUrinaryOptActive(null);
                 }}
                 className="text-rose-400 hover:text-rose-600"
               >
@@ -9882,25 +9956,74 @@ export default function HomePage() {
                   style={{ width: `${((wizardStep + 1) / wizardSteps.length) * 100}%` }}
                 />
               </div>
+              {/* Micro-progress dots (for steps with micro-questions) */}
+              {(() => {
+                const currentStepId = wizardSteps[wizardStep]?.id;
+                const microQuestions = currentStepId ? MICRO_QUESTIONS[currentStepId] : undefined;
+                if (!microQuestions) return null;
+                const activeMicros = microQuestions.filter((mq) => {
+                  if (mq.id === "urinaryOpt" && !activeUrinary) return false;
+                  return true;
+                });
+                if (activeMicros.length <= 1) return null;
+                const currentMicro = microQuestions[wizardMicroStep];
+                const currentActiveIdx = activeMicros.findIndex((m) => m.id === currentMicro?.id);
+                return (
+                  <div className="mt-2 flex justify-center gap-1.5">
+                    {activeMicros.map((_, idx) => (
+                      <div
+                        key={idx}
+                        className={cn(
+                          "h-1.5 w-6 rounded-full transition-colors",
+                          idx <= currentActiveIdx ? "bg-rose-400" : "bg-rose-200"
+                        )}
+                      />
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           </header>
 
           {/* Wizard Content */}
-          <main className="flex-1 overflow-auto">
+          <main className="flex-1 overflow-auto bg-gradient-to-b from-rose-50 to-white">
             <div className="mx-auto max-w-lg px-4 py-6">
+              {/* Wizard Card Container */}
+              <div
+                key={`${wizardStep}-${wizardMicroStep}-${wizardSubStep}`}
+                className="wizard-card rounded-2xl border border-rose-100 bg-white p-6 shadow-lg shadow-rose-100/50"
+              >
               {(() => {
                 const currentStep = wizardSteps[wizardStep];
                 if (!currentStep) return null;
 
                 const StepIcon = currentStep.icon;
-                const goNext = () => {
+                const microQuestions = MICRO_QUESTIONS[currentStep.id];
+                const currentMicro = microQuestions?.[wizardMicroStep];
+
+                // Get active micro-questions (filtering out urinaryOpt if feature flag inactive)
+                const getActiveMicroQuestions = () => {
+                  if (!microQuestions) return [];
+                  return microQuestions.filter((mq) => {
+                    if (mq.id === "urinaryOpt" && !activeUrinary) return false;
+                    return true;
+                  });
+                };
+                const activeMicros = getActiveMicroQuestions();
+                const activeMicroIndex = currentMicro ? activeMicros.findIndex((m) => m.id === currentMicro.id) : 0;
+
+                // Go to next main step (resets all temp state)
+                const goNextStep = () => {
                   setWizardSubStep("question");
+                  setWizardMicroStep(0);
                   setWizardPainRegion(null);
                   setWizardPainIntensity(5);
                   setWizardPainQualities([]);
+                  setWizardPainTimesOfDay([]);
                   setWizardMedName("");
                   setWizardMedDose(undefined);
                   setWizardMedTime(undefined);
+                  setWizardUrinaryOptActive(null);
                   if (wizardStep < wizardSteps.length - 1) {
                     setWizardStep((s) => s + 1);
                   } else {
@@ -9908,14 +10031,36 @@ export default function HomePage() {
                   }
                 };
 
-                // Common header for all steps
+                // Go to next micro-question or next step
+                const goNext = () => {
+                  if (microQuestions && activeMicroIndex < activeMicros.length - 1) {
+                    // Find the next active micro-question index in the original array
+                    const nextActiveMicro = activeMicros[activeMicroIndex + 1];
+                    const nextIndex = microQuestions.findIndex((m) => m.id === nextActiveMicro.id);
+                    setWizardMicroStep(nextIndex);
+                  } else {
+                    goNextStep();
+                  }
+                };
+
+                // Skip entire step (go to next main step)
+                const skipStep = () => {
+                  goNextStep();
+                };
+
+                // Common header for all steps - uses micro-question text if available
                 const stepHeader = (
-                  <div className="mb-6 text-center">
-                    <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full" style={{ backgroundColor: CATEGORY_COLORS[currentStep.id]?.pastel }}>
+                  <div className="wizard-card-content mb-6 text-center">
+                    <div className="wizard-icon-bounce mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full shadow-md" style={{ backgroundColor: CATEGORY_COLORS[currentStep.id]?.pastel }}>
                       <StepIcon className="h-7 w-7" style={{ color: CATEGORY_COLORS[currentStep.id]?.saturated }} />
                     </div>
-                    <h2 className="text-lg font-semibold text-rose-900">{currentStep.title}</h2>
-                    <p className="mt-1 text-sm text-rose-600">{currentStep.question}</p>
+                    <h2 className="text-xl font-semibold text-rose-900">{currentStep.title}</h2>
+                    <p className="mt-2 text-sm text-rose-600">
+                      {currentMicro?.question ?? currentStep.question}
+                    </p>
+                    {currentMicro?.subtext && (
+                      <p className="mt-1 text-xs text-rose-400">{currentMicro.subtext}</p>
+                    )}
                   </div>
                 );
 
@@ -10038,11 +10183,41 @@ export default function HomePage() {
                                 })}
                               </div>
                             </div>
+                            <div>
+                              <p className="mb-2 text-sm font-medium text-rose-700">Zeitraum</p>
+                              <div className="grid grid-cols-3 gap-2">
+                                {PAIN_TIMES_OF_DAY.map((time) => {
+                                  const isSelected = wizardPainTimesOfDay.includes(time);
+                                  return (
+                                    <button
+                                      key={time}
+                                      type="button"
+                                      onClick={() => {
+                                        setWizardPainTimesOfDay((prev) =>
+                                          isSelected ? prev.filter((t) => t !== time) : [...prev, time]
+                                        );
+                                      }}
+                                      className={cn(
+                                        "rounded-xl border px-3 py-2 text-sm font-medium transition",
+                                        isSelected
+                                          ? "border-rose-400 bg-rose-100 text-rose-800"
+                                          : "border-rose-200 bg-white text-rose-600 hover:border-rose-300"
+                                      )}
+                                    >
+                                      {PAIN_TIME_OF_DAY_LABEL[time]}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              {wizardPainTimesOfDay.length === 0 && (
+                                <p className="mt-1 text-xs text-rose-400">Bitte mindestens einen Zeitraum auswählen</p>
+                              )}
+                            </div>
                           </div>
                           <div className="mt-6 flex flex-col gap-3">
                             <Button
                               onClick={() => {
-                                // Add pain entry
+                                // Add pain entry with time of day
                                 setDailyDraft((prev) => {
                                   const current = prev.painRegions ?? [];
                                   return {
@@ -10053,6 +10228,8 @@ export default function HomePage() {
                                         regionId: wizardPainRegion!,
                                         nrs: wizardPainIntensity,
                                         qualities: wizardPainQualities,
+                                        timeOfDay: wizardPainTimesOfDay,
+                                        granularity: "dritteltag" as const,
                                       },
                                     ],
                                     painMapRegionIds: [...(prev.painMapRegionIds ?? []), wizardPainRegion!],
@@ -10062,9 +10239,10 @@ export default function HomePage() {
                                 setWizardPainRegion(null);
                                 setWizardPainIntensity(5);
                                 setWizardPainQualities([]);
+                                setWizardPainTimesOfDay([]);
                                 setWizardSubStep("question");
                               }}
-                              disabled={wizardPainQualities.length === 0}
+                              disabled={wizardPainQualities.length === 0 || wizardPainTimesOfDay.length === 0}
                               className="w-full bg-rose-600 text-white hover:bg-rose-500 disabled:opacity-50"
                             >
                               Schmerz speichern
@@ -10472,6 +10650,7 @@ export default function HomePage() {
                                       {isSelected && <CheckCircle2 className="h-5 w-5 text-rose-500" />}
                                     </div>
                                     <span className="text-xs text-rose-500">{intensity.description}</span>
+                                    <span className="mt-0.5 text-xs text-rose-400">{intensity.productEquivalent}</span>
                                   </button>
                                 );
                               })}
@@ -11124,13 +11303,15 @@ export default function HomePage() {
                     const currentHours = dailyDraft.sleep?.hours;
                     const currentAwakenings = dailyDraft.sleep?.awakenings;
 
-                    return (
-                      <div>
-                        {stepHeader}
-                        <div className="space-y-5">
-                          {/* Sleep quality emoji picker */}
-                          <div>
-                            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-rose-400">Schlafqualität</p>
+                    // Micro-question based rendering
+                    const sleepMicroId = currentMicro?.id;
+
+                    // Micro 1: Sleep quality
+                    if (sleepMicroId === "quality") {
+                      return (
+                        <div>
+                          {stepHeader}
+                          <div className="mb-6">
                             <SleepQualityPicker
                               value={currentSleepQuality}
                               onChange={(value) => {
@@ -11138,41 +11319,72 @@ export default function HomePage() {
                                   ...prev,
                                   sleep: { ...prev.sleep, quality: value },
                                 }));
+                                // Auto-advance after selection
+                                setTimeout(goNext, 300);
                               }}
                             />
                           </div>
+                          <div className="flex flex-col gap-3">
+                            <Button variant="ghost" onClick={skipStep} className="w-full text-rose-400">
+                              Überspringen
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    }
 
-                          {/* Hours slider */}
-                          <div>
-                            <div className="mb-2 flex items-center justify-between">
-                              <span className="text-xs font-medium uppercase tracking-wide text-rose-400">Stunden geschlafen</span>
-                              <span className="text-sm font-bold text-rose-600">{currentHours ?? "–"} h</span>
-                            </div>
-                            <input
-                              type="range"
-                              min="0"
-                              max="12"
-                              step="0.5"
-                              value={currentHours ?? 7}
-                              onChange={(e) => {
-                                setDailyDraft((prev) => ({
-                                  ...prev,
-                                  sleep: { ...prev.sleep, hours: Number(e.target.value) },
-                                }));
-                              }}
-                              className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-rose-100 accent-rose-500"
-                            />
-                            <div className="mt-1 flex justify-between text-xs text-rose-400">
-                              <span>0</span>
-                              <span>12</span>
+                    // Micro 2: Hours
+                    if (sleepMicroId === "hours") {
+                      return (
+                        <div>
+                          {stepHeader}
+                          <div className="mb-6">
+                            <div className="rounded-xl border border-rose-100 bg-white p-6">
+                              <div className="mb-4 text-center">
+                                <span className="text-4xl font-bold text-rose-700">{currentHours ?? 7}</span>
+                                <span className="ml-1 text-xl text-rose-500">Stunden</span>
+                              </div>
+                              <input
+                                type="range"
+                                min="0"
+                                max="12"
+                                step="0.5"
+                                value={currentHours ?? 7}
+                                onChange={(e) => {
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    sleep: { ...prev.sleep, hours: Number(e.target.value) },
+                                  }));
+                                }}
+                                className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-rose-100 accent-rose-500"
+                              />
+                              <div className="mt-2 flex justify-between text-xs text-rose-400">
+                                <span>0h</span>
+                                <span>6h</span>
+                                <span>12h</span>
+                              </div>
                             </div>
                           </div>
+                          <div className="flex flex-col gap-3">
+                            <Button
+                              onClick={goNext}
+                              className="w-full bg-rose-600 text-white hover:bg-rose-500"
+                            >
+                              Weiter
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    }
 
-                          {/* Awakenings stepper */}
-                          <div>
-                            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-rose-400">Nachts aufgewacht</p>
-                            <div className="flex items-center gap-3">
-                              <div className="flex items-center gap-2">
+                    // Micro 3: Awakenings
+                    if (sleepMicroId === "awakenings") {
+                      return (
+                        <div>
+                          {stepHeader}
+                          <div className="mb-6">
+                            <div className="rounded-xl border border-rose-100 bg-white p-6">
+                              <div className="flex items-center justify-center gap-6">
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -11181,13 +11393,16 @@ export default function HomePage() {
                                       sleep: { ...prev.sleep, awakenings: Math.max(0, (prev.sleep?.awakenings ?? 0) - 1) },
                                     }));
                                   }}
-                                  className="flex h-10 w-10 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50"
+                                  className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50"
                                 >
-                                  <Minus className="h-4 w-4" />
+                                  <Minus className="h-6 w-6" />
                                 </button>
-                                <span className="w-8 text-center text-lg font-bold text-rose-700">
-                                  {currentAwakenings ?? 0}
-                                </span>
+                                <div className="text-center">
+                                  <span className="text-5xl font-bold text-rose-700">
+                                    {currentAwakenings ?? 0}
+                                  </span>
+                                  <p className="mt-1 text-sm text-rose-500">mal</p>
+                                </div>
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -11196,62 +11411,63 @@ export default function HomePage() {
                                       sleep: { ...prev.sleep, awakenings: (prev.sleep?.awakenings ?? 0) + 1 },
                                     }));
                                   }}
-                                  className="flex h-10 w-10 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50"
+                                  className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50"
                                 >
-                                  <Plus className="h-4 w-4" />
+                                  <Plus className="h-6 w-6" />
                                 </button>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setDailyDraft((prev) => ({
-                                    ...prev,
-                                    sleep: { ...prev.sleep, awakenings: 0 },
-                                  }));
-                                }}
-                                className={cn(
-                                  "rounded-full border px-3 py-1.5 text-sm font-medium transition",
-                                  currentAwakenings === 0
-                                    ? "border-rose-400 bg-rose-100 text-rose-800"
-                                    : "border-rose-200 bg-white text-rose-600 hover:border-rose-300"
-                                )}
-                              >
-                                Nie
-                              </button>
+                              <div className="mt-4 flex justify-center">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDailyDraft((prev) => ({
+                                      ...prev,
+                                      sleep: { ...prev.sleep, awakenings: 0 },
+                                    }));
+                                    goNext();
+                                  }}
+                                  className={cn(
+                                    "rounded-full border px-4 py-2 text-sm font-medium transition",
+                                    currentAwakenings === 0
+                                      ? "border-rose-400 bg-rose-100 text-rose-800"
+                                      : "border-rose-200 bg-white text-rose-600 hover:border-rose-300"
+                                  )}
+                                >
+                                  Gar nicht aufgewacht
+                                </button>
+                              </div>
                             </div>
                           </div>
+                          <div className="flex flex-col gap-3">
+                            <Button
+                              onClick={goNext}
+                              className="w-full bg-rose-600 text-white hover:bg-rose-500"
+                            >
+                              Weiter
+                            </Button>
+                          </div>
                         </div>
+                      );
+                    }
 
-                        <div className="mt-6 flex flex-col gap-3">
-                          <Button
-                            onClick={goNext}
-                            className="w-full bg-rose-600 text-white hover:bg-rose-500"
-                          >
-                            Weiter
-                          </Button>
-                          <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
-                            Überspringen
-                          </Button>
-                        </div>
-                      </div>
-                    );
+                    // Fallback (should not happen)
+                    return null;
                   }
 
                   case "bowelBladder": {
                     const currentBristol = dailyDraft.gi?.bristolType;
                     const dyscheziaActive = dailyDraft.symptoms?.dyschezia?.present ?? false;
                     const dysuriaActive = dailyDraft.symptoms?.dysuria?.present ?? false;
-                    const hasUrinaryData = dailyDraft.urinary?.freqPerDay !== undefined || dailyDraft.urinary?.urgency !== undefined;
-                    const hasUrinaryOptData = dailyDraft.urinaryOpt?.leaksCount !== undefined || dailyDraft.urinaryOpt?.padsCount !== undefined || dailyDraft.urinaryOpt?.nocturia !== undefined;
-                    const hasAnyData = currentBristol || dyscheziaActive || dysuriaActive || hasUrinaryData || hasUrinaryOptData;
 
-                    return (
-                      <div>
-                        {stepHeader}
-                        <div className="mb-4 space-y-4">
-                          {/* Bristol scale */}
-                          <div>
-                            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-rose-400">Stuhlkonsistenz</p>
+                    // Micro-question based rendering
+                    const microId = currentMicro?.id;
+
+                    // Micro 1: Bristol scale
+                    if (microId === "bristol") {
+                      return (
+                        <div>
+                          {stepHeader}
+                          <div className="mb-6">
                             <BristolScalePicker
                               value={currentBristol as BristolType | undefined}
                               onChange={(value) => {
@@ -11262,39 +11478,75 @@ export default function HomePage() {
                               }}
                             />
                           </div>
-
-                          {/* Dyschezia - painful bowel movements */}
-                          <div className="overflow-hidden rounded-xl border border-rose-100 bg-white">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setDailyDraft((prev) => ({
-                                  ...prev,
-                                  symptoms: {
-                                    ...prev.symptoms,
-                                    dyschezia: dyscheziaActive ? { present: false } : { present: true, score: 5 },
-                                  },
-                                }));
-                              }}
-                              className={cn(
-                                "flex w-full items-center justify-between px-4 py-3 text-left transition",
-                                dyscheziaActive ? "bg-rose-50" : "hover:bg-rose-50/50"
-                              )}
+                          <div className="flex flex-col gap-3">
+                            <Button
+                              onClick={goNext}
+                              className="w-full bg-rose-600 text-white hover:bg-rose-500"
                             >
-                              <span className={cn("font-medium", dyscheziaActive ? "text-rose-800" : "text-rose-700")}>
-                                {TERMS.dyschezia.label}
-                              </span>
-                              {dyscheziaActive ? (
-                                <CheckCircle2 className="h-5 w-5 text-rose-500" />
-                              ) : (
-                                <div className="h-5 w-5 rounded-full border-2 border-rose-200" />
-                              )}
-                            </button>
+                              Weiter
+                            </Button>
+                            <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                              Kein Stuhlgang heute
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // Micro 2: Dyschezia
+                    if (microId === "dyschezia") {
+                      return (
+                        <div>
+                          {stepHeader}
+                          <div className="mb-6 space-y-4">
+                            <div className="flex justify-center gap-4">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    symptoms: {
+                                      ...prev.symptoms,
+                                      dyschezia: { present: false },
+                                    },
+                                  }));
+                                  goNext();
+                                }}
+                                className={cn(
+                                  "flex-1 rounded-xl border-2 px-6 py-4 text-center font-medium transition",
+                                  !dyscheziaActive
+                                    ? "border-rose-300 bg-rose-50 text-rose-800"
+                                    : "border-rose-200 bg-white text-rose-600 hover:border-rose-300"
+                                )}
+                              >
+                                Nein
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    symptoms: {
+                                      ...prev.symptoms,
+                                      dyschezia: { present: true, score: prev.symptoms?.dyschezia?.score ?? 5 },
+                                    },
+                                  }));
+                                }}
+                                className={cn(
+                                  "flex-1 rounded-xl border-2 px-6 py-4 text-center font-medium transition",
+                                  dyscheziaActive
+                                    ? "border-rose-300 bg-rose-50 text-rose-800"
+                                    : "border-rose-200 bg-white text-rose-600 hover:border-rose-300"
+                                )}
+                              >
+                                Ja
+                              </button>
+                            </div>
                             {dyscheziaActive && (
-                              <div className="border-t border-rose-100 bg-rose-50/50 px-4 py-3">
+                              <div className="rounded-xl border border-rose-100 bg-white p-4">
                                 <div className="flex items-center justify-between">
-                                  <span className="text-xs text-rose-600">Stärke</span>
-                                  <span className="text-sm font-bold text-rose-700">{dailyDraft.symptoms?.dyschezia?.score ?? 5}/10</span>
+                                  <span className="text-sm text-rose-600">Stärke</span>
+                                  <span className="text-lg font-bold text-rose-700">{dailyDraft.symptoms?.dyschezia?.score ?? 5}/10</span>
                                 </div>
                                 <input
                                   type="range"
@@ -11311,44 +11563,77 @@ export default function HomePage() {
                                       },
                                     }));
                                   }}
-                                  className="mt-1 h-2 w-full cursor-pointer appearance-none rounded-lg bg-rose-100 accent-rose-500"
+                                  className="mt-2 h-2 w-full cursor-pointer appearance-none rounded-lg bg-rose-100 accent-rose-500"
                                 />
                               </div>
                             )}
                           </div>
-
-                          {/* Dysuria - painful urination */}
-                          <div className="overflow-hidden rounded-xl border border-rose-100 bg-white">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setDailyDraft((prev) => ({
-                                  ...prev,
-                                  symptoms: {
-                                    ...prev.symptoms,
-                                    dysuria: dysuriaActive ? { present: false } : { present: true, score: 5 },
-                                  },
-                                }));
-                              }}
-                              className={cn(
-                                "flex w-full items-center justify-between px-4 py-3 text-left transition",
-                                dysuriaActive ? "bg-rose-50" : "hover:bg-rose-50/50"
-                              )}
+                          <div className="flex flex-col gap-3">
+                            <Button
+                              onClick={goNext}
+                              className="w-full bg-rose-600 text-white hover:bg-rose-500"
                             >
-                              <span className={cn("font-medium", dysuriaActive ? "text-rose-800" : "text-rose-700")}>
-                                {TERMS.dysuria.label}
-                              </span>
-                              {dysuriaActive ? (
-                                <CheckCircle2 className="h-5 w-5 text-rose-500" />
-                              ) : (
-                                <div className="h-5 w-5 rounded-full border-2 border-rose-200" />
-                              )}
-                            </button>
+                              Weiter
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // Micro 3: Dysuria
+                    if (microId === "dysuria") {
+                      return (
+                        <div>
+                          {stepHeader}
+                          <div className="mb-6 space-y-4">
+                            <div className="flex justify-center gap-4">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    symptoms: {
+                                      ...prev.symptoms,
+                                      dysuria: { present: false },
+                                    },
+                                  }));
+                                  goNext();
+                                }}
+                                className={cn(
+                                  "flex-1 rounded-xl border-2 px-6 py-4 text-center font-medium transition",
+                                  !dysuriaActive
+                                    ? "border-rose-300 bg-rose-50 text-rose-800"
+                                    : "border-rose-200 bg-white text-rose-600 hover:border-rose-300"
+                                )}
+                              >
+                                Nein
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    symptoms: {
+                                      ...prev.symptoms,
+                                      dysuria: { present: true, score: prev.symptoms?.dysuria?.score ?? 5 },
+                                    },
+                                  }));
+                                }}
+                                className={cn(
+                                  "flex-1 rounded-xl border-2 px-6 py-4 text-center font-medium transition",
+                                  dysuriaActive
+                                    ? "border-rose-300 bg-rose-50 text-rose-800"
+                                    : "border-rose-200 bg-white text-rose-600 hover:border-rose-300"
+                                )}
+                              >
+                                Ja
+                              </button>
+                            </div>
                             {dysuriaActive && (
-                              <div className="border-t border-rose-100 bg-rose-50/50 px-4 py-3">
+                              <div className="rounded-xl border border-rose-100 bg-white p-4">
                                 <div className="flex items-center justify-between">
-                                  <span className="text-xs text-rose-600">Stärke</span>
-                                  <span className="text-sm font-bold text-rose-700">{dailyDraft.symptoms?.dysuria?.score ?? 5}/10</span>
+                                  <span className="text-sm text-rose-600">Stärke</span>
+                                  <span className="text-lg font-bold text-rose-700">{dailyDraft.symptoms?.dysuria?.score ?? 5}/10</span>
                                 </div>
                                 <input
                                   type="range"
@@ -11365,144 +11650,272 @@ export default function HomePage() {
                                       },
                                     }));
                                   }}
-                                  className="mt-1 h-2 w-full cursor-pointer appearance-none rounded-lg bg-rose-100 accent-rose-500"
+                                  className="mt-2 h-2 w-full cursor-pointer appearance-none rounded-lg bg-rose-100 accent-rose-500"
                                 />
                               </div>
                             )}
                           </div>
-
-                          {/* Urinary frequency */}
-                          <div className="rounded-xl border border-rose-100 bg-white p-4">
-                            <p className="mb-2 text-sm font-medium text-rose-800">{TERMS.urinary_freq.label}</p>
-                            <input
-                              type="number"
-                              min={0}
-                              step={1}
-                              placeholder="z.B. 8"
-                              value={dailyDraft.urinary?.freqPerDay ?? ""}
-                              onChange={(e) => {
-                                setDailyDraft((prev) => ({
-                                  ...prev,
-                                  urinary: {
-                                    ...(prev.urinary ?? {}),
-                                    freqPerDay: e.target.value ? Number(e.target.value) : undefined,
-                                  },
-                                }));
-                              }}
-                              className="w-full rounded-lg border border-rose-200 px-3 py-2 text-rose-800 placeholder-rose-300 focus:border-rose-400 focus:outline-none focus:ring-1 focus:ring-rose-400"
-                            />
+                          <div className="flex flex-col gap-3">
+                            <Button
+                              onClick={goNext}
+                              className="w-full bg-rose-600 text-white hover:bg-rose-500"
+                            >
+                              Weiter
+                            </Button>
                           </div>
+                        </div>
+                      );
+                    }
 
-                          {/* Urinary urgency */}
-                          <div className="rounded-xl border border-rose-100 bg-white p-4">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-medium text-rose-800">{TERMS.urinary_urgency.label}</span>
-                              <span className="text-sm font-bold text-rose-700">{dailyDraft.urinary?.urgency ?? 0}/10</span>
-                            </div>
-                            <input
-                              type="range"
-                              min="0"
-                              max="10"
-                              step="1"
-                              value={dailyDraft.urinary?.urgency ?? 0}
-                              onChange={(e) => {
-                                setDailyDraft((prev) => ({
-                                  ...prev,
-                                  urinary: {
-                                    ...(prev.urinary ?? {}),
-                                    urgency: Number(e.target.value),
-                                  },
-                                }));
-                              }}
-                              className="mt-2 h-2 w-full cursor-pointer appearance-none rounded-lg bg-rose-100 accent-rose-500"
-                            />
-                          </div>
-
-                          {/* Dranginkontinenz section - only if feature flag active */}
-                          {activeUrinary && (
-                            <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-4">
-                              <p className="mb-3 text-sm font-medium text-rose-800">Dranginkontinenz</p>
-                              <div className="space-y-3">
-                                {/* Leaks count */}
-                                <div>
-                                  <label className="mb-1 block text-xs text-rose-600">{MODULE_TERMS.urinaryOpt.leaksCount.label}</label>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={1}
-                                    placeholder="0"
-                                    value={dailyDraft.urinaryOpt?.leaksCount ?? ""}
-                                    onChange={(e) => {
-                                      setDailyDraft((prev) => ({
-                                        ...prev,
-                                        urinaryOpt: {
-                                          ...(prev.urinaryOpt ?? {}),
-                                          leaksCount: e.target.value ? Number(e.target.value) : undefined,
-                                        },
-                                      }));
-                                    }}
-                                    className="w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-rose-800 placeholder-rose-300 focus:border-rose-400 focus:outline-none"
-                                  />
+                    // Micro 4: Urinary frequency + urgency
+                    if (microId === "urinary") {
+                      const freqValue = dailyDraft.urinary?.freqPerDay ?? 0;
+                      return (
+                        <div>
+                          {stepHeader}
+                          <div className="mb-6 space-y-4">
+                            {/* Urinary frequency - stepper */}
+                            <div className="rounded-xl border border-rose-100 bg-white p-4">
+                              <p className="mb-3 text-center text-sm font-medium text-rose-800">{TERMS.urinary_freq.label}</p>
+                              <div className="flex items-center justify-center gap-5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDailyDraft((prev) => ({
+                                      ...prev,
+                                      urinary: {
+                                        ...(prev.urinary ?? {}),
+                                        freqPerDay: Math.max(0, (prev.urinary?.freqPerDay ?? 0) - 1),
+                                      },
+                                    }));
+                                  }}
+                                  className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50"
+                                >
+                                  <Minus className="h-5 w-5" />
+                                </button>
+                                <div className="text-center">
+                                  <span className="text-4xl font-bold text-rose-700">{freqValue}</span>
+                                  <p className="mt-0.5 text-xs text-rose-500">pro Tag</p>
                                 </div>
-                                {/* Pads count */}
-                                <div>
-                                  <label className="mb-1 block text-xs text-rose-600">{MODULE_TERMS.urinaryOpt.padsCount.label}</label>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={1}
-                                    placeholder="0"
-                                    value={dailyDraft.urinaryOpt?.padsCount ?? ""}
-                                    onChange={(e) => {
-                                      setDailyDraft((prev) => ({
-                                        ...prev,
-                                        urinaryOpt: {
-                                          ...(prev.urinaryOpt ?? {}),
-                                          padsCount: e.target.value ? Number(e.target.value) : undefined,
-                                        },
-                                      }));
-                                    }}
-                                    className="w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-rose-800 placeholder-rose-300 focus:border-rose-400 focus:outline-none"
-                                  />
-                                </div>
-                                {/* Nocturia */}
-                                <div>
-                                  <label className="mb-1 block text-xs text-rose-600">{MODULE_TERMS.urinaryOpt.nocturia.label}</label>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={1}
-                                    placeholder="0"
-                                    value={dailyDraft.urinaryOpt?.nocturia ?? ""}
-                                    onChange={(e) => {
-                                      setDailyDraft((prev) => ({
-                                        ...prev,
-                                        urinaryOpt: {
-                                          ...(prev.urinaryOpt ?? {}),
-                                          nocturia: e.target.value ? Number(e.target.value) : undefined,
-                                        },
-                                      }));
-                                    }}
-                                    className="w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-rose-800 placeholder-rose-300 focus:border-rose-400 focus:outline-none"
-                                  />
-                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDailyDraft((prev) => ({
+                                      ...prev,
+                                      urinary: {
+                                        ...(prev.urinary ?? {}),
+                                        freqPerDay: (prev.urinary?.freqPerDay ?? 0) + 1,
+                                      },
+                                    }));
+                                  }}
+                                  className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50"
+                                >
+                                  <Plus className="h-5 w-5" />
+                                </button>
                               </div>
                             </div>
-                          )}
+
+                            {/* Urinary urgency */}
+                            <div className="rounded-xl border border-rose-100 bg-white p-4">
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm font-medium text-rose-800">{TERMS.urinary_urgency.label}</span>
+                                <span className="text-lg font-bold text-rose-700">{dailyDraft.urinary?.urgency ?? 0}/10</span>
+                              </div>
+                              <input
+                                type="range"
+                                min="0"
+                                max="10"
+                                step="1"
+                                value={dailyDraft.urinary?.urgency ?? 0}
+                                onChange={(e) => {
+                                  setDailyDraft((prev) => ({
+                                    ...prev,
+                                    urinary: {
+                                      ...(prev.urinary ?? {}),
+                                      urgency: Number(e.target.value),
+                                    },
+                                  }));
+                                }}
+                                className="mt-2 h-2 w-full cursor-pointer appearance-none rounded-lg bg-rose-100 accent-rose-500"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex flex-col gap-3">
+                            <Button
+                              onClick={goNext}
+                              className="w-full bg-rose-600 text-white hover:bg-rose-500"
+                            >
+                              Weiter
+                            </Button>
+                            <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                              Überspringen
+                            </Button>
+                          </div>
                         </div>
-                        <div className="flex flex-col gap-3">
-                          <Button
-                            onClick={goNext}
-                            className="w-full bg-rose-600 text-white hover:bg-rose-500"
-                          >
-                            {hasAnyData ? "Weiter" : "Weiter ohne Angabe"}
-                          </Button>
-                          <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
-                            Überspringen
-                          </Button>
+                      );
+                    }
+
+                    // Micro 5: Dranginkontinenz (urinaryOpt) - only if feature flag active
+                    if (microId === "urinaryOpt" && activeUrinary) {
+                      // First ask yes/no, then show follow-up questions if yes
+                      if (wizardUrinaryOptActive === null) {
+                        return (
+                          <div>
+                            {stepHeader}
+                            <div className="mb-6 space-y-4">
+                              <div className="flex justify-center gap-4">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setWizardUrinaryOptActive(false);
+                                    goNext();
+                                  }}
+                                  className="flex-1 rounded-xl border-2 border-rose-200 bg-white px-6 py-4 text-center font-medium text-rose-600 transition hover:border-rose-300"
+                                >
+                                  Nein
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setWizardUrinaryOptActive(true)}
+                                  className="flex-1 rounded-xl border-2 border-rose-200 bg-white px-6 py-4 text-center font-medium text-rose-600 transition hover:border-rose-300"
+                                >
+                                  Ja
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // Show follow-up questions if yes
+                      const leaksValue = dailyDraft.urinaryOpt?.leaksCount ?? 0;
+                      const padsValue = dailyDraft.urinaryOpt?.padsCount ?? 0;
+                      const nocturiaValue = dailyDraft.urinaryOpt?.nocturia ?? 0;
+
+                      // Helper component for number stepper
+                      const NumberStepper = ({ label, value, onDecrement, onIncrement, unit }: { label: string; value: number; onDecrement: () => void; onIncrement: () => void; unit: string }) => (
+                        <div className="rounded-xl border border-rose-100 bg-rose-50/30 p-3">
+                          <p className="mb-2 text-center text-xs font-medium text-rose-700">{label}</p>
+                          <div className="flex items-center justify-center gap-4">
+                            <button
+                              type="button"
+                              onClick={onDecrement}
+                              className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50"
+                            >
+                              <Minus className="h-4 w-4" />
+                            </button>
+                            <div className="text-center">
+                              <span className="text-3xl font-bold text-rose-700">{value}</span>
+                              <p className="text-xs text-rose-500">{unit}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={onIncrement}
+                              className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    );
+                      );
+
+                      return (
+                        <div>
+                          <div className="wizard-card-content mb-6 text-center">
+                            <div className="wizard-icon-bounce mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full shadow-md" style={{ backgroundColor: CATEGORY_COLORS[currentStep.id]?.pastel }}>
+                              <StepIcon className="h-7 w-7" style={{ color: CATEGORY_COLORS[currentStep.id]?.saturated }} />
+                            </div>
+                            <h2 className="text-xl font-semibold text-rose-900">{currentStep.title}</h2>
+                            <p className="mt-2 text-sm text-rose-600">Details zur Dranginkontinenz</p>
+                          </div>
+                          <div className="mb-6 space-y-3">
+                            {/* Leaks count */}
+                            <NumberStepper
+                              label={MODULE_TERMS.urinaryOpt.leaksCount.label}
+                              value={leaksValue}
+                              onDecrement={() => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  urinaryOpt: {
+                                    ...(prev.urinaryOpt ?? {}),
+                                    leaksCount: Math.max(0, (prev.urinaryOpt?.leaksCount ?? 0) - 1),
+                                  },
+                                }));
+                              }}
+                              onIncrement={() => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  urinaryOpt: {
+                                    ...(prev.urinaryOpt ?? {}),
+                                    leaksCount: (prev.urinaryOpt?.leaksCount ?? 0) + 1,
+                                  },
+                                }));
+                              }}
+                              unit="mal"
+                            />
+                            {/* Pads count */}
+                            <NumberStepper
+                              label={MODULE_TERMS.urinaryOpt.padsCount.label}
+                              value={padsValue}
+                              onDecrement={() => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  urinaryOpt: {
+                                    ...(prev.urinaryOpt ?? {}),
+                                    padsCount: Math.max(0, (prev.urinaryOpt?.padsCount ?? 0) - 1),
+                                  },
+                                }));
+                              }}
+                              onIncrement={() => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  urinaryOpt: {
+                                    ...(prev.urinaryOpt ?? {}),
+                                    padsCount: (prev.urinaryOpt?.padsCount ?? 0) + 1,
+                                  },
+                                }));
+                              }}
+                              unit="Stück"
+                            />
+                            {/* Nocturia */}
+                            <NumberStepper
+                              label={MODULE_TERMS.urinaryOpt.nocturia.label}
+                              value={nocturiaValue}
+                              onDecrement={() => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  urinaryOpt: {
+                                    ...(prev.urinaryOpt ?? {}),
+                                    nocturia: Math.max(0, (prev.urinaryOpt?.nocturia ?? 0) - 1),
+                                  },
+                                }));
+                              }}
+                              onIncrement={() => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  urinaryOpt: {
+                                    ...(prev.urinaryOpt ?? {}),
+                                    nocturia: (prev.urinaryOpt?.nocturia ?? 0) + 1,
+                                  },
+                                }));
+                              }}
+                              unit="mal"
+                            />
+                          </div>
+                          <div className="flex flex-col gap-3">
+                            <Button
+                              onClick={goNext}
+                              className="w-full bg-rose-600 text-white hover:bg-rose-500"
+                            >
+                              Weiter
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // Fallback (should not happen)
+                    return null;
                   }
 
                   case "mood": {
@@ -11660,6 +12073,7 @@ export default function HomePage() {
                     return null;
                 }
               })()}
+              </div>
             </div>
           </main>
         </div>

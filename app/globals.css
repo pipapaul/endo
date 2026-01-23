@@ -393,3 +393,58 @@ textarea:focus-visible {
     transform: rotateY(360deg) rotateX(8deg) scale(1);
   }
 }
+
+/* Wizard card animations */
+@keyframes wizard-card-enter {
+  0% {
+    opacity: 0;
+    transform: translateX(20px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes wizard-card-exit {
+  0% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-20px) scale(0.98);
+  }
+}
+
+@keyframes wizard-fade-in {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes wizard-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+.wizard-card {
+  animation: wizard-card-enter 0.3s ease-out;
+}
+
+.wizard-card-content {
+  animation: wizard-fade-in 0.25s ease-out 0.1s both;
+}
+
+.wizard-icon-bounce {
+  animation: wizard-pulse 2s ease-in-out infinite;
+}
