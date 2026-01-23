@@ -876,7 +876,7 @@ const MICRO_QUESTIONS: MicroQuestionsConfig = {
     { id: "dyschezia", question: "Hattest du schmerzhaften Stuhlgang?", subtext: "Druck oder Schmerzen beim Toilettengang" },
     { id: "dysuria", question: "Hattest du Beschwerden beim Wasserlassen?", subtext: "Brennen oder Schmerzen" },
     { id: "urinary", question: "Wie war dein Harndrang heute?", subtext: "Toilettengänge und Drang" },
-    { id: "urinaryOpt", question: "Weitere Blasenbeschwerden?", subtext: "Dranginkontinenz-Details" },
+    { id: "urinaryOpt", question: "Hattest du Episoden von Dranginkontinenz?", subtext: "Ungewollter Urinverlust bei starkem Harndrang" },
   ],
   sleep: [
     { id: "quality", question: "Wie hast du letzte Nacht geschlafen?", subtext: "Schlafqualität" },
@@ -3867,6 +3867,10 @@ export default function HomePage() {
   const [wizardMedName, setWizardMedName] = useState("");
   const [wizardMedDose, setWizardMedDose] = useState<number | undefined>(undefined);
   const [wizardMedTime, setWizardMedTime] = useState<string | undefined>(undefined);
+  // Wizard pain time of day state
+  const [wizardPainTimesOfDay, setWizardPainTimesOfDay] = useState<PainTimeOfDay[]>([]);
+  // Wizard urinary opt state (for yes/no flow)
+  const [wizardUrinaryOptActive, setWizardUrinaryOptActive] = useState<boolean | null>(null);
 
   // Compute wizard steps - includes cervixMucus when Billings method is enabled
   const wizardSteps = useMemo<WizardStep[]>(() => {
@@ -9935,7 +9939,9 @@ export default function HomePage() {
                   setWizardPainRegion(null);
                   setWizardPainIntensity(5);
                   setWizardPainQualities([]);
+                  setWizardPainTimesOfDay([]);
                   setWizardMedName("");
+                  setWizardUrinaryOptActive(null);
                 }}
                 className="text-rose-400 hover:text-rose-600"
               >
@@ -9980,8 +9986,13 @@ export default function HomePage() {
           </header>
 
           {/* Wizard Content */}
-          <main className="flex-1 overflow-auto">
+          <main className="flex-1 overflow-auto bg-gradient-to-b from-rose-50 to-white">
             <div className="mx-auto max-w-lg px-4 py-6">
+              {/* Wizard Card Container */}
+              <div
+                key={`${wizardStep}-${wizardMicroStep}-${wizardSubStep}`}
+                className="wizard-card rounded-2xl border border-rose-100 bg-white p-6 shadow-lg shadow-rose-100/50"
+              >
               {(() => {
                 const currentStep = wizardSteps[wizardStep];
                 if (!currentStep) return null;
@@ -10008,9 +10019,11 @@ export default function HomePage() {
                   setWizardPainRegion(null);
                   setWizardPainIntensity(5);
                   setWizardPainQualities([]);
+                  setWizardPainTimesOfDay([]);
                   setWizardMedName("");
                   setWizardMedDose(undefined);
                   setWizardMedTime(undefined);
+                  setWizardUrinaryOptActive(null);
                   if (wizardStep < wizardSteps.length - 1) {
                     setWizardStep((s) => s + 1);
                   } else {
@@ -10037,16 +10050,16 @@ export default function HomePage() {
 
                 // Common header for all steps - uses micro-question text if available
                 const stepHeader = (
-                  <div className="mb-6 text-center">
-                    <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full" style={{ backgroundColor: CATEGORY_COLORS[currentStep.id]?.pastel }}>
+                  <div className="wizard-card-content mb-6 text-center">
+                    <div className="wizard-icon-bounce mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full shadow-md" style={{ backgroundColor: CATEGORY_COLORS[currentStep.id]?.pastel }}>
                       <StepIcon className="h-7 w-7" style={{ color: CATEGORY_COLORS[currentStep.id]?.saturated }} />
                     </div>
-                    <h2 className="text-lg font-semibold text-rose-900">{currentStep.title}</h2>
-                    <p className="mt-1 text-sm text-rose-600">
+                    <h2 className="text-xl font-semibold text-rose-900">{currentStep.title}</h2>
+                    <p className="mt-2 text-sm text-rose-600">
                       {currentMicro?.question ?? currentStep.question}
                     </p>
                     {currentMicro?.subtext && (
-                      <p className="mt-0.5 text-xs text-rose-400">{currentMicro.subtext}</p>
+                      <p className="mt-1 text-xs text-rose-400">{currentMicro.subtext}</p>
                     )}
                   </div>
                 );
@@ -10170,11 +10183,41 @@ export default function HomePage() {
                                 })}
                               </div>
                             </div>
+                            <div>
+                              <p className="mb-2 text-sm font-medium text-rose-700">Zeitraum</p>
+                              <div className="grid grid-cols-3 gap-2">
+                                {PAIN_TIMES_OF_DAY.map((time) => {
+                                  const isSelected = wizardPainTimesOfDay.includes(time);
+                                  return (
+                                    <button
+                                      key={time}
+                                      type="button"
+                                      onClick={() => {
+                                        setWizardPainTimesOfDay((prev) =>
+                                          isSelected ? prev.filter((t) => t !== time) : [...prev, time]
+                                        );
+                                      }}
+                                      className={cn(
+                                        "rounded-xl border px-3 py-2 text-sm font-medium transition",
+                                        isSelected
+                                          ? "border-rose-400 bg-rose-100 text-rose-800"
+                                          : "border-rose-200 bg-white text-rose-600 hover:border-rose-300"
+                                      )}
+                                    >
+                                      {PAIN_TIME_OF_DAY_LABEL[time]}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              {wizardPainTimesOfDay.length === 0 && (
+                                <p className="mt-1 text-xs text-rose-400">Bitte mindestens einen Zeitraum auswählen</p>
+                              )}
+                            </div>
                           </div>
                           <div className="mt-6 flex flex-col gap-3">
                             <Button
                               onClick={() => {
-                                // Add pain entry
+                                // Add pain entry with time of day
                                 setDailyDraft((prev) => {
                                   const current = prev.painRegions ?? [];
                                   return {
@@ -10185,6 +10228,8 @@ export default function HomePage() {
                                         regionId: wizardPainRegion!,
                                         nrs: wizardPainIntensity,
                                         qualities: wizardPainQualities,
+                                        timeOfDay: wizardPainTimesOfDay,
+                                        granularity: "dritteltag" as const,
                                       },
                                     ],
                                     painMapRegionIds: [...(prev.painMapRegionIds ?? []), wizardPainRegion!],
@@ -10194,9 +10239,10 @@ export default function HomePage() {
                                 setWizardPainRegion(null);
                                 setWizardPainIntensity(5);
                                 setWizardPainQualities([]);
+                                setWizardPainTimesOfDay([]);
                                 setWizardSubStep("question");
                               }}
-                              disabled={wizardPainQualities.length === 0}
+                              disabled={wizardPainQualities.length === 0 || wizardPainTimesOfDay.length === 0}
                               className="w-full bg-rose-600 text-white hover:bg-rose-500 disabled:opacity-50"
                             >
                               Schmerz speichern
@@ -10604,6 +10650,7 @@ export default function HomePage() {
                                       {isSelected && <CheckCircle2 className="h-5 w-5 text-rose-500" />}
                                     </div>
                                     <span className="text-xs text-rose-500">{intensity.description}</span>
+                                    <span className="mt-0.5 text-xs text-rose-400">{intensity.productEquivalent}</span>
                                   </button>
                                 );
                               })}
@@ -11690,9 +11737,46 @@ export default function HomePage() {
 
                     // Micro 5: Dranginkontinenz (urinaryOpt) - only if feature flag active
                     if (microId === "urinaryOpt" && activeUrinary) {
+                      // First ask yes/no, then show follow-up questions if yes
+                      if (wizardUrinaryOptActive === null) {
+                        return (
+                          <div>
+                            {stepHeader}
+                            <div className="mb-6 space-y-4">
+                              <div className="flex justify-center gap-4">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setWizardUrinaryOptActive(false);
+                                    goNext();
+                                  }}
+                                  className="flex-1 rounded-xl border-2 border-rose-200 bg-white px-6 py-4 text-center font-medium text-rose-600 transition hover:border-rose-300"
+                                >
+                                  Nein
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setWizardUrinaryOptActive(true)}
+                                  className="flex-1 rounded-xl border-2 border-rose-200 bg-white px-6 py-4 text-center font-medium text-rose-600 transition hover:border-rose-300"
+                                >
+                                  Ja
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // Show follow-up questions if yes
                       return (
                         <div>
-                          {stepHeader}
+                          <div className="mb-6 text-center">
+                            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full" style={{ backgroundColor: CATEGORY_COLORS[currentStep.id]?.pastel }}>
+                              <StepIcon className="h-7 w-7" style={{ color: CATEGORY_COLORS[currentStep.id]?.saturated }} />
+                            </div>
+                            <h2 className="text-lg font-semibold text-rose-900">{currentStep.title}</h2>
+                            <p className="mt-1 text-sm text-rose-600">Details zur Dranginkontinenz</p>
+                          </div>
                           <div className="mb-6">
                             <div className="rounded-xl border border-rose-200 bg-white p-4">
                               <div className="space-y-4">
@@ -11768,9 +11852,6 @@ export default function HomePage() {
                               className="w-full bg-rose-600 text-white hover:bg-rose-500"
                             >
                               Weiter
-                            </Button>
-                            <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
-                              Überspringen
                             </Button>
                           </div>
                         </div>
@@ -11936,6 +12017,7 @@ export default function HomePage() {
                     return null;
                 }
               })()}
+              </div>
             </div>
           </main>
         </div>
