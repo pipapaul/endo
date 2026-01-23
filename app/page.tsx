@@ -12269,9 +12269,12 @@ export default function HomePage() {
                       setWizardStep(0);
                       setWizardOpen(true);
                     }}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl border-rose-200 bg-white/80 px-4 py-2.5 text-sm font-medium text-rose-700 transition hover:border-rose-300 hover:bg-rose-50"
+                    className={cn(
+                      "flex w-full items-center justify-center gap-2 rounded-xl border-rose-200 bg-white/80 px-4 py-2.5 text-sm font-medium text-rose-700 transition hover:border-rose-300 hover:bg-rose-50",
+                      !hasDailyEntryForToday && "schnell-check-sparkle"
+                    )}
                   >
-                    <Sparkles className="h-4 w-4" />
+                    <Sparkles className={cn("h-4 w-4", !hasDailyEntryForToday && "sparkle-icon")} />
                     Schnell-Check
                   </Button>
                 </div>

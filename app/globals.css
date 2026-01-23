@@ -448,3 +448,74 @@ textarea:focus-visible {
 .wizard-icon-bounce {
   animation: wizard-pulse 2s ease-in-out infinite;
 }
+
+/* Sparkle animation for Schnell-Check button */
+@keyframes sparkle-glow {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(251, 113, 133, 0.4), 0 0 10px rgba(251, 113, 133, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 15px rgba(251, 113, 133, 0.6), 0 0 25px rgba(251, 113, 133, 0.3), 0 0 35px rgba(251, 113, 133, 0.1);
+  }
+}
+
+@keyframes sparkle-icon {
+  0%, 100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  25% {
+    transform: scale(1.15) rotate(-5deg);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.2) rotate(5deg);
+    opacity: 1;
+  }
+  75% {
+    transform: scale(1.15) rotate(-3deg);
+    opacity: 0.9;
+  }
+}
+
+@keyframes sparkle-twinkle {
+  0%, 100% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.schnell-check-sparkle {
+  animation: sparkle-glow 2s ease-in-out infinite;
+  position: relative;
+}
+
+.schnell-check-sparkle .sparkle-icon {
+  animation: sparkle-icon 2s ease-in-out infinite;
+}
+
+.schnell-check-sparkle::before,
+.schnell-check-sparkle::after {
+  content: "✦";
+  position: absolute;
+  font-size: 10px;
+  color: #fb7185;
+  animation: sparkle-twinkle 1.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.schnell-check-sparkle::before {
+  top: -2px;
+  right: 10px;
+  animation-delay: 0s;
+}
+
+.schnell-check-sparkle::after {
+  bottom: -2px;
+  left: 15px;
+  animation-delay: 0.75s;
+}
