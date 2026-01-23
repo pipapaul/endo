@@ -11669,30 +11669,50 @@ export default function HomePage() {
 
                     // Micro 4: Urinary frequency + urgency
                     if (microId === "urinary") {
+                      const freqValue = dailyDraft.urinary?.freqPerDay ?? 0;
                       return (
                         <div>
                           {stepHeader}
                           <div className="mb-6 space-y-4">
-                            {/* Urinary frequency */}
+                            {/* Urinary frequency - stepper */}
                             <div className="rounded-xl border border-rose-100 bg-white p-4">
-                              <p className="mb-2 text-sm font-medium text-rose-800">{TERMS.urinary_freq.label}</p>
-                              <input
-                                type="number"
-                                min={0}
-                                step={1}
-                                placeholder="z.B. 8"
-                                value={dailyDraft.urinary?.freqPerDay ?? ""}
-                                onChange={(e) => {
-                                  setDailyDraft((prev) => ({
-                                    ...prev,
-                                    urinary: {
-                                      ...(prev.urinary ?? {}),
-                                      freqPerDay: e.target.value ? Number(e.target.value) : undefined,
-                                    },
-                                  }));
-                                }}
-                                className="w-full rounded-lg border border-rose-200 px-3 py-2 text-rose-800 placeholder-rose-300 focus:border-rose-400 focus:outline-none focus:ring-1 focus:ring-rose-400"
-                              />
+                              <p className="mb-3 text-center text-sm font-medium text-rose-800">{TERMS.urinary_freq.label}</p>
+                              <div className="flex items-center justify-center gap-5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDailyDraft((prev) => ({
+                                      ...prev,
+                                      urinary: {
+                                        ...(prev.urinary ?? {}),
+                                        freqPerDay: Math.max(0, (prev.urinary?.freqPerDay ?? 0) - 1),
+                                      },
+                                    }));
+                                  }}
+                                  className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50"
+                                >
+                                  <Minus className="h-5 w-5" />
+                                </button>
+                                <div className="text-center">
+                                  <span className="text-4xl font-bold text-rose-700">{freqValue}</span>
+                                  <p className="mt-0.5 text-xs text-rose-500">pro Tag</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDailyDraft((prev) => ({
+                                      ...prev,
+                                      urinary: {
+                                        ...(prev.urinary ?? {}),
+                                        freqPerDay: (prev.urinary?.freqPerDay ?? 0) + 1,
+                                      },
+                                    }));
+                                  }}
+                                  className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50"
+                                >
+                                  <Plus className="h-5 w-5" />
+                                </button>
+                              </div>
                             </div>
 
                             {/* Urinary urgency */}
@@ -11768,83 +11788,119 @@ export default function HomePage() {
                       }
 
                       // Show follow-up questions if yes
+                      const leaksValue = dailyDraft.urinaryOpt?.leaksCount ?? 0;
+                      const padsValue = dailyDraft.urinaryOpt?.padsCount ?? 0;
+                      const nocturiaValue = dailyDraft.urinaryOpt?.nocturia ?? 0;
+
+                      // Helper component for number stepper
+                      const NumberStepper = ({ label, value, onDecrement, onIncrement, unit }: { label: string; value: number; onDecrement: () => void; onIncrement: () => void; unit: string }) => (
+                        <div className="rounded-xl border border-rose-100 bg-rose-50/30 p-3">
+                          <p className="mb-2 text-center text-xs font-medium text-rose-700">{label}</p>
+                          <div className="flex items-center justify-center gap-4">
+                            <button
+                              type="button"
+                              onClick={onDecrement}
+                              className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50"
+                            >
+                              <Minus className="h-4 w-4" />
+                            </button>
+                            <div className="text-center">
+                              <span className="text-3xl font-bold text-rose-700">{value}</span>
+                              <p className="text-xs text-rose-500">{unit}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={onIncrement}
+                              className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+
                       return (
                         <div>
-                          <div className="mb-6 text-center">
-                            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full" style={{ backgroundColor: CATEGORY_COLORS[currentStep.id]?.pastel }}>
+                          <div className="wizard-card-content mb-6 text-center">
+                            <div className="wizard-icon-bounce mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full shadow-md" style={{ backgroundColor: CATEGORY_COLORS[currentStep.id]?.pastel }}>
                               <StepIcon className="h-7 w-7" style={{ color: CATEGORY_COLORS[currentStep.id]?.saturated }} />
                             </div>
-                            <h2 className="text-lg font-semibold text-rose-900">{currentStep.title}</h2>
-                            <p className="mt-1 text-sm text-rose-600">Details zur Dranginkontinenz</p>
+                            <h2 className="text-xl font-semibold text-rose-900">{currentStep.title}</h2>
+                            <p className="mt-2 text-sm text-rose-600">Details zur Dranginkontinenz</p>
                           </div>
-                          <div className="mb-6">
-                            <div className="rounded-xl border border-rose-200 bg-white p-4">
-                              <div className="space-y-4">
-                                {/* Leaks count */}
-                                <div>
-                                  <label className="mb-1 block text-sm font-medium text-rose-800">{MODULE_TERMS.urinaryOpt.leaksCount.label}</label>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={1}
-                                    placeholder="0"
-                                    value={dailyDraft.urinaryOpt?.leaksCount ?? ""}
-                                    onChange={(e) => {
-                                      setDailyDraft((prev) => ({
-                                        ...prev,
-                                        urinaryOpt: {
-                                          ...(prev.urinaryOpt ?? {}),
-                                          leaksCount: e.target.value ? Number(e.target.value) : undefined,
-                                        },
-                                      }));
-                                    }}
-                                    className="w-full rounded-lg border border-rose-200 px-3 py-2 text-rose-800 placeholder-rose-300 focus:border-rose-400 focus:outline-none"
-                                  />
-                                </div>
-                                {/* Pads count */}
-                                <div>
-                                  <label className="mb-1 block text-sm font-medium text-rose-800">{MODULE_TERMS.urinaryOpt.padsCount.label}</label>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={1}
-                                    placeholder="0"
-                                    value={dailyDraft.urinaryOpt?.padsCount ?? ""}
-                                    onChange={(e) => {
-                                      setDailyDraft((prev) => ({
-                                        ...prev,
-                                        urinaryOpt: {
-                                          ...(prev.urinaryOpt ?? {}),
-                                          padsCount: e.target.value ? Number(e.target.value) : undefined,
-                                        },
-                                      }));
-                                    }}
-                                    className="w-full rounded-lg border border-rose-200 px-3 py-2 text-rose-800 placeholder-rose-300 focus:border-rose-400 focus:outline-none"
-                                  />
-                                </div>
-                                {/* Nocturia */}
-                                <div>
-                                  <label className="mb-1 block text-sm font-medium text-rose-800">{MODULE_TERMS.urinaryOpt.nocturia.label}</label>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={1}
-                                    placeholder="0"
-                                    value={dailyDraft.urinaryOpt?.nocturia ?? ""}
-                                    onChange={(e) => {
-                                      setDailyDraft((prev) => ({
-                                        ...prev,
-                                        urinaryOpt: {
-                                          ...(prev.urinaryOpt ?? {}),
-                                          nocturia: e.target.value ? Number(e.target.value) : undefined,
-                                        },
-                                      }));
-                                    }}
-                                    className="w-full rounded-lg border border-rose-200 px-3 py-2 text-rose-800 placeholder-rose-300 focus:border-rose-400 focus:outline-none"
-                                  />
-                                </div>
-                              </div>
-                            </div>
+                          <div className="mb-6 space-y-3">
+                            {/* Leaks count */}
+                            <NumberStepper
+                              label={MODULE_TERMS.urinaryOpt.leaksCount.label}
+                              value={leaksValue}
+                              onDecrement={() => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  urinaryOpt: {
+                                    ...(prev.urinaryOpt ?? {}),
+                                    leaksCount: Math.max(0, (prev.urinaryOpt?.leaksCount ?? 0) - 1),
+                                  },
+                                }));
+                              }}
+                              onIncrement={() => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  urinaryOpt: {
+                                    ...(prev.urinaryOpt ?? {}),
+                                    leaksCount: (prev.urinaryOpt?.leaksCount ?? 0) + 1,
+                                  },
+                                }));
+                              }}
+                              unit="mal"
+                            />
+                            {/* Pads count */}
+                            <NumberStepper
+                              label={MODULE_TERMS.urinaryOpt.padsCount.label}
+                              value={padsValue}
+                              onDecrement={() => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  urinaryOpt: {
+                                    ...(prev.urinaryOpt ?? {}),
+                                    padsCount: Math.max(0, (prev.urinaryOpt?.padsCount ?? 0) - 1),
+                                  },
+                                }));
+                              }}
+                              onIncrement={() => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  urinaryOpt: {
+                                    ...(prev.urinaryOpt ?? {}),
+                                    padsCount: (prev.urinaryOpt?.padsCount ?? 0) + 1,
+                                  },
+                                }));
+                              }}
+                              unit="Stück"
+                            />
+                            {/* Nocturia */}
+                            <NumberStepper
+                              label={MODULE_TERMS.urinaryOpt.nocturia.label}
+                              value={nocturiaValue}
+                              onDecrement={() => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  urinaryOpt: {
+                                    ...(prev.urinaryOpt ?? {}),
+                                    nocturia: Math.max(0, (prev.urinaryOpt?.nocturia ?? 0) - 1),
+                                  },
+                                }));
+                              }}
+                              onIncrement={() => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  urinaryOpt: {
+                                    ...(prev.urinaryOpt ?? {}),
+                                    nocturia: (prev.urinaryOpt?.nocturia ?? 0) + 1,
+                                  },
+                                }));
+                              }}
+                              unit="mal"
+                            />
                           </div>
                           <div className="flex flex-col gap-3">
                             <Button
