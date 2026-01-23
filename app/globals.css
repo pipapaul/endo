@@ -449,73 +449,103 @@ textarea:focus-visible {
   animation: wizard-pulse 2s ease-in-out infinite;
 }
 
-/* Sparkle animation for Schnell-Check button */
-@keyframes sparkle-glow {
+/* Playful sparkle animation for Schnell-Check button */
+@keyframes schnell-wiggle {
   0%, 100% {
-    box-shadow: 0 0 5px rgba(251, 113, 133, 0.4), 0 0 10px rgba(251, 113, 133, 0.2);
+    transform: rotate(0deg);
   }
-  50% {
-    box-shadow: 0 0 15px rgba(251, 113, 133, 0.6), 0 0 25px rgba(251, 113, 133, 0.3), 0 0 35px rgba(251, 113, 133, 0.1);
+  15% {
+    transform: rotate(-2deg) scale(1.02);
   }
-}
-
-@keyframes sparkle-icon {
-  0%, 100% {
-    transform: scale(1) rotate(0deg);
-    opacity: 1;
+  30% {
+    transform: rotate(2deg) scale(1.02);
   }
-  25% {
-    transform: scale(1.15) rotate(-5deg);
-    opacity: 0.9;
+  45% {
+    transform: rotate(-1deg);
   }
-  50% {
-    transform: scale(1.2) rotate(5deg);
-    opacity: 1;
+  60% {
+    transform: rotate(1deg);
   }
   75% {
-    transform: scale(1.15) rotate(-3deg);
-    opacity: 0.9;
+    transform: rotate(0deg);
   }
 }
 
-@keyframes sparkle-twinkle {
+@keyframes sparkle-dance {
+  0%, 100% {
+    transform: scale(1) rotate(0deg);
+  }
+  20% {
+    transform: scale(1.3) rotate(-15deg);
+  }
+  40% {
+    transform: scale(0.9) rotate(10deg);
+  }
+  60% {
+    transform: scale(1.2) rotate(-10deg);
+  }
+  80% {
+    transform: scale(1.1) rotate(5deg);
+  }
+}
+
+@keyframes sparkle-float {
   0%, 100% {
     opacity: 0;
-    transform: scale(0.5);
+    transform: translateY(0) scale(0.5);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(-5px) scale(1);
+  }
+  80% {
+    opacity: 1;
+    transform: translateY(-12px) scale(0.8);
+  }
+}
+
+@keyframes sparkle-orbit {
+  0% {
+    transform: rotate(0deg) translateX(8px) rotate(0deg);
+    opacity: 0.7;
   }
   50% {
     opacity: 1;
-    transform: scale(1);
+  }
+  100% {
+    transform: rotate(360deg) translateX(8px) rotate(-360deg);
+    opacity: 0.7;
   }
 }
 
 .schnell-check-sparkle {
-  animation: sparkle-glow 2s ease-in-out infinite;
+  animation: schnell-wiggle 3s ease-in-out infinite;
   position: relative;
+  overflow: visible;
 }
 
 .schnell-check-sparkle .sparkle-icon {
-  animation: sparkle-icon 2s ease-in-out infinite;
+  animation: sparkle-dance 2s ease-in-out infinite;
 }
 
 .schnell-check-sparkle::before,
 .schnell-check-sparkle::after {
-  content: "✦";
+  content: "✨";
   position: absolute;
-  font-size: 10px;
-  color: #fb7185;
-  animation: sparkle-twinkle 1.5s ease-in-out infinite;
+  font-size: 12px;
+  animation: sparkle-float 2s ease-in-out infinite;
   pointer-events: none;
 }
 
 .schnell-check-sparkle::before {
-  top: -2px;
-  right: 10px;
+  top: -8px;
+  right: 20%;
   animation-delay: 0s;
 }
 
 .schnell-check-sparkle::after {
-  bottom: -2px;
-  left: 15px;
-  animation-delay: 0.75s;
+  top: -6px;
+  left: 25%;
+  animation-delay: 1s;
+  font-size: 10px;
 }

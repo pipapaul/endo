@@ -3871,6 +3871,8 @@ export default function HomePage() {
   const [wizardPainTimesOfDay, setWizardPainTimesOfDay] = useState<PainTimeOfDay[]>([]);
   // Wizard urinary opt state (for yes/no flow)
   const [wizardUrinaryOptActive, setWizardUrinaryOptActive] = useState<boolean | null>(null);
+  // Track last wizard completion date for sparkle animation
+  const [lastWizardUseDate, setLastWizardUseDate] = usePersistentState<string | null>("endo.wizard.lastUseDate", null);
 
   // Compute wizard steps - includes cervixMucus when Billings method is enabled
   const wizardSteps = useMemo<WizardStep[]>(() => {
@@ -10028,6 +10030,8 @@ export default function HomePage() {
                     setWizardStep((s) => s + 1);
                   } else {
                     setWizardOpen(false);
+                    // Mark wizard as used for today
+                    setLastWizardUseDate(today);
                   }
                 };
 
@@ -12271,10 +12275,10 @@ export default function HomePage() {
                     }}
                     className={cn(
                       "flex w-full items-center justify-center gap-2 rounded-xl border-rose-200 bg-white/80 px-4 py-2.5 text-sm font-medium text-rose-700 transition hover:border-rose-300 hover:bg-rose-50",
-                      !hasDailyEntryForToday && "schnell-check-sparkle"
+                      lastWizardUseDate !== today && "schnell-check-sparkle"
                     )}
                   >
-                    <Sparkles className={cn("h-4 w-4", !hasDailyEntryForToday && "sparkle-icon")} />
+                    <Sparkles className={cn("h-4 w-4", lastWizardUseDate !== today && "sparkle-icon")} />
                     Schnell-Check
                   </Button>
                 </div>
