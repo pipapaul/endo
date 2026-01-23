@@ -3,6 +3,25 @@
 ## Goal
 Ensure the wizard and daily check-in collect **identical data** while improving UX in both. The wizard should be a faster path to the same data, not a shortcut that records less.
 
+## Critical Principle: Scientific Integrity & Terminology Consistency
+
+**The wizard must NEVER dilute medical data quality.**
+
+- Scales must match validated instruments (Bristol scale 1-7, NRS 0-10, PBAC scoring)
+- Data fields must map 1:1 to daily check-in — no "simplified" versions that lose precision
+- If the daily check-in uses a validated scale, the wizard must use the same scale
+- User-facing simplifications (emojis, visual pickers) must map to correct underlying values
+
+**Wizard and Daily Check-in MUST use identical terminology.**
+
+- If daily check-in says "Schmerzen beim Stuhlgang", wizard must say "Schmerzen beim Stuhlgang" (not "Kloschmerzen")
+- If daily check-in says "Vermuteter Eisprungschmerz", wizard must say "Vermuteter Eisprungschmerz"
+- Labels CAN be user-friendly German (not Latin/medical jargon) — but must be **identical** in both views
+- All labels should come from shared `TERMS` constants to guarantee consistency
+- When adding new UI elements, always check what label the daily check-in uses first
+
+**Why this matters:** Users may share this data with healthcare providers. Inconsistent terminology confuses users and undermines data quality.
+
 ---
 
 ## Current Gaps (Wizard Missing Data)
@@ -250,3 +269,114 @@ No change needed - full 1-7 scale in both, just better UI
 - Created new components:
   - `components/home/BristolScalePicker.tsx` - Visual 7-type Bristol scale with categories
   - `components/home/SleepQualityPicker.tsx` - 5-level emoji picker with 0-10 scale mapping
+
+---
+
+## Phase 4: Remaining Parity Gaps
+
+### 4.1 Pain Module - Add Ovulation Pain (Mittelschmerz)
+
+**Current State:**
+- Daily check-in: Has "Vermuteter Eisprungschmerz" (Mittelschmerz) card with side selection (links/rechts/beidseitig/unsicher) + intensity slider (NRS 0-10)
+- Wizard: Missing entirely
+
+**Implementation:**
+- Add ovulation pain question in wizard's pain step (after deepDyspareunia toggle)
+- Use exact label from daily check-in: "Vermuteter Eisprungschmerz"
+- UI: Side selection buttons + NRS intensity slider (0-10)
+- Fields: `ovulationPain.side` + `ovulationPain.intensity`
+- Must use `OVULATION_PAIN_SIDES` constant for consistent options
+
+### 4.2 Bleeding Module - Use Settings-Based Tracking Method
+
+**Current State:**
+- Daily check-in: Respects `productSettings.trackingMethod` (simple | pbac_classic | pbac_extended)
+- Wizard: Hardcoded to simple mode only
+
+**Problem:** User selects extended PBAC in settings but wizard only offers simple intensity selection.
+
+**Implementation:**
+1. Read `productSettings.trackingMethod` in wizard
+2. For `simple` mode: Keep current UI (intensity selection with `SIMPLE_BLEEDING_INTENSITIES`)
+3. For `pbac_classic` mode: Show product counter UI (tampons, pads with fill levels)
+4. For `pbac_extended` mode: Show ExtendedBleedingEntryForm component
+
+**Scientific Accuracy:**
+- PBAC (Pictorial Blood Loss Assessment Chart) is a validated instrument
+- Simple mode maps to PBAC-equivalent scores via `getSimpleBleedingPbacEquivalent()`
+- Classic/Extended modes use actual PBAC product scoring
+- All modes must produce comparable `pbacScore` values for analytics
+- Labels must match `SIMPLE_BLEEDING_INTENSITIES` definitions exactly (e.g., "Sehr schwach", "Schwach", "Mittel", "Stark", "Sehr stark")
+
+### 4.3 Medication Module - Share Med List
+
+**Current State:**
+- Daily check-in: Uses `rescueMedOptions` = `STANDARD_RESCUE_MEDS` + `customRescueMeds`
+  - STANDARD_RESCUE_MEDS: ["Ibuprofen", "Paracetamol", "Naproxen", "Buscopan", "Novalgin", "Triptan"]
+- Wizard: Hardcoded `commonMeds` = ["Ibuprofen", "Paracetamol", "Naproxen", "Buscopan", "Aspirin"]
+
+**Problems:**
+1. Different default meds (wizard has Aspirin, missing Novalgin/Triptan)
+2. Custom meds added in daily check-in don't appear in wizard
+
+**Implementation:**
+1. Replace wizard's `commonMeds` with `rescueMedOptions` (shared list)
+2. When user adds custom med in wizard, also add to `customRescueMeds` state
+3. Both views show identical medication options
+
+### 4.4 Bowel/Bladder Module - Add Urinary Fields
+
+**Current State:**
+- Daily check-in has:
+  - `urinary.freqPerDay` - Miktionsfrequenz (number of voids per day)
+  - `urinary.urgency` - Harndrang score (NRS 0-10)
+  - "Dranginkontinenz" toggle (`moduleUrinary` feature flag) enabling:
+    - `urinaryOpt.leaksCount` - Inkontinenzepisoden
+    - `urinaryOpt.padsCount` - Vorlagenverbrauch
+    - `urinaryOpt.nocturia` - Nykturie (nighttime voids)
+- Wizard: Only has Bristol scale, dyschezia, dysuria (missing all urinary fields)
+
+**Implementation:**
+1. Add Miktionsfrequenz input (number field, label from `TERMS.urinary_freq`)
+2. Add Harndrang slider (NRS 0-10, label from `TERMS.urinary_urgency`)
+3. If `featureFlags.moduleUrinary` active, show Dranginkontinenz section:
+   - Use exact labels from `MODULE_TERMS.urinaryOpt.*`
+   - Leaks count, pads count, nocturia inputs
+
+**Scientific Accuracy:**
+- Use standardized urological terminology (Miktionsfrequenz, Nykturie, Dranginkontinenz)
+- NRS 0-10 scale for subjective urgency rating
+- All labels must match `TERMS` and `MODULE_TERMS` constants
+
+---
+
+## Implementation Checklist - Phase 4
+
+**Remember:** Always use labels from `TERMS` / `MODULE_TERMS` constants — never hardcode strings!
+
+### 4.1 Ovulation Pain in Wizard
+- [ ] Add ovulation pain UI after deepDyspareunia in pain step
+- [ ] Use label: `TERMS.ovulationPain.label` ("Vermuteter Eisprungschmerz")
+- [ ] Side selection using `OVULATION_PAIN_SIDES` and `OVULATION_PAIN_SIDE_LABELS`
+- [ ] Intensity slider (NRS 0-10)
+
+### 4.2 Bleeding Method Parity
+- [ ] Read `productSettings.trackingMethod` in wizard bleeding step
+- [ ] Conditional rendering based on tracking method
+- [ ] For simple: Use `SIMPLE_BLEEDING_INTENSITIES` (labels: "Sehr schwach", "Schwach", etc.)
+- [ ] For pbac_classic: Add product counting UI (tampon/pad with fill levels)
+- [ ] For pbac_extended: Integrate `ExtendedBleedingEntryForm` component
+
+### 4.3 Shared Medication List
+- [ ] Replace wizard `commonMeds` with `rescueMedOptions`
+- [ ] When custom med added in wizard, call `setCustomRescueMeds` to persist
+- [ ] Verify both views show same meds
+
+### 4.4 Urinary Fields in Wizard
+- [ ] Add urinary frequency input using `TERMS.urinary_freq.label`
+- [ ] Add urinary urgency slider using `TERMS.urinary_urgency.label` (NRS 0-10)
+- [ ] If `featureFlags.moduleUrinary` active:
+  - [ ] Use labels from `MODULE_TERMS.urinaryOpt.*`
+  - [ ] Add leaks count input
+  - [ ] Add pads count input
+  - [ ] Add nocturia input

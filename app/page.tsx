@@ -10120,7 +10120,7 @@ export default function HomePage() {
                                 )}
                               >
                                 <span className={cn("font-medium", deepDyspareuniaActive ? "text-rose-800" : "text-rose-700")}>
-                                  Schmerzen beim Sex
+                                  {TERMS.deepDyspareunia.label}
                                 </span>
                                 {deepDyspareuniaActive ? (
                                   <CheckCircle2 className="h-5 w-5 text-rose-500" />
@@ -10153,6 +10153,92 @@ export default function HomePage() {
                                   />
                                 </div>
                               )}
+                            </div>
+                          );
+                        })()}
+
+                        {/* Ovulation pain (Mittelschmerz) */}
+                        {(() => {
+                          const ovulationPainData = dailyDraft.ovulationPain;
+                          const hasOvulationPain = Boolean(ovulationPainData?.side);
+                          return (
+                            <div className="mb-4 overflow-hidden rounded-xl border border-rose-100 bg-white">
+                              <div className="px-4 py-3">
+                                <p className={cn("font-medium", hasOvulationPain ? "text-rose-800" : "text-rose-700")}>
+                                  {TERMS.ovulationPain.label}
+                                </p>
+                                <p className="mt-1 text-xs text-rose-500">Seite auswählen, falls vorhanden</p>
+                              </div>
+                              <div className="border-t border-rose-100 bg-rose-50/30 px-4 py-3">
+                                <div className="flex flex-wrap gap-2">
+                                  {OVULATION_PAIN_SIDES.map((side) => {
+                                    const isSelected = ovulationPainData?.side === side;
+                                    return (
+                                      <button
+                                        key={side}
+                                        type="button"
+                                        onClick={() => {
+                                          setDailyDraft((prev) => ({
+                                            ...prev,
+                                            ovulationPain: isSelected
+                                              ? undefined
+                                              : { side, intensity: prev.ovulationPain?.intensity ?? 5 },
+                                          }));
+                                        }}
+                                        className={cn(
+                                          "rounded-full border px-3 py-1.5 text-sm font-medium transition",
+                                          isSelected
+                                            ? "border-rose-300 bg-rose-100 text-rose-700"
+                                            : "border-rose-200 bg-white text-rose-600 hover:border-rose-300"
+                                        )}
+                                      >
+                                        {OVULATION_PAIN_SIDE_LABELS[side]}
+                                      </button>
+                                    );
+                                  })}
+                                  {hasOvulationPain && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setDailyDraft((prev) => {
+                                          const next = { ...prev };
+                                          delete (next as { ovulationPain?: typeof prev.ovulationPain }).ovulationPain;
+                                          return next;
+                                        });
+                                      }}
+                                      className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-sm font-medium text-rose-400 transition hover:border-rose-300"
+                                    >
+                                      Keine
+                                    </button>
+                                  )}
+                                </div>
+                                {hasOvulationPain && (
+                                  <div className="mt-3">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs text-rose-600">Intensität</span>
+                                      <span className="text-sm font-bold text-rose-700">{ovulationPainData?.intensity ?? 5}/10</span>
+                                    </div>
+                                    <input
+                                      type="range"
+                                      min="0"
+                                      max="10"
+                                      step="1"
+                                      value={ovulationPainData?.intensity ?? 5}
+                                      onChange={(e) => {
+                                        setDailyDraft((prev) => ({
+                                          ...prev,
+                                          ovulationPain: {
+                                            ...prev.ovulationPain,
+                                            side: prev.ovulationPain?.side ?? "unsicher",
+                                            intensity: Number(e.target.value),
+                                          },
+                                        }));
+                                      }}
+                                      className="mt-1 h-2 w-full cursor-pointer appearance-none rounded-lg bg-rose-100 accent-rose-500"
+                                    />
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           );
                         })()}
@@ -10346,88 +10432,289 @@ export default function HomePage() {
 
                   case "bleeding": {
                     const hasPbacData = Object.values(pbacCounts).some((v) => v > 0);
-                    const hasBleedingData = hasPbacData || dailyDraft.bleeding?.isBleeding;
+                    const hasExtendedPbacData = (dailyDraft.extendedPbacData?.extendedEntries?.length ?? 0) > 0;
+                    const hasBleedingData = hasPbacData || hasExtendedPbacData || dailyDraft.bleeding?.isBleeding;
+                    const trackingMethod = productSettings.trackingMethod;
 
                     // Sub-step: entry mode for adding bleeding
                     if (wizardSubStep === "entry") {
-                      const currentIntensity = dailyDraft.simpleBleedingIntensity;
-
-                      return (
-                        <div>
-                          <div className="mb-4 text-center">
-                            <h2 className="text-lg font-semibold text-rose-900">Wie stark ist die Blutung?</h2>
+                      // Simple mode: intensity selection
+                      if (trackingMethod === "simple") {
+                        const currentIntensity = dailyDraft.simpleBleedingIntensity;
+                        return (
+                          <div>
+                            <div className="mb-4 text-center">
+                              <h2 className="text-lg font-semibold text-rose-900">Wie stark ist die Blutung?</h2>
+                            </div>
+                            <div className="mb-4 space-y-2">
+                              {SIMPLE_BLEEDING_INTENSITIES.filter((i) => i.id !== "none").map((intensity) => {
+                                const isSelected = currentIntensity === intensity.id;
+                                return (
+                                  <button
+                                    key={intensity.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setDailyDraft((prev) => ({
+                                        ...prev,
+                                        bleeding: { ...prev.bleeding, isBleeding: true },
+                                        simpleBleedingIntensity: intensity.id,
+                                      }));
+                                    }}
+                                    className={cn(
+                                      "flex w-full flex-col items-start rounded-xl border px-4 py-3 text-left transition",
+                                      isSelected
+                                        ? "border-rose-300 bg-rose-50 text-rose-800"
+                                        : "border-rose-100 bg-white text-rose-700 hover:border-rose-200"
+                                    )}
+                                  >
+                                    <div className="flex w-full items-center justify-between">
+                                      <span className="font-medium">{intensity.label}</span>
+                                      {isSelected && <CheckCircle2 className="h-5 w-5 text-rose-500" />}
+                                    </div>
+                                    <span className="text-xs text-rose-500">{intensity.description}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className="mb-4 space-y-2">
+                              <label className="flex items-center gap-3 rounded-xl border border-rose-100 bg-white px-4 py-3">
+                                <input
+                                  type="checkbox"
+                                  checked={dailyDraft.bleeding?.clots ?? false}
+                                  onChange={(e) => {
+                                    setDailyDraft((prev) => ({
+                                      ...prev,
+                                      bleeding: { ...prev.bleeding, isBleeding: true, clots: e.target.checked },
+                                    }));
+                                  }}
+                                  className="h-4 w-4 rounded border-rose-300 text-rose-500 focus:ring-rose-500"
+                                />
+                                <span className="text-sm font-medium text-rose-700">Blutklumpen</span>
+                              </label>
+                              <label className="flex items-center gap-3 rounded-xl border border-rose-100 bg-white px-4 py-3">
+                                <input
+                                  type="checkbox"
+                                  checked={dailyDraft.bleeding?.flooding ?? false}
+                                  onChange={(e) => {
+                                    setDailyDraft((prev) => ({
+                                      ...prev,
+                                      bleeding: { ...prev.bleeding, isBleeding: true, flooding: e.target.checked },
+                                    }));
+                                  }}
+                                  className="h-4 w-4 rounded border-rose-300 text-rose-500 focus:ring-rose-500"
+                                />
+                                <span className="text-sm font-medium text-rose-700">Schwall-Blutung</span>
+                              </label>
+                            </div>
+                            <div className="flex flex-col gap-3">
+                              <Button
+                                onClick={() => setWizardSubStep("question")}
+                                disabled={!currentIntensity}
+                                className="w-full bg-rose-600 text-white hover:bg-rose-500 disabled:opacity-50"
+                              >
+                                Speichern
+                              </Button>
+                            </div>
                           </div>
-                          <div className="mb-4 space-y-2">
-                            {SIMPLE_BLEEDING_INTENSITIES.filter((i) => i.id !== "none").map((intensity) => {
-                              const isSelected = currentIntensity === intensity.id;
-                              return (
-                                <button
-                                  key={intensity.id}
-                                  type="button"
-                                  onClick={() => {
+                        );
+                      }
+
+                      // PBAC Classic mode: product counters
+                      if (trackingMethod === "pbac_classic") {
+                        const pbacScore = Object.entries(pbacCounts).reduce((sum, [key, count]) => {
+                          const item = PBAC_ITEMS.find((i) => i.id === key);
+                          return sum + (item?.score ?? 0) * count;
+                        }, 0);
+
+                        return (
+                          <div>
+                            <div className="mb-4 text-center">
+                              <h2 className="text-lg font-semibold text-rose-900">Periodenprodukte dokumentieren</h2>
+                              <p className="mt-1 text-sm text-rose-600">PBAC-Score: {pbacScore}</p>
+                            </div>
+                            <div className="mb-4 space-y-4">
+                              {/* Pads section */}
+                              <div className="rounded-xl border border-rose-100 bg-white p-4">
+                                <p className="mb-3 text-sm font-medium text-rose-800">Binden</p>
+                                <div className="grid grid-cols-3 gap-2">
+                                  {PBAC_PRODUCT_ITEMS.filter((i) => i.product === "pad").map((item) => {
+                                    const count = pbacCounts[item.id] ?? 0;
+                                    return (
+                                      <div key={item.id} className="text-center">
+                                        <div className="mb-1 flex items-center justify-center">
+                                          <item.Icon className="h-8 w-8" />
+                                        </div>
+                                        <p className="text-xs text-rose-600">{item.label}</p>
+                                        <div className="mt-1 flex items-center justify-center gap-1">
+                                          <button
+                                            type="button"
+                                            onClick={() => setPbacCounts((prev) => ({ ...prev, [item.id]: Math.max(0, count - 1) }))}
+                                            className="h-6 w-6 rounded-full border border-rose-200 text-rose-600 hover:bg-rose-50"
+                                          >
+                                            −
+                                          </button>
+                                          <span className="w-6 text-center text-sm font-bold text-rose-700">{count}</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => setPbacCounts((prev) => ({ ...prev, [item.id]: count + 1 }))}
+                                            className="h-6 w-6 rounded-full border border-rose-200 text-rose-600 hover:bg-rose-50"
+                                          >
+                                            +
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                              {/* Tampons section */}
+                              <div className="rounded-xl border border-rose-100 bg-white p-4">
+                                <p className="mb-3 text-sm font-medium text-rose-800">Tampons</p>
+                                <div className="grid grid-cols-3 gap-2">
+                                  {PBAC_PRODUCT_ITEMS.filter((i) => i.product === "tampon").map((item) => {
+                                    const count = pbacCounts[item.id] ?? 0;
+                                    return (
+                                      <div key={item.id} className="text-center">
+                                        <div className="mb-1 flex items-center justify-center">
+                                          <item.Icon className="h-8 w-8" />
+                                        </div>
+                                        <p className="text-xs text-rose-600">{item.label}</p>
+                                        <div className="mt-1 flex items-center justify-center gap-1">
+                                          <button
+                                            type="button"
+                                            onClick={() => setPbacCounts((prev) => ({ ...prev, [item.id]: Math.max(0, count - 1) }))}
+                                            className="h-6 w-6 rounded-full border border-rose-200 text-rose-600 hover:bg-rose-50"
+                                          >
+                                            −
+                                          </button>
+                                          <span className="w-6 text-center text-sm font-bold text-rose-700">{count}</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => setPbacCounts((prev) => ({ ...prev, [item.id]: count + 1 }))}
+                                            className="h-6 w-6 rounded-full border border-rose-200 text-rose-600 hover:bg-rose-50"
+                                          >
+                                            +
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                              {/* Clots section */}
+                              <div className="rounded-xl border border-rose-100 bg-white p-4">
+                                <p className="mb-3 text-sm font-medium text-rose-800">Koagel (Blutklumpen)</p>
+                                <div className="grid grid-cols-2 gap-3">
+                                  {PBAC_CLOT_ITEMS.map((item) => {
+                                    const count = pbacCounts[item.id] ?? 0;
+                                    return (
+                                      <div key={item.id} className="flex items-center justify-between rounded-lg border border-rose-100 bg-rose-50/50 px-3 py-2">
+                                        <span className="text-sm text-rose-700">{item.label}</span>
+                                        <div className="flex items-center gap-1">
+                                          <button
+                                            type="button"
+                                            onClick={() => setPbacCounts((prev) => ({ ...prev, [item.id]: Math.max(0, count - 1) }))}
+                                            className="h-6 w-6 rounded-full border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
+                                          >
+                                            −
+                                          </button>
+                                          <span className="w-6 text-center text-sm font-bold text-rose-700">{count}</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => setPbacCounts((prev) => ({ ...prev, [item.id]: count + 1 }))}
+                                            className="h-6 w-6 rounded-full border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
+                                          >
+                                            +
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                              {/* Flooding checkbox */}
+                              <label className="flex items-center gap-3 rounded-xl border border-rose-100 bg-white px-4 py-3">
+                                <input
+                                  type="checkbox"
+                                  checked={dailyDraft.bleeding?.flooding ?? false}
+                                  onChange={(e) => {
+                                    setDailyDraft((prev) => ({
+                                      ...prev,
+                                      bleeding: { ...prev.bleeding, isBleeding: true, flooding: e.target.checked },
+                                    }));
+                                  }}
+                                  className="h-4 w-4 rounded border-rose-300 text-rose-500 focus:ring-rose-500"
+                                />
+                                <span className="text-sm font-medium text-rose-700">Schwall-Blutung</span>
+                              </label>
+                            </div>
+                            <div className="flex flex-col gap-3">
+                              <Button
+                                onClick={() => {
+                                  // Mark as bleeding if any products were added
+                                  if (Object.values(pbacCounts).some((v) => v > 0)) {
                                     setDailyDraft((prev) => ({
                                       ...prev,
                                       bleeding: { ...prev.bleeding, isBleeding: true },
-                                      simpleBleedingIntensity: intensity.id,
                                     }));
-                                  }}
-                                  className={cn(
-                                    "flex w-full flex-col items-start rounded-xl border px-4 py-3 text-left transition",
-                                    isSelected
-                                      ? "border-rose-300 bg-rose-50 text-rose-800"
-                                      : "border-rose-100 bg-white text-rose-700 hover:border-rose-200"
-                                  )}
-                                >
-                                  <div className="flex w-full items-center justify-between">
-                                    <span className="font-medium">{intensity.label}</span>
-                                    {isSelected && <CheckCircle2 className="h-5 w-5 text-rose-500" />}
-                                  </div>
-                                  <span className="text-xs text-rose-500">{intensity.description}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                          <div className="mb-4 space-y-2">
-                            <label className="flex items-center gap-3 rounded-xl border border-rose-100 bg-white px-4 py-3">
-                              <input
-                                type="checkbox"
-                                checked={dailyDraft.bleeding?.clots ?? false}
-                                onChange={(e) => {
-                                  setDailyDraft((prev) => ({
-                                    ...prev,
-                                    bleeding: { ...prev.bleeding, isBleeding: true, clots: e.target.checked },
-                                  }));
+                                  }
+                                  setWizardSubStep("question");
                                 }}
-                                className="h-4 w-4 rounded border-rose-300 text-rose-500 focus:ring-rose-500"
+                                className="w-full bg-rose-600 text-white hover:bg-rose-500"
+                              >
+                                Speichern
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // PBAC Extended mode: use ExtendedBleedingEntryForm
+                      if (trackingMethod === "pbac_extended") {
+                        return (
+                          <div>
+                            <div className="mb-4 text-center">
+                              <h2 className="text-lg font-semibold text-rose-900">Blutung dokumentieren</h2>
+                              <p className="mt-1 text-sm text-rose-600">Erweiterter PBAC-Modus</p>
+                            </div>
+                            <div className="mb-4">
+                              <ExtendedBleedingEntryForm
+                                settings={productSettings}
+                                onAddEntry={handleAddExtendedBleedingEntry}
                               />
-                              <span className="text-sm font-medium text-rose-700">Blutklumpen</span>
-                            </label>
-                            <label className="flex items-center gap-3 rounded-xl border border-rose-100 bg-white px-4 py-3">
-                              <input
-                                type="checkbox"
-                                checked={dailyDraft.bleeding?.flooding ?? false}
-                                onChange={(e) => {
-                                  setDailyDraft((prev) => ({
-                                    ...prev,
-                                    bleeding: { ...prev.bleeding, isBleeding: true, flooding: e.target.checked },
-                                  }));
+                            </div>
+                            {(dailyDraft.extendedPbacData?.extendedEntries?.length ?? 0) > 0 && (
+                              <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50/50 p-3">
+                                <p className="text-sm font-medium text-rose-800">
+                                  {dailyDraft.extendedPbacData?.extendedEntries?.length} Einträge hinzugefügt
+                                </p>
+                                <p className="text-xs text-rose-600">
+                                  PBAC-Äquivalent: {dailyDraft.extendedPbacData?.totalPbacEquivalentScore ?? 0}
+                                </p>
+                              </div>
+                            )}
+                            <div className="flex flex-col gap-3">
+                              <Button
+                                onClick={() => {
+                                  if (hasExtendedPbacData) {
+                                    setDailyDraft((prev) => ({
+                                      ...prev,
+                                      bleeding: { ...prev.bleeding, isBleeding: true },
+                                    }));
+                                  }
+                                  setWizardSubStep("question");
                                 }}
-                                className="h-4 w-4 rounded border-rose-300 text-rose-500 focus:ring-rose-500"
-                              />
-                              <span className="text-sm font-medium text-rose-700">Schwall-Blutung</span>
-                            </label>
+                                className="w-full bg-rose-600 text-white hover:bg-rose-500"
+                              >
+                                {hasExtendedPbacData ? "Speichern" : "Fertig"}
+                              </Button>
+                            </div>
                           </div>
-                          <div className="flex flex-col gap-3">
-                            <Button
-                              onClick={() => setWizardSubStep("question")}
-                              disabled={!currentIntensity}
-                              className="w-full bg-rose-600 text-white hover:bg-rose-500 disabled:opacity-50"
-                            >
-                              Speichern
-                            </Button>
-                          </div>
-                        </div>
-                      );
+                        );
+                      }
+
+                      // Fallback (shouldn't happen)
+                      return null;
                     }
 
                     // Main question view
@@ -10449,7 +10736,12 @@ export default function HomePage() {
                             )}
                             {Object.values(pbacCounts).some((v) => v > 0) && (
                               <p className="mt-1 text-xs text-rose-600">
-                                {Object.values(pbacCounts).reduce((a, b) => a + b, 0)} Produkt(e)
+                                {Object.values(pbacCounts).reduce((a, b) => a + b, 0)} Produkt(e) (PBAC)
+                              </p>
+                            )}
+                            {hasExtendedPbacData && (
+                              <p className="mt-1 text-xs text-rose-600">
+                                {dailyDraft.extendedPbacData?.extendedEntries?.length} Einträge (Erweiterter PBAC)
                               </p>
                             )}
                           </div>
@@ -10615,7 +10907,6 @@ export default function HomePage() {
 
                     // Sub-step: entry mode for adding medication
                     if (wizardSubStep === "entry") {
-                      const commonMeds = ["Ibuprofen", "Paracetamol", "Naproxen", "Buscopan", "Aspirin"];
                       const hasSelectedMed = wizardMedName.trim().length > 0;
 
                       // Step 1: Select medication name
@@ -10630,7 +10921,7 @@ export default function HomePage() {
                               <div>
                                 <p className="mb-2 text-xs font-medium uppercase tracking-wide text-rose-400">Schnellauswahl</p>
                                 <div className="flex flex-wrap gap-2">
-                                  {commonMeds.map((med) => (
+                                  {rescueMedOptions.map((med) => (
                                     <button
                                       key={med}
                                       type="button"
@@ -10718,17 +11009,23 @@ export default function HomePage() {
                           <div className="mt-6 flex flex-col gap-3">
                             <Button
                               onClick={() => {
+                                const medName = wizardMedName.trim();
+                                // Add to daily draft
                                 setDailyDraft((prev) => ({
                                   ...prev,
                                   rescueMeds: [
                                     ...(prev.rescueMeds ?? []),
                                     {
-                                      name: wizardMedName.trim(),
+                                      name: medName,
                                       ...(wizardMedDose !== undefined && { doseMg: wizardMedDose }),
                                       ...(wizardMedTime !== undefined && { time: wizardMedTime }),
                                     },
                                   ],
                                 }));
+                                // If custom med (not in standard list), add to customRescueMeds for persistence
+                                if (!(STANDARD_RESCUE_MEDS as readonly string[]).includes(medName) && !customRescueMeds.includes(medName)) {
+                                  setCustomRescueMeds((prev) => [...prev, medName]);
+                                }
                                 setWizardMedName("");
                                 setWizardMedDose(undefined);
                                 setWizardMedTime(undefined);
@@ -10944,7 +11241,9 @@ export default function HomePage() {
                     const currentBristol = dailyDraft.gi?.bristolType;
                     const dyscheziaActive = dailyDraft.symptoms?.dyschezia?.present ?? false;
                     const dysuriaActive = dailyDraft.symptoms?.dysuria?.present ?? false;
-                    const hasAnyData = currentBristol || dyscheziaActive || dysuriaActive;
+                    const hasUrinaryData = dailyDraft.urinary?.freqPerDay !== undefined || dailyDraft.urinary?.urgency !== undefined;
+                    const hasUrinaryOptData = dailyDraft.urinaryOpt?.leaksCount !== undefined || dailyDraft.urinaryOpt?.padsCount !== undefined || dailyDraft.urinaryOpt?.nocturia !== undefined;
+                    const hasAnyData = currentBristol || dyscheziaActive || dysuriaActive || hasUrinaryData || hasUrinaryOptData;
 
                     return (
                       <div>
@@ -10983,7 +11282,7 @@ export default function HomePage() {
                               )}
                             >
                               <span className={cn("font-medium", dyscheziaActive ? "text-rose-800" : "text-rose-700")}>
-                                Schmerzen beim Stuhlgang
+                                {TERMS.dyschezia.label}
                               </span>
                               {dyscheziaActive ? (
                                 <CheckCircle2 className="h-5 w-5 text-rose-500" />
@@ -11037,7 +11336,7 @@ export default function HomePage() {
                               )}
                             >
                               <span className={cn("font-medium", dysuriaActive ? "text-rose-800" : "text-rose-700")}>
-                                Schmerzen beim Wasserlassen
+                                {TERMS.dysuria.label}
                               </span>
                               {dysuriaActive ? (
                                 <CheckCircle2 className="h-5 w-5 text-rose-500" />
@@ -11071,6 +11370,125 @@ export default function HomePage() {
                               </div>
                             )}
                           </div>
+
+                          {/* Urinary frequency */}
+                          <div className="rounded-xl border border-rose-100 bg-white p-4">
+                            <p className="mb-2 text-sm font-medium text-rose-800">{TERMS.urinary_freq.label}</p>
+                            <input
+                              type="number"
+                              min={0}
+                              step={1}
+                              placeholder="z.B. 8"
+                              value={dailyDraft.urinary?.freqPerDay ?? ""}
+                              onChange={(e) => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  urinary: {
+                                    ...(prev.urinary ?? {}),
+                                    freqPerDay: e.target.value ? Number(e.target.value) : undefined,
+                                  },
+                                }));
+                              }}
+                              className="w-full rounded-lg border border-rose-200 px-3 py-2 text-rose-800 placeholder-rose-300 focus:border-rose-400 focus:outline-none focus:ring-1 focus:ring-rose-400"
+                            />
+                          </div>
+
+                          {/* Urinary urgency */}
+                          <div className="rounded-xl border border-rose-100 bg-white p-4">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium text-rose-800">{TERMS.urinary_urgency.label}</span>
+                              <span className="text-sm font-bold text-rose-700">{dailyDraft.urinary?.urgency ?? 0}/10</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="0"
+                              max="10"
+                              step="1"
+                              value={dailyDraft.urinary?.urgency ?? 0}
+                              onChange={(e) => {
+                                setDailyDraft((prev) => ({
+                                  ...prev,
+                                  urinary: {
+                                    ...(prev.urinary ?? {}),
+                                    urgency: Number(e.target.value),
+                                  },
+                                }));
+                              }}
+                              className="mt-2 h-2 w-full cursor-pointer appearance-none rounded-lg bg-rose-100 accent-rose-500"
+                            />
+                          </div>
+
+                          {/* Dranginkontinenz section - only if feature flag active */}
+                          {activeUrinary && (
+                            <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-4">
+                              <p className="mb-3 text-sm font-medium text-rose-800">Dranginkontinenz</p>
+                              <div className="space-y-3">
+                                {/* Leaks count */}
+                                <div>
+                                  <label className="mb-1 block text-xs text-rose-600">{MODULE_TERMS.urinaryOpt.leaksCount.label}</label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step={1}
+                                    placeholder="0"
+                                    value={dailyDraft.urinaryOpt?.leaksCount ?? ""}
+                                    onChange={(e) => {
+                                      setDailyDraft((prev) => ({
+                                        ...prev,
+                                        urinaryOpt: {
+                                          ...(prev.urinaryOpt ?? {}),
+                                          leaksCount: e.target.value ? Number(e.target.value) : undefined,
+                                        },
+                                      }));
+                                    }}
+                                    className="w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-rose-800 placeholder-rose-300 focus:border-rose-400 focus:outline-none"
+                                  />
+                                </div>
+                                {/* Pads count */}
+                                <div>
+                                  <label className="mb-1 block text-xs text-rose-600">{MODULE_TERMS.urinaryOpt.padsCount.label}</label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step={1}
+                                    placeholder="0"
+                                    value={dailyDraft.urinaryOpt?.padsCount ?? ""}
+                                    onChange={(e) => {
+                                      setDailyDraft((prev) => ({
+                                        ...prev,
+                                        urinaryOpt: {
+                                          ...(prev.urinaryOpt ?? {}),
+                                          padsCount: e.target.value ? Number(e.target.value) : undefined,
+                                        },
+                                      }));
+                                    }}
+                                    className="w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-rose-800 placeholder-rose-300 focus:border-rose-400 focus:outline-none"
+                                  />
+                                </div>
+                                {/* Nocturia */}
+                                <div>
+                                  <label className="mb-1 block text-xs text-rose-600">{MODULE_TERMS.urinaryOpt.nocturia.label}</label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step={1}
+                                    placeholder="0"
+                                    value={dailyDraft.urinaryOpt?.nocturia ?? ""}
+                                    onChange={(e) => {
+                                      setDailyDraft((prev) => ({
+                                        ...prev,
+                                        urinaryOpt: {
+                                          ...(prev.urinaryOpt ?? {}),
+                                          nocturia: e.target.value ? Number(e.target.value) : undefined,
+                                        },
+                                      }));
+                                    }}
+                                    className="w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-rose-800 placeholder-rose-300 focus:border-rose-400 focus:outline-none"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
                         <div className="flex flex-col gap-3">
                           <Button
