@@ -12275,10 +12275,10 @@ export default function HomePage() {
                     }}
                     className={cn(
                       "flex w-full items-center justify-center gap-2 rounded-xl border-rose-200 bg-white/80 px-4 py-2.5 text-sm font-medium text-rose-700 transition hover:border-rose-300 hover:bg-rose-50",
-                      lastWizardUseDate !== today && "schnell-check-sparkle"
+                      lastWizardUseDate !== today && currentTime.getHours() >= 17 && "schnell-check-sparkle"
                     )}
                   >
-                    <Sparkles className={cn("h-4 w-4", lastWizardUseDate !== today && "sparkle-icon")} />
+                    <Sparkles className={cn("h-4 w-4", lastWizardUseDate !== today && currentTime.getHours() >= 17 && "sparkle-icon")} />
                     Schnell-Check
                   </Button>
                 </div>
