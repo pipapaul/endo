@@ -885,6 +885,18 @@ const MICRO_QUESTIONS: MicroQuestionsConfig = {
   ],
 };
 
+// Wizard notification messages
+const WIZARD_COMPLETED_MESSAGES = [
+  "Ok!", "Check!", "Registriert!", "Alles klar!", "Notiert!", "Gespeichert!",
+  "Super!", "Danke!", "Erledigt!", "Verstanden!", "Prima!", "Perfekt!",
+  "Hab ich!", "Ist drin!", "Gemerkt!", "Top!",
+];
+
+const WIZARD_SKIPPED_MESSAGES = [
+  "Na gut!", "Übersprungen!", "Nächstes Mal!", "Kein Problem!", "Weiter!",
+  "Okay!", "Passt!", "Verstehe!", "Geht klar!", "Kein Ding!",
+];
+
 const isTrackedDailyCategory = (
   categoryId: DailyCategoryId
 ): categoryId is TrackableDailyCategoryId =>
@@ -3873,6 +3885,8 @@ export default function HomePage() {
   const [wizardUrinaryOptActive, setWizardUrinaryOptActive] = useState<boolean | null>(null);
   // Track last wizard completion date for sparkle animation
   const [lastWizardUseDate, setLastWizardUseDate] = usePersistentState<string | null>("endo.wizard.lastUseDate", null);
+  // Wizard notification state
+  const [wizardNotification, setWizardNotification] = useState<{ message: string; type: "completed" | "skipped" } | null>(null);
 
   // Compute wizard steps - includes cervixMucus when Billings method is enabled
   const wizardSteps = useMemo<WizardStep[]>(() => {
@@ -9989,7 +10003,20 @@ export default function HomePage() {
 
           {/* Wizard Content */}
           <main className="flex-1 overflow-auto bg-gradient-to-b from-rose-50 to-white">
-            <div className="mx-auto max-w-lg px-4 py-6">
+            <div className="relative mx-auto max-w-lg px-4 py-6">
+              {/* Wizard Notification Toast */}
+              {wizardNotification && (
+                <div
+                  className={cn(
+                    "wizard-notification absolute left-1/2 top-0 z-50 -translate-x-1/2 rounded-full px-4 py-1.5 text-sm font-medium shadow-md",
+                    wizardNotification.type === "completed"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : "bg-gray-100 text-gray-600"
+                  )}
+                >
+                  {wizardNotification.message}
+                </div>
+              )}
               {/* Wizard Card Container */}
               <div
                 key={`${wizardStep}-${wizardMicroStep}-${wizardSubStep}`}
@@ -10014,8 +10041,20 @@ export default function HomePage() {
                 const activeMicros = getActiveMicroQuestions();
                 const activeMicroIndex = currentMicro ? activeMicros.findIndex((m) => m.id === currentMicro.id) : 0;
 
+                // Show wizard notification
+                const showNotification = (type: "completed" | "skipped") => {
+                  const messages = type === "completed" ? WIZARD_COMPLETED_MESSAGES : WIZARD_SKIPPED_MESSAGES;
+                  const message = messages[Math.floor(Math.random() * messages.length)];
+                  setWizardNotification({ message, type });
+                  setTimeout(() => setWizardNotification(null), 1200);
+                };
+
                 // Go to next main step (resets all temp state)
-                const goNextStep = () => {
+                const goNextStep = (wasSkipped = false) => {
+                  // Show notification (but not when finishing the wizard)
+                  if (wizardStep < wizardSteps.length - 1) {
+                    showNotification(wasSkipped ? "skipped" : "completed");
+                  }
                   setWizardSubStep("question");
                   setWizardMicroStep(0);
                   setWizardPainRegion(null);
@@ -10049,7 +10088,7 @@ export default function HomePage() {
 
                 // Skip entire step (go to next main step)
                 const skipStep = () => {
-                  goNextStep();
+                  goNextStep(true);
                 };
 
                 // Common header for all steps - uses micro-question text if available

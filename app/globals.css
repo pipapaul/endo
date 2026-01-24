@@ -449,6 +449,33 @@ textarea:focus-visible {
   animation: wizard-pulse 2s ease-in-out infinite;
 }
 
+/* Wizard notification toast */
+@keyframes wizard-notification-pop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -10px) scale(0.8);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1.05);
+  }
+  25% {
+    transform: translate(-50%, 0) scale(1);
+  }
+  80% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -5px) scale(0.95);
+  }
+}
+
+.wizard-notification {
+  animation: wizard-notification-pop 1.2s ease-out forwards;
+}
+
 /* Playful sparkle animation for Schnell-Check button */
 @keyframes schnell-wiggle {
   0%, 100% {
