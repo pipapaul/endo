@@ -63,6 +63,8 @@ export const TERMS = {
     help: "Außergewöhnlich müde?",
   },
   bloating: { label: "Blähbauch", tech: "Bloating", help: "Bauch wirkt aufgebläht/gespannt" },
+  moodSwings: { label: "Stimmungsschwankungen", help: "Emotionale Schwankungen oder Reizbarkeit" },
+  skinProblems: { label: "Hautprobleme", help: "Akne, Ausschlag oder andere Hautveränderungen" },
   meds: { label: "Akut-/Rescue-Medikamente", help: "Bedarfseinnahmen dokumentieren" },
   rescue: { label: "Rescue-Dosis", help: "Zusätzliche Einnahmen bei Bedarf" },
   sleep_hours: { label: "Schlafdauer (h)", help: "Gesamtschlaf letzte Nacht" },

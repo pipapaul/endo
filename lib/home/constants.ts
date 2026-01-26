@@ -19,6 +19,8 @@ export const SYMPTOM_TERMS: Record<SymptomKey, TermDescriptor> = {
   dysuria: TERMS.dysuria,
   fatigue: TERMS.fatigue,
   bloating: TERMS.bloating,
+  moodSwings: TERMS.moodSwings,
+  skinProblems: TERMS.skinProblems,
 };
 
 export type TrendMetricKey = "pain" | "impact" | "symptomAverage" | "sleepQuality" | "steps";
