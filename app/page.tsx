@@ -12138,7 +12138,11 @@ export default function HomePage() {
                           </Button>
                           <Button
                             variant="outline"
-                            onClick={() => setWizardOpen(false)}
+                            onClick={() => {
+                              setWizardOpen(false);
+                              setLastWizardUseDate(today);
+                              setWizardProgress(null);
+                            }}
                             className="w-full border-rose-200 text-rose-700"
                           >
                             {hasNotes ? "Fertig!" : "Nein, fertig!"}
