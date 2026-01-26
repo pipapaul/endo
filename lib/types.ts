@@ -71,6 +71,8 @@ export interface DailyEntry {
     dysuria?: { present: boolean; score?: number };
     fatigue?: { present: boolean; score?: number };
     bloating?: { present: boolean; score?: number };
+    moodSwings?: { present: boolean; score?: number };
+    skinProblems?: { present: boolean; score?: number };
   };
   rescueMeds?: { name: string; doseMg?: number; time?: string }[];
 

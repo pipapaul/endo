@@ -1095,6 +1095,8 @@ const formatNumber = (
 const SYMPTOM_ITEMS: { key: SymptomKey; termKey: TermKey }[] = [
   { key: "fatigue", termKey: "fatigue" },
   { key: "bloating", termKey: "bloating" },
+  { key: "moodSwings", termKey: "moodSwings" },
+  { key: "skinProblems", termKey: "skinProblems" },
 ];
 
 type PbacSaturation = "light" | "medium" | "heavy";
@@ -7428,6 +7430,8 @@ export default function HomePage() {
       "dysmenorrhea",
       "fatigue",
       "bloating",
+      "moodSwings",
+      "skinProblems",
       "deepDyspareunia",
       "pelvicPainNonMenses",
       "dyschezia",
@@ -7438,6 +7442,8 @@ export default function HomePage() {
       dysmenorrhea: "Regelschmerzen",
       fatigue: "Erschöpfung",
       bloating: "Blähungen",
+      moodSwings: "Stimmung",
+      skinProblems: "Haut",
       deepDyspareunia: "Schmerz b. Sex",
       pelvicPainNonMenses: "Beckenschmerz",
       dyschezia: "Stuhlgang",
@@ -10467,10 +10473,12 @@ export default function HomePage() {
                   case "symptoms": {
                     // Only non-pain symptoms - pain-related symptoms are covered by pain map
                     // and contextual sections (bowel/bladder) in daily check-in
-                    const symptomKeys: SymptomKey[] = ["fatigue", "bloating"];
+                    const symptomKeys: SymptomKey[] = ["fatigue", "bloating", "moodSwings", "skinProblems"];
                     const symptomLabels: Record<string, string> = {
                       fatigue: "Müdigkeit / Erschöpfung",
                       bloating: "Blähbauch",
+                      moodSwings: "Stimmungsschwankungen",
+                      skinProblems: "Hautprobleme",
                     };
                     const activeSymptoms = symptomKeys.filter((key) => dailyDraft.symptoms?.[key]?.present);
 
