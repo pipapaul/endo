@@ -1382,6 +1382,17 @@ const SYMPTOM_FREE_MESSAGES = [
 
 const SYMPTOM_FREE_EMOJIS = ["✨", "🎉", "😊", "🥳", "🌟", "😄", "🙌", "🍀", "🤗", "💫"] as const;
 
+const WIZARD_STREAK_MESSAGES = [
+  "Super gemacht!",
+  "Toll erledigt!",
+  "Perfekt!",
+  "Weiter so!",
+  "Großartig!",
+  "Klasse!",
+  "Prima!",
+  "Stark!",
+] as const;
+
 const pickRandom = <T,>(values: readonly T[]): T => {
   return values[Math.floor(Math.random() * values.length)];
 };
@@ -3875,6 +3886,12 @@ export default function HomePage() {
   const [wizardUrinaryOptActive, setWizardUrinaryOptActive] = useState<boolean | null>(null);
   // Track last wizard completion date for sparkle animation
   const [lastWizardUseDate, setLastWizardUseDate] = usePersistentState<string | null>("endo.wizard.lastUseDate", null);
+  // Track wizard completion streak
+  const [wizardStreak, setWizardStreak] = usePersistentState<number>("endo.wizard.streak", 0);
+  // Track wizard progress for resuming (step number and date)
+  const [wizardProgress, setWizardProgress] = usePersistentState<{ step: number; date: string } | null>("endo.wizard.progress", null);
+  // Dialog state for asking to continue or start over
+  const [showWizardResumeDialog, setShowWizardResumeDialog] = useState(false);
 
   // Compute wizard steps - includes cervixMucus when Billings method is enabled
   const wizardSteps = useMemo<WizardStep[]>(() => {
@@ -9861,6 +9878,63 @@ export default function HomePage() {
           </div>
         </div>
       )}
+      {/* Wizard Resume Dialog */}
+      {showWizardResumeDialog && wizardProgress && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowWizardResumeDialog(false);
+          }}
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+            <div className="mb-4 text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-rose-100">
+                <Sparkles className="h-6 w-6 text-rose-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-rose-900">Schnell-Check fortsetzen?</h3>
+              <p className="mt-2 text-sm text-rose-600">
+                Du hast bereits {Math.min(wizardProgress.step, wizardSteps.length - 1)} von {wizardSteps.length - 1} Schritten ausgefüllt.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Button
+                type="button"
+                onClick={() => {
+                  setWizardStep(wizardProgress.step);
+                  setShowWizardResumeDialog(false);
+                  setWizardOpen(true);
+                }}
+                className="w-full bg-rose-600 text-white hover:bg-rose-700"
+              >
+                Weitermachen
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setWizardStep(0);
+                  setWizardProgress(null);
+                  setShowWizardResumeDialog(false);
+                  setWizardOpen(true);
+                }}
+                className="w-full border-rose-200 text-rose-700 hover:bg-rose-50"
+              >
+                Neu starten
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setShowWizardResumeDialog(false)}
+                className="w-full text-rose-400 hover:text-rose-600"
+              >
+                Abbrechen
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Daily Check-in Wizard Mode */}
       {wizardOpen && (
         <div
@@ -9941,6 +10015,14 @@ export default function HomePage() {
                 variant="ghost"
                 size="sm"
                 onClick={() => {
+                  // Save progress for resuming later (only if not on first step and not on notes)
+                  const isNotesStep = wizardSteps[wizardStep]?.id === "notes";
+                  if (wizardStep > 0 && !isNotesStep) {
+                    setWizardProgress({ step: wizardStep, date: today });
+                  } else if (isNotesStep) {
+                    // On notes step = content complete, clear progress
+                    setWizardProgress(null);
+                  }
                   setWizardOpen(false);
                   setWizardSubStep("question");
                   setWizardMicroStep(0);
@@ -10035,8 +10117,27 @@ export default function HomePage() {
                   if (wizardStep < wizardSteps.length - 1) {
                     setWizardStep((s) => s + 1);
                   } else {
-                    setWizardOpen(false);
-                    // Mark wizard as used for today
+                    completeWizard();
+                  }
+                };
+
+                // Complete the wizard and update streak
+                const completeWizard = () => {
+                  setWizardOpen(false);
+                  setWizardProgress(null);
+
+                  // Only update streak if not already completed today
+                  if (lastWizardUseDate !== today) {
+                    // Check if yesterday was completed (streak continues)
+                    const yesterday = new Date();
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    const yesterdayStr = yesterday.toISOString().split("T")[0];
+
+                    if (lastWizardUseDate === yesterdayStr) {
+                      setWizardStreak((s) => s + 1);
+                    } else {
+                      setWizardStreak(1);
+                    }
                     setLastWizardUseDate(today);
                   }
                 };
@@ -10058,13 +10159,22 @@ export default function HomePage() {
                   goNextStep();
                 };
 
+                // Dynamic title for bowelBladder based on current micro-question
+                const getStepTitle = () => {
+                  if (currentStep.id === "bowelBladder" && currentMicro) {
+                    const bladderMicros = ["dysuria", "urinary", "urinaryOpt"];
+                    return bladderMicros.includes(currentMicro.id) ? "Blase" : "Verdauung";
+                  }
+                  return currentStep.title;
+                };
+
                 // Common header for all steps - uses micro-question text if available
                 const stepHeader = (
                   <div className="wizard-card-content mb-6 text-center">
                     <div className="wizard-icon-bounce mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full shadow-md" style={{ backgroundColor: CATEGORY_COLORS[currentStep.id]?.pastel }}>
                       <StepIcon className="h-7 w-7" style={{ color: CATEGORY_COLORS[currentStep.id]?.saturated }} />
                     </div>
-                    <h2 className="text-xl font-semibold text-rose-900">{currentStep.title}</h2>
+                    <h2 className="text-xl font-semibold text-rose-900">{getStepTitle()}</h2>
                     <p className="mt-2 text-sm text-rose-600">
                       {currentMicro?.question ?? currentStep.question}
                     </p>
@@ -10439,12 +10549,11 @@ export default function HomePage() {
                             {hasPainData ? "Weiteren Schmerz hinzufügen" : "Ja, Schmerzen eintragen"}
                           </Button>
                           {hasPainData ? (
-                            <Button variant="outline" onClick={goNext} className="w-full border-rose-200 text-rose-700">
+                            <Button onClick={goNext} className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200">
                               Fertig, weiter
                             </Button>
                           ) : (
                             <Button
-                              variant="outline"
                               onClick={() => {
                                 updateQuickPainEventsForDate(dailyDraft.date, () => []);
                                 setDailyDraft((prev) => ({
@@ -10457,7 +10566,7 @@ export default function HomePage() {
                                 }));
                                 goNext();
                               }}
-                              className="w-full border-rose-200 text-rose-700"
+                              className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200"
                             >
                               Nein, keine Schmerzen
                             </Button>
@@ -10945,12 +11054,11 @@ export default function HomePage() {
                             {hasBleedingData ? "Blutung bearbeiten" : "Ja, Blutung eintragen"}
                           </Button>
                           {hasBleedingData ? (
-                            <Button variant="outline" onClick={goNext} className="w-full border-rose-200 text-rose-700">
+                            <Button onClick={goNext} className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200">
                               Fertig, weiter
                             </Button>
                           ) : (
                             <Button
-                              variant="outline"
                               onClick={() => {
                                 setPbacCounts(createEmptyPbacCounts());
                                 setDailyDraft((prev) => ({
@@ -10960,7 +11068,7 @@ export default function HomePage() {
                                 }));
                                 goNext();
                               }}
-                              className="w-full border-rose-200 text-rose-700"
+                              className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200"
                             >
                               Nein, keine Blutung
                             </Button>
@@ -11072,14 +11180,13 @@ export default function HomePage() {
                           </Button>
                           {hasMucusData && (
                             <Button
-                              variant="outline"
                               onClick={() => {
                                 setDailyDraft((prev) => ({
                                   ...prev,
                                   cervixMucus: undefined,
                                 }));
                               }}
-                              className="w-full border-rose-200 text-rose-700"
+                              className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200"
                             >
                               Zurücksetzen
                             </Button>
@@ -11227,9 +11334,8 @@ export default function HomePage() {
                               {wizardMedDose || wizardMedTime ? "Mit Details speichern" : "Ohne Details speichern"}
                             </Button>
                             <Button
-                              variant="outline"
                               onClick={() => setWizardMedName("")}
-                              className="w-full border-rose-200 text-rose-700"
+                              className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200"
                             >
                               Anderes Medikament
                             </Button>
@@ -11287,17 +11393,16 @@ export default function HomePage() {
                             {hasMeds ? "Weiteres Medikament" : "Ja, Medikament eintragen"}
                           </Button>
                           {hasMeds ? (
-                            <Button variant="outline" onClick={goNext} className="w-full border-rose-200 text-rose-700">
+                            <Button onClick={goNext} className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200">
                               Fertig, weiter
                             </Button>
                           ) : (
                             <Button
-                              variant="outline"
                               onClick={() => {
                                 setDailyDraft((prev) => ({ ...prev, rescueMeds: [] }));
                                 goNext();
                               }}
-                              className="w-full border-rose-200 text-rose-700"
+                              className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200"
                             >
                               Nein, keine Medikamente
                             </Button>
@@ -11384,6 +11489,9 @@ export default function HomePage() {
                             >
                               Weiter
                             </Button>
+                            <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                              Überspringen
+                            </Button>
                           </div>
                         </div>
                       );
@@ -11456,6 +11564,9 @@ export default function HomePage() {
                               className="w-full bg-rose-600 text-white hover:bg-rose-500"
                             >
                               Weiter
+                            </Button>
+                            <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                              Überspringen
                             </Button>
                           </div>
                         </div>
@@ -11587,6 +11698,9 @@ export default function HomePage() {
                             >
                               Weiter
                             </Button>
+                            <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                              Überspringen
+                            </Button>
                           </div>
                         </div>
                       );
@@ -11673,6 +11787,9 @@ export default function HomePage() {
                               className="w-full bg-rose-600 text-white hover:bg-rose-500"
                             >
                               Weiter
+                            </Button>
+                            <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                              Überspringen
                             </Button>
                           </div>
                         </div>
@@ -11794,6 +11911,11 @@ export default function HomePage() {
                                   Ja
                                 </button>
                               </div>
+                            </div>
+                            <div className="flex flex-col gap-3">
+                              <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                                Überspringen
+                              </Button>
                             </div>
                           </div>
                         );
@@ -11920,6 +12042,9 @@ export default function HomePage() {
                               className="w-full bg-rose-600 text-white hover:bg-rose-500"
                             >
                               Weiter
+                            </Button>
+                            <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                              Überspringen
                             </Button>
                           </div>
                         </div>
@@ -12067,9 +12192,8 @@ export default function HomePage() {
                             {hasNotes ? "Notizen bearbeiten" : "Ja, Notizen hinzufügen"}
                           </Button>
                           <Button
-                            variant="outline"
-                            onClick={() => setWizardOpen(false)}
-                            className="w-full border-rose-200 text-rose-700"
+                            onClick={() => completeWizard()}
+                            className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200"
                           >
                             {hasNotes ? "Fertig!" : "Nein, fertig!"}
                           </Button>
@@ -12259,36 +12383,56 @@ export default function HomePage() {
                       setDailyActiveCategory("overview");
                       setActiveView("daily");
                     }}
-                    className="flex min-h-[180px] w-full flex-col items-start justify-start gap-2 rounded-2xl bg-rose-600 px-6 py-5 text-left text-white shadow-lg transition hover:bg-rose-500"
+                    className="flex w-full items-center justify-center rounded-2xl bg-rose-600 px-6 py-8 text-white shadow-lg transition hover:bg-rose-500"
                   >
                     <span className="text-lg font-semibold">Täglicher Check-in</span>
-                    <span className="text-sm text-rose-50/80">In unter einer Minute erledigt</span>
-                    {hasDailyEntryForToday && (
-                      <span className="flex items-center gap-1 text-sm font-medium text-rose-50">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-200" />
-                        Heute erledigt
-                      </span>
-                    )}
                   </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      manualDailySelectionRef.current = false;
-                      if (dailyDraft.date !== today) {
-                        selectDailyDate(today);
-                      }
-                      setWizardStep(0);
-                      setWizardOpen(true);
-                    }}
-                    className={cn(
-                      "flex w-full items-center justify-center gap-2 rounded-xl border-rose-200 bg-white/80 px-4 py-2.5 text-sm font-medium text-rose-700 transition hover:border-rose-300 hover:bg-rose-50",
-                      lastWizardUseDate !== today && currentTime.getHours() >= 17 && "schnell-check-sparkle"
-                    )}
-                  >
-                    <Sparkles className={cn("h-4 w-4", lastWizardUseDate !== today && currentTime.getHours() >= 17 && "sparkle-icon")} />
-                    Schnell-Check
-                  </Button>
+                  <div className="mt-2">
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        manualDailySelectionRef.current = false;
+                        if (dailyDraft.date !== today) {
+                          selectDailyDate(today);
+                        }
+                        // Check if there's saved progress for today
+                        if (wizardProgress && wizardProgress.date === today && wizardProgress.step > 0) {
+                          setShowWizardResumeDialog(true);
+                        } else {
+                          setWizardStep(0);
+                          setWizardProgress(null);
+                          setWizardOpen(true);
+                        }
+                      }}
+                      className={cn(
+                        "relative flex w-full items-center justify-center gap-2 rounded-2xl bg-amber-100 px-6 py-8 text-base font-medium text-amber-800 shadow-sm transition hover:bg-amber-200",
+                        lastWizardUseDate !== today && currentTime.getHours() >= 17 && "schnell-check-sparkle"
+                      )}
+                    >
+                      {/* Progress indicator (excluding notes step) */}
+                      {(wizardProgress && wizardProgress.date === today && wizardProgress.step > 0) || lastWizardUseDate === today ? (
+                        <div
+                          className="absolute bottom-0 left-0 h-1 rounded-b-2xl bg-amber-400 transition-all"
+                          style={{
+                            width: lastWizardUseDate === today
+                              ? "100%"
+                              : `${(Math.min(wizardProgress!.step, wizardSteps.length - 1) / (wizardSteps.length - 1)) * 100}%`
+                          }}
+                        />
+                      ) : null}
+                      <Sparkles className={cn("h-4 w-4", lastWizardUseDate !== today && currentTime.getHours() >= 17 && "sparkle-icon")} />
+                      Schnell-Check
+                    </Button>
+                    {lastWizardUseDate === today ? (
+                      <p className="mt-1 text-center text-xs text-amber-600">
+                        ✓ {wizardSteps.length - 1}/{wizardSteps.length - 1} · {pickRandom(WIZARD_STREAK_MESSAGES)} {wizardStreak > 1 ? `🔥 ${wizardStreak} Tage Streak!` : ""}
+                      </p>
+                    ) : wizardProgress && wizardProgress.date === today && wizardProgress.step > 0 ? (
+                      <p className="mt-1 text-center text-xs text-amber-600">
+                        {Math.min(wizardProgress.step, wizardSteps.length - 1)}/{wizardSteps.length - 1} Schritte
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
                 <Button
                   type="button"
