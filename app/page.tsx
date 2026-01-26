@@ -871,6 +871,10 @@ interface MicroQuestion {
 type MicroQuestionsConfig = Partial<Record<WizardStepId, MicroQuestion[]>>;
 
 const MICRO_QUESTIONS: MicroQuestionsConfig = {
+  pain: [
+    { id: "general", question: "Hattest du heute Schmerzen?", subtext: "Körperliche Schmerzen eintragen" },
+    { id: "special", question: "Weitere Schmerzarten?", subtext: "Spezifische Schmerzen" },
+  ],
   bowelBladder: [
     { id: "bristol", question: "Wie war deine Verdauung heute?", subtext: "Stuhlkonsistenz nach Bristol-Skala" },
     { id: "dyschezia", question: "Hattest du schmerzhaften Stuhlgang?", subtext: "Druck oder Schmerzen beim Toilettengang" },
@@ -10372,31 +10376,77 @@ export default function HomePage() {
                       );
                     }
 
-                    // Main question view
-                    return (
-                      <div>
-                        {stepHeader}
-                        {hasPainData && (
-                          <div className="mb-4 space-y-2">
-                            <p className="text-xs font-medium uppercase tracking-wide text-rose-400">Heutige Einträge</p>
-                            {allPainEntries.map((entry) => (
-                              <div
-                                key={entry.id}
-                                className="flex items-center justify-between rounded-lg border border-rose-100 bg-rose-50/50 px-3 py-2"
-                              >
-                                <div>
-                                  <p className="text-sm font-medium text-rose-800">{entry.label}</p>
-                                  <p className="text-xs text-rose-500">
-                                    Intensität {entry.intensity}/10
-                                    {entry.qualities.length > 0 && ` · ${entry.qualities.join(", ")}`}
-                                  </p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                    // Micro-question based rendering for pain
+                    const painMicroId = currentMicro?.id;
 
-                        {/* Deep dyspareunia - pain during sex */}
+                    // Micro 1: General pain (existing entries + add more)
+                    if (!painMicroId || painMicroId === "general") {
+                      return (
+                        <div>
+                          {stepHeader}
+                          {hasPainData ? (
+                            <>
+                              <div className="mb-4 space-y-2">
+                                <p className="text-xs font-medium uppercase tracking-wide text-rose-400">
+                                  Du hast heute folgende Schmerzen angegeben:
+                                </p>
+                                {allPainEntries.map((entry) => (
+                                  <div
+                                    key={entry.id}
+                                    className="flex items-center justify-between rounded-lg border border-rose-100 bg-rose-50/50 px-3 py-2"
+                                  >
+                                    <div>
+                                      <p className="text-sm font-medium text-rose-800">{entry.label}</p>
+                                      <p className="text-xs text-rose-500">
+                                        Intensität {entry.intensity}/10
+                                        {entry.qualities.length > 0 && ` · ${entry.qualities.join(", ")}`}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="flex flex-col gap-3">
+                                <Button
+                                  onClick={() => setWizardSubStep("entry")}
+                                  className="w-full bg-rose-600 text-white hover:bg-rose-500"
+                                >
+                                  Weiteren Schmerz hinzufügen
+                                </Button>
+                                <Button onClick={goNext} className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200">
+                                  Fertig, weiter
+                                </Button>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="flex flex-col gap-3">
+                              <Button
+                                onClick={() => setWizardSubStep("entry")}
+                                className="w-full bg-rose-600 text-white hover:bg-rose-500"
+                              >
+                                Ja, Schmerzen eintragen
+                              </Button>
+                              <Button
+                                onClick={goNext}
+                                className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200"
+                              >
+                                Nein, keine Schmerzen
+                              </Button>
+                              <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                                Überspringen
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    // Micro 2: Special pain types (deep dyspareunia + ovulation pain)
+                    if (painMicroId === "special") {
+                      return (
+                        <div>
+                          {stepHeader}
+
+                          {/* Deep dyspareunia - pain during sex */}
                         {(() => {
                           const deepDyspareuniaActive = dailyDraft.symptoms?.deepDyspareunia?.present ?? false;
                           return (
@@ -10542,41 +10592,19 @@ export default function HomePage() {
                         })()}
 
                         <div className="flex flex-col gap-3">
-                          <Button
-                            onClick={() => setWizardSubStep("entry")}
-                            className="w-full bg-rose-600 text-white hover:bg-rose-500"
-                          >
-                            {hasPainData ? "Weiteren Schmerz hinzufügen" : "Ja, Schmerzen eintragen"}
+                          <Button onClick={goNext} className="w-full bg-rose-600 text-white hover:bg-rose-500">
+                            Weiter
                           </Button>
-                          {hasPainData ? (
-                            <Button onClick={goNext} className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200">
-                              Fertig, weiter
-                            </Button>
-                          ) : (
-                            <Button
-                              onClick={() => {
-                                updateQuickPainEventsForDate(dailyDraft.date, () => []);
-                                setDailyDraft((prev) => ({
-                                  ...prev,
-                                  painRegions: [],
-                                  painMapRegionIds: [],
-                                  painQuality: [],
-                                  painNRS: 0,
-                                  impactNRS: 0,
-                                }));
-                                goNext();
-                              }}
-                              className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200"
-                            >
-                              Nein, keine Schmerzen
-                            </Button>
-                          )}
                           <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
                             Überspringen
                           </Button>
                         </div>
                       </div>
                     );
+                    }
+
+                    // Fallback
+                    return null;
                   }
 
                   case "symptoms": {
