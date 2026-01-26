@@ -10473,10 +10473,12 @@ export default function HomePage() {
                   case "symptoms": {
                     // Only non-pain symptoms - pain-related symptoms are covered by pain map
                     // and contextual sections (bowel/bladder) in daily check-in
-                    const symptomKeys: SymptomKey[] = ["fatigue", "bloating"];
+                    const symptomKeys: SymptomKey[] = ["fatigue", "bloating", "moodSwings", "skinProblems"];
                     const symptomLabels: Record<string, string> = {
                       fatigue: "Müdigkeit / Erschöpfung",
                       bloating: "Blähbauch",
+                      moodSwings: "Stimmungsschwankungen",
+                      skinProblems: "Hautprobleme",
                     };
                     const activeSymptoms = symptomKeys.filter((key) => dailyDraft.symptoms?.[key]?.present);
 
