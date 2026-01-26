@@ -9882,7 +9882,7 @@ export default function HomePage() {
               </div>
               <h3 className="text-lg font-semibold text-rose-900">Schnell-Check fortsetzen?</h3>
               <p className="mt-2 text-sm text-rose-600">
-                Du hast bereits {Math.round((Math.min(wizardProgress.step, wizardSteps.length - 1) / (wizardSteps.length - 1)) * 100)}% ausgefüllt.
+                Du hast bereits {Math.min(wizardProgress.step, wizardSteps.length - 1)} von {wizardSteps.length - 1} Schritten ausgefüllt.
               </p>
             </div>
             <div className="space-y-2">
@@ -12333,54 +12333,50 @@ export default function HomePage() {
                       setDailyActiveCategory("overview");
                       setActiveView("daily");
                     }}
-                    className="flex min-h-[180px] w-full flex-col items-start justify-start gap-2 rounded-2xl bg-rose-600 px-6 py-5 text-left text-white shadow-lg transition hover:bg-rose-500"
+                    className="flex w-full flex-col items-start justify-start gap-1 rounded-2xl bg-rose-600 px-6 py-4 text-left text-white shadow-lg transition hover:bg-rose-500"
                   >
                     <span className="text-lg font-semibold">Täglicher Check-in</span>
-                    <span className="text-sm text-rose-50/80">In unter einer Minute erledigt</span>
-                    {hasDailyEntryForToday && (
-                      <span className="flex items-center gap-1 text-sm font-medium text-rose-50">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-200" />
-                        Heute erledigt
-                      </span>
-                    )}
+                    <span className="text-sm text-rose-50/80">Alle Details eintragen</span>
                   </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      manualDailySelectionRef.current = false;
-                      if (dailyDraft.date !== today) {
-                        selectDailyDate(today);
-                      }
-                      // Check if there's saved progress for today
-                      if (wizardProgress && wizardProgress.date === today && wizardProgress.step > 0) {
-                        setShowWizardResumeDialog(true);
-                      } else {
-                        setWizardStep(0);
-                        setWizardProgress(null);
-                        setWizardOpen(true);
-                      }
-                    }}
-                    className={cn(
-                      "relative flex w-full items-center justify-center gap-2 rounded-xl border-rose-200 bg-white/80 px-4 py-2.5 text-sm font-medium text-rose-700 transition hover:border-rose-300 hover:bg-rose-50",
-                      lastWizardUseDate !== today && currentTime.getHours() >= 17 && "schnell-check-sparkle"
-                    )}
-                  >
-                    {/* Progress indicator (excluding notes step) */}
+                  <div className="mt-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        manualDailySelectionRef.current = false;
+                        if (dailyDraft.date !== today) {
+                          selectDailyDate(today);
+                        }
+                        // Check if there's saved progress for today
+                        if (wizardProgress && wizardProgress.date === today && wizardProgress.step > 0) {
+                          setShowWizardResumeDialog(true);
+                        } else {
+                          setWizardStep(0);
+                          setWizardProgress(null);
+                          setWizardOpen(true);
+                        }
+                      }}
+                      className={cn(
+                        "relative flex w-full items-center justify-center gap-2 rounded-2xl border-rose-200 bg-white/80 px-6 py-4 text-base font-medium text-rose-700 transition hover:border-rose-300 hover:bg-rose-50",
+                        lastWizardUseDate !== today && currentTime.getHours() >= 17 && "schnell-check-sparkle"
+                      )}
+                    >
+                      {/* Progress indicator (excluding notes step) */}
+                      {wizardProgress && wizardProgress.date === today && wizardProgress.step > 0 && (
+                        <div
+                          className="absolute bottom-0 left-0 h-1 rounded-b-2xl bg-rose-300 transition-all"
+                          style={{ width: `${(Math.min(wizardProgress.step, wizardSteps.length - 1) / (wizardSteps.length - 1)) * 100}%` }}
+                        />
+                      )}
+                      <Sparkles className={cn("h-4 w-4", lastWizardUseDate !== today && currentTime.getHours() >= 17 && "sparkle-icon")} />
+                      Schnell-Check
+                    </Button>
                     {wizardProgress && wizardProgress.date === today && wizardProgress.step > 0 && (
-                      <div
-                        className="absolute bottom-0 left-0 h-1 rounded-b-xl bg-rose-300 transition-all"
-                        style={{ width: `${(Math.min(wizardProgress.step, wizardSteps.length - 1) / (wizardSteps.length - 1)) * 100}%` }}
-                      />
+                      <p className="mt-1 text-center text-xs text-rose-400">
+                        {Math.min(wizardProgress.step, wizardSteps.length - 1)}/{wizardSteps.length - 1} Schritte
+                      </p>
                     )}
-                    <Sparkles className={cn("h-4 w-4", lastWizardUseDate !== today && currentTime.getHours() >= 17 && "sparkle-icon")} />
-                    Schnell-Check
-                    {wizardProgress && wizardProgress.date === today && wizardProgress.step > 0 && (
-                      <span className="ml-1 text-xs text-rose-400">
-                        ({Math.round((Math.min(wizardProgress.step, wizardSteps.length - 1) / (wizardSteps.length - 1)) * 100)}%)
-                      </span>
-                    )}
-                  </Button>
+                  </div>
                 </div>
                 <Button
                   type="button"
