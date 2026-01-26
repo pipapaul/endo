@@ -1382,6 +1382,17 @@ const SYMPTOM_FREE_MESSAGES = [
 
 const SYMPTOM_FREE_EMOJIS = ["✨", "🎉", "😊", "🥳", "🌟", "😄", "🙌", "🍀", "🤗", "💫"] as const;
 
+const WIZARD_STREAK_MESSAGES = [
+  "Super gemacht!",
+  "Toll erledigt!",
+  "Perfekt!",
+  "Weiter so!",
+  "Großartig!",
+  "Klasse!",
+  "Prima!",
+  "Stark!",
+] as const;
+
 const pickRandom = <T,>(values: readonly T[]): T => {
   return values[Math.floor(Math.random() * values.length)];
 };
@@ -3875,6 +3886,8 @@ export default function HomePage() {
   const [wizardUrinaryOptActive, setWizardUrinaryOptActive] = useState<boolean | null>(null);
   // Track last wizard completion date for sparkle animation
   const [lastWizardUseDate, setLastWizardUseDate] = usePersistentState<string | null>("endo.wizard.lastUseDate", null);
+  // Track wizard completion streak
+  const [wizardStreak, setWizardStreak] = usePersistentState<number>("endo.wizard.streak", 0);
   // Track wizard progress for resuming (step number and date)
   const [wizardProgress, setWizardProgress] = usePersistentState<{ step: number; date: string } | null>("endo.wizard.progress", null);
   // Dialog state for asking to continue or start over
@@ -10104,10 +10117,28 @@ export default function HomePage() {
                   if (wizardStep < wizardSteps.length - 1) {
                     setWizardStep((s) => s + 1);
                   } else {
-                    setWizardOpen(false);
-                    // Mark wizard as used for today and clear progress
+                    completeWizard();
+                  }
+                };
+
+                // Complete the wizard and update streak
+                const completeWizard = () => {
+                  setWizardOpen(false);
+                  setWizardProgress(null);
+
+                  // Only update streak if not already completed today
+                  if (lastWizardUseDate !== today) {
+                    // Check if yesterday was completed (streak continues)
+                    const yesterday = new Date();
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    const yesterdayStr = yesterday.toISOString().split("T")[0];
+
+                    if (lastWizardUseDate === yesterdayStr) {
+                      setWizardStreak((s) => s + 1);
+                    } else {
+                      setWizardStreak(1);
+                    }
                     setLastWizardUseDate(today);
-                    setWizardProgress(null);
                   }
                 };
 
@@ -12138,11 +12169,7 @@ export default function HomePage() {
                           </Button>
                           <Button
                             variant="outline"
-                            onClick={() => {
-                              setWizardOpen(false);
-                              setLastWizardUseDate(today);
-                              setWizardProgress(null);
-                            }}
+                            onClick={() => completeWizard()}
                             className="w-full border-rose-200 text-rose-700"
                           >
                             {hasNotes ? "Fertig!" : "Nein, fertig!"}
@@ -12360,20 +12387,28 @@ export default function HomePage() {
                       )}
                     >
                       {/* Progress indicator (excluding notes step) */}
-                      {wizardProgress && wizardProgress.date === today && wizardProgress.step > 0 && (
+                      {(wizardProgress && wizardProgress.date === today && wizardProgress.step > 0) || lastWizardUseDate === today ? (
                         <div
                           className="absolute bottom-0 left-0 h-1 rounded-b-2xl bg-amber-400 transition-all"
-                          style={{ width: `${(Math.min(wizardProgress.step, wizardSteps.length - 1) / (wizardSteps.length - 1)) * 100}%` }}
+                          style={{
+                            width: lastWizardUseDate === today
+                              ? "100%"
+                              : `${(Math.min(wizardProgress!.step, wizardSteps.length - 1) / (wizardSteps.length - 1)) * 100}%`
+                          }}
                         />
-                      )}
+                      ) : null}
                       <Sparkles className={cn("h-4 w-4", lastWizardUseDate !== today && currentTime.getHours() >= 17 && "sparkle-icon")} />
                       Schnell-Check
                     </Button>
-                    {wizardProgress && wizardProgress.date === today && wizardProgress.step > 0 && (
+                    {lastWizardUseDate === today ? (
+                      <p className="mt-1 text-center text-xs text-amber-600">
+                        ✓ {wizardSteps.length - 1}/{wizardSteps.length - 1} · {pickRandom(WIZARD_STREAK_MESSAGES)} {wizardStreak > 1 ? `🔥 ${wizardStreak} Tage Streak!` : ""}
+                      </p>
+                    ) : wizardProgress && wizardProgress.date === today && wizardProgress.step > 0 ? (
                       <p className="mt-1 text-center text-xs text-amber-600">
                         {Math.min(wizardProgress.step, wizardSteps.length - 1)}/{wizardSteps.length - 1} Schritte
                       </p>
-                    )}
+                    ) : null}
                   </div>
                 </div>
                 <Button
