@@ -11618,7 +11618,10 @@ export default function HomePage() {
 
                   case "bowelBladder": {
                     const currentBristol = dailyDraft.gi?.bristolType;
+                    // Track if values are explicitly set (not just defaulting)
+                    const dyscheziaSet = dailyDraft.symptoms?.dyschezia !== undefined;
                     const dyscheziaActive = dailyDraft.symptoms?.dyschezia?.present ?? false;
+                    const dysuriaSet = dailyDraft.symptoms?.dysuria !== undefined;
                     const dysuriaActive = dailyDraft.symptoms?.dysuria?.present ?? false;
 
                     // Micro-question based rendering
@@ -11676,7 +11679,7 @@ export default function HomePage() {
                                 }}
                                 className={cn(
                                   "flex-1 rounded-xl border-2 px-6 py-4 text-center font-medium transition",
-                                  !dyscheziaActive
+                                  dyscheziaSet && !dyscheziaActive
                                     ? "border-rose-300 bg-rose-50 text-rose-800"
                                     : "border-rose-200 bg-white text-rose-600 hover:border-rose-300"
                                 )}
@@ -11696,7 +11699,7 @@ export default function HomePage() {
                                 }}
                                 className={cn(
                                   "flex-1 rounded-xl border-2 px-6 py-4 text-center font-medium transition",
-                                  dyscheziaActive
+                                  dyscheziaSet && dyscheziaActive
                                     ? "border-rose-300 bg-rose-50 text-rose-800"
                                     : "border-rose-200 bg-white text-rose-600 hover:border-rose-300"
                                 )}
@@ -11766,7 +11769,7 @@ export default function HomePage() {
                                 }}
                                 className={cn(
                                   "flex-1 rounded-xl border-2 px-6 py-4 text-center font-medium transition",
-                                  !dysuriaActive
+                                  dysuriaSet && !dysuriaActive
                                     ? "border-rose-300 bg-rose-50 text-rose-800"
                                     : "border-rose-200 bg-white text-rose-600 hover:border-rose-300"
                                 )}
@@ -11786,7 +11789,7 @@ export default function HomePage() {
                                 }}
                                 className={cn(
                                   "flex-1 rounded-xl border-2 px-6 py-4 text-center font-medium transition",
-                                  dysuriaActive
+                                  dysuriaSet && dysuriaActive
                                     ? "border-rose-300 bg-rose-50 text-rose-800"
                                     : "border-rose-200 bg-white text-rose-600 hover:border-rose-300"
                                 )}
