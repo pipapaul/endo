@@ -10159,13 +10159,22 @@ export default function HomePage() {
                   goNextStep();
                 };
 
+                // Dynamic title for bowelBladder based on current micro-question
+                const getStepTitle = () => {
+                  if (currentStep.id === "bowelBladder" && currentMicro) {
+                    const bladderMicros = ["dysuria", "urinary", "urinaryOpt"];
+                    return bladderMicros.includes(currentMicro.id) ? "Blase" : "Verdauung";
+                  }
+                  return currentStep.title;
+                };
+
                 // Common header for all steps - uses micro-question text if available
                 const stepHeader = (
                   <div className="wizard-card-content mb-6 text-center">
                     <div className="wizard-icon-bounce mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full shadow-md" style={{ backgroundColor: CATEGORY_COLORS[currentStep.id]?.pastel }}>
                       <StepIcon className="h-7 w-7" style={{ color: CATEGORY_COLORS[currentStep.id]?.saturated }} />
                     </div>
-                    <h2 className="text-xl font-semibold text-rose-900">{currentStep.title}</h2>
+                    <h2 className="text-xl font-semibold text-rose-900">{getStepTitle()}</h2>
                     <p className="mt-2 text-sm text-rose-600">
                       {currentMicro?.question ?? currentStep.question}
                     </p>
@@ -10540,12 +10549,11 @@ export default function HomePage() {
                             {hasPainData ? "Weiteren Schmerz hinzufügen" : "Ja, Schmerzen eintragen"}
                           </Button>
                           {hasPainData ? (
-                            <Button variant="outline" onClick={goNext} className="w-full border-rose-200 text-rose-700">
+                            <Button onClick={goNext} className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200">
                               Fertig, weiter
                             </Button>
                           ) : (
                             <Button
-                              variant="outline"
                               onClick={() => {
                                 updateQuickPainEventsForDate(dailyDraft.date, () => []);
                                 setDailyDraft((prev) => ({
@@ -10558,7 +10566,7 @@ export default function HomePage() {
                                 }));
                                 goNext();
                               }}
-                              className="w-full border-rose-200 text-rose-700"
+                              className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200"
                             >
                               Nein, keine Schmerzen
                             </Button>
@@ -11046,12 +11054,11 @@ export default function HomePage() {
                             {hasBleedingData ? "Blutung bearbeiten" : "Ja, Blutung eintragen"}
                           </Button>
                           {hasBleedingData ? (
-                            <Button variant="outline" onClick={goNext} className="w-full border-rose-200 text-rose-700">
+                            <Button onClick={goNext} className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200">
                               Fertig, weiter
                             </Button>
                           ) : (
                             <Button
-                              variant="outline"
                               onClick={() => {
                                 setPbacCounts(createEmptyPbacCounts());
                                 setDailyDraft((prev) => ({
@@ -11061,7 +11068,7 @@ export default function HomePage() {
                                 }));
                                 goNext();
                               }}
-                              className="w-full border-rose-200 text-rose-700"
+                              className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200"
                             >
                               Nein, keine Blutung
                             </Button>
@@ -11173,14 +11180,13 @@ export default function HomePage() {
                           </Button>
                           {hasMucusData && (
                             <Button
-                              variant="outline"
                               onClick={() => {
                                 setDailyDraft((prev) => ({
                                   ...prev,
                                   cervixMucus: undefined,
                                 }));
                               }}
-                              className="w-full border-rose-200 text-rose-700"
+                              className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200"
                             >
                               Zurücksetzen
                             </Button>
@@ -11328,9 +11334,8 @@ export default function HomePage() {
                               {wizardMedDose || wizardMedTime ? "Mit Details speichern" : "Ohne Details speichern"}
                             </Button>
                             <Button
-                              variant="outline"
                               onClick={() => setWizardMedName("")}
-                              className="w-full border-rose-200 text-rose-700"
+                              className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200"
                             >
                               Anderes Medikament
                             </Button>
@@ -11388,17 +11393,16 @@ export default function HomePage() {
                             {hasMeds ? "Weiteres Medikament" : "Ja, Medikament eintragen"}
                           </Button>
                           {hasMeds ? (
-                            <Button variant="outline" onClick={goNext} className="w-full border-rose-200 text-rose-700">
+                            <Button onClick={goNext} className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200">
                               Fertig, weiter
                             </Button>
                           ) : (
                             <Button
-                              variant="outline"
                               onClick={() => {
                                 setDailyDraft((prev) => ({ ...prev, rescueMeds: [] }));
                                 goNext();
                               }}
-                              className="w-full border-rose-200 text-rose-700"
+                              className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200"
                             >
                               Nein, keine Medikamente
                             </Button>
@@ -11485,6 +11489,9 @@ export default function HomePage() {
                             >
                               Weiter
                             </Button>
+                            <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                              Überspringen
+                            </Button>
                           </div>
                         </div>
                       );
@@ -11557,6 +11564,9 @@ export default function HomePage() {
                               className="w-full bg-rose-600 text-white hover:bg-rose-500"
                             >
                               Weiter
+                            </Button>
+                            <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                              Überspringen
                             </Button>
                           </div>
                         </div>
@@ -11688,6 +11698,9 @@ export default function HomePage() {
                             >
                               Weiter
                             </Button>
+                            <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                              Überspringen
+                            </Button>
                           </div>
                         </div>
                       );
@@ -11774,6 +11787,9 @@ export default function HomePage() {
                               className="w-full bg-rose-600 text-white hover:bg-rose-500"
                             >
                               Weiter
+                            </Button>
+                            <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                              Überspringen
                             </Button>
                           </div>
                         </div>
@@ -11895,6 +11911,11 @@ export default function HomePage() {
                                   Ja
                                 </button>
                               </div>
+                            </div>
+                            <div className="flex flex-col gap-3">
+                              <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                                Überspringen
+                              </Button>
                             </div>
                           </div>
                         );
@@ -12021,6 +12042,9 @@ export default function HomePage() {
                               className="w-full bg-rose-600 text-white hover:bg-rose-500"
                             >
                               Weiter
+                            </Button>
+                            <Button variant="ghost" onClick={goNext} className="w-full text-rose-400">
+                              Überspringen
                             </Button>
                           </div>
                         </div>
@@ -12168,9 +12192,8 @@ export default function HomePage() {
                             {hasNotes ? "Notizen bearbeiten" : "Ja, Notizen hinzufügen"}
                           </Button>
                           <Button
-                            variant="outline"
                             onClick={() => completeWizard()}
-                            className="w-full border-rose-200 text-rose-700"
+                            className="w-full bg-rose-100 text-rose-700 hover:bg-rose-200"
                           >
                             {hasNotes ? "Fertig!" : "Nein, fertig!"}
                           </Button>
