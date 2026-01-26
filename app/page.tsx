@@ -3875,6 +3875,10 @@ export default function HomePage() {
   const [wizardUrinaryOptActive, setWizardUrinaryOptActive] = useState<boolean | null>(null);
   // Track last wizard completion date for sparkle animation
   const [lastWizardUseDate, setLastWizardUseDate] = usePersistentState<string | null>("endo.wizard.lastUseDate", null);
+  // Track wizard progress for resuming (step number and date)
+  const [wizardProgress, setWizardProgress] = usePersistentState<{ step: number; date: string } | null>("endo.wizard.progress", null);
+  // Dialog state for asking to continue or start over
+  const [showWizardResumeDialog, setShowWizardResumeDialog] = useState(false);
 
   // Compute wizard steps - includes cervixMucus when Billings method is enabled
   const wizardSteps = useMemo<WizardStep[]>(() => {
@@ -9861,6 +9865,63 @@ export default function HomePage() {
           </div>
         </div>
       )}
+      {/* Wizard Resume Dialog */}
+      {showWizardResumeDialog && wizardProgress && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowWizardResumeDialog(false);
+          }}
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+            <div className="mb-4 text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-rose-100">
+                <Sparkles className="h-6 w-6 text-rose-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-rose-900">Schnell-Check fortsetzen?</h3>
+              <p className="mt-2 text-sm text-rose-600">
+                Du hast bereits {Math.round((wizardProgress.step / wizardSteps.length) * 100)}% ausgefüllt.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Button
+                type="button"
+                onClick={() => {
+                  setWizardStep(wizardProgress.step);
+                  setShowWizardResumeDialog(false);
+                  setWizardOpen(true);
+                }}
+                className="w-full bg-rose-600 text-white hover:bg-rose-700"
+              >
+                Weitermachen
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setWizardStep(0);
+                  setWizardProgress(null);
+                  setShowWizardResumeDialog(false);
+                  setWizardOpen(true);
+                }}
+                className="w-full border-rose-200 text-rose-700 hover:bg-rose-50"
+              >
+                Neu starten
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setShowWizardResumeDialog(false)}
+                className="w-full text-rose-400 hover:text-rose-600"
+              >
+                Abbrechen
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Daily Check-in Wizard Mode */}
       {wizardOpen && (
         <div
@@ -9941,6 +10002,10 @@ export default function HomePage() {
                 variant="ghost"
                 size="sm"
                 onClick={() => {
+                  // Save progress for resuming later (only if not on first step)
+                  if (wizardStep > 0) {
+                    setWizardProgress({ step: wizardStep, date: today });
+                  }
                   setWizardOpen(false);
                   setWizardSubStep("question");
                   setWizardMicroStep(0);
@@ -10036,8 +10101,9 @@ export default function HomePage() {
                     setWizardStep((s) => s + 1);
                   } else {
                     setWizardOpen(false);
-                    // Mark wizard as used for today
+                    // Mark wizard as used for today and clear progress
                     setLastWizardUseDate(today);
+                    setWizardProgress(null);
                   }
                 };
 
@@ -12278,16 +12344,34 @@ export default function HomePage() {
                       if (dailyDraft.date !== today) {
                         selectDailyDate(today);
                       }
-                      setWizardStep(0);
-                      setWizardOpen(true);
+                      // Check if there's saved progress for today
+                      if (wizardProgress && wizardProgress.date === today && wizardProgress.step > 0) {
+                        setShowWizardResumeDialog(true);
+                      } else {
+                        setWizardStep(0);
+                        setWizardProgress(null);
+                        setWizardOpen(true);
+                      }
                     }}
                     className={cn(
-                      "flex w-full items-center justify-center gap-2 rounded-xl border-rose-200 bg-white/80 px-4 py-2.5 text-sm font-medium text-rose-700 transition hover:border-rose-300 hover:bg-rose-50",
+                      "relative flex w-full items-center justify-center gap-2 rounded-xl border-rose-200 bg-white/80 px-4 py-2.5 text-sm font-medium text-rose-700 transition hover:border-rose-300 hover:bg-rose-50",
                       lastWizardUseDate !== today && currentTime.getHours() >= 17 && "schnell-check-sparkle"
                     )}
                   >
+                    {/* Progress indicator */}
+                    {wizardProgress && wizardProgress.date === today && wizardProgress.step > 0 && (
+                      <div
+                        className="absolute bottom-0 left-0 h-1 rounded-b-xl bg-rose-300 transition-all"
+                        style={{ width: `${(wizardProgress.step / wizardSteps.length) * 100}%` }}
+                      />
+                    )}
                     <Sparkles className={cn("h-4 w-4", lastWizardUseDate !== today && currentTime.getHours() >= 17 && "sparkle-icon")} />
                     Schnell-Check
+                    {wizardProgress && wizardProgress.date === today && wizardProgress.step > 0 && (
+                      <span className="ml-1 text-xs text-rose-400">
+                        ({Math.round((wizardProgress.step / wizardSteps.length) * 100)}%)
+                      </span>
+                    )}
                   </Button>
                 </div>
                 <Button
