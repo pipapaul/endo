@@ -10083,12 +10083,21 @@ export default function HomePage() {
           <main className="flex-1 overflow-auto bg-gradient-to-b from-rose-50 to-white">
             <div className="mx-auto max-w-lg px-4 py-6">
               {/* Wizard Card Container */}
-              <div
-                key={`${wizardStep}-${wizardMicroStep}-${wizardSubStep}`}
-                className="wizard-card rounded-2xl border border-rose-100 bg-white p-6 shadow-lg shadow-rose-100/50"
-              >
               {(() => {
                 const currentStep = wizardSteps[wizardStep];
+                const categoryColor = currentStep ? CATEGORY_COLORS[currentStep.id] : null;
+                return (
+              <div
+                key={`${wizardStep}-${wizardMicroStep}-${wizardSubStep}`}
+                className="wizard-card rounded-2xl border p-6 shadow-lg overflow-hidden"
+                style={{
+                  borderColor: categoryColor?.border ?? "rgba(244, 63, 94, 0.1)",
+                  background: categoryColor
+                    ? `linear-gradient(to bottom, ${categoryColor.pastel} 0%, ${categoryColor.pastel} 10%, white 35%)`
+                    : "white",
+                }}
+              >
+              {(() => {
                 if (!currentStep) return null;
 
                 const StepIcon = currentStep.icon;
@@ -10172,18 +10181,20 @@ export default function HomePage() {
                   return currentStep.title;
                 };
 
-                // Common header for all steps - uses micro-question text if available
+                // Common header for all steps - big question as focal point
                 const stepHeader = (
-                  <div className="wizard-card-content mb-6 text-center">
-                    <div className="wizard-icon-bounce mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full shadow-md" style={{ backgroundColor: CATEGORY_COLORS[currentStep.id]?.pastel }}>
-                      <StepIcon className="h-7 w-7" style={{ color: CATEGORY_COLORS[currentStep.id]?.saturated }} />
+                  <div className="wizard-card-content mb-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full" style={{ backgroundColor: CATEGORY_COLORS[currentStep.id]?.pastel }}>
+                        <StepIcon className="h-4 w-4" style={{ color: CATEGORY_COLORS[currentStep.id]?.saturated }} />
+                      </div>
+                      <span className="text-sm font-medium" style={{ color: CATEGORY_COLORS[currentStep.id]?.saturated }}>{getStepTitle()}</span>
                     </div>
-                    <h2 className="text-xl font-semibold text-rose-900">{getStepTitle()}</h2>
-                    <p className="mt-2 text-sm text-rose-600">
+                    <h2 className="text-2xl font-semibold text-gray-900 leading-tight">
                       {currentMicro?.question ?? currentStep.question}
-                    </p>
+                    </h2>
                     {currentMicro?.subtext && (
-                      <p className="mt-1 text-xs text-rose-400">{currentMicro.subtext}</p>
+                      <p className="mt-2 text-sm text-gray-500">{currentMicro.subtext}</p>
                     )}
                   </div>
                 );
@@ -11607,7 +11618,10 @@ export default function HomePage() {
 
                   case "bowelBladder": {
                     const currentBristol = dailyDraft.gi?.bristolType;
+                    // Track if values are explicitly set (not just defaulting)
+                    const dyscheziaSet = dailyDraft.symptoms?.dyschezia !== undefined;
                     const dyscheziaActive = dailyDraft.symptoms?.dyschezia?.present ?? false;
+                    const dysuriaSet = dailyDraft.symptoms?.dysuria !== undefined;
                     const dysuriaActive = dailyDraft.symptoms?.dysuria?.present ?? false;
 
                     // Micro-question based rendering
@@ -11665,7 +11679,7 @@ export default function HomePage() {
                                 }}
                                 className={cn(
                                   "flex-1 rounded-xl border-2 px-6 py-4 text-center font-medium transition",
-                                  !dyscheziaActive
+                                  dyscheziaSet && !dyscheziaActive
                                     ? "border-rose-300 bg-rose-50 text-rose-800"
                                     : "border-rose-200 bg-white text-rose-600 hover:border-rose-300"
                                 )}
@@ -11685,7 +11699,7 @@ export default function HomePage() {
                                 }}
                                 className={cn(
                                   "flex-1 rounded-xl border-2 px-6 py-4 text-center font-medium transition",
-                                  dyscheziaActive
+                                  dyscheziaSet && dyscheziaActive
                                     ? "border-rose-300 bg-rose-50 text-rose-800"
                                     : "border-rose-200 bg-white text-rose-600 hover:border-rose-300"
                                 )}
@@ -11755,7 +11769,7 @@ export default function HomePage() {
                                 }}
                                 className={cn(
                                   "flex-1 rounded-xl border-2 px-6 py-4 text-center font-medium transition",
-                                  !dysuriaActive
+                                  dysuriaSet && !dysuriaActive
                                     ? "border-rose-300 bg-rose-50 text-rose-800"
                                     : "border-rose-200 bg-white text-rose-600 hover:border-rose-300"
                                 )}
@@ -11775,7 +11789,7 @@ export default function HomePage() {
                                 }}
                                 className={cn(
                                   "flex-1 rounded-xl border-2 px-6 py-4 text-center font-medium transition",
-                                  dysuriaActive
+                                  dysuriaSet && dysuriaActive
                                     ? "border-rose-300 bg-rose-50 text-rose-800"
                                     : "border-rose-200 bg-white text-rose-600 hover:border-rose-300"
                                 )}
@@ -11983,12 +11997,14 @@ export default function HomePage() {
 
                       return (
                         <div>
-                          <div className="wizard-card-content mb-6 text-center">
-                            <div className="wizard-icon-bounce mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full shadow-md" style={{ backgroundColor: CATEGORY_COLORS[currentStep.id]?.pastel }}>
-                              <StepIcon className="h-7 w-7" style={{ color: CATEGORY_COLORS[currentStep.id]?.saturated }} />
+                          <div className="wizard-card-content mb-6">
+                            <div className="flex items-center gap-2 mb-4">
+                              <div className="flex h-8 w-8 items-center justify-center rounded-full" style={{ backgroundColor: CATEGORY_COLORS[currentStep.id]?.pastel }}>
+                                <StepIcon className="h-4 w-4" style={{ color: CATEGORY_COLORS[currentStep.id]?.saturated }} />
+                              </div>
+                              <span className="text-sm font-medium" style={{ color: CATEGORY_COLORS[currentStep.id]?.saturated }}>Blase</span>
                             </div>
-                            <h2 className="text-xl font-semibold text-rose-900">{currentStep.title}</h2>
-                            <p className="mt-2 text-sm text-rose-600">Details zur Dranginkontinenz</p>
+                            <h2 className="text-2xl font-semibold text-gray-900 leading-tight">Details zur Dranginkontinenz</h2>
                           </div>
                           <div className="mb-6 space-y-3">
                             {/* Leaks count */}
@@ -12238,6 +12254,8 @@ export default function HomePage() {
                 }
               })()}
               </div>
+                );
+              })()}
             </div>
           </main>
         </div>
