@@ -9882,7 +9882,7 @@ export default function HomePage() {
               </div>
               <h3 className="text-lg font-semibold text-rose-900">Schnell-Check fortsetzen?</h3>
               <p className="mt-2 text-sm text-rose-600">
-                Du hast bereits {Math.round((wizardProgress.step / wizardSteps.length) * 100)}% ausgefüllt.
+                Du hast bereits {Math.round((Math.min(wizardProgress.step, wizardSteps.length - 1) / (wizardSteps.length - 1)) * 100)}% ausgefüllt.
               </p>
             </div>
             <div className="space-y-2">
@@ -10002,9 +10002,13 @@ export default function HomePage() {
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  // Save progress for resuming later (only if not on first step)
-                  if (wizardStep > 0) {
+                  // Save progress for resuming later (only if not on first step and not on notes)
+                  const isNotesStep = wizardSteps[wizardStep]?.id === "notes";
+                  if (wizardStep > 0 && !isNotesStep) {
                     setWizardProgress({ step: wizardStep, date: today });
+                  } else if (isNotesStep) {
+                    // On notes step = content complete, clear progress
+                    setWizardProgress(null);
                   }
                   setWizardOpen(false);
                   setWizardSubStep("question");
@@ -12358,18 +12362,18 @@ export default function HomePage() {
                       lastWizardUseDate !== today && currentTime.getHours() >= 17 && "schnell-check-sparkle"
                     )}
                   >
-                    {/* Progress indicator */}
+                    {/* Progress indicator (excluding notes step) */}
                     {wizardProgress && wizardProgress.date === today && wizardProgress.step > 0 && (
                       <div
                         className="absolute bottom-0 left-0 h-1 rounded-b-xl bg-rose-300 transition-all"
-                        style={{ width: `${(wizardProgress.step / wizardSteps.length) * 100}%` }}
+                        style={{ width: `${(Math.min(wizardProgress.step, wizardSteps.length - 1) / (wizardSteps.length - 1)) * 100}%` }}
                       />
                     )}
                     <Sparkles className={cn("h-4 w-4", lastWizardUseDate !== today && currentTime.getHours() >= 17 && "sparkle-icon")} />
                     Schnell-Check
                     {wizardProgress && wizardProgress.date === today && wizardProgress.step > 0 && (
                       <span className="ml-1 text-xs text-rose-400">
-                        ({Math.round((wizardProgress.step / wizardSteps.length) * 100)}%)
+                        ({Math.round((Math.min(wizardProgress.step, wizardSteps.length - 1) / (wizardSteps.length - 1)) * 100)}%)
                       </span>
                     )}
                   </Button>
