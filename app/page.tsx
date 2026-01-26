@@ -12333,15 +12333,13 @@ export default function HomePage() {
                       setDailyActiveCategory("overview");
                       setActiveView("daily");
                     }}
-                    className="flex w-full flex-col items-start justify-start gap-1 rounded-2xl bg-rose-600 px-6 py-4 text-left text-white shadow-lg transition hover:bg-rose-500"
+                    className="flex w-full items-center justify-center rounded-2xl bg-rose-600 px-6 py-8 text-white shadow-lg transition hover:bg-rose-500"
                   >
                     <span className="text-lg font-semibold">Täglicher Check-in</span>
-                    <span className="text-sm text-rose-50/80">Alle Details eintragen</span>
                   </Button>
                   <div className="mt-2">
                     <Button
                       type="button"
-                      variant="outline"
                       onClick={() => {
                         manualDailySelectionRef.current = false;
                         if (dailyDraft.date !== today) {
@@ -12357,14 +12355,14 @@ export default function HomePage() {
                         }
                       }}
                       className={cn(
-                        "relative flex w-full items-center justify-center gap-2 rounded-2xl border-rose-200 bg-white/80 px-6 py-4 text-base font-medium text-rose-700 transition hover:border-rose-300 hover:bg-rose-50",
+                        "relative flex w-full items-center justify-center gap-2 rounded-2xl bg-amber-100 px-6 py-8 text-base font-medium text-amber-800 shadow-sm transition hover:bg-amber-200",
                         lastWizardUseDate !== today && currentTime.getHours() >= 17 && "schnell-check-sparkle"
                       )}
                     >
                       {/* Progress indicator (excluding notes step) */}
                       {wizardProgress && wizardProgress.date === today && wizardProgress.step > 0 && (
                         <div
-                          className="absolute bottom-0 left-0 h-1 rounded-b-2xl bg-rose-300 transition-all"
+                          className="absolute bottom-0 left-0 h-1 rounded-b-2xl bg-amber-400 transition-all"
                           style={{ width: `${(Math.min(wizardProgress.step, wizardSteps.length - 1) / (wizardSteps.length - 1)) * 100}%` }}
                         />
                       )}
@@ -12372,7 +12370,7 @@ export default function HomePage() {
                       Schnell-Check
                     </Button>
                     {wizardProgress && wizardProgress.date === today && wizardProgress.step > 0 && (
-                      <p className="mt-1 text-center text-xs text-rose-400">
+                      <p className="mt-1 text-center text-xs text-amber-600">
                         {Math.min(wizardProgress.step, wizardSteps.length - 1)}/{wizardSteps.length - 1} Schritte
                       </p>
                     )}
