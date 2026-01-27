@@ -3478,6 +3478,9 @@ export default function HomePage() {
   const [bleedingQuickAddOpen, setBleedingQuickAddOpen] = useState(false);
   const [pendingBleedingQuickAdd, setPendingBleedingQuickAdd] = useState<PbacProductItemId | null>(null);
   const [bleedingQuickAddNotice, setBleedingQuickAddNotice] = useState<BleedingQuickAddNotice | null>(null);
+  const [medicationQuickAddOpen, setMedicationQuickAddOpen] = useState(false);
+  const [medicationQuickName, setMedicationQuickName] = useState("");
+  const [medicationQuickDose, setMedicationQuickDose] = useState<number | undefined>(undefined);
   const [painQuickAddOpen, setPainQuickAddOpen] = useState(false);
   const [painQuickContext, setPainQuickContext] = useState<"shortcut" | "module">("shortcut");
   const [painQuickStep, setPainQuickStep] = useState<1 | 2 | 3>(1);
@@ -8692,6 +8695,27 @@ export default function HomePage() {
     const details = detailParts.length ? ` – ${detailParts.join(", ")}` : "";
     return `Periode: ${bleedingShortcutProducts.total} Produkte${details}`;
   }, [bleedingShortcutProducts]);
+
+  // Medication shortcut data for quick tracker visualization
+  const medicationShortcutMeds = useMemo(() => {
+    if (dailyDraft.date !== today) {
+      return { meds: [] as { name: string; time?: string }[], total: 0 };
+    }
+    const meds = (dailyDraft.rescueMeds ?? []).map((med) => ({
+      name: med.name,
+      time: med.time,
+    }));
+    return { meds, total: meds.length };
+  }, [dailyDraft.date, dailyDraft.rescueMeds, today]);
+
+  const medicationShortcutAriaLabel = useMemo(() => {
+    if (!medicationShortcutMeds.total) {
+      return "Medikamente: Medikament hinzufügen";
+    }
+    const medNames = medicationShortcutMeds.meds.map((m) => m.name).join(", ");
+    return `Medikamente: ${medicationShortcutMeds.total} eingetragen – ${medNames}`;
+  }, [medicationShortcutMeds]);
+
   const painShortcutAriaLabel = useMemo(() => {
     if (!latestPainShortcutEvent) {
       return "Schmerzen schnell erfassen";
@@ -10230,6 +10254,7 @@ export default function HomePage() {
                       ...painRegions.map((r, i) => ({
                         type: "region" as const,
                         id: `region-${i}`,
+                        originalIndex: i,
                         label: getRegionLabel(r.regionId),
                         intensity: r.nrs,
                         qualities: r.qualities,
@@ -10237,6 +10262,7 @@ export default function HomePage() {
                       ...quickPainEvents.map((e) => ({
                         type: "event" as const,
                         id: `event-${e.id}`,
+                        originalId: e.id,
                         label: getRegionLabel(e.regionId),
                         intensity: e.intensity,
                         qualities: e.qualities,
@@ -10422,7 +10448,7 @@ export default function HomePage() {
                                 <p className="text-xs font-medium uppercase tracking-wide text-rose-400">
                                   Du hast heute folgende Schmerzen angegeben:
                                 </p>
-                                {allPainEntries.map((entry) => (
+                                {allPainEntries.map((entry, index) => (
                                   <div
                                     key={entry.id}
                                     className="flex items-center justify-between rounded-lg border border-rose-100 bg-rose-50/50 px-3 py-2"
@@ -10434,6 +10460,25 @@ export default function HomePage() {
                                         {entry.qualities.length > 0 && ` · ${entry.qualities.join(", ")}`}
                                       </p>
                                     </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (entry.type === "region") {
+                                          setDailyDraft((prev) => ({
+                                            ...prev,
+                                            painRegions: (prev.painRegions ?? []).filter((_, i) => i !== entry.originalIndex),
+                                          }));
+                                        } else {
+                                          setDailyDraft((prev) => ({
+                                            ...prev,
+                                            quickPainEvents: (prev.quickPainEvents ?? []).filter((e) => e.id !== entry.originalId),
+                                          }));
+                                        }
+                                      }}
+                                      className="text-rose-400 hover:text-rose-600"
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </button>
                                   </div>
                                 ))}
                               </div>
@@ -11428,7 +11473,15 @@ export default function HomePage() {
                                 key={i}
                                 className="flex items-center justify-between rounded-lg border border-rose-100 bg-rose-50/50 px-3 py-2"
                               >
-                                <span className="text-sm font-medium text-rose-800">{med.name}</span>
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-medium text-rose-800">
+                                    {med.name}
+                                    {med.doseMg && <span className="ml-1 text-rose-600">{med.doseMg}mg</span>}
+                                  </span>
+                                  {med.time && (
+                                    <span className="text-xs text-rose-500">{med.time} Uhr</span>
+                                  )}
+                                </div>
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -12437,6 +12490,44 @@ export default function HomePage() {
                     </div>
                   </div>
                 )}
+                {/* Medikamente quick tracker */}
+                <div
+                  role="group"
+                  aria-label={medicationShortcutAriaLabel}
+                  className="flex flex-1 min-w-[12rem] items-center gap-3 rounded-xl border border-rose-100 bg-white/80 px-3 py-2 text-rose-800 shadow-sm"
+                >
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setMedicationQuickAddOpen(true)}
+                    aria-label={medicationShortcutAriaLabel}
+                    className="h-9 w-9 rounded-full border-rose-200 bg-white text-rose-700 shadow-sm transition hover:border-rose-300 hover:bg-rose-50"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                  <div className="flex flex-1 items-center justify-between gap-2">
+                    <div className="flex flex-col leading-tight">
+                      <span className="text-[12px] font-semibold leading-tight">Medikamente</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-rose-500">
+                        quick tracker
+                      </span>
+                    </div>
+                    <div className="flex min-h-[0.75rem] flex-wrap items-center justify-end gap-1" aria-hidden>
+                      {medicationShortcutMeds.total === 0 ? (
+                        <span className="h-1 w-6 rounded-full bg-rose-100" />
+                      ) : (
+                        medicationShortcutMeds.meds.map((med, index) => (
+                          <span
+                            key={`med-inline-dot-${index}`}
+                            className="h-2 w-2 rounded-full bg-sky-400 shadow-sm shadow-sky-200/60"
+                            title={med.name}
+                          />
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="sm:col-span-3 lg:col-span-2">
@@ -16554,6 +16645,142 @@ export default function HomePage() {
                 <p className="text-xs text-rose-500">Die Auswahl wird direkt für heute gezählt.</p>
               </>
             )}
+          </div>
+        </div>
+      ) : null}
+      {medicationQuickAddOpen ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-rose-950/40 px-4 py-6 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Medikament hinzufügen"
+          onClick={() => {
+            setMedicationQuickAddOpen(false);
+            setMedicationQuickName("");
+            setMedicationQuickDose(undefined);
+          }}
+        >
+          <div
+            className="w-full max-w-md space-y-5 rounded-3xl bg-white p-5 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-sky-400">
+                  Medikamente
+                </p>
+                <p className="text-lg font-semibold text-rose-900">
+                  {medicationQuickName ? medicationQuickName : "Medikament hinzufügen"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setMedicationQuickAddOpen(false);
+                  setMedicationQuickName("");
+                  setMedicationQuickDose(undefined);
+                }}
+                className="rounded-full border border-rose-100 p-2 text-rose-500 transition hover:border-rose-200 hover:text-rose-700"
+                aria-label="Schließen"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {!medicationQuickName ? (
+              // Step 1: Select medication
+              <div className="space-y-4">
+                <div>
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-rose-400">Schnellauswahl</p>
+                  <div className="flex flex-wrap gap-2">
+                    {rescueMedOptions.map((med) => (
+                      <button
+                        key={med}
+                        type="button"
+                        onClick={() => setMedicationQuickName(med)}
+                        className="rounded-full border border-sky-200 bg-white px-3 py-1.5 text-sm font-medium text-sky-600 transition hover:border-sky-300 hover:bg-sky-50"
+                      >
+                        {med}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="text-center text-xs text-rose-400">oder</div>
+                <div>
+                  <input
+                    type="text"
+                    placeholder="Anderes Medikament eingeben..."
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && e.currentTarget.value.trim()) {
+                        setMedicationQuickName(e.currentTarget.value.trim());
+                      }
+                    }}
+                    className="w-full rounded-xl border border-rose-200 px-4 py-3 text-rose-800 placeholder-rose-300 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
+                  />
+                </div>
+              </div>
+            ) : (
+              // Step 2: Optional dose
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-rose-400">
+                    Dosis (mg) – optional
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    placeholder="z.B. 400"
+                    value={medicationQuickDose ?? ""}
+                    onChange={(e) => setMedicationQuickDose(e.target.value ? Number(e.target.value) : undefined)}
+                    className="w-full rounded-xl border border-rose-200 px-4 py-3 text-rose-800 placeholder-rose-300 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Button
+                    onClick={() => {
+                      const medName = medicationQuickName.trim();
+                      const currentTime = new Date().toTimeString().slice(0, 5);
+                      // Ensure we're editing today's draft
+                      if (dailyDraft.date !== today) {
+                        selectDailyDate(today);
+                      }
+                      // Add medication to daily draft
+                      setDailyDraft((prev) => ({
+                        ...prev,
+                        rescueMeds: [
+                          ...(prev.rescueMeds ?? []),
+                          {
+                            name: medName,
+                            time: currentTime,
+                            ...(medicationQuickDose !== undefined && { doseMg: medicationQuickDose }),
+                          },
+                        ],
+                      }));
+                      // If custom med, add to persistent list
+                      if (!(STANDARD_RESCUE_MEDS as readonly string[]).includes(medName) && !customRescueMeds.includes(medName)) {
+                        setCustomRescueMeds((prev) => [...prev, medName]);
+                      }
+                      // Reset and close
+                      setMedicationQuickName("");
+                      setMedicationQuickDose(undefined);
+                      setMedicationQuickAddOpen(false);
+                    }}
+                    className="w-full bg-sky-500 text-white hover:bg-sky-600"
+                  >
+                    {medicationQuickDose ? `${medicationQuickName} ${medicationQuickDose}mg hinzufügen` : `${medicationQuickName} hinzufügen`}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setMedicationQuickName("")}
+                    className="w-full border-rose-200 text-rose-600 hover:bg-rose-50"
+                  >
+                    Anderes Medikament
+                  </Button>
+                </div>
+              </div>
+            )}
+            <p className="text-xs text-rose-500">Zeitstempel wird automatisch gesetzt.</p>
           </div>
         </div>
       ) : null}
