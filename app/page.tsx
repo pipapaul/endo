@@ -3358,6 +3358,8 @@ export default function HomePage() {
     usePersistentState<string[]>("endo.dismissedCheckIns.v1", []);
   const [customRescueMeds, setCustomRescueMeds, _customRescueMedsStorage] =
     usePersistentState<string[]>("endo.rescueMeds.v1", []);
+  const [savedMedDoses, setSavedMedDoses, _savedMedDosesStorage] =
+    usePersistentState<Record<string, number[]>>("endo.medDoses.v1", {});
   const [dailyDraft, setDailyDraft, dailyDraftStorage] =
     usePersistentState<DailyEntry>("endo.draft.daily.v1", defaultDailyDraft);
   const [lastSavedDailySnapshot, setLastSavedDailySnapshot] = useState<DailyEntry>(() => createEmptyDailyEntry(today));
@@ -8472,14 +8474,24 @@ export default function HomePage() {
       if (!current?.name || current.doseMg === undefined || !current.time) {
         return current;
       }
-      const nextDose = { name: current.name, doseMg: current.doseMg, time: current.time };
+      const medName = current.name;
+      const medDose = current.doseMg;
+      const nextDose = { name: medName, doseMg: medDose, time: current.time };
       setDailyDraft((prev) => ({
         ...prev,
         rescueMeds: [...(prev.rescueMeds ?? []), nextDose],
       }));
+      // Save dose for future quick selection
+      const existingDoses = savedMedDoses[medName] ?? [];
+      if (!existingDoses.includes(medDose)) {
+        setSavedMedDoses((prev) => ({
+          ...prev,
+          [medName]: [...(prev[medName] ?? []), medDose].sort((a, b) => a - b),
+        }));
+      }
       return null;
     });
-  }, [setDailyDraft]);
+  }, [setDailyDraft, savedMedDoses, setSavedMedDoses]);
 
   const handleCustomRescueSubmit = useCallback(() => {
     const trimmed = customRescueName.trim();
@@ -11312,48 +11324,30 @@ export default function HomePage() {
                     if (wizardSubStep === "entry") {
                       const hasSelectedMed = wizardMedName.trim().length > 0;
 
-                      // Step 1: Select medication name
+                      // Step 1: Select medication name (wizard only shows standard meds, no custom input)
                       if (!hasSelectedMed) {
                         return (
                           <div>
                             <div className="mb-4 text-center">
                               <h2 className="text-lg font-semibold text-rose-900">Medikament hinzufügen</h2>
-                              <p className="mt-1 text-sm text-rose-600">Wähle oder gib ein Medikament ein</p>
+                              <p className="mt-1 text-sm text-rose-600">Wähle ein Medikament</p>
                             </div>
                             <div className="space-y-4">
-                              <div>
-                                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-rose-400">Schnellauswahl</p>
-                                <div className="flex flex-wrap gap-2">
-                                  {rescueMedOptions.map((med) => (
-                                    <button
-                                      key={med}
-                                      type="button"
-                                      onClick={() => setWizardMedName(med)}
-                                      className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-sm font-medium text-rose-600 transition hover:border-rose-300 hover:bg-rose-50"
-                                    >
-                                      {med}
-                                    </button>
-                                  ))}
-                                </div>
+                              <div className="flex flex-wrap gap-2">
+                                {STANDARD_RESCUE_MEDS.map((med) => (
+                                  <button
+                                    key={med}
+                                    type="button"
+                                    onClick={() => setWizardMedName(med)}
+                                    className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-sm font-medium text-rose-600 transition hover:border-rose-300 hover:bg-rose-50"
+                                  >
+                                    {med}
+                                  </button>
+                                ))}
                               </div>
-                              <div className="text-center text-xs text-rose-400">oder</div>
-                              <div>
-                                <input
-                                  type="text"
-                                  placeholder="Anderes Medikament eingeben..."
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter" && e.currentTarget.value.trim()) {
-                                      setWizardMedName(e.currentTarget.value.trim());
-                                    }
-                                  }}
-                                  onBlur={(e) => {
-                                    if (e.currentTarget.value.trim()) {
-                                      setWizardMedName(e.currentTarget.value.trim());
-                                    }
-                                  }}
-                                  className="w-full rounded-xl border border-rose-200 px-4 py-3 text-rose-800 placeholder-rose-300 focus:border-rose-400 focus:outline-none focus:ring-1 focus:ring-rose-400"
-                                />
-                              </div>
+                              <p className="text-xs text-rose-400 text-center">
+                                Weitere Medikamente im täglichen Check-in hinzufügen
+                              </p>
                             </div>
                             <div className="mt-6">
                               <Button
@@ -11361,7 +11355,6 @@ export default function HomePage() {
                                 onClick={() => {
                                   setWizardMedName("");
                                   setWizardMedDose(undefined);
-                                  setWizardMedTime(undefined);
                                   setWizardSubStep("question");
                                 }}
                                 className="w-full text-rose-400"
@@ -11373,18 +11366,42 @@ export default function HomePage() {
                         );
                       }
 
-                      // Step 2: Add optional dose and time
+                      // Step 2: Add optional dose (time is always current time in wizard)
+                      const savedDosesForMed = savedMedDoses[wizardMedName] ?? [];
                       return (
                         <div>
                           <div className="mb-4 text-center">
                             <h2 className="text-lg font-semibold text-rose-900">{wizardMedName}</h2>
-                            <p className="mt-1 text-sm text-rose-600">Optionale Details hinzufügen</p>
+                            <p className="mt-1 text-sm text-rose-600">Dosis wählen oder eingeben</p>
                           </div>
                           <div className="space-y-4">
+                            {/* Saved doses as quick tags */}
+                            {savedDosesForMed.length > 0 && (
+                              <div>
+                                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-rose-400">Gespeicherte Dosen</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {savedDosesForMed.map((dose) => (
+                                    <button
+                                      key={dose}
+                                      type="button"
+                                      onClick={() => setWizardMedDose(dose)}
+                                      className={cn(
+                                        "rounded-full border px-3 py-1.5 text-sm font-medium transition",
+                                        wizardMedDose === dose
+                                          ? "border-rose-400 bg-rose-100 text-rose-800"
+                                          : "border-rose-200 bg-white text-rose-600 hover:border-rose-300 hover:bg-rose-50"
+                                      )}
+                                    >
+                                      {dose}mg
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                             {/* Dose input */}
                             <div>
                               <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-rose-400">
-                                Dosis (mg) – optional
+                                {savedDosesForMed.length > 0 ? "Oder andere Dosis (mg)" : "Dosis (mg) – optional"}
                               </label>
                               <input
                                 type="number"
@@ -11396,47 +11413,38 @@ export default function HomePage() {
                                 className="w-full rounded-xl border border-rose-200 px-4 py-3 text-rose-800 placeholder-rose-300 focus:border-rose-400 focus:outline-none focus:ring-1 focus:ring-rose-400"
                               />
                             </div>
-                            {/* Time input */}
-                            <div>
-                              <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-rose-400">
-                                Uhrzeit – optional
-                              </label>
-                              <input
-                                type="time"
-                                value={wizardMedTime ?? ""}
-                                onChange={(e) => setWizardMedTime(e.target.value || undefined)}
-                                className="w-full rounded-xl border border-rose-200 px-4 py-3 text-rose-800 placeholder-rose-300 focus:border-rose-400 focus:outline-none focus:ring-1 focus:ring-rose-400"
-                              />
-                            </div>
                           </div>
                           <div className="mt-6 flex flex-col gap-3">
                             <Button
                               onClick={() => {
                                 const medName = wizardMedName.trim();
-                                // Add to daily draft
+                                const currentTime = new Date().toTimeString().slice(0, 5);
+                                // Add to daily draft with current time
                                 setDailyDraft((prev) => ({
                                   ...prev,
                                   rescueMeds: [
                                     ...(prev.rescueMeds ?? []),
                                     {
                                       name: medName,
+                                      time: currentTime,
                                       ...(wizardMedDose !== undefined && { doseMg: wizardMedDose }),
-                                      ...(wizardMedTime !== undefined && { time: wizardMedTime }),
                                     },
                                   ],
                                 }));
-                                // If custom med (not in standard list), add to customRescueMeds for persistence
-                                if (!(STANDARD_RESCUE_MEDS as readonly string[]).includes(medName) && !customRescueMeds.includes(medName)) {
-                                  setCustomRescueMeds((prev) => [...prev, medName]);
+                                // Save dose for future quick selection if entered
+                                if (wizardMedDose !== undefined && !savedDosesForMed.includes(wizardMedDose)) {
+                                  setSavedMedDoses((prev) => ({
+                                    ...prev,
+                                    [medName]: [...(prev[medName] ?? []), wizardMedDose].sort((a, b) => a - b),
+                                  }));
                                 }
                                 setWizardMedName("");
                                 setWizardMedDose(undefined);
-                                setWizardMedTime(undefined);
                                 setWizardSubStep("question");
                               }}
                               className="w-full bg-rose-600 text-white hover:bg-rose-500"
                             >
-                              {wizardMedDose || wizardMedTime ? "Mit Details speichern" : "Ohne Details speichern"}
+                              {wizardMedDose ? `${wizardMedName} ${wizardMedDose}mg hinzufügen` : `${wizardMedName} hinzufügen`}
                             </Button>
                             <Button
                               onClick={() => setWizardMedName("")}
@@ -13927,11 +13935,29 @@ export default function HomePage() {
                             </div>
                           </div>
                           {rescueWizard.step >= 2 ? (
-                            <div className="space-y-1">
+                            <div className="space-y-2">
                               <Label className="text-xs text-rose-600">Schritt 2: Dosis (mg) auswählen</Label>
+                              {/* Saved doses as quick selection */}
+                              {rescueWizard.name && (savedMedDoses[rescueWizard.name] ?? []).length > 0 && (
+                                <div className="flex flex-wrap gap-2">
+                                  {(savedMedDoses[rescueWizard.name] ?? []).map((dose) => (
+                                    <Button
+                                      key={dose}
+                                      type="button"
+                                      variant={rescueWizard.doseMg === dose ? "default" : "outline"}
+                                      size="sm"
+                                      className="rounded-full"
+                                      onClick={() => setRescueWizard((prev) => prev ? { ...prev, doseMg: dose } : prev)}
+                                    >
+                                      {dose}mg
+                                    </Button>
+                                  ))}
+                                </div>
+                              )}
                               <Input
                                 type="number"
                                 min={0}
+                                placeholder="Andere Dosis eingeben"
                                 value={rescueWizard.doseMg ?? ""}
                                 onChange={(event) =>
                                   setRescueWizard((prev) =>
@@ -16720,11 +16746,34 @@ export default function HomePage() {
                 </div>
               </div>
             ) : (
-              // Step 2: Optional dose
+              // Step 2: Optional dose with saved doses as quick selection
               <div className="space-y-4">
+                {/* Saved doses as quick tags */}
+                {(savedMedDoses[medicationQuickName] ?? []).length > 0 && (
+                  <div>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-rose-400">Gespeicherte Dosen</p>
+                    <div className="flex flex-wrap gap-2">
+                      {(savedMedDoses[medicationQuickName] ?? []).map((dose) => (
+                        <button
+                          key={dose}
+                          type="button"
+                          onClick={() => setMedicationQuickDose(dose)}
+                          className={cn(
+                            "rounded-full border px-3 py-1.5 text-sm font-medium transition",
+                            medicationQuickDose === dose
+                              ? "border-sky-400 bg-sky-100 text-sky-800"
+                              : "border-sky-200 bg-white text-sky-600 hover:border-sky-300 hover:bg-sky-50"
+                          )}
+                        >
+                          {dose}mg
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div>
                   <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-rose-400">
-                    Dosis (mg) – optional
+                    {(savedMedDoses[medicationQuickName] ?? []).length > 0 ? "Oder andere Dosis (mg)" : "Dosis (mg) – optional"}
                   </label>
                   <input
                     type="number"
@@ -16757,6 +16806,16 @@ export default function HomePage() {
                           },
                         ],
                       }));
+                      // Save dose for future quick selection if entered
+                      if (medicationQuickDose !== undefined) {
+                        const existingDoses = savedMedDoses[medName] ?? [];
+                        if (!existingDoses.includes(medicationQuickDose)) {
+                          setSavedMedDoses((prev) => ({
+                            ...prev,
+                            [medName]: [...(prev[medName] ?? []), medicationQuickDose].sort((a, b) => a - b),
+                          }));
+                        }
+                      }
                       // If custom med, add to persistent list
                       if (!(STANDARD_RESCUE_MEDS as readonly string[]).includes(medName) && !customRescueMeds.includes(medName)) {
                         setCustomRescueMeds((prev) => [...prev, medName]);
