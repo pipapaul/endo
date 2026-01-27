@@ -26,7 +26,8 @@ export const ExtendedBleedingEntryForm: React.FC<ExtendedBleedingEntryFormProps>
   settings,
   onAddEntry,
 }) => {
-  const enabledProducts = getEnabledProducts(settings);
+  // Filter to only show enabled extended products (not classic PBAC)
+  const enabledProducts = getEnabledProducts(settings).filter(p => p.isClassicPbac !== true);
   const [selectedProduct, setSelectedProduct] = useState<ProductDefinition | null>(null);
   const [fillLevel, setFillLevel] = useState<FillLevel>(66);
   const [freeBleedingIntensity, setFreeBleedingIntensity] = useState<
