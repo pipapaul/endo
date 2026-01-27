@@ -11324,30 +11324,48 @@ export default function HomePage() {
                     if (wizardSubStep === "entry") {
                       const hasSelectedMed = wizardMedName.trim().length > 0;
 
-                      // Step 1: Select medication name (wizard only shows standard meds, no custom input)
+                      // Step 1: Select medication name (same options as daily check-in)
                       if (!hasSelectedMed) {
                         return (
                           <div>
                             <div className="mb-4 text-center">
                               <h2 className="text-lg font-semibold text-rose-900">Medikament hinzufügen</h2>
-                              <p className="mt-1 text-sm text-rose-600">Wähle ein Medikament</p>
+                              <p className="mt-1 text-sm text-rose-600">Wähle oder gib ein Medikament ein</p>
                             </div>
                             <div className="space-y-4">
-                              <div className="flex flex-wrap gap-2">
-                                {STANDARD_RESCUE_MEDS.map((med) => (
-                                  <button
-                                    key={med}
-                                    type="button"
-                                    onClick={() => setWizardMedName(med)}
-                                    className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-sm font-medium text-rose-600 transition hover:border-rose-300 hover:bg-rose-50"
-                                  >
-                                    {med}
-                                  </button>
-                                ))}
+                              <div>
+                                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-rose-400">Schnellauswahl</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {rescueMedOptions.map((med) => (
+                                    <button
+                                      key={med}
+                                      type="button"
+                                      onClick={() => setWizardMedName(med)}
+                                      className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-sm font-medium text-rose-600 transition hover:border-rose-300 hover:bg-rose-50"
+                                    >
+                                      {med}
+                                    </button>
+                                  ))}
+                                </div>
                               </div>
-                              <p className="text-xs text-rose-400 text-center">
-                                Weitere Medikamente im täglichen Check-in hinzufügen
-                              </p>
+                              <div className="text-center text-xs text-rose-400">oder</div>
+                              <div>
+                                <input
+                                  type="text"
+                                  placeholder="Anderes Medikament eingeben..."
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" && e.currentTarget.value.trim()) {
+                                      setWizardMedName(e.currentTarget.value.trim());
+                                    }
+                                  }}
+                                  onBlur={(e) => {
+                                    if (e.currentTarget.value.trim()) {
+                                      setWizardMedName(e.currentTarget.value.trim());
+                                    }
+                                  }}
+                                  className="w-full rounded-xl border border-rose-200 px-4 py-3 text-rose-800 placeholder-rose-300 focus:border-rose-400 focus:outline-none focus:ring-1 focus:ring-rose-400"
+                                />
+                              </div>
                             </div>
                             <div className="mt-6">
                               <Button
@@ -11431,6 +11449,10 @@ export default function HomePage() {
                                     },
                                   ],
                                 }));
+                                // If custom med (not in standard list), add to customRescueMeds for persistence
+                                if (!(STANDARD_RESCUE_MEDS as readonly string[]).includes(medName) && !customRescueMeds.includes(medName)) {
+                                  setCustomRescueMeds((prev) => [...prev, medName]);
+                                }
                                 // Save dose for future quick selection if entered
                                 if (wizardMedDose !== undefined && !savedDosesForMed.includes(wizardMedDose)) {
                                   setSavedMedDoses((prev) => ({
@@ -16714,10 +16736,45 @@ export default function HomePage() {
             </div>
 
             {!medicationQuickName ? (
-              // Step 1: Select medication
+              // Step 1: Select medication or medication+dose combo
               <div className="space-y-4">
+                {/* Quick add: medication + saved dose combos */}
+                {Object.entries(savedMedDoses).some(([_, doses]) => doses.length > 0) && (
+                  <div>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-sky-500">Schnell hinzufügen</p>
+                    <div className="flex flex-wrap gap-2">
+                      {rescueMedOptions.flatMap((med) => {
+                        const doses = savedMedDoses[med] ?? [];
+                        return doses.map((dose) => (
+                          <button
+                            key={`${med}-${dose}`}
+                            type="button"
+                            onClick={() => {
+                              const currentTime = new Date().toTimeString().slice(0, 5);
+                              if (dailyDraft.date !== today) {
+                                selectDailyDate(today);
+                              }
+                              setDailyDraft((prev) => ({
+                                ...prev,
+                                rescueMeds: [
+                                  ...(prev.rescueMeds ?? []),
+                                  { name: med, doseMg: dose, time: currentTime },
+                                ],
+                              }));
+                              setMedicationQuickAddOpen(false);
+                            }}
+                            className="rounded-full border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-medium text-sky-700 transition hover:border-sky-400 hover:bg-sky-100"
+                          >
+                            {med} {dose}mg
+                          </button>
+                        ));
+                      })}
+                    </div>
+                  </div>
+                )}
+                {/* Standard medication selection */}
                 <div>
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-rose-400">Schnellauswahl</p>
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-rose-400">Medikament wählen</p>
                   <div className="flex flex-wrap gap-2">
                     {rescueMedOptions.map((med) => (
                       <button
