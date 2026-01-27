@@ -6058,7 +6058,7 @@ export default function HomePage() {
 
   const handleBackupExport = () => {
     downloadFile(
-      `endo-backup-${today}.json`,
+      `cycle-backup-${today}.json`,
       JSON.stringify(backupPayload, null, 2),
       "application/json"
     );
