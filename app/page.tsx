@@ -8649,6 +8649,8 @@ export default function HomePage() {
     }
     const summary: Record<PbacSaturation, number> = { light: 0, medium: 0, heavy: 0 };
     const dots: PbacSaturation[] = [];
+
+    // Classic PBAC products
     PBAC_PRODUCT_ITEMS.forEach((item) => {
       const count = pbacCounts[item.id] ?? 0;
       if (!count) {
@@ -8659,8 +8661,27 @@ export default function HomePage() {
         dots.push(item.saturation);
       }
     });
+
+    // Extended PBAC entries - map pbacEquivalentScore to saturation
+    const extendedEntries = dailyDraft.extendedPbacData?.extendedEntries ?? [];
+    extendedEntries.forEach((entry) => {
+      const score = entry.pbacEquivalentScore;
+      const saturation: PbacSaturation = score >= 11 ? "heavy" : score >= 5 ? "medium" : "light";
+      summary[saturation] += 1;
+      dots.push(saturation);
+    });
+
+    // Free bleeding entries
+    const freeBleedingEntries = dailyDraft.extendedPbacData?.freeBleedingEntries ?? [];
+    freeBleedingEntries.forEach((entry) => {
+      const score = entry.pbacEquivalentScore;
+      const saturation: PbacSaturation = score >= 11 ? "heavy" : score >= 5 ? "medium" : "light";
+      summary[saturation] += 1;
+      dots.push(saturation);
+    });
+
     return { dots, summary, total: dots.length };
-  }, [dailyDraft.date, pbacCounts, today]);
+  }, [dailyDraft.date, dailyDraft.extendedPbacData?.extendedEntries, dailyDraft.extendedPbacData?.freeBleedingEntries, pbacCounts, today]);
   const periodShortcutAriaLabel = useMemo(() => {
     if (!bleedingShortcutProducts.total) {
       return "Periode: Produkt hinzufügen";
