@@ -148,6 +148,7 @@ export const DEFAULT_PRODUCTS: ProductDefinition[] = [
   { id: "cup_l", category: "cup", name: "Größe L", nameShort: "L", capacity_ml: 33, enabled: false },
 
   // Menstruationsdisc
+  { id: "disc_small", category: "disc", name: "Klein", nameShort: "Klein", capacity_ml: 36, enabled: false },
   { id: "disc_standard", category: "disc", name: "Standard", nameShort: "Standard", capacity_ml: 50, enabled: false },
   { id: "disc_large", category: "disc", name: "Groß", nameShort: "Groß", capacity_ml: 70, enabled: false },
 
