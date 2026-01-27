@@ -10254,6 +10254,7 @@ export default function HomePage() {
                       ...painRegions.map((r, i) => ({
                         type: "region" as const,
                         id: `region-${i}`,
+                        originalIndex: i,
                         label: getRegionLabel(r.regionId),
                         intensity: r.nrs,
                         qualities: r.qualities,
@@ -10261,6 +10262,7 @@ export default function HomePage() {
                       ...quickPainEvents.map((e) => ({
                         type: "event" as const,
                         id: `event-${e.id}`,
+                        originalId: e.id,
                         label: getRegionLabel(e.regionId),
                         intensity: e.intensity,
                         qualities: e.qualities,
@@ -10446,7 +10448,7 @@ export default function HomePage() {
                                 <p className="text-xs font-medium uppercase tracking-wide text-rose-400">
                                   Du hast heute folgende Schmerzen angegeben:
                                 </p>
-                                {allPainEntries.map((entry) => (
+                                {allPainEntries.map((entry, index) => (
                                   <div
                                     key={entry.id}
                                     className="flex items-center justify-between rounded-lg border border-rose-100 bg-rose-50/50 px-3 py-2"
@@ -10458,6 +10460,25 @@ export default function HomePage() {
                                         {entry.qualities.length > 0 && ` · ${entry.qualities.join(", ")}`}
                                       </p>
                                     </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (entry.type === "region") {
+                                          setDailyDraft((prev) => ({
+                                            ...prev,
+                                            painRegions: (prev.painRegions ?? []).filter((_, i) => i !== entry.originalIndex),
+                                          }));
+                                        } else {
+                                          setDailyDraft((prev) => ({
+                                            ...prev,
+                                            quickPainEvents: (prev.quickPainEvents ?? []).filter((e) => e.id !== entry.originalId),
+                                          }));
+                                        }
+                                      }}
+                                      className="text-rose-400 hover:text-rose-600"
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </button>
                                   </div>
                                 ))}
                               </div>
@@ -11452,7 +11473,15 @@ export default function HomePage() {
                                 key={i}
                                 className="flex items-center justify-between rounded-lg border border-rose-100 bg-rose-50/50 px-3 py-2"
                               >
-                                <span className="text-sm font-medium text-rose-800">{med.name}</span>
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-medium text-rose-800">
+                                    {med.name}
+                                    {med.doseMg && <span className="ml-1 text-rose-600">{med.doseMg}mg</span>}
+                                  </span>
+                                  {med.time && (
+                                    <span className="text-xs text-rose-500">{med.time} Uhr</span>
+                                  )}
+                                </div>
                                 <button
                                   type="button"
                                   onClick={() => {
