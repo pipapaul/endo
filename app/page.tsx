@@ -3764,11 +3764,6 @@ export default function HomePage() {
     createEmptyCategoryCompletion()
   );
 
-  const isBirthdayGreetingDay = () => {
-    const now = new Date();
-    return now.getFullYear() === 2025 && now.getMonth() === 10 && now.getDate() === 10;
-  };
-  const [showBirthdayGreeting, setShowBirthdayGreeting] = useState(isBirthdayGreetingDay);
   const [pendingCategoryConfirm, setPendingCategoryConfirm] =
     useState<TrackableDailyCategoryId | null>(null);
   const [pendingOverviewConfirm, setPendingOverviewConfirm] =
@@ -3776,11 +3771,6 @@ export default function HomePage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmStep, setDeleteConfirmStep] = useState<1 | 2>(1);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
-  const heartGradientReactId = useId();
-  const heartGradientId = useMemo(
-    () => `heart-gradient-${heartGradientReactId.replace(/:/g, "")}`,
-    [heartGradientReactId]
-  );
 
   const storageMetas = [
     dailyStorage,
@@ -9590,7 +9580,7 @@ export default function HomePage() {
     ]
   );
 
-  const showFloatingCheckInBadge = activeView === "home" && pendingCheckIns.length > 0 && !showBirthdayGreeting;
+  const showFloatingCheckInBadge = activeView === "home" && pendingCheckIns.length > 0;
 
   const floatingCheckInBadge = showFloatingCheckInBadge ? (
     <div className="pointer-events-none fixed right-4 top-4 z-[90] flex flex-col items-end gap-2 sm:right-6">
@@ -9724,43 +9714,6 @@ export default function HomePage() {
   return (
     <div className="relative flex min-h-screen flex-col">
       {floatingCheckInBadge}
-      {showBirthdayGreeting && (
-        <div
-          className="fixed inset-0 z-[100] flex flex-col bg-gradient-to-br from-rose-50 via-white to-rose-100 px-6 py-12 text-center"
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="flex flex-1 flex-col items-center justify-center gap-8">
-            <h1 className="text-4xl font-extrabold tracking-tight text-rose-700 sm:text-5xl">
-              Alles Liebe zum Geburtstag!
-            </h1>
-            <div className="heart-3d-container">
-              <div className="heart-3d">
-                <svg viewBox="0 0 512 512" className="h-full w-full" aria-hidden="true" focusable="false">
-                  <defs>
-                    <linearGradient id={heartGradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stopColor="#f9a8d4" />
-                      <stop offset="50%" stopColor="#f472b6" />
-                      <stop offset="100%" stopColor="#db2777" />
-                    </linearGradient>
-                  </defs>
-                  <path
-                    d="M256 464l-35.35-32.33C118.6 343.5 48 279.4 48 196.6 48 131 99 80 164.5 80c37.5 0 73.5 17.7 96 45.2C283.9 97.7 319.9 80 357.4 80 423 80 474 131 474 196.6c0 82.8-70.6 146.9-172.7 235.1L256 464z"
-                    fill={`url(#${heartGradientId})`}
-                  />
-                </svg>
-              </div>
-            </div>
-          </div>
-          <Button
-            type="button"
-            onClick={() => setShowBirthdayGreeting(false)}
-            className="mx-auto mt-auto w-full max-w-xs rounded-full bg-rose-600 py-4 text-lg font-semibold shadow-lg transition hover:bg-rose-500"
-          >
-            weiter zur App
-          </Button>
-        </div>
-      )}
       {showSettings && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4"
