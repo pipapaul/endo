@@ -5,6 +5,9 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -15,24 +18,27 @@ jobs:
           node-version: 24
 
       - name: Install deps
-        run: npm ci || npm install
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-audit --no-fund
+          fi
 
-      - name: Build
+      - name: Build (Next.js static export)
         run: npm run build
-
-      - name: SPA fallback
-        run: cp dist/index.html dist/404.html || true
+        # Produces ./out/ via output: 'export' in next.config.mjs
 
       - name: Deploy via FTP (plain, port 21)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.6
         with:
-          server:     ${{ secrets.FTP_HOST }}      # z.B. w00xyz.kasserver.com
-          username:   ${{ secrets.FTP_USERNAME }}  # z.B. w00xyz_1
+          server:     ${{ secrets.FTP_HOST }}
+          username:   ${{ secrets.FTP_USERNAME }}
           password:   ${{ secrets.FTP_PASSWORD }}
           protocol:   ftp
           port:       21
-          local-dir:  dist/
+          local-dir:  ./out/
           server-dir: /
           log-level:  verbose
           state-name: .ftp-deploy-sync-state.json
-          dangerous-clean-slate: true  # nach dem ersten erfolgreichen Lauf auf false setzen
+          dangerous-clean-slate: true
