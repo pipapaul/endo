@@ -1929,7 +1929,7 @@ type CycleOverviewData = {
 };
 
 const CYCLE_OVERVIEW_PAST_DAYS = 180;
-const CYCLE_OVERVIEW_FUTURE_DAYS = 30;
+const CYCLE_OVERVIEW_FUTURE_DAYS = 92;
 const CYCLE_OVERVIEW_VISIBLE_DAYS = 30;
 
 type MenstruationComparisonPoint = {
@@ -2315,7 +2315,235 @@ const MucusFertilityDot = ({ cx, cy, payload }: PredictionDotProps) => {
   );
 };
 
-const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
+// ─── Kalender View ────────────────────────────────────────────────────────────
+
+const KalenderDayRow = ({
+  point,
+  isToday,
+  isLast,
+}: {
+  point: CycleOverviewPoint;
+  isToday: boolean;
+  isLast: boolean;
+}) => {
+  const todayIso = formatDate(new Date());
+  const isFutureDay = point.date > todayIso;
+
+  const hasPredictedBleeding =
+    isFutureDay &&
+    point.predictedBleedingIntensity !== null &&
+    point.predictedBleedingIntensity !== undefined &&
+    point.predictedBleedingIntensity > 0;
+
+  const hasOvulationOrConfirmed = point.isPredictedOvulationDay || point.ovulationPositive;
+  const hasFertileWindow = point.isInPredictedFertileWindow && !hasOvulationOrConfirmed;
+  const hasMucus = point.mucusFertilityScore !== null && point.mucusFertilityScore >= 3;
+
+  const confidence = point.ovulationPositive ? 100 : (point.ovulationConfidence ?? 50);
+
+  const dateObj = parseIsoDate(point.date);
+  const dayLabel = dateObj
+    ? dateObj.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" })
+    : point.date;
+
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-3 px-4 py-2.5",
+        isToday ? "bg-rose-50" : "hover:bg-gray-50/50",
+        !isLast ? "border-b border-rose-50" : ""
+      )}
+    >
+      {/* Date label */}
+      <div className="w-24 flex-shrink-0">
+        <span className={cn("text-sm", isToday ? "font-bold text-rose-900" : "text-gray-700")}>
+          {dayLabel}
+        </span>
+      </div>
+
+      {/* Cycle day */}
+      <div className="w-14 flex-shrink-0">
+        {point.cycleDay !== null ? (
+          <span className={cn("text-xs", isToday ? "text-rose-500 font-semibold" : "text-gray-400")}>
+            Tag {point.cycleDay}
+          </span>
+        ) : null}
+      </div>
+
+      {/* Prediction icons */}
+      <div className="flex items-center gap-2.5">
+        {/* Predicted bleeding drop */}
+        {hasPredictedBleeding && (() => {
+          const intensity = point.predictedBleedingIntensity ?? 0;
+          const opacity = 0.3 + intensity * 0.65;
+          return (
+            <svg width="10" height="13" viewBox="0 0 10 13" aria-label="Vorhergesagte Blutung">
+              <path
+                d="M 5 1 C 8 5, 9 8, 5 12 C 1 8, 2 5, 5 1 Z"
+                fill="#ef4444"
+                opacity={opacity}
+              />
+            </svg>
+          );
+        })()}
+
+        {/* Ovulation dot */}
+        {hasOvulationOrConfirmed && (() => {
+          if (confidence === 100 || point.ovulationPositive) {
+            return (
+              <svg width="14" height="14" viewBox="-7 -7 14 14" aria-label="Eisprung bestätigt">
+                <circle cx={0} cy={0} r={5} fill="none" stroke="#ef4444" strokeWidth={1.5} />
+                <circle cx={0} cy={0} r={3.5} fill="#fef08a" stroke="#ca8a04" strokeWidth={1} />
+                <circle cx={0} cy={0} r={1.5} fill="#fde047" />
+              </svg>
+            );
+          }
+          if (confidence >= 90) {
+            return (
+              <svg width="12" height="12" viewBox="-6 -6 12 12" aria-label="Eisprung (hoch)">
+                <circle cx={0} cy={0} r={4} fill="#fef08a" stroke="#ca8a04" strokeWidth={1} />
+                <circle cx={0} cy={0} r={1.5} fill="#fde047" />
+              </svg>
+            );
+          }
+          if (confidence >= 61) {
+            return (
+              <svg width="12" height="12" viewBox="-6 -6 12 12" aria-label="Eisprung (mittel)">
+                <circle cx={0} cy={0} r={4} fill="#fefce8" stroke="#eab308" strokeWidth={1} />
+              </svg>
+            );
+          }
+          return (
+            <svg width="12" height="12" viewBox="-6 -6 12 12" aria-label="Eisprung (niedrig)">
+              <circle cx={0} cy={0} r={4} fill="#fefce8" stroke="#eab308" strokeWidth={1} strokeDasharray="2,1" />
+            </svg>
+          );
+        })()}
+
+        {/* Fertile window dot */}
+        {hasFertileWindow && (() => {
+          const isMucusValidated =
+            (point.ovulationMethod === "mucus" || point.ovulationMethod === "mucus_pain") &&
+            (point.ovulationConfidence ?? 0) >= 70;
+          return (
+            <svg width="10" height="10" viewBox="-5 -5 10 10" aria-label="Fruchtbares Fenster">
+              <circle
+                cx={0}
+                cy={0}
+                r={4}
+                fill={isMucusValidated ? "#fce7f3" : "#fdf2f8"}
+                stroke="#f472b6"
+                strokeWidth={1}
+                strokeDasharray={isMucusValidated ? undefined : "2,1"}
+              />
+            </svg>
+          );
+        })()}
+
+        {/* Mucus fertility dot */}
+        {hasMucus && (() => {
+          const isPeak = point.mucusFertilityScore === 4;
+          const hasEnoughHistory =
+            (point.ovulationMethod === "mucus" || point.ovulationMethod === "mucus_pain") &&
+            (point.ovulationConfidence ?? 0) >= 70;
+          return (
+            <svg width="12" height="12" viewBox="-6 -6 12 12" aria-label="Fruchtbarer Zervixschleim">
+              <circle
+                cx={0}
+                cy={0}
+                r={isPeak ? 3.5 : 3}
+                fill={hasEnoughHistory ? (isPeak ? "#22c55e" : "#86efac") : "#f0fdf4"}
+                stroke={isPeak ? "#15803d" : "#22c55e"}
+                strokeWidth={1}
+                strokeDasharray={hasEnoughHistory ? undefined : "2,1"}
+              />
+            </svg>
+          );
+        })()}
+      </div>
+    </div>
+  );
+};
+
+const KalenderView = ({ data }: { data: CycleOverviewData }) => {
+  const todayIso = useMemo(() => formatDate(new Date()), []);
+
+  const futurePoints = useMemo(
+    () => data.points.filter((p) => p.date >= todayIso),
+    [data.points, todayIso]
+  );
+
+  const monthGroups = useMemo(() => {
+    const map = new Map<string, CycleOverviewPoint[]>();
+    for (const point of futurePoints) {
+      const key = point.date.slice(0, 7);
+      const arr = map.get(key) ?? [];
+      arr.push(point);
+      map.set(key, arr);
+    }
+    return Array.from(map.entries()).map(([key, points]) => ({ key, points }));
+  }, [futurePoints]);
+
+  return (
+    <div className="space-y-6 pb-8">
+      <div className="space-y-1">
+        <h2 className="text-2xl font-bold text-rose-900">Kalender</h2>
+        <p className="text-sm text-rose-600">Nächste 3 Monate – Voraussagen</p>
+      </div>
+
+      {/* Legend */}
+      <div className="flex flex-wrap gap-3 text-xs text-gray-500">
+        <span className="flex items-center gap-1.5">
+          <svg width="10" height="13" viewBox="0 0 10 13" aria-hidden="true">
+            <path d="M 5 1 C 8 5, 9 8, 5 12 C 1 8, 2 5, 5 1 Z" fill="#ef4444" opacity={0.7} />
+          </svg>
+          Blutung
+        </span>
+        <span className="flex items-center gap-1.5">
+          <svg width="12" height="12" viewBox="-6 -6 12 12" aria-hidden="true">
+            <circle cx={0} cy={0} r={4} fill="#fef08a" stroke="#ca8a04" strokeWidth={1} />
+          </svg>
+          Eisprung
+        </span>
+        <span className="flex items-center gap-1.5">
+          <svg width="10" height="10" viewBox="-5 -5 10 10" aria-hidden="true">
+            <circle cx={0} cy={0} r={4} fill="#fce7f3" stroke="#f472b6" strokeWidth={1} />
+          </svg>
+          Fruchtbares Fenster
+        </span>
+      </div>
+
+      {monthGroups.map(({ key, points }) => {
+        const monthDate = parseIsoDate(`${key}-01`);
+        const monthLabel = monthDate
+          ? monthDate.toLocaleDateString("de-DE", { month: "long", year: "numeric" })
+          : key;
+
+        return (
+          <div key={key} className="space-y-1.5">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-rose-700 px-1">
+              {monthLabel}
+            </h3>
+            <div className="rounded-2xl border border-rose-100 bg-white/70 overflow-hidden shadow-sm">
+              {points.map((point, index) => (
+                <KalenderDayRow
+                  key={point.date}
+                  point={point}
+                  isToday={point.date === todayIso}
+                  isLast={index === points.length - 1}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// ─── Chart ────────────────────────────────────────────────────────────────────
+
+const CycleOverviewMiniChart = ({ data, onOpenCalendar }: { data: CycleOverviewData; onOpenCalendar?: () => void }) => {
   const bleedingGradientId = useId();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showScrollToToday, setShowScrollToToday] = useState(false);
@@ -2588,6 +2816,17 @@ const CycleOverviewMiniChart = ({ data }: { data: CycleOverviewData }) => {
 
   return (
     <section aria-label="Zyklusübersicht" className="relative">
+      {/* Calendar icon button – top-right corner */}
+      {onOpenCalendar && (
+        <button
+          type="button"
+          onClick={onOpenCalendar}
+          className="absolute right-2 top-1 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-white/90 shadow-sm border border-gray-200 text-gray-400 hover:bg-white hover:text-rose-600 transition-all"
+          aria-label="Kalenderansicht öffnen"
+        >
+          <Calendar className="h-3.5 w-3.5" />
+        </button>
+      )}
       {/* Tooltip rendered fixed at top of screen to avoid clipping */}
       {tooltipContent && (
         <div className="fixed top-0 left-1/2 -translate-x-1/2 z-50 pointer-events-none pt-2">
@@ -3867,7 +4106,7 @@ export default function HomePage() {
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [detailToolbarHeight, setDetailToolbarHeight] = useState<number>(DETAIL_TOOLBAR_FALLBACK_HEIGHT);
-  const [activeView, setActiveView] = useState<"home" | "daily" | "weekly" | "monthly" | "analytics">("home");
+  const [activeView, setActiveView] = useState<"home" | "daily" | "weekly" | "monthly" | "analytics" | "calendar">("home");
   const [analyticsActiveSection, setAnalyticsActiveSection] = useState<AnalyticsSectionKey>("progress");
   const [timeCorrelationAlignment, setTimeCorrelationAlignment] = useState<CycleAlignmentMode>("period");
   const [timeCorrelationView, setTimeCorrelationView] = useState<CycleViewMode>("last");
@@ -5066,6 +5305,7 @@ export default function HomePage() {
     if (activeView === "weekly") return weeklyToolbarLabel;
     if (activeView === "monthly") return monthlyToolbarLabel;
     if (activeView === "analytics") return "Auswertungen";
+    if (activeView === "calendar") return "Kalender";
     return null;
   }, [activeView, dailyToolbarLabel, monthlyToolbarLabel, weeklyToolbarLabel]);
 
@@ -12426,7 +12666,12 @@ export default function HomePage() {
                   </p>
                 )}
               </header>
-              {cycleOverview ? <CycleOverviewMiniChart data={cycleOverview} /> : null}
+              {cycleOverview ? (
+                <CycleOverviewMiniChart
+                  data={cycleOverview}
+                  onOpenCalendar={() => setActiveView("calendar")}
+                />
+              ) : null}
               <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                 <div
                   role="group"
@@ -16381,6 +16626,9 @@ export default function HomePage() {
             </div>
           </Section>
           </SectionScopeContext.Provider>
+        </TabsContent>
+        <TabsContent value="calendar" className="space-y-6 pb-8">
+          {cycleOverview ? <KalenderView data={cycleOverview} /> : null}
         </TabsContent>
               </Tabs>
             </div>
