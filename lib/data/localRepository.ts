@@ -2,6 +2,7 @@ import { getItem, setItem } from "@/lib/persistence";
 import { loadProductSettings, saveProductSettings } from "@/lib/persistence";
 import { listWeeklyReports, replaceWeeklyReports } from "@/lib/weekly/reports";
 import { normalizeDailyEntry } from "@/lib/dailyEntries";
+import { DEFAULT_PRODUCT_SETTINGS } from "@/lib/productSettings";
 import type { DailyEntry, MonthlyEntry, FeatureFlags } from "@/lib/types";
 import type { AppSnapshot, DataRepository } from "./repository";
 
@@ -66,6 +67,16 @@ export class LocalRepository implements DataRepository {
       this.saveFlags(snapshot.flags),
       this.saveProductSettings(snapshot.productSettings),
     ]);
+  }
+
+  async clearAll(): Promise<void> {
+    await this.replaceAll({
+      daily: [],
+      monthly: [],
+      weekly: [],
+      flags: {},
+      productSettings: DEFAULT_PRODUCT_SETTINGS,
+    });
   }
 }
 

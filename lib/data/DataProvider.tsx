@@ -42,6 +42,8 @@ export interface DataContextValue {
   exportSnapshot: () => AppSnapshot;
   /** Replace all data (import from an old export). */
   importSnapshot: (snapshot: AppSnapshot) => Promise<void>;
+  /** Delete all data and reset to defaults. */
+  clearAll: () => Promise<void>;
 }
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -172,6 +174,15 @@ export function DataProvider({
     [repository]
   );
 
+  const clearAll = useCallback(async () => {
+    await repository.clearAll();
+    setDaily([]);
+    setMonthly([]);
+    setWeeklyState([]);
+    setFlagsState({});
+    setProductSettingsState(DEFAULT_PRODUCT_SETTINGS);
+  }, [repository]);
+
   const value = useMemo<DataContextValue>(
     () => ({
       ready,
@@ -189,6 +200,7 @@ export function DataProvider({
       setProductSettings,
       exportSnapshot,
       importSnapshot,
+      clearAll,
     }),
     [
       ready,
@@ -206,6 +218,7 @@ export function DataProvider({
       setProductSettings,
       exportSnapshot,
       importSnapshot,
+      clearAll,
     ]
   );
 

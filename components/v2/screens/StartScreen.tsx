@@ -7,6 +7,7 @@ import { analyzeCycle, type CyclePhase } from "@/lib/cycle/cycle";
 import { todayIso } from "@/lib/data/factory";
 import { hasBleedingForEntry } from "@/lib/dailyEntries";
 import { Card } from "../ui";
+import { CycleGraph } from "../CycleGraph";
 import { QuickCheckIn } from "../QuickCheckIn";
 import { QuickTrackers } from "../QuickTrackers";
 
@@ -60,24 +61,27 @@ export function StartScreen() {
 
       {/* Cycle snapshot */}
       {analysis && analysis.currentCycleDay !== null ? (
-        <Card className="flex items-center justify-between gap-4 bg-gradient-to-br from-white to-rose-50/60">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-sm font-medium text-rose-500">
-              <span>{analysis.phase ? PHASE_EMOJI[analysis.phase] : "🌸"}</span>
-              <span>{analysis.phase ? PHASE_LABEL[analysis.phase] : "Zyklus"}</span>
-            </div>
-            <p className="text-3xl font-bold text-rose-900">
-              Zyklustag {analysis.currentCycleDay}
-            </p>
-            {analysis.daysUntilNextPeriod !== null ? (
-              <p className="text-sm text-rose-500">
-                {analysis.daysUntilNextPeriod === 0
-                  ? "Periode heute erwartet"
-                  : `Periode in ~${analysis.daysUntilNextPeriod} Tagen`}
+        <Card className="space-y-4 bg-gradient-to-br from-white to-rose-50/60">
+          <div className="flex items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-sm font-medium text-rose-500">
+                <span>{analysis.phase ? PHASE_EMOJI[analysis.phase] : "🌸"}</span>
+                <span>{analysis.phase ? PHASE_LABEL[analysis.phase] : "Zyklus"}</span>
+              </div>
+              <p className="text-3xl font-bold text-rose-900">
+                Zyklustag {analysis.currentCycleDay}
               </p>
-            ) : null}
+              {analysis.daysUntilNextPeriod !== null ? (
+                <p className="text-sm text-rose-500">
+                  {analysis.daysUntilNextPeriod === 0
+                    ? "Periode heute erwartet"
+                    : `Periode in ~${analysis.daysUntilNextPeriod} Tagen`}
+                </p>
+              ) : null}
+            </div>
+            <CycleRing day={analysis.currentCycleDay} length={analysis.averageLength} />
           </div>
-          <CycleRing day={analysis.currentCycleDay} length={analysis.averageLength} />
+          <CycleGraph daily={daily} />
         </Card>
       ) : (
         <Card className="space-y-1 bg-gradient-to-br from-white to-rose-50/60">

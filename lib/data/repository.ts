@@ -38,4 +38,7 @@ export interface DataRepository {
 
   /** Replace everything at once (used by "import from old export"). */
   replaceAll(snapshot: AppSnapshot): Promise<void>;
+
+  /** Reset all data to empty/defaults. */
+  clearAll(): Promise<void>;
 }
