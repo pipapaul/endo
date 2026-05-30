@@ -112,6 +112,32 @@ export function Sheet({
   );
 }
 
+/** Collapsible "+ Details" section — keeps the wizard fast by default. */
+export function Disclosure({
+  label,
+  children,
+  defaultOpen = false,
+}: {
+  label: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = React.useState(defaultOpen);
+  return (
+    <div className="rounded-2xl border border-dashed border-rose-200 bg-white/40">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between px-4 py-2.5 text-sm font-medium text-rose-600"
+      >
+        <span>{open ? "− " : "+ "}{label}</span>
+      </button>
+      {open ? <div className="space-y-4 px-4 pb-4">{children}</div> : null}
+    </div>
+  );
+}
+
 /** Tappable 0–10 scale. Fast single-tap input for pain / intensity. */
 export function ScalePicker({
   value,

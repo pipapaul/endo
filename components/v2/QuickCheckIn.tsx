@@ -3,9 +3,11 @@
 import { useMemo, useState } from "react";
 import { Check, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Chip } from "./ui";
+import { Chip, Disclosure } from "./ui";
 import { useData } from "@/lib/data/DataProvider";
 import { createEmptyDailyEntry } from "@/lib/data/factory";
+import { BODY_REGION_GROUPS } from "@/lib/painRegions";
+import { BodyMap } from "./BodyMap";
 import { NrsInput, MultiSelectChips, ScoreInput, NumberField } from "@/components/home/inputs";
 import { SleepQualityPicker } from "@/components/home/SleepQualityPicker";
 import { BristolScalePicker, type BristolType } from "@/components/home/BristolScalePicker";
@@ -47,7 +49,37 @@ const WIZARD_SYMPTOMS: { key: SymptomKey; label: string }[] = [
 
 const COMMON_MEDS = ["Ibuprofen", "Paracetamol", "Naproxen", "Buscopan", "Novalgin"];
 
-type StepId = "pain" | "bleeding" | "symptoms" | "mood" | "sleep" | "digestion" | "meds" | "notes";
+type StepId =
+  | "pain"
+  | "bleeding"
+  | "cervix"
+  | "symptoms"
+  | "mood"
+  | "sleep"
+  | "digestion"
+  | "meds"
+  | "notes";
+
+const MUCUS_OBSERVATION = [
+  { id: "dry", label: "trocken" },
+  { id: "moist", label: "feucht" },
+  { id: "wet", label: "nass" },
+  { id: "slippery", label: "spinnbar / glitschig" },
+] as const;
+
+const MUCUS_APPEARANCE = [
+  { id: "none", label: "nichts" },
+  { id: "sticky", label: "klebrig" },
+  { id: "creamy", label: "cremig" },
+  { id: "eggWhite", label: "eiweißartig" },
+] as const;
+
+const OVU_SIDES = [
+  { id: "links", label: "Links" },
+  { id: "rechts", label: "Rechts" },
+  { id: "beidseitig", label: "Beidseitig" },
+  { id: "unsicher", label: "Unsicher" },
+] as const;
 
 export function QuickCheckIn({
   open,
@@ -58,7 +90,7 @@ export function QuickCheckIn({
   onClose: () => void;
   date: string;
 }) {
-  const { getDailyEntry, upsertDailyEntry } = useData();
+  const { getDailyEntry, upsertDailyEntry, flags } = useData();
   const [draft, setDraft] = useState<DailyEntry>(
     () => getDailyEntry(date) ?? createEmptyDailyEntry(date)
   );
@@ -66,6 +98,14 @@ export function QuickCheckIn({
   const [medName, setMedName] = useState("");
 
   const patch = (p: Partial<DailyEntry>) => setDraft((d) => ({ ...d, ...p }));
+
+  const toggleRegion = (id: string) =>
+    setDraft((d) => {
+      const set = new Set(d.painMapRegionIds ?? []);
+      if (set.has(id)) set.delete(id);
+      else set.add(id);
+      return { ...d, painMapRegionIds: Array.from(set) };
+    });
 
   const setSymptom = (key: SymptomKey, present: boolean, score?: number) =>
     setDraft((d) => ({
@@ -82,7 +122,13 @@ export function QuickCheckIn({
     });
   }, [date]);
 
-  const steps: { id: StepId; title: string; question: string; body: React.ReactNode }[] = [
+  const allSteps: {
+    id: StepId;
+    title: string;
+    question: string;
+    body: React.ReactNode;
+    hidden?: boolean;
+  }[] = [
     {
       id: "pain",
       title: "Schmerzen",
@@ -98,6 +144,50 @@ export function QuickCheckIn({
               onToggle={(next) => patch({ painQuality: next as PainQuality[] })}
             />
           </div>
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-rose-700">Wo tut es weh?</p>
+            <BodyMap selected={draft.painMapRegionIds ?? []} onToggle={toggleRegion} />
+            <Disclosure label="Arme & Beine">
+              {BODY_REGION_GROUPS.filter((g) => g.id === "arms" || g.id === "legs").map((group) => (
+                <div key={group.id} className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">
+                    {group.label}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {group.regions.map((region) => (
+                      <Chip
+                        key={region.id}
+                        selected={(draft.painMapRegionIds ?? []).includes(region.id)}
+                        onClick={() => toggleRegion(region.id)}
+                      >
+                        {region.label}
+                      </Chip>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </Disclosure>
+          </div>
+          <Disclosure label="Eisprungschmerz (Mittelschmerz)" defaultOpen={!!draft.ovulationPain?.side}>
+            <div className="flex flex-wrap gap-2">
+              {OVU_SIDES.map((s) => (
+                <Chip
+                  key={s.id}
+                  selected={draft.ovulationPain?.side === s.id}
+                  onClick={() => patch({ ovulationPain: { ...draft.ovulationPain, side: s.id } })}
+                >
+                  {s.label}
+                </Chip>
+              ))}
+            </div>
+            {draft.ovulationPain?.side ? (
+              <NrsInput
+                id="wz-ovu"
+                value={draft.ovulationPain?.intensity ?? 0}
+                onChange={(v) => patch({ ovulationPain: { ...draft.ovulationPain, intensity: v } })}
+              />
+            ) : null}
+          </Disclosure>
         </div>
       ),
     },
@@ -106,25 +196,83 @@ export function QuickCheckIn({
       title: "Blutung",
       question: "Wie stark war deine Blutung?",
       body: (
-        <div className="flex flex-wrap gap-2">
-          {SIMPLE_BLEEDING_INTENSITIES.map((b) => (
-            <Chip
-              key={b.id}
-              selected={draft.simpleBleedingIntensity === b.id}
-              onClick={() =>
-                patch({
-                  simpleBleedingIntensity: b.id as SimpleBleedingIntensity,
-                  bleeding: {
-                    ...draft.bleeding,
-                    isBleeding: b.id !== "none",
-                    pbacScore: getSimpleBleedingPbacEquivalent(b.id),
-                  },
-                })
-              }
-            >
-              {b.label}
-            </Chip>
-          ))}
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {SIMPLE_BLEEDING_INTENSITIES.map((b) => (
+              <Chip
+                key={b.id}
+                selected={draft.simpleBleedingIntensity === b.id}
+                onClick={() =>
+                  patch({
+                    simpleBleedingIntensity: b.id as SimpleBleedingIntensity,
+                    bleeding: {
+                      ...draft.bleeding,
+                      isBleeding: b.id !== "none",
+                      pbacScore: getSimpleBleedingPbacEquivalent(b.id),
+                    },
+                  })
+                }
+              >
+                {b.label}
+              </Chip>
+            ))}
+          </div>
+          {draft.bleeding?.isBleeding ? (
+            <Disclosure label="Besonderheiten" defaultOpen={draft.bleeding?.clots || draft.bleeding?.flooding}>
+              <div className="flex flex-wrap gap-2">
+                <Chip
+                  selected={draft.bleeding?.clots ?? false}
+                  onClick={() => patch({ bleeding: { ...draft.bleeding, isBleeding: true, clots: !draft.bleeding?.clots } })}
+                >
+                  Koagel / Klümpchen
+                </Chip>
+                <Chip
+                  selected={draft.bleeding?.flooding ?? false}
+                  onClick={() => patch({ bleeding: { ...draft.bleeding, isBleeding: true, flooding: !draft.bleeding?.flooding } })}
+                >
+                  Durchbruchblutung
+                </Chip>
+              </div>
+            </Disclosure>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      id: "cervix",
+      title: "Zervixschleim",
+      hidden: !flags.billingMethod,
+      question: "Wie war dein Zervixschleim heute?",
+      body: (
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-rose-700">Empfindung</p>
+            <div className="flex flex-wrap gap-2">
+              {MUCUS_OBSERVATION.map((o) => (
+                <Chip
+                  key={o.id}
+                  selected={draft.cervixMucus?.observation === o.id}
+                  onClick={() => patch({ cervixMucus: { ...draft.cervixMucus, observation: o.id } })}
+                >
+                  {o.label}
+                </Chip>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-rose-700">Aussehen</p>
+            <div className="flex flex-wrap gap-2">
+              {MUCUS_APPEARANCE.map((a) => (
+                <Chip
+                  key={a.id}
+                  selected={draft.cervixMucus?.appearance === a.id}
+                  onClick={() => patch({ cervixMucus: { ...draft.cervixMucus, appearance: a.id } })}
+                >
+                  {a.label}
+                </Chip>
+              ))}
+            </div>
+          </div>
         </div>
       ),
     },
@@ -155,6 +303,78 @@ export function QuickCheckIn({
               />
             </div>
           ))}
+          <Disclosure label="Weitere Beschwerden (Kopf, Schwindel, Blase)">
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Chip
+                  selected={draft.headacheOpt?.present ?? false}
+                  onClick={() =>
+                    patch({ headacheOpt: { ...draft.headacheOpt, present: !draft.headacheOpt?.present } })
+                  }
+                >
+                  Kopfschmerzen
+                </Chip>
+                {draft.headacheOpt?.present ? (
+                  <div className="space-y-2 rounded-2xl border border-rose-100 bg-white/70 p-3">
+                    <ScoreInput
+                      id="wz-head-nrs"
+                      label="Stärke"
+                      value={draft.headacheOpt?.nrs ?? 0}
+                      onChange={(v) => patch({ headacheOpt: { ...draft.headacheOpt, present: true, nrs: v } })}
+                    />
+                    <Chip
+                      selected={draft.headacheOpt?.aura ?? false}
+                      onClick={() =>
+                        patch({ headacheOpt: { ...draft.headacheOpt, present: true, aura: !draft.headacheOpt?.aura } })
+                      }
+                    >
+                      mit Aura
+                    </Chip>
+                  </div>
+                ) : null}
+              </div>
+              <div className="space-y-2">
+                <Chip
+                  selected={draft.dizzinessOpt?.present ?? false}
+                  onClick={() =>
+                    patch({ dizzinessOpt: { ...draft.dizzinessOpt, present: !draft.dizzinessOpt?.present } })
+                  }
+                >
+                  Schwindel
+                </Chip>
+                {draft.dizzinessOpt?.present ? (
+                  <div className="rounded-2xl border border-rose-100 bg-white/70 p-3">
+                    <ScoreInput
+                      id="wz-diz-nrs"
+                      label="Stärke"
+                      value={draft.dizzinessOpt?.nrs ?? 0}
+                      onChange={(v) => patch({ dizzinessOpt: { ...draft.dizzinessOpt, present: true, nrs: v } })}
+                    />
+                  </div>
+                ) : null}
+              </div>
+              <div className="space-y-2">
+                <Chip
+                  selected={draft.urinaryOpt?.present ?? false}
+                  onClick={() =>
+                    patch({ urinaryOpt: { ...draft.urinaryOpt, present: !draft.urinaryOpt?.present } })
+                  }
+                >
+                  Harndrang / Blase
+                </Chip>
+                {draft.urinaryOpt?.present ? (
+                  <div className="rounded-2xl border border-rose-100 bg-white/70 p-3">
+                    <ScoreInput
+                      id="wz-urg"
+                      label="Harndrang"
+                      value={draft.urinaryOpt?.urgency ?? 0}
+                      onChange={(v) => patch({ urinaryOpt: { ...draft.urinaryOpt, present: true, urgency: v } })}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </Disclosure>
         </div>
       ),
     },
@@ -192,13 +412,23 @@ export function QuickCheckIn({
             value={draft.sleep?.quality}
             onChange={(v) => patch({ sleep: { ...draft.sleep, quality: v } })}
           />
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-rose-700">Stunden geschlafen</p>
-            <NumberField
-              id="wz-sleep-hours"
-              value={draft.sleep?.hours}
-              onChange={(v) => patch({ sleep: { ...draft.sleep, hours: v } })}
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-rose-700">Stunden</p>
+              <NumberField
+                id="wz-sleep-hours"
+                value={draft.sleep?.hours}
+                onChange={(v) => patch({ sleep: { ...draft.sleep, hours: v } })}
+              />
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-rose-700">Aufgewacht (×)</p>
+              <NumberField
+                id="wz-sleep-wake"
+                value={draft.sleep?.awakenings}
+                onChange={(v) => patch({ sleep: { ...draft.sleep, awakenings: v } })}
+              />
+            </div>
           </div>
         </div>
       ),
@@ -293,8 +523,9 @@ export function QuickCheckIn({
     },
   ];
 
+  const steps = allSteps.filter((s) => !s.hidden);
   const isLast = step === steps.length - 1;
-  const current = steps[step];
+  const current = steps[Math.min(step, steps.length - 1)];
 
   const save = () => {
     const cleaned: DailyEntry = { ...draft, notesFree: draft.notesFree?.trim() || undefined };
