@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Download, Palette, Trash2, Upload } from "lucide-react";
+import Link from "next/link";
+import { ChevronRight, ClipboardList, Download, Palette, Trash2, Upload } from "lucide-react";
 import { useData } from "@/lib/data/DataProvider";
 import { buildBackup, parseBackup } from "@/lib/data/importExport";
 import { getColorSchemeName, type ColorScheme } from "@/lib/theme";
@@ -128,12 +129,33 @@ export function MehrScreen() {
         </p>
       </Card>
 
-      <Card className="space-y-2 border-amber-200 bg-amber-50/40">
-        <span className="font-semibold text-amber-800">Wochen- & Monats-Check-in</span>
-        <p className="text-sm text-amber-700">
-          Die Fragebögen (WPAI, EHP-5, PHQ-9, GAD-7) bleiben als Datenerfassung erhalten und werden
-          hier im nächsten Schritt eingebunden.
+      <Card className="space-y-3">
+        <div className="flex items-center gap-2 text-rose-900">
+          <ClipboardList className="h-5 w-5 text-rose-500" />
+          <span className="font-semibold">Check-ins</span>
+        </div>
+        <p className="text-sm text-rose-500">
+          Ausführlichere Fragebögen als Datenerfassung – ergänzend zum täglichen Journal.
         </p>
+        <Link
+          href="/weekly/"
+          className="flex items-center justify-between gap-3 rounded-2xl border border-rose-100 bg-white px-4 py-3 text-rose-800 transition hover:border-rose-200 hover:bg-rose-50"
+        >
+          <span>
+            <span className="block text-sm font-semibold">Wöchentlicher Check-in</span>
+            <span className="block text-xs text-rose-400">Funktion & Belastung (WPAI)</span>
+          </span>
+          <ChevronRight className="h-5 w-5 text-rose-300" />
+        </Link>
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-rose-100 bg-rose-50/40 px-4 py-3 text-rose-400">
+          <span>
+            <span className="block text-sm font-semibold">Monatlicher Check-in</span>
+            <span className="block text-xs">Lebensqualität & Stimmung (EHP-5, PHQ-9, GAD-7)</span>
+          </span>
+          <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-500">
+            bald
+          </span>
+        </div>
       </Card>
 
       <Card className="space-y-3 border-red-100">
