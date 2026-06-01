@@ -60,14 +60,13 @@ export function StartScreen() {
 
       {/* Cycle snapshot — graph sits directly on the background, no card. */}
       {analysis && analysis.currentCycleDay !== null ? (
-        <section className="space-y-3 px-1">
+        <section className="space-y-4 px-1 py-2">
           <div className="flex items-center justify-between gap-4">
             <div className="space-y-1">
               <div className="flex items-center gap-2 text-sm font-medium text-rose-500">
                 <span>{analysis.phase ? PHASE_EMOJI[analysis.phase] : "🌸"}</span>
                 <span>{analysis.phase ? PHASE_LABEL[analysis.phase] : "Zyklus"}</span>
               </div>
-              <p className="text-3xl font-bold text-rose-900">Zyklustag {analysis.currentCycleDay}</p>
               {analysis.daysUntilNextPeriod !== null ? (
                 <p className="text-sm text-rose-500">
                   {analysis.daysUntilNextPeriod === 0

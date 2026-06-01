@@ -30,21 +30,50 @@ function painValue(entry?: DailyEntry): number | null {
   return p;
 }
 
-/** Catmull-Rom → cubic-bezier smoothing for a soft, rounded line. */
-function smoothPath(pts: { x: number; y: number }[]): string {
-  if (pts.length === 0) return "";
-  if (pts.length === 1) return `M ${pts[0].x} ${pts[0].y}`;
-  let d = `M ${pts[0].x} ${pts[0].y}`;
-  for (let i = 0; i < pts.length - 1; i += 1) {
-    const p0 = pts[i - 1] ?? pts[i];
-    const p1 = pts[i];
-    const p2 = pts[i + 1];
-    const p3 = pts[i + 2] ?? p2;
-    const cp1x = p1.x + (p2.x - p0.x) / 6;
-    const cp1y = p1.y + (p2.y - p0.y) / 6;
-    const cp2x = p2.x - (p3.x - p1.x) / 6;
-    const cp2y = p2.y - (p3.y - p1.y) / 6;
-    d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+/**
+ * Monotone cubic (Fritsch–Carlson) spline → cubic-bezier. Unlike Catmull-Rom,
+ * it never overshoots the data, so a rise from 0 to >0 can't dip below the
+ * baseline.
+ */
+function monotonePath(pts: { x: number; y: number }[]): string {
+  const n = pts.length;
+  if (n === 0) return "";
+  if (n === 1) return `M ${pts[0].x} ${pts[0].y}`;
+  const xs = pts.map((p) => p.x);
+  const ys = pts.map((p) => p.y);
+  const dx: number[] = [];
+  const delta: number[] = [];
+  for (let i = 0; i < n - 1; i += 1) {
+    dx[i] = xs[i + 1] - xs[i];
+    delta[i] = (ys[i + 1] - ys[i]) / dx[i];
+  }
+  const m: number[] = [];
+  m[0] = delta[0];
+  for (let i = 1; i < n - 1; i += 1) {
+    m[i] = delta[i - 1] * delta[i] <= 0 ? 0 : (delta[i - 1] + delta[i]) / 2;
+  }
+  m[n - 1] = delta[n - 2];
+  for (let i = 0; i < n - 1; i += 1) {
+    if (delta[i] === 0) {
+      m[i] = 0;
+      m[i + 1] = 0;
+      continue;
+    }
+    const a = m[i] / delta[i];
+    const b = m[i + 1] / delta[i];
+    const s = a * a + b * b;
+    if (s > 9) {
+      const t = 3 / Math.sqrt(s);
+      m[i] = t * a * delta[i];
+      m[i + 1] = t * b * delta[i];
+    }
+  }
+  let d = `M ${xs[0]} ${ys[0]}`;
+  for (let i = 0; i < n - 1; i += 1) {
+    const h = dx[i];
+    d += ` C ${xs[i] + h / 3} ${ys[i] + (m[i] * h) / 3}, ${xs[i + 1] - h / 3} ${
+      ys[i + 1] - (m[i + 1] * h) / 3
+    }, ${xs[i + 1]} ${ys[i + 1]}`;
   }
   return d;
 }
@@ -52,9 +81,9 @@ function smoothPath(pts: { x: number; y: number }[]): string {
 const PAST = 14;
 const FUTURE = 28;
 const DW = 8; // px per day in the viewBox
-const H = 86;
-const BASE = H - 16;
-const BAR_MAX = 46;
+const H = 104;
+const BASE = H - 18;
+const BAR_MAX = 62;
 
 /**
  * Compact cycle graph: recorded + predicted bleeding (bars), pain (dots),
@@ -80,8 +109,8 @@ export function CycleGraph({ daily }: { daily: DailyEntry[] }) {
   const width = days.length * DW;
 
   return (
-    <div className="space-y-1">
-      <svg viewBox={`0 0 ${width} ${H}`} className="h-20 w-full" preserveAspectRatio="none">
+    <div className="space-y-2">
+      <svg viewBox={`0 0 ${width} ${H}`} className="h-32 w-full" preserveAspectRatio="none">
         {/* fertile window shading */}
         {days.map((d) =>
           d.isFertile || d.isPredictedOvulation ? (
@@ -139,7 +168,7 @@ export function CycleGraph({ daily }: { daily: DailyEntry[] }) {
           if (pts.length < 2) return null;
           return (
             <path
-              d={smoothPath(pts)}
+              d={monotonePath(pts)}
               fill="none"
               stroke="#a855f7"
               strokeWidth={2}

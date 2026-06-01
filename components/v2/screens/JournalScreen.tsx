@@ -21,6 +21,44 @@ function dayParts(date: string): { day: string; weekday: string } {
   };
 }
 
+const SIMPLE_MAG: Record<string, number> = {
+  none: 0,
+  very_light: 0.2,
+  light: 0.4,
+  medium: 0.6,
+  heavy: 0.8,
+  very_heavy: 1,
+};
+
+function painLevel(e: DailyEntry): number {
+  let p = e.painNRS ?? 0;
+  for (const ev of e.quickPainEvents ?? []) p = Math.max(p, ev.intensity);
+  return Math.min(p / 10, 1);
+}
+
+function bleedLevel(e: DailyEntry): number {
+  const s = e.simpleBleedingIntensity;
+  if (s && s in SIMPLE_MAG) return SIMPLE_MAG[s];
+  const pbac = e.bleeding?.pbacScore;
+  if (typeof pbac === "number" && pbac > 0) return Math.min(pbac / 50, 1);
+  return e.bleeding?.isBleeding ? 0.5 : 0;
+}
+
+/**
+ * Per-day tinting: pain bleeds in from the left in purple, bleeding from the
+ * right in red — each covers a share of the card proportional to its level.
+ */
+function dayBg(e: DailyEntry): string | undefined {
+  const pl = painLevel(e);
+  const bl = bleedLevel(e);
+  const layers: string[] = [];
+  if (pl > 0)
+    layers.push(`linear-gradient(to right, rgba(168,85,247,0.34), rgba(168,85,247,0) ${Math.round(pl * 82)}%)`);
+  if (bl > 0)
+    layers.push(`linear-gradient(to left, rgba(232,82,74,0.34), rgba(232,82,74,0) ${Math.round(bl * 82)}%)`);
+  return layers.length ? layers.join(", ") : undefined;
+}
+
 function summarise(entry: DailyEntry): string[] {
   const parts: string[] = [];
   const painEvents = entry.quickPainEvents?.length ?? 0;
@@ -92,7 +130,8 @@ export function JournalScreen() {
               <button
                 type="button"
                 onClick={() => setEditDate(date)}
-                className="flex w-full items-center gap-3 rounded-2xl border border-rose-100 bg-white/90 px-4 py-3 text-left shadow-sm transition active:scale-[0.99] hover:border-rose-200 hover:bg-rose-50"
+                style={{ backgroundImage: dayBg(entry) }}
+                className="flex w-full items-center gap-3 rounded-2xl border border-rose-100 bg-white/90 px-4 py-3 text-left shadow-sm transition active:scale-[0.99] hover:border-rose-200"
               >
                 <div className="flex w-14 shrink-0 flex-col items-center">
                   <span className="text-lg font-bold leading-none text-rose-900">{day}</span>
@@ -125,7 +164,8 @@ export function JournalScreen() {
                   <button
                     type="button"
                     onClick={() => setEditDate(entry.date)}
-                    className="flex w-full items-center gap-3 rounded-2xl border border-rose-100 bg-white/90 px-4 py-3 text-left shadow-sm transition active:scale-[0.99] hover:border-rose-200 hover:bg-rose-50"
+                    style={{ backgroundImage: dayBg(entry) }}
+                    className="flex w-full items-center gap-3 rounded-2xl border border-rose-100 bg-white/90 px-4 py-3 text-left shadow-sm transition active:scale-[0.99] hover:border-rose-200"
                   >
                     <div className="flex w-16 shrink-0 flex-col items-center">
                       <span className="text-sm font-bold leading-none text-rose-900">
