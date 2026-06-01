@@ -5,13 +5,16 @@ import { Check, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useData } from "@/lib/data/DataProvider";
 import { createEmptyDailyEntry } from "@/lib/data/factory";
-import { visibleSections, type StepId } from "./checkin/sections";
+import { visibleSections, type CheckInSection, type StepId } from "./checkin/sections";
 import type { DailyEntry } from "@/lib/types";
+
+type SubStep = "question" | "entry";
 
 /**
  * Full-screen, guided check-in wizard. Design carried over from v1: one big
  * question per step as the focal point, a per-category colour accent (header
- * pill + progress bar + card tint), and a clean linear progress bar.
+ * pill + progress bar + card tint), and — for presence sections — a Ja/Nein
+ * gate before the form so the fast path stays uncluttered.
  */
 export function QuickCheckIn({
   open,
@@ -31,12 +34,18 @@ export function QuickCheckIn({
   );
 
   const steps = useMemo(() => visibleSections(flags), [flags]);
+
+  const subStepFor = (section: CheckInSection, d: DailyEntry): SubStep =>
+    section.gate && section.summary(d).length === 0 ? "question" : "entry";
+
   const startIndex = useMemo(() => {
     if (!initialStep) return 0;
     const i = steps.findIndex((s) => s.id === initialStep);
     return i >= 0 ? i : 0;
   }, [initialStep, steps]);
+
   const [step, setStep] = useState(startIndex);
+  const [subStep, setSubStep] = useState<SubStep>(() => subStepFor(steps[startIndex], draft));
 
   const dateLabel = useMemo(() => {
     const [y, m, dd] = date.split("-").map(Number);
@@ -52,17 +61,29 @@ export function QuickCheckIn({
   const Editor = current.Editor;
   const Icon = current.icon;
   const color = current.color;
-  const error = current.validate?.(draft) ?? null;
+  const error = subStep === "entry" ? current.validate?.(draft) ?? null : null;
 
   const save = () => {
     if (error) return;
-    const cleaned: DailyEntry = { ...draft, notesFree: draft.notesFree?.trim() || undefined };
-    upsertDailyEntry(cleaned);
+    upsertDailyEntry({ ...draft, notesFree: draft.notesFree?.trim() || undefined });
     onClose();
   };
 
+  const goToStep = (i: number) => {
+    setStep(i);
+    setSubStep(subStepFor(steps[i], draft));
+  };
+
+  /** Advance to the next step, or save if this is the last one. */
+  const advance = () => {
+    if (error) return;
+    if (isLast) save();
+    else goToStep(step + 1);
+  };
+
   const goBack = () => {
-    if (step > 0) setStep((s) => s - 1);
+    if (subStep === "entry" && current.gate) setSubStep("question");
+    else if (step > 0) goToStep(step - 1);
     else onClose();
   };
 
@@ -79,7 +100,7 @@ export function QuickCheckIn({
             className="flex items-center gap-1 text-sm font-medium text-rose-600 hover:text-rose-800"
           >
             <ChevronLeft className="h-4 w-4" />
-            {step > 0 ? "Zurück" : "Abbrechen"}
+            {subStep === "entry" && current.gate ? "Zurück" : step > 0 ? "Zurück" : "Abbrechen"}
           </button>
           <span className="text-sm font-medium text-rose-500">
             {step + 1} von {steps.length}
@@ -107,7 +128,7 @@ export function QuickCheckIn({
       <main className="flex-1 overflow-auto bg-gradient-to-b from-rose-50 to-white">
         <div className="mx-auto max-w-lg px-4 py-6">
           <div
-            key={step}
+            key={`${step}-${subStep}`}
             className="overflow-hidden rounded-2xl border p-6 shadow-lg"
             style={{
               borderColor: color.border,
@@ -127,54 +148,64 @@ export function QuickCheckIn({
                 </span>
                 <span className="ml-auto text-[11px] uppercase tracking-wide text-gray-400">{dateLabel}</span>
               </div>
-              <h2 className="text-2xl font-semibold leading-tight text-gray-900">{current.question}</h2>
+              <h2 className="text-2xl font-semibold leading-tight text-gray-900">
+                {subStep === "question" && current.gate ? current.gate : current.question}
+              </h2>
             </div>
-            <Editor draft={draft} setDraft={setDraft} flags={flags} productSettings={productSettings} />
+
+            {subStep === "question" && current.gate ? (
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={advance}
+                  className="flex-1 rounded-2xl py-6 text-base"
+                >
+                  Nein
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setSubStep("entry")}
+                  className="flex-1 rounded-2xl py-6 text-base font-semibold text-white shadow-sm transition active:scale-[0.98]"
+                  style={{ backgroundColor: color.saturated }}
+                >
+                  Ja
+                </button>
+              </div>
+            ) : (
+              <Editor draft={draft} setDraft={setDraft} flags={flags} productSettings={productSettings} />
+            )}
           </div>
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-rose-100 bg-white px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
-        <div className="mx-auto max-w-lg">
-          {error ? <p className="mb-2 text-center text-xs font-medium text-red-500">{error}</p> : null}
-          <div className="flex items-center gap-2">
-            {!isLast ? (
+      {/* Footer — only in entry mode (the Ja/Nein buttons drive the question step) */}
+      {subStep === "entry" ? (
+        <footer className="border-t border-rose-100 bg-white px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
+          <div className="mx-auto max-w-lg">
+            {error ? <p className="mb-2 text-center text-xs font-medium text-red-500">{error}</p> : null}
+            <div className="flex items-center justify-end">
               <Button
                 type="button"
-                variant="ghost"
-                onClick={() => !error && setStep((s) => s + 1)}
-                disabled={!!error}
-                className="rounded-2xl text-rose-400"
-              >
-                Überspringen
-              </Button>
-            ) : null}
-            <span className="flex-1" />
-            {isLast ? (
-              <Button
-                type="button"
-                onClick={save}
+                onClick={advance}
                 disabled={!!error}
                 className="rounded-2xl px-6"
                 style={{ backgroundColor: color.saturated }}
               >
-                <Check className="mr-1 h-4 w-4" /> Speichern
+                {isLast ? (
+                  <>
+                    <Check className="mr-1 h-4 w-4" /> Speichern
+                  </>
+                ) : (
+                  <>
+                    Weiter <ChevronRight className="ml-1 h-4 w-4" />
+                  </>
+                )}
               </Button>
-            ) : (
-              <Button
-                type="button"
-                onClick={() => !error && setStep((s) => s + 1)}
-                disabled={!!error}
-                className="rounded-2xl px-6"
-                style={{ backgroundColor: color.saturated }}
-              >
-                Weiter <ChevronRight className="ml-1 h-4 w-4" />
-              </Button>
-            )}
+            </div>
           </div>
-        </div>
-      </footer>
+        </footer>
+      ) : null}
     </div>
   );
 }

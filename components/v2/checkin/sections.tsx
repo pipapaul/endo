@@ -96,8 +96,14 @@ export interface CheckInSection {
   icon: LucideIcon;
   /** Per-area accent colour (header pill, journal highlight, progress bar). */
   color: CategoryColor;
-  /** Full question shown at the top of a wizard step. */
+  /** Prompt shown above the editor (entry sub-step / single-section edit). */
   question: string;
+  /**
+   * Optional yes/no presence question (v1 style). When set, the wizard opens
+   * the step with this question and Ja/Nein buttons; "Ja" reveals the editor,
+   * "Nein" skips to the next step. Sections without a gate go straight in.
+   */
+  gate?: string;
   /** Hide the whole section unless the relevant feature flag is on. */
   hidden?: (flags: FeatureFlags) => boolean;
   /** Compact chips for the day overview; empty array = nothing recorded yet. */
@@ -1000,7 +1006,8 @@ export const CHECKIN_SECTIONS: CheckInSection[] = [
     title: "Schmerzen",
     icon: Activity,
     color: CATEGORY_COLORS.pain,
-    question: "Hattest du heute Schmerzen?",
+    gate: "Hattest du heute Schmerzen?",
+    question: "Wo und wie stark?",
     summary: painSummary,
     validate: (e) => {
       const missing = (e.painRegions ?? []).some((r) => !(r.timeOfDay && r.timeOfDay.length > 0));
@@ -1013,6 +1020,7 @@ export const CHECKIN_SECTIONS: CheckInSection[] = [
     title: "Blutung",
     icon: Droplet,
     color: CATEGORY_COLORS.bleeding,
+    gate: "Hattest du heute eine Blutung?",
     question: "Wie stark war deine Blutung?",
     summary: bleedingSummary,
     Editor: BleedingEditor,
@@ -1039,7 +1047,8 @@ export const CHECKIN_SECTIONS: CheckInSection[] = [
     title: "Symptome",
     icon: HeartPulse,
     color: CATEGORY_COLORS.symptoms,
-    question: "Welche Symptome hattest du? (mit Stärke)",
+    gate: "Hattest du heute Symptome?",
+    question: "Welche Symptome? (mit Stärke)",
     summary: symptomsSummary,
     Editor: SymptomsEditor,
   },
@@ -1081,7 +1090,8 @@ export const CHECKIN_SECTIONS: CheckInSection[] = [
     title: "Medikamente",
     icon: Pill,
     color: CATEGORY_COLORS.meds,
-    question: "Hast du Medikamente genommen?",
+    gate: "Hast du Medikamente genommen?",
+    question: "Welche Medikamente?",
     summary: (e) =>
       (e.rescueMeds ?? []).map((m) => (m.doseMg ? `${m.name} ${m.doseMg} mg` : m.name)),
     Editor: MedsEditor,
