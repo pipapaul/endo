@@ -30,6 +30,25 @@ function painValue(entry?: DailyEntry): number | null {
   return p;
 }
 
+/** Catmull-Rom → cubic-bezier smoothing for a soft, rounded line. */
+function smoothPath(pts: { x: number; y: number }[]): string {
+  if (pts.length === 0) return "";
+  if (pts.length === 1) return `M ${pts[0].x} ${pts[0].y}`;
+  let d = `M ${pts[0].x} ${pts[0].y}`;
+  for (let i = 0; i < pts.length - 1; i += 1) {
+    const p0 = pts[i - 1] ?? pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] ?? p2;
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+  }
+  return d;
+}
+
 const PAST = 14;
 const FUTURE = 28;
 const DW = 8; // px per day in the viewBox
@@ -112,20 +131,24 @@ export function CycleGraph({ daily }: { daily: DailyEntry[] }) {
           );
         })}
 
-        {/* pain dots */}
-        {days.map((d) => {
-          const p = painValue(d.entry);
-          if (p === null || p <= 0) return null;
+        {/* pain — smooth rounded curve over the recorded window (past → today) */}
+        {(() => {
+          const pts = days
+            .filter((_, i) => i <= todayIndex)
+            .map((d) => ({ x: d.x + DW / 2, y: BASE - ((painValue(d.entry) ?? 0) / 10) * BAR_MAX }));
+          if (pts.length < 2) return null;
           return (
-            <circle
-              key={`p-${d.date}`}
-              cx={d.x + DW / 2}
-              cy={BASE - (p / 10) * BAR_MAX}
-              r={2}
-              fill="#a855f7"
+            <path
+              d={smoothPath(pts)}
+              fill="none"
+              stroke="#a855f7"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
             />
           );
-        })}
+        })()}
 
         {/* ovulation markers */}
         {days.map((d) =>

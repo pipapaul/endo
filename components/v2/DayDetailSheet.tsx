@@ -77,26 +77,47 @@ export function DayDetailSheet({
         <ul className="space-y-2">
           {sections.map((section) => {
             const parts = entry ? section.summary(entry) : [];
+            const filled = parts.length > 0;
             const Icon = section.icon;
+            const c = section.color;
             return (
               <li key={section.id}>
                 <button
                   type="button"
                   onClick={() => setEditing(section.id)}
-                  className="flex w-full items-center gap-3 rounded-2xl border border-rose-100 bg-white px-4 py-3 text-left transition active:scale-[0.99] hover:border-rose-200 hover:bg-rose-50"
+                  className="flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition active:scale-[0.99]"
+                  style={
+                    filled
+                      ? { borderColor: c.border, background: c.pastel }
+                      : { borderColor: "rgb(255 228 230)", background: "rgba(255,255,255,0.6)" }
+                  }
                 >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-500">
+                  <span
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                    style={{
+                      backgroundColor: filled ? "#fff" : "#fff5f6",
+                      color: filled ? c.saturated : "#fda4af",
+                    }}
+                  >
                     <Icon className="h-5 w-5" strokeWidth={2} />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold text-rose-900">{section.title}</span>
-                    {parts.length > 0 ? (
-                      <span className="block truncate text-xs text-rose-500">{parts.join(" · ")}</span>
+                    <span
+                      className="block text-sm font-semibold"
+                      style={{ color: filled ? c.saturated : "#9f1239" }}
+                    >
+                      {section.title}
+                    </span>
+                    {filled ? (
+                      <span className="block truncate text-xs text-gray-600">{parts.join(" · ")}</span>
                     ) : (
                       <span className="block text-xs text-rose-300">noch nichts erfasst</span>
                     )}
                   </span>
-                  <ChevronRight className="h-5 w-5 shrink-0 text-rose-300" />
+                  <ChevronRight
+                    className="h-5 w-5 shrink-0"
+                    style={{ color: filled ? c.saturated : "#fda4af" }}
+                  />
                 </button>
               </li>
             );
@@ -130,8 +151,12 @@ function SectionEditSheet({
     () => getDailyEntry(date) ?? createEmptyDailyEntry(date)
   );
   const Editor = section.Editor;
+  const Icon = section.icon;
+  const c = section.color;
+  const error = section.validate?.(draft) ?? null;
 
   const save = () => {
+    if (error) return;
     upsertDailyEntry({ ...draft, notesFree: draft.notesFree?.trim() || undefined });
     onClose();
   };
@@ -140,11 +165,24 @@ function SectionEditSheet({
     <Sheet
       open
       onClose={onClose}
-      title={section.title}
+      title={
+        <span className="flex items-center gap-2" style={{ color: c.saturated }}>
+          <Icon className="h-5 w-5" /> {section.title}
+        </span>
+      }
       footer={
-        <Button type="button" onClick={save} className="w-full rounded-2xl py-3">
-          <Check className="mr-1 h-4 w-4" /> Speichern
-        </Button>
+        <div>
+          {error ? <p className="mb-2 text-center text-xs font-medium text-red-500">{error}</p> : null}
+          <Button
+            type="button"
+            onClick={save}
+            disabled={!!error}
+            className="w-full rounded-2xl py-3"
+            style={{ backgroundColor: c.saturated }}
+          >
+            <Check className="mr-1 h-4 w-4" /> Speichern
+          </Button>
+        </div>
       }
     >
       <p className="mb-4 text-sm font-medium text-rose-700">{section.question}</p>

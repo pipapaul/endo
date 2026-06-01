@@ -71,16 +71,39 @@ export interface EditorProps {
   productSettings: ProductSettings;
 }
 
+export interface CategoryColor {
+  saturated: string;
+  pastel: string;
+  border: string;
+}
+
+/** Per-area colours, carried over 1:1 from v1 for visual consistency. */
+export const CATEGORY_COLORS: Record<StepId, CategoryColor> = {
+  pain: { saturated: "#a855f7", pastel: "#f8f0fc", border: "rgba(168, 85, 247, 0.25)" },
+  bleeding: { saturated: "#e8524a", pastel: "#fdf0ef", border: "rgba(232, 82, 74, 0.25)" },
+  cervix: { saturated: "#14b8a6", pastel: "#e8f6f1", border: "rgba(20, 184, 166, 0.25)" },
+  symptoms: { saturated: "#ec4899", pastel: "#fcf0f4", border: "rgba(236, 72, 153, 0.25)" },
+  mood: { saturated: "#10b981", pastel: "#ecfdf5", border: "rgba(16, 185, 129, 0.25)" },
+  sleep: { saturated: "#8b5cf6", pastel: "#f3f0fa", border: "rgba(139, 92, 246, 0.25)" },
+  digestion: { saturated: "#ec4899", pastel: "#fcf0f4", border: "rgba(236, 72, 153, 0.25)" },
+  meds: { saturated: "#0ea5e9", pastel: "#edf5fc", border: "rgba(14, 165, 233, 0.25)" },
+  notes: { saturated: "#f97316", pastel: "#faf4ed", border: "rgba(249, 115, 22, 0.25)" },
+};
+
 export interface CheckInSection {
   id: StepId;
   title: string;
   icon: LucideIcon;
+  /** Per-area accent colour (header pill, journal highlight, progress bar). */
+  color: CategoryColor;
   /** Full question shown at the top of a wizard step. */
   question: string;
   /** Hide the whole section unless the relevant feature flag is on. */
   hidden?: (flags: FeatureFlags) => boolean;
   /** Compact chips for the day overview; empty array = nothing recorded yet. */
   summary: (entry: DailyEntry) => string[];
+  /** Returns an error message that blocks saving/advancing, or null if valid. */
+  validate?: (entry: DailyEntry) => string | null;
   /** The editor body, shared by wizard step and single-section edit sheet. */
   Editor: (props: EditorProps) => ReactNode;
 }
@@ -268,26 +291,34 @@ function PainEditor({ draft, setDraft }: EditorProps) {
                 value={(r.qualities ?? []) as string[]}
                 onToggle={(next) => updateRegion(r.regionId, { qualities: next as PainQuality[] })}
               />
-              <div className="flex flex-wrap gap-2">
-                {PAIN_TIMES.map((t) => {
-                  const cur = r.timeOfDay ?? [];
-                  const on = cur.includes(t.id);
-                  return (
-                    <Chip
-                      key={t.id}
-                      selected={on}
-                      onClick={() => {
-                        const next = on ? cur.filter((x) => x !== t.id) : [...cur, t.id];
-                        updateRegion(r.regionId, {
-                          timeOfDay: next,
-                          granularity: next.length > 0 ? "dritteltag" : "tag",
-                        });
-                      }}
-                    >
-                      {t.label}
-                    </Chip>
-                  );
-                })}
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-rose-700">
+                  Wann? <span className="text-rose-400">· Pflicht, Mehrfachauswahl</span>
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {PAIN_TIMES.map((t) => {
+                    const cur = r.timeOfDay ?? [];
+                    const on = cur.includes(t.id);
+                    return (
+                      <Chip
+                        key={t.id}
+                        selected={on}
+                        onClick={() => {
+                          const next = on ? cur.filter((x) => x !== t.id) : [...cur, t.id];
+                          updateRegion(r.regionId, {
+                            timeOfDay: next,
+                            granularity: next.length > 0 ? "dritteltag" : "tag",
+                          });
+                        }}
+                      >
+                        {t.label}
+                      </Chip>
+                    );
+                  })}
+                </div>
+                {(r.timeOfDay?.length ?? 0) === 0 ? (
+                  <p className="text-xs font-medium text-red-500">Bitte mindestens eine Tageszeit wählen.</p>
+                ) : null}
               </div>
             </div>
           ))}
@@ -968,14 +999,20 @@ export const CHECKIN_SECTIONS: CheckInSection[] = [
     id: "pain",
     title: "Schmerzen",
     icon: Activity,
+    color: CATEGORY_COLORS.pain,
     question: "Hattest du heute Schmerzen?",
     summary: painSummary,
+    validate: (e) => {
+      const missing = (e.painRegions ?? []).some((r) => !(r.timeOfDay && r.timeOfDay.length > 0));
+      return missing ? "Bitte für jede Schmerz-Stelle mindestens eine Tageszeit angeben." : null;
+    },
     Editor: PainEditor,
   },
   {
     id: "bleeding",
     title: "Blutung",
     icon: Droplet,
+    color: CATEGORY_COLORS.bleeding,
     question: "Wie stark war deine Blutung?",
     summary: bleedingSummary,
     Editor: BleedingEditor,
@@ -984,6 +1021,7 @@ export const CHECKIN_SECTIONS: CheckInSection[] = [
     id: "cervix",
     title: "Zervixschleim",
     icon: Droplets,
+    color: CATEGORY_COLORS.cervix,
     question: "Wie war dein Zervixschleim heute?",
     hidden: (flags) => !flags.billingMethod,
     summary: (e) => {
@@ -1000,6 +1038,7 @@ export const CHECKIN_SECTIONS: CheckInSection[] = [
     id: "symptoms",
     title: "Symptome",
     icon: HeartPulse,
+    color: CATEGORY_COLORS.symptoms,
     question: "Welche Symptome hattest du? (mit Stärke)",
     summary: symptomsSummary,
     Editor: SymptomsEditor,
@@ -1008,6 +1047,7 @@ export const CHECKIN_SECTIONS: CheckInSection[] = [
     id: "mood",
     title: "Stimmung",
     icon: Smile,
+    color: CATEGORY_COLORS.mood,
     question: "Wie war deine Stimmung heute?",
     summary: (e) => (e.mood ? [`${MOOD_EMOJI[e.mood]} ${MOODS.find((m) => m.value === e.mood)?.label}`] : []),
     Editor: MoodEditor,
@@ -1016,6 +1056,7 @@ export const CHECKIN_SECTIONS: CheckInSection[] = [
     id: "sleep",
     title: "Schlaf",
     icon: Moon,
+    color: CATEGORY_COLORS.sleep,
     question: "Wie hast du geschlafen?",
     summary: (e) => {
       const parts: string[] = [];
@@ -1030,6 +1071,7 @@ export const CHECKIN_SECTIONS: CheckInSection[] = [
     id: "digestion",
     title: "Verdauung",
     icon: Soup,
+    color: CATEGORY_COLORS.digestion,
     question: "Wie war deine Verdauung? (Bristol-Skala)",
     summary: (e) => (e.gi?.bristolType ? [BRISTOL_LABEL[e.gi.bristolType]] : []),
     Editor: DigestionEditor,
@@ -1038,6 +1080,7 @@ export const CHECKIN_SECTIONS: CheckInSection[] = [
     id: "meds",
     title: "Medikamente",
     icon: Pill,
+    color: CATEGORY_COLORS.meds,
     question: "Hast du Medikamente genommen?",
     summary: (e) =>
       (e.rescueMeds ?? []).map((m) => (m.doseMg ? `${m.name} ${m.doseMg} mg` : m.name)),
@@ -1047,6 +1090,7 @@ export const CHECKIN_SECTIONS: CheckInSection[] = [
     id: "notes",
     title: "Notizen",
     icon: StickyNote,
+    color: CATEGORY_COLORS.notes,
     question: "Möchtest du etwas festhalten?",
     summary: (e) => (e.notesFree?.trim() ? [e.notesFree.trim()] : []),
     Editor: NotesEditor,

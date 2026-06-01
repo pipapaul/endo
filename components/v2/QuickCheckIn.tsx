@@ -8,6 +8,11 @@ import { createEmptyDailyEntry } from "@/lib/data/factory";
 import { visibleSections, type StepId } from "./checkin/sections";
 import type { DailyEntry } from "@/lib/types";
 
+/**
+ * Full-screen, guided check-in wizard. Design carried over from v1: one big
+ * question per step as the focal point, a per-category colour accent (header
+ * pill + progress bar + card tint), and a clean linear progress bar.
+ */
 export function QuickCheckIn({
   open,
   onClose,
@@ -45,100 +50,131 @@ export function QuickCheckIn({
   const isLast = step === steps.length - 1;
   const current = steps[Math.min(step, steps.length - 1)];
   const Editor = current.Editor;
+  const Icon = current.icon;
+  const color = current.color;
+  const error = current.validate?.(draft) ?? null;
 
   const save = () => {
+    if (error) return;
     const cleaned: DailyEntry = { ...draft, notesFree: draft.notesFree?.trim() || undefined };
     upsertDailyEntry(cleaned);
     onClose();
   };
 
+  const goBack = () => {
+    if (step > 0) setStep((s) => s - 1);
+    else onClose();
+  };
+
   if (!open) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center"
-      role="dialog"
-      aria-modal="true"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-rose-50 shadow-2xl sm:rounded-3xl">
-        {/* Header with progress */}
-        <div className="border-b border-rose-100 bg-white/80 px-5 pt-4 pb-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[11px] uppercase tracking-wide text-rose-400">
-                Schnell-Check-in · {dateLabel}
-              </p>
-              <h2 className="text-lg font-bold text-rose-900">{current.title}</h2>
+    <div className="fixed inset-0 z-50 flex flex-col bg-white" role="dialog" aria-modal="true">
+      {/* Header */}
+      <header className="border-b border-rose-100 bg-white px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3">
+        <div className="mx-auto flex max-w-lg items-center justify-between">
+          <button
+            type="button"
+            onClick={goBack}
+            className="flex items-center gap-1 text-sm font-medium text-rose-600 hover:text-rose-800"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            {step > 0 ? "Zurück" : "Abbrechen"}
+          </button>
+          <span className="text-sm font-medium text-rose-500">
+            {step + 1} von {steps.length}
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Schließen"
+            className="rounded-full p-1 text-rose-400 hover:bg-rose-100 hover:text-rose-600"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="mx-auto mt-3 max-w-lg">
+          <div className="h-1.5 overflow-hidden rounded-full bg-rose-100">
+            <div
+              className="h-full rounded-full transition-all duration-300"
+              style={{ width: `${((step + 1) / steps.length) * 100}%`, backgroundColor: color.saturated }}
+            />
+          </div>
+        </div>
+      </header>
+
+      {/* Content */}
+      <main className="flex-1 overflow-auto bg-gradient-to-b from-rose-50 to-white">
+        <div className="mx-auto max-w-lg px-4 py-6">
+          <div
+            key={step}
+            className="overflow-hidden rounded-2xl border p-6 shadow-lg"
+            style={{
+              borderColor: color.border,
+              background: `linear-gradient(to bottom, ${color.pastel} 0%, ${color.pastel} 10%, white 35%)`,
+            }}
+          >
+            <div className="mb-6">
+              <div className="mb-4 flex items-center gap-2">
+                <span
+                  className="flex h-8 w-8 items-center justify-center rounded-full"
+                  style={{ backgroundColor: color.pastel }}
+                >
+                  <Icon className="h-4 w-4" style={{ color: color.saturated }} />
+                </span>
+                <span className="text-sm font-medium" style={{ color: color.saturated }}>
+                  {current.title}
+                </span>
+                <span className="ml-auto text-[11px] uppercase tracking-wide text-gray-400">{dateLabel}</span>
+              </div>
+              <h2 className="text-2xl font-semibold leading-tight text-gray-900">{current.question}</h2>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Schließen"
-              className="rounded-full p-1.5 text-rose-500 transition hover:bg-rose-100"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-          <div className="mt-3 flex gap-1">
-            {steps.map((s, i) => (
-              <button
-                key={s.id}
-                type="button"
-                aria-label={`Schritt ${i + 1}: ${s.title}`}
-                onClick={() => setStep(i)}
-                className={`h-1.5 flex-1 rounded-full transition ${
-                  i <= step ? "bg-rose-500" : "bg-rose-200"
-                }`}
-              />
-            ))}
+            <Editor draft={draft} setDraft={setDraft} flags={flags} productSettings={productSettings} />
           </div>
         </div>
+      </main>
 
-        {/* Step body */}
-        <div className="flex-1 overflow-y-auto px-5 py-5">
-          <p className="mb-4 text-base font-medium text-rose-800">{current.question}</p>
-          <Editor draft={draft} setDraft={setDraft} flags={flags} productSettings={productSettings} />
-        </div>
-
-        {/* Footer nav */}
-        <div className="flex items-center gap-2 border-t border-rose-100 bg-white/80 px-5 py-3">
-          {step > 0 ? (
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setStep((s) => s - 1)}
-              className="rounded-2xl"
-            >
-              <ChevronLeft className="mr-1 h-4 w-4" /> Zurück
-            </Button>
-          ) : (
-            <span className="flex-1" />
-          )}
-          <span className="flex-1" />
-          {isLast ? (
-            <Button type="button" onClick={save} className="rounded-2xl px-6">
-              <Check className="mr-1 h-4 w-4" /> Speichern
-            </Button>
-          ) : (
-            <div className="flex items-center gap-1">
+      {/* Footer */}
+      <footer className="border-t border-rose-100 bg-white px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
+        <div className="mx-auto max-w-lg">
+          {error ? <p className="mb-2 text-center text-xs font-medium text-red-500">{error}</p> : null}
+          <div className="flex items-center gap-2">
+            {!isLast ? (
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => setStep((s) => s + 1)}
+                onClick={() => !error && setStep((s) => s + 1)}
+                disabled={!!error}
                 className="rounded-2xl text-rose-400"
               >
                 Überspringen
               </Button>
-              <Button type="button" onClick={() => setStep((s) => s + 1)} className="rounded-2xl px-5">
+            ) : null}
+            <span className="flex-1" />
+            {isLast ? (
+              <Button
+                type="button"
+                onClick={save}
+                disabled={!!error}
+                className="rounded-2xl px-6"
+                style={{ backgroundColor: color.saturated }}
+              >
+                <Check className="mr-1 h-4 w-4" /> Speichern
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                onClick={() => !error && setStep((s) => s + 1)}
+                disabled={!!error}
+                className="rounded-2xl px-6"
+                style={{ backgroundColor: color.saturated }}
+              >
                 Weiter <ChevronRight className="ml-1 h-4 w-4" />
               </Button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      </footer>
     </div>
   );
 }
