@@ -4,24 +4,25 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { buildCyclePredictions, addDays, daysBetween } from "@/lib/cycle/cycle";
 import { todayIso } from "@/lib/data/factory";
+import { calculatePbacScore, normalizePbacCounts, getSimpleBleedingPbacEquivalent } from "@/lib/pbac";
 import type { DailyEntry } from "@/lib/types";
 
-const SIMPLE_MAG: Record<string, number> = {
-  none: 0,
-  very_light: 0.2,
-  light: 0.4,
-  medium: 0.6,
-  heavy: 0.8,
-  very_heavy: 1,
-};
+/** PBAC (or PBAC-equivalent) score that fills the bleeding bar completely. */
+const PBAC_FULL = 80;
 
-function bleedMagnitude(entry?: DailyEntry): number {
+/** Unified PBAC score for a day across all tracking methods. */
+function bleedScore(entry?: DailyEntry): number {
   if (!entry) return 0;
-  const simp = entry.simpleBleedingIntensity;
-  if (simp && simp in SIMPLE_MAG) return SIMPLE_MAG[simp];
-  const pbac = entry.bleeding?.pbacScore;
-  if (typeof pbac === "number" && pbac > 0) return Math.min(pbac / 50, 1);
-  return entry.bleeding?.isBleeding ? 0.5 : 0;
+  const direct = entry.bleeding?.pbacScore;
+  if (typeof direct === "number" && direct > 0) return direct;
+  if (entry.pbacCounts) {
+    const s = calculatePbacScore(normalizePbacCounts(entry.pbacCounts));
+    if (s > 0) return s;
+  }
+  const ext = entry.extendedPbacData?.totalPbacEquivalentScore;
+  if (ext && ext > 0) return ext;
+  if (entry.simpleBleedingIntensity) return getSimpleBleedingPbacEquivalent(entry.simpleBleedingIntensity);
+  return entry.bleeding?.isBleeding ? 5 : 0;
 }
 
 function painValue(entry?: DailyEntry): number | null {
@@ -179,10 +180,15 @@ export function CycleGraph({ daily }: { daily: DailyEntry[] }) {
         {/* baseline */}
         <line x1={0} y1={BASE} x2={width} y2={BASE} stroke="#fecdd3" strokeWidth={1} />
 
-        {/* bleeding bars */}
+        {/* bleeding bars — height scales with the PBAC / PBAC-equivalent score */}
         {days.map((d) => {
-          const mag = bleedMagnitude(d.entry);
-          const h = (d.actualBleeding ? mag : d.predictedMenstruation ? 0.5 : 0) * BAR_MAX;
+          let h = 0;
+          if (d.actualBleeding) {
+            const score = bleedScore(d.entry);
+            h = score > 0 ? Math.max(0.08, Math.min(score / PBAC_FULL, 1)) * BAR_MAX : 0;
+          } else if (d.predictedMenstruation) {
+            h = 0.45 * BAR_MAX;
+          }
           if (h <= 0) return null;
           return (
             <rect
