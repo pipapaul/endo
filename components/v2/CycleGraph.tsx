@@ -143,12 +143,12 @@ export function CycleGraph({ daily }: { daily: DailyEntry[] }) {
           }}
           className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
-          <svg
-            viewBox={`0 0 ${width} ${H}`}
-            style={{ width: `${width}px` }}
-            className="h-32"
-            preserveAspectRatio="none"
-          >
+          <div style={{ width: `${width}px` }} className="h-32">
+            <svg
+              viewBox={`0 0 ${width} ${H}`}
+              className="block h-full w-full"
+              preserveAspectRatio="none"
+            >
         {/* fertile window shading */}
         {days.map((d) =>
           d.isFertile || d.isPredictedOvulation ? (
@@ -223,7 +223,8 @@ export function CycleGraph({ daily }: { daily: DailyEntry[] }) {
             <circle key={`o-${d.date}`} cx={d.x + DW / 2} cy={10} r={3.5} fill="#f59e0b" stroke="#d97706" strokeWidth={1} />
           ) : null
         )}
-          </svg>
+            </svg>
+          </div>
         </div>
 
         {showJump ? (

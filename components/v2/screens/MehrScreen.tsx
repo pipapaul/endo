@@ -8,7 +8,7 @@ import { buildBackup, parseBackup } from "@/lib/data/importExport";
 import { getColorSchemeName, type ColorScheme } from "@/lib/theme";
 import { getTrackingMethodLabel } from "@/lib/pbac";
 import { applyTrackingMethod } from "@/lib/productSettings";
-import { ProductSettingsPanel } from "@/components/ui/ProductSettingsPanel";
+import { ProductSettingsPanel, ProductConfigPanel } from "@/components/ui/ProductSettingsPanel";
 import { Card, Sheet } from "../ui";
 import { Button } from "@/components/ui/button";
 
@@ -211,6 +211,15 @@ export function MehrScreen() {
             )
           }
         />
+        {productSettings.trackingMethod === "pbac_extended" ? (
+          <div className="mt-5 space-y-2 border-t border-rose-100 pt-5">
+            <p className="text-sm font-semibold text-rose-900">Produkte anpassen</p>
+            <p className="text-xs text-rose-500">
+              Wähle, welche Produkte beim Eintragen zur Auswahl stehen – oder füge eigene hinzu.
+            </p>
+            <ProductConfigPanel settings={productSettings} onSettingsChange={setProductSettings} />
+          </div>
+        ) : null}
       </Sheet>
 
       <Sheet
