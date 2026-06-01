@@ -57,6 +57,8 @@ export const BODY_REGION_GROUPS: { id: string; label: string; regions: BodyRegio
       { id: "knee_right", label: "Knie rechts" },
       { id: "calf_left", label: "Unterschenkel links" },
       { id: "calf_right", label: "Unterschenkel rechts" },
+      { id: "foot_left", label: "Fuß links" },
+      { id: "foot_right", label: "Fuß rechts" },
     ],
   },
   {

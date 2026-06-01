@@ -4,7 +4,8 @@ import { useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScoreInput } from "@/components/home/inputs";
-import { BODY_REGION_GROUPS, getRegionLabel } from "@/lib/painRegions";
+import { getRegionLabel } from "@/lib/painRegions";
+import { BodyMap } from "../BodyMap";
 import { cn } from "@/lib/utils";
 import type { PainQuality, PainTimeOfDay } from "@/lib/types";
 
@@ -50,42 +51,9 @@ export function PainEntryFlow({
   const [qualities, setQualities] = useState<PainQuality[]>([]);
   const [times, setTimes] = useState<PainTimeOfDay[]>([]);
 
-  // Step 1: region
+  // Step 1: region — illustrated body map.
   if (!region) {
-    return (
-      <div>
-        <div className="mb-4 text-center">
-          <h3 className="text-lg font-semibold text-rose-900">Wo tut es weh?</h3>
-          <p className="mt-1 text-sm text-rose-600">Wähle die Körperregion</p>
-        </div>
-        <div className="max-h-[55vh] space-y-3 overflow-y-auto">
-          {BODY_REGION_GROUPS.map((group) => (
-            <div key={group.id}>
-              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-rose-400">{group.label}</p>
-              <div className="grid grid-cols-2 gap-2">
-                {group.regions.map((r) => (
-                  <button
-                    key={r.id}
-                    type="button"
-                    onClick={() => setRegion(r.id)}
-                    className="rounded-xl border border-rose-100 bg-white px-3 py-2 text-left text-sm font-medium text-rose-700 transition hover:border-rose-300 hover:bg-rose-50"
-                  >
-                    {r.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="mt-4 flex items-center gap-1 text-sm font-medium text-rose-500 hover:text-rose-700"
-        >
-          <ChevronLeft className="h-4 w-4" /> Abbrechen
-        </button>
-      </div>
-    );
+    return <BodyMap onPick={setRegion} onCancel={onCancel} />;
   }
 
   // Step 2: intensity + quality + time
