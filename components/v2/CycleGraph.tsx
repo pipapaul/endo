@@ -159,8 +159,8 @@ export function CycleGraph({ daily }: { daily: DailyEntry[] }) {
               y={8}
               width={DW}
               height={H - 24}
-              fill="#14b8a6"
-              opacity={0.1}
+              fill="#2dd4bf"
+              opacity={0.32}
             />
           ) : null
         )}
