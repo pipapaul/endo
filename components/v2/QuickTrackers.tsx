@@ -3,29 +3,19 @@
 import { useState } from "react";
 import { Activity, Droplet, Pill, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Sheet, ScalePicker, Chip } from "./ui";
+import { Sheet, Chip } from "./ui";
+import { PainEntryFlow, type PainEntryDraft } from "./checkin/PainEntryFlow";
 import { useData } from "@/lib/data/DataProvider";
 import {
   SIMPLE_BLEEDING_INTENSITIES,
   getSimpleBleedingPbacEquivalent,
   type SimpleBleedingIntensity,
 } from "@/lib/pbac";
-import type { DailyEntry, PainQuality } from "@/lib/types";
+import type { DailyEntry } from "@/lib/types";
 
 type Tracker = "pain" | "period" | "med" | null;
 
 const COMMON_MEDS = ["Ibuprofen", "Paracetamol", "Naproxen", "Buscopan", "Novalgin"];
-
-const QUICK_PAIN_REGIONS = [
-  { id: "uterus", label: "Uterus" },
-  { id: "lower_abdomen", label: "Unterbauch" },
-  { id: "lower_abdomen_left", label: "Unterb. li." },
-  { id: "lower_abdomen_right", label: "Unterb. re." },
-  { id: "lower_back", label: "Kreuzbein" },
-  { id: "head", label: "Kopf" },
-];
-
-const QUICK_PAIN_QUALITIES: PainQuality[] = ["krampfend", "stechend", "brennend", "dumpf", "ziehend"];
 
 /**
  * Quick-trackers — fast, in-the-moment logging that lives below the quick
@@ -38,30 +28,25 @@ export function QuickTrackers({ date }: { date: string }) {
   const [active, setActive] = useState<Tracker>(null);
 
   // local sheet state
-  const [painValue, setPainValue] = useState<number | null>(null);
-  const [painRegion, setPainRegion] = useState<string>("");
-  const [painQualities, setPainQualities] = useState<PainQuality[]>([]);
   const [medName, setMedName] = useState("");
 
   const close = () => {
     setActive(null);
-    setPainValue(null);
-    setPainRegion("");
-    setPainQualities([]);
     setMedName("");
   };
 
-  const logPain = () => {
-    if (painValue === null) return close();
+  const logPain = (e: PainEntryDraft) => {
     const now = new Date();
     updateDailyEntry(date, (prev): DailyEntry => {
       const event = {
         id: Date.now(),
         date,
         timestamp: now.toISOString(),
-        regionId: painRegion,
-        intensity: painValue,
-        qualities: painQualities,
+        regionId: e.regionId,
+        intensity: e.nrs,
+        qualities: e.qualities,
+        timeOfDay: e.times,
+        granularity: e.times.length > 0 ? ("dritteltag" as const) : ("tag" as const),
       };
       return { ...prev, quickPainEvents: [...(prev.quickPainEvents ?? []), event] };
     });
@@ -126,44 +111,8 @@ export function QuickTrackers({ date }: { date: string }) {
         />
       </div>
 
-      <Sheet
-        open={active === "pain"}
-        onClose={close}
-        title="Akut-Schmerz eintragen"
-        footer={
-          <Button type="button" onClick={logPain} className="w-full rounded-2xl py-3">
-            Eintragen
-          </Button>
-        }
-      >
-        <p className="mb-3 text-sm text-rose-600">Wie stark ist der Schmerz gerade?</p>
-        <ScalePicker value={painValue} onChange={setPainValue} />
-        <p className="mb-2 mt-4 text-sm text-rose-600">Wo?</p>
-        <div className="flex flex-wrap gap-2">
-          {QUICK_PAIN_REGIONS.map((r) => (
-            <Chip
-              key={r.id}
-              selected={painRegion === r.id}
-              onClick={() => setPainRegion((cur) => (cur === r.id ? "" : r.id))}
-            >
-              {r.label}
-            </Chip>
-          ))}
-        </div>
-        <p className="mb-2 mt-4 text-sm text-rose-600">Schmerzart</p>
-        <div className="flex flex-wrap gap-2">
-          {QUICK_PAIN_QUALITIES.map((q) => (
-            <Chip
-              key={q}
-              selected={painQualities.includes(q)}
-              onClick={() =>
-                setPainQualities((cur) => (cur.includes(q) ? cur.filter((x) => x !== q) : [...cur, q]))
-              }
-            >
-              {q}
-            </Chip>
-          ))}
-        </div>
+      <Sheet open={active === "pain"} onClose={close} title="Akut-Schmerz eintragen">
+        <PainEntryFlow requireTime={false} onCommit={logPain} onCancel={close} />
       </Sheet>
 
       <Sheet open={active === "period"} onClose={close} title="Periodenprodukt / Blutung">

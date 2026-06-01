@@ -18,9 +18,9 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Chip, Disclosure } from "../ui";
-import { BodyMap } from "../BodyMap";
-import { BODY_REGION_GROUPS, getRegionLabel } from "@/lib/painRegions";
-import { NrsInput, MultiSelectChips, ScoreInput, NumberField } from "@/components/home/inputs";
+import { getRegionLabel } from "@/lib/painRegions";
+import { PainEntryFlow, type PainEntryDraft } from "./PainEntryFlow";
+import { NrsInput, ScoreInput, NumberField } from "@/components/home/inputs";
 import { SleepQualityPicker } from "@/components/home/SleepQualityPicker";
 import { BristolScalePicker, type BristolType } from "@/components/home/BristolScalePicker";
 import { ExtendedBleedingEntryForm } from "@/components/home/ExtendedBleedingEntry";
@@ -38,7 +38,7 @@ import {
   type FreeBleedingEntry,
 } from "@/lib/pbac";
 import type { ProductSettings } from "@/lib/productSettings";
-import type { DailyEntry, FeatureFlags, PainQuality, PainTimeOfDay } from "@/lib/types";
+import type { DailyEntry, FeatureFlags, PainQuality } from "@/lib/types";
 import type { SymptomKey } from "@/lib/home/constants";
 
 /**
@@ -115,21 +115,6 @@ export interface CheckInSection {
 }
 
 // ── shared option lists ──────────────────────────────────────────────────────
-
-const PAIN_QUALITY_OPTIONS = [
-  { value: "krampfend", label: "krampfend" },
-  { value: "stechend", label: "stechend" },
-  { value: "brennend", label: "brennend" },
-  { value: "dumpf", label: "dumpf" },
-  { value: "ziehend", label: "ziehend" },
-  { value: "anders", label: "anders" },
-];
-
-const PAIN_TIMES: { id: PainTimeOfDay; label: string }[] = [
-  { id: "morgens", label: "Morgens" },
-  { id: "mittags", label: "Mittags" },
-  { id: "abends", label: "Abends" },
-];
 
 const MOODS: { value: 1 | 2 | 3 | 4; emoji: string; label: string }[] = [
   { value: 1, emoji: "😞", label: "schlecht" },
@@ -220,116 +205,109 @@ function painAggregates(regions: PainRegion[]): Pick<DailyEntry, "painNRS" | "pa
 
 function PainEditor({ draft, setDraft }: EditorProps) {
   const patch = makePatch(setDraft);
-
-  const toggleRegion = (id: string) =>
-    setDraft((d) => {
-      const ids = new Set(d.painMapRegionIds ?? []);
-      let regions = [...(d.painRegions ?? [])];
-      if (ids.has(id)) {
-        ids.delete(id);
-        regions = regions.filter((r) => r.regionId !== id);
-      } else {
-        ids.add(id);
-        if (!regions.some((r) => r.regionId === id))
-          regions.push({ regionId: id, nrs: 0, qualities: [], timeOfDay: [], granularity: "tag" });
-      }
-      return { ...d, painMapRegionIds: Array.from(ids), painRegions: regions, ...painAggregates(regions) };
-    });
-
-  const updateRegion = (id: string, partial: Partial<PainRegion>) =>
-    setDraft((d) => {
-      const regions = (d.painRegions ?? []).map((r) => (r.regionId === id ? { ...r, ...partial } : r));
-      return { ...d, painRegions: regions, ...painAggregates(regions) };
-    });
+  const [adding, setAdding] = useState(false);
 
   const regions = draft.painRegions ?? [];
+  const events = draft.quickPainEvents ?? [];
+  const hasEntries = regions.length > 0 || events.length > 0;
+
+  const commit = (e: PainEntryDraft) =>
+    setDraft((d) => {
+      const next: PainRegion[] = [
+        ...(d.painRegions ?? []),
+        {
+          regionId: e.regionId,
+          nrs: e.nrs,
+          qualities: e.qualities,
+          timeOfDay: e.times,
+          granularity: e.times.length > 0 ? "dritteltag" : "tag",
+        },
+      ];
+      const ids = Array.from(new Set(next.map((r) => r.regionId)));
+      return { ...d, painRegions: next, painMapRegionIds: ids, ...painAggregates(next) };
+    });
+
+  const removeRegion = (index: number) =>
+    setDraft((d) => {
+      const next = (d.painRegions ?? []).filter((_, i) => i !== index);
+      return { ...d, painRegions: next, painMapRegionIds: next.map((r) => r.regionId), ...painAggregates(next) };
+    });
+
+  const removeEvent = (id: number) =>
+    setDraft((d) => ({ ...d, quickPainEvents: (d.quickPainEvents ?? []).filter((e) => e.id !== id) }));
+
+  // Add flow: pick region, then intensity/quality/time (v1-style, multi-step).
+  if (adding) {
+    return (
+      <PainEntryFlow
+        requireTime
+        onCommit={(e) => {
+          commit(e);
+          setAdding(false);
+        }}
+        onCancel={() => setAdding(false)}
+      />
+    );
+  }
 
   return (
     <div className="space-y-5">
-      <div className="space-y-2">
-        <p className="text-sm font-medium text-rose-700">Wo tut es weh?</p>
-        <BodyMap selected={draft.painMapRegionIds ?? []} onToggle={toggleRegion} />
-        <Disclosure label="Arme & Beine">
-          {BODY_REGION_GROUPS.filter((g) => g.id === "arms" || g.id === "legs").map((group) => (
-            <div key={group.id} className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-rose-400">{group.label}</p>
-              <div className="flex flex-wrap gap-2">
-                {group.regions.map((region) => (
-                  <Chip
-                    key={region.id}
-                    selected={(draft.painMapRegionIds ?? []).includes(region.id)}
-                    onClick={() => toggleRegion(region.id)}
-                  >
-                    {region.label}
-                  </Chip>
-                ))}
+      {hasEntries ? (
+        <div className="space-y-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-rose-400">Erfasste Schmerzen</p>
+          {regions.map((r, i) => (
+            <div
+              key={`r-${i}`}
+              className="flex items-center justify-between rounded-2xl border border-rose-100 bg-white/70 px-3 py-2"
+            >
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-rose-800">{getRegionLabel(r.regionId)}</p>
+                <p className="text-xs text-rose-500">
+                  Intensität {r.nrs}/10
+                  {r.qualities?.length ? ` · ${r.qualities.join(", ")}` : ""}
+                  {r.timeOfDay?.length ? ` · ${r.timeOfDay.join(", ")}` : ""}
+                </p>
               </div>
+              <button
+                type="button"
+                aria-label="Entfernen"
+                onClick={() => removeRegion(i)}
+                className="shrink-0 text-rose-400 hover:text-rose-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
           ))}
-        </Disclosure>
-      </div>
-
-      {/* Per-region detail — full v1 precision (intensity, quality, time of day). */}
-      {regions.length > 0 ? (
-        <div className="space-y-3">
-          <p className="text-sm font-medium text-rose-700">Details je Stelle</p>
-          {regions.map((r) => (
-            <div key={r.regionId} className="space-y-3 rounded-2xl border border-rose-100 bg-white/70 p-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-rose-900">{getRegionLabel(r.regionId)}</p>
-                <button
-                  type="button"
-                  aria-label="Stelle entfernen"
-                  onClick={() => toggleRegion(r.regionId)}
-                  className="rounded-full p-1 text-rose-400 hover:bg-rose-100"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <ScoreInput
-                id={`pain-${r.regionId}`}
-                label="Stärke"
-                value={r.nrs ?? 0}
-                onChange={(v) => updateRegion(r.regionId, { nrs: v })}
-              />
-              <MultiSelectChips
-                options={PAIN_QUALITY_OPTIONS}
-                value={(r.qualities ?? []) as string[]}
-                onToggle={(next) => updateRegion(r.regionId, { qualities: next as PainQuality[] })}
-              />
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-rose-700">
-                  Wann? <span className="text-rose-400">· Pflicht, Mehrfachauswahl</span>
+          {events.map((e) => (
+            <div
+              key={`e-${e.id}`}
+              className="flex items-center justify-between rounded-2xl border border-rose-100 bg-white/70 px-3 py-2"
+            >
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-rose-800">
+                  {e.regionId ? getRegionLabel(e.regionId) : "Akut-Schmerz"}
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  {PAIN_TIMES.map((t) => {
-                    const cur = r.timeOfDay ?? [];
-                    const on = cur.includes(t.id);
-                    return (
-                      <Chip
-                        key={t.id}
-                        selected={on}
-                        onClick={() => {
-                          const next = on ? cur.filter((x) => x !== t.id) : [...cur, t.id];
-                          updateRegion(r.regionId, {
-                            timeOfDay: next,
-                            granularity: next.length > 0 ? "dritteltag" : "tag",
-                          });
-                        }}
-                      >
-                        {t.label}
-                      </Chip>
-                    );
-                  })}
-                </div>
-                {(r.timeOfDay?.length ?? 0) === 0 ? (
-                  <p className="text-xs font-medium text-red-500">Bitte mindestens eine Tageszeit wählen.</p>
-                ) : null}
+                <p className="text-xs text-rose-500">
+                  Intensität {e.intensity}/10
+                  {e.qualities?.length ? ` · ${e.qualities.join(", ")}` : ""}
+                </p>
               </div>
+              <button
+                type="button"
+                aria-label="Entfernen"
+                onClick={() => removeEvent(e.id)}
+                className="shrink-0 text-rose-400 hover:text-rose-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
           ))}
         </div>
       ) : null}
+
+      <Button type="button" variant="outline" onClick={() => setAdding(true)} className="w-full rounded-2xl">
+        <Plus className="mr-1 h-4 w-4" /> {hasEntries ? "Weiteren Schmerz hinzufügen" : "Schmerz hinzufügen"}
+      </Button>
 
       <div className="space-y-1">
         <p className="text-sm font-medium text-rose-700">Wie sehr hat es dich beeinträchtigt?</p>
@@ -1009,10 +987,6 @@ export const CHECKIN_SECTIONS: CheckInSection[] = [
     gate: "Hattest du heute Schmerzen?",
     question: "Wo und wie stark?",
     summary: painSummary,
-    validate: (e) => {
-      const missing = (e.painRegions ?? []).some((r) => !(r.timeOfDay && r.timeOfDay.length > 0));
-      return missing ? "Bitte für jede Schmerz-Stelle mindestens eine Tageszeit angeben." : null;
-    },
     Editor: PainEditor,
   },
   {
