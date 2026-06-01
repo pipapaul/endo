@@ -73,101 +73,97 @@ export function BodyMap({
   const dot = DOTS.find((d) => d.id === activeDot) ?? null;
 
   return (
-    <div className="space-y-3">
-      <div className="text-center">
-        <h3 className="text-lg font-semibold text-rose-900">Wo tut es weh?</h3>
-        <p className="mt-1 text-sm text-rose-600">Tippe einen lila Punkt an</p>
-      </div>
-
-      {/* Large figure, scrolls inside this capped box. */}
-      <div
-        className="mx-auto w-full max-w-[340px] overflow-y-auto rounded-3xl border border-rose-100 bg-white/40 [scrollbar-width:thin]"
-        style={{ maxHeight: "46vh" }}
-      >
-        <div className="relative w-full" style={{ aspectRatio: "720 / 2023" }}>
-          <div
-            aria-hidden
-            className="absolute inset-0"
-            style={{
-              backgroundColor: "#f7cdda",
-              WebkitMaskImage: "url(/bodymap.png)",
-              maskImage: "url(/bodymap.png)",
-              WebkitMaskSize: "contain",
-              maskSize: "contain",
-              WebkitMaskRepeat: "no-repeat",
-              maskRepeat: "no-repeat",
-              WebkitMaskPosition: "top center",
-              maskPosition: "top center",
-            }}
-          />
-          {DOTS.map((d) => {
-            const active = d.id === activeDot;
-            return (
-              <button
-                key={d.id}
-                type="button"
-                onClick={() => setActiveDot(active ? null : d.id)}
-                aria-label="Schmerzstelle wählen"
-                style={{ left: `${d.x}%`, top: `${d.y}%` }}
-                className="absolute flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full transition active:scale-90"
-              >
-                <span
-                  className={cn(
-                    "rounded-full border-2 border-white shadow transition",
-                    active ? "h-5 w-5 bg-violet-600 ring-2 ring-violet-300" : "h-3.5 w-3.5 bg-violet-500"
-                  )}
-                />
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Spot picker — stays directly below the figure, always in view. */}
-      <div className="rounded-2xl border border-violet-100 bg-violet-50/60 p-3">
-        {dot ? (
-          <>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-violet-500">
-              Welche Stelle genau?
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {dot.regions.map((rid) => (
+    <div className="space-y-2">
+      {/* Figure fills the whole area; it scrolls, the picker floats above it. */}
+      <div className="relative h-[60vh]">
+        <div className="absolute inset-0 overflow-y-auto [scrollbar-width:thin]">
+          <div className="relative w-full" style={{ aspectRatio: "720 / 2023" }}>
+            <div
+              aria-hidden
+              className="absolute inset-0"
+              style={{
+                backgroundColor: "#f7cdda",
+                WebkitMaskImage: "url(/bodymap.png)",
+                maskImage: "url(/bodymap.png)",
+                WebkitMaskSize: "contain",
+                maskSize: "contain",
+                WebkitMaskRepeat: "no-repeat",
+                maskRepeat: "no-repeat",
+                WebkitMaskPosition: "top center",
+                maskPosition: "top center",
+              }}
+            />
+            {DOTS.map((d) => {
+              const active = d.id === activeDot;
+              return (
                 <button
-                  key={rid}
+                  key={d.id}
                   type="button"
-                  onClick={() => onPick(rid)}
-                  className="rounded-full border border-violet-300 bg-white px-3 py-1.5 text-sm font-medium text-violet-700 transition hover:bg-violet-100 active:scale-95"
+                  onClick={() => setActiveDot(active ? null : d.id)}
+                  aria-label="Schmerzstelle wählen"
+                  style={{ left: `${d.x}%`, top: `${d.y}%` }}
+                  className="absolute flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full transition active:scale-90"
                 >
-                  {getRegionLabel(rid)}
+                  <span
+                    className={cn(
+                      "rounded-full border-2 border-white shadow transition",
+                      active ? "h-5 w-5 bg-violet-600 ring-2 ring-violet-300" : "h-3.5 w-3.5 bg-violet-500"
+                    )}
+                  />
                 </button>
-              ))}
-            </div>
-          </>
-        ) : (
-          <p className="text-center text-sm text-violet-500">Tippe einen Punkt an, um die Stelle zu wählen.</p>
-        )}
-
-        <button
-          type="button"
-          onClick={() => setShowBack((s) => !s)}
-          className="mt-3 text-xs font-medium text-rose-500 hover:text-rose-700"
-        >
-          {showBack ? "− " : "+ "}Rücken &amp; weitere
-        </button>
-        {showBack ? (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {BACK_REGIONS.map((rid) => (
-              <button
-                key={rid}
-                type="button"
-                onClick={() => onPick(rid)}
-                className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-sm font-medium text-rose-700 transition hover:bg-rose-50 active:scale-95"
-              >
-                {getRegionLabel(rid)}
-              </button>
-            ))}
+              );
+            })}
           </div>
-        ) : null}
+        </div>
+
+        {/* Spot picker — floating layer pinned to the bottom of the figure. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0">
+          <div className="pointer-events-auto max-h-[42%] overflow-y-auto rounded-2xl border border-violet-100 bg-white/90 p-3 shadow-lg backdrop-blur">
+            {dot ? (
+              <>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-violet-500">
+                  Welche Stelle genau?
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {dot.regions.map((rid) => (
+                    <button
+                      key={rid}
+                      type="button"
+                      onClick={() => onPick(rid)}
+                      className="rounded-full border border-violet-300 bg-white px-3 py-1.5 text-sm font-medium text-violet-700 transition hover:bg-violet-100 active:scale-95"
+                    >
+                      {getRegionLabel(rid)}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="text-center text-sm text-violet-500">Tippe einen lila Punkt an, um die Stelle zu wählen.</p>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setShowBack((s) => !s)}
+              className="mt-3 text-xs font-medium text-rose-500 hover:text-rose-700"
+            >
+              {showBack ? "− " : "+ "}Rücken &amp; weitere
+            </button>
+            {showBack ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {BACK_REGIONS.map((rid) => (
+                  <button
+                    key={rid}
+                    type="button"
+                    onClick={() => onPick(rid)}
+                    className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-sm font-medium text-rose-700 transition hover:bg-rose-50 active:scale-95"
+                  >
+                    {getRegionLabel(rid)}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
       </div>
 
       {onCancel ? (

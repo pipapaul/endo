@@ -5,6 +5,7 @@ import { Activity, Droplet, Pill, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, Chip } from "./ui";
 import { PainEntryFlow, type PainEntryDraft } from "./checkin/PainEntryFlow";
+import { CATEGORY_COLORS, type CategoryColor } from "./checkin/sections";
 import { ExtendedBleedingEntryForm } from "@/components/home/ExtendedBleedingEntry";
 import { useData } from "@/lib/data/DataProvider";
 import {
@@ -164,18 +165,21 @@ export function QuickTrackers({ date }: { date: string }) {
         <TrackerTile
           icon={<Activity className="h-5 w-5" />}
           label="Schmerz"
+          color={CATEGORY_COLORS.pain}
           badge={painCount > 0 ? `${painCount}×` : undefined}
           onClick={() => setActive("pain")}
         />
         <TrackerTile
           icon={<Droplet className="h-5 w-5" />}
           label="Periode"
+          color={CATEGORY_COLORS.bleeding}
           badge={periodBadge}
           onClick={() => setActive("period")}
         />
         <TrackerTile
           icon={<Pill className="h-5 w-5" />}
           label="Medikament"
+          color={CATEGORY_COLORS.meds}
           badge={medCount > 0 ? `${medCount}×` : undefined}
           onClick={() => setActive("med")}
         />
@@ -335,11 +339,13 @@ function ProductTile({
 function TrackerTile({
   icon,
   label,
+  color,
   badge,
   onClick,
 }: {
   icon: React.ReactNode;
   label: string;
+  color: CategoryColor;
   badge?: string;
   onClick: () => void;
 }) {
@@ -347,17 +353,29 @@ function TrackerTile({
     <button
       type="button"
       onClick={onClick}
-      className="relative flex flex-col items-center gap-1.5 rounded-2xl border border-rose-100 bg-white/90 py-3.5 text-rose-700 shadow-sm transition active:scale-95 hover:border-rose-200 hover:bg-rose-50"
+      style={{
+        backgroundImage: `linear-gradient(to bottom right, ${color.pastel}, #ffffff)`,
+        borderColor: color.border,
+      }}
+      className="relative flex flex-col items-center gap-1.5 rounded-2xl border py-3.5 shadow-sm transition active:scale-95"
     >
-      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-rose-50 text-rose-500">
+      <span
+        className="flex h-9 w-9 items-center justify-center rounded-full bg-white shadow-sm"
+        style={{ color: color.saturated }}
+      >
         {icon}
       </span>
-      <span className="text-[12px] font-semibold">{label}</span>
-      <span className="absolute right-2 top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-100 px-1 text-[10px] font-bold text-rose-600">
+      <span className="text-[12px] font-semibold" style={{ color: color.saturated }}>
+        {label}
+      </span>
+      <span
+        className="absolute right-2 top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-white/80 px-1 text-[10px] font-bold shadow-sm"
+        style={{ color: color.saturated }}
+      >
         <Plus className="h-3 w-3" />
       </span>
       {badge ? (
-        <span className="text-[10px] font-medium text-rose-400">{badge}</span>
+        <span className="text-[10px] font-medium text-gray-500">{badge}</span>
       ) : (
         <span className="text-[10px] text-transparent">·</span>
       )}
