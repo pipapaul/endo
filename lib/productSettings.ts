@@ -25,6 +25,54 @@ export const DEFAULT_PRODUCT_SETTINGS: ProductSettings = {
   showPbacEquivalent: true,
 };
 
+/** Sinnvolle Standard-Auswahl für den erweiterten PBAC (übernommen aus v1). */
+export const DEFAULT_EXTENDED_PRODUCT_IDS = [
+  "ext_pad_normal",
+  "ext_pad_super",
+  "ext_tampon_regular",
+  "ext_tampon_super",
+  "cup_m",
+  "disc_standard",
+  "underwear_medium",
+  "free_bleeding",
+];
+
+/**
+ * Switch tracking method and make sure the new mode has usable products
+ * enabled — classic modes keep the classic defaults, extended mode gets a
+ * sensible default product set so the entry form is never empty.
+ */
+export const applyTrackingMethod = (
+  settings: ProductSettings,
+  method: TrackingMethod
+): ProductSettings => {
+  const all = [...DEFAULT_PRODUCTS, ...settings.customProducts];
+  const isEnabledExtended = (id: string) => {
+    const p = all.find((x) => x.id === id);
+    return p && p.isClassicPbac !== true;
+  };
+  const isEnabledClassic = (id: string) => all.find((x) => x.id === id)?.isClassicPbac === true;
+
+  if (method === "pbac_extended" && !settings.enabledProductIds.some(isEnabledExtended)) {
+    return {
+      ...settings,
+      trackingMethod: method,
+      enabledProductIds: Array.from(
+        new Set([...settings.enabledProductIds, ...DEFAULT_EXTENDED_PRODUCT_IDS])
+      ),
+    };
+  }
+  if (method === "pbac_classic" && !settings.enabledProductIds.some(isEnabledClassic)) {
+    const classicDefaults = DEFAULT_PRODUCTS.filter((p) => p.isClassicPbac && p.enabled).map((p) => p.id);
+    return {
+      ...settings,
+      trackingMethod: method,
+      enabledProductIds: Array.from(new Set([...settings.enabledProductIds, ...classicDefaults])),
+    };
+  }
+  return { ...settings, trackingMethod: method };
+};
+
 /** Holt alle verfügbaren Produkte (Standard + Custom) */
 export const getAllProducts = (settings: ProductSettings): ProductDefinition[] => {
   return [...DEFAULT_PRODUCTS, ...settings.customProducts];

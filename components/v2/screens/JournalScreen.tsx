@@ -52,10 +52,22 @@ function dayBg(e: DailyEntry): string | undefined {
   const pl = painLevel(e);
   const bl = bleedLevel(e);
   const layers: string[] = [];
-  if (pl > 0)
-    layers.push(`linear-gradient(to right, rgba(168,85,247,0.34), rgba(168,85,247,0) ${Math.round(pl * 82)}%)`);
-  if (bl > 0)
-    layers.push(`linear-gradient(to left, rgba(232,82,74,0.34), rgba(232,82,74,0) ${Math.round(bl * 82)}%)`);
+  // Peak opacity (0.7) only at the very edge, dropping off quickly inward and
+  // fading to transparent over a share of the width proportional to the level.
+  if (pl > 0) {
+    const end = Math.round(pl * 82);
+    const mid = Math.min(8, Math.max(2, Math.round(end * 0.35)));
+    layers.push(
+      `linear-gradient(to right, rgba(168,85,247,0.7) 0%, rgba(168,85,247,0.28) ${mid}%, rgba(168,85,247,0) ${end}%)`
+    );
+  }
+  if (bl > 0) {
+    const end = Math.round(bl * 82);
+    const mid = Math.min(8, Math.max(2, Math.round(end * 0.35)));
+    layers.push(
+      `linear-gradient(to left, rgba(232,82,74,0.7) 0%, rgba(232,82,74,0.28) ${mid}%, rgba(232,82,74,0) ${end}%)`
+    );
+  }
   return layers.length ? layers.join(", ") : undefined;
 }
 

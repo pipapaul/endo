@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { buildCyclePredictions, addDays, daysBetween } from "@/lib/cycle/cycle";
 import { todayIso } from "@/lib/data/factory";
 import type { DailyEntry } from "@/lib/types";
@@ -78,9 +79,9 @@ function monotonePath(pts: { x: number; y: number }[]): string {
   return d;
 }
 
-const PAST = 14;
-const FUTURE = 28;
-const DW = 8; // px per day in the viewBox
+const PAST = 90;
+const FUTURE = 21;
+const DW = 12; // px per day (also viewBox units → 1:1, no horizontal stretch)
 const H = 104;
 const BASE = H - 18;
 const BAR_MAX = 62;
@@ -108,9 +109,46 @@ export function CycleGraph({ daily }: { daily: DailyEntry[] }) {
   const todayIndex = daysBetween(from, today);
   const width = days.length * DW;
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [showJump, setShowJump] = useState(false);
+
+  // Scroll position that puts "today" ~62% from the left (recent past + a bit of future).
+  const nowScrollLeft = useCallback((el: HTMLDivElement) => {
+    const target = (todayIndex + 0.5) * DW - el.clientWidth * 0.62;
+    return Math.max(0, Math.min(target, width - el.clientWidth));
+  }, [todayIndex, width]);
+
+  // Start at "now" once mounted / when the data window changes.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollLeft = nowScrollLeft(el);
+    setShowJump(false);
+  }, [nowScrollLeft]);
+
+  const jumpToNow = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ left: nowScrollLeft(el), behavior: "smooth" });
+  };
+
   return (
     <div className="space-y-2">
-      <svg viewBox={`0 0 ${width} ${H}`} className="h-32 w-full" preserveAspectRatio="none">
+      <div className="relative">
+        <div
+          ref={scrollRef}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            setShowJump(Math.abs(el.scrollLeft - nowScrollLeft(el)) > 16);
+          }}
+          className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          <svg
+            viewBox={`0 0 ${width} ${H}`}
+            style={{ width: `${width}px` }}
+            className="h-32"
+            preserveAspectRatio="none"
+          >
         {/* fertile window shading */}
         {days.map((d) =>
           d.isFertile || d.isPredictedOvulation ? (
@@ -185,7 +223,20 @@ export function CycleGraph({ daily }: { daily: DailyEntry[] }) {
             <circle key={`o-${d.date}`} cx={d.x + DW / 2} cy={10} r={3.5} fill="#f59e0b" stroke="#d97706" strokeWidth={1} />
           ) : null
         )}
-      </svg>
+          </svg>
+        </div>
+
+        {showJump ? (
+          <button
+            type="button"
+            onClick={jumpToNow}
+            aria-label="Zur Jetzt-Ansicht"
+            className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-full border border-rose-200 bg-white/95 py-1 pl-2.5 pr-2 text-[11px] font-semibold text-rose-600 shadow-md backdrop-blur transition active:scale-95"
+          >
+            Jetzt <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
+      </div>
 
       <div className="flex items-center justify-between px-0.5 text-[10px] text-rose-400">
         <span className="flex items-center gap-1">

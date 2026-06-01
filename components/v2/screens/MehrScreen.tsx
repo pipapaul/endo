@@ -7,6 +7,7 @@ import { useData } from "@/lib/data/DataProvider";
 import { buildBackup, parseBackup } from "@/lib/data/importExport";
 import { getColorSchemeName, type ColorScheme } from "@/lib/theme";
 import { getTrackingMethodLabel } from "@/lib/pbac";
+import { applyTrackingMethod } from "@/lib/productSettings";
 import { ProductSettingsPanel } from "@/components/ui/ProductSettingsPanel";
 import { Card, Sheet } from "../ui";
 import { Button } from "@/components/ui/button";
@@ -200,7 +201,16 @@ export function MehrScreen() {
         onClose={() => setBleedingSettingsOpen(false)}
         title="Blutungs-Erfassung"
       >
-        <ProductSettingsPanel settings={productSettings} onSettingsChange={setProductSettings} />
+        <ProductSettingsPanel
+          settings={productSettings}
+          onSettingsChange={(next) =>
+            setProductSettings(
+              next.trackingMethod !== productSettings.trackingMethod
+                ? applyTrackingMethod(next, next.trackingMethod)
+                : next
+            )
+          }
+        />
       </Sheet>
 
       <Sheet

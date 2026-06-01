@@ -37,7 +37,7 @@ import {
   type ExtendedBleedingEntry as ExtBleedingEntry,
   type FreeBleedingEntry,
 } from "@/lib/pbac";
-import type { ProductSettings } from "@/lib/productSettings";
+import { getEnabledProducts, type ProductSettings } from "@/lib/productSettings";
 import type { DailyEntry, FeatureFlags, PainQuality } from "@/lib/types";
 import type { SymptomKey } from "@/lib/home/constants";
 
@@ -501,8 +501,16 @@ function ExtendedBleedingEditor({ draft, setDraft, productSettings }: EditorProp
     })),
   ];
 
+  const hasProducts = getEnabledProducts(productSettings).some((p) => p.isClassicPbac !== true);
+
   return (
     <div className="space-y-4">
+      {!hasProducts ? (
+        <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Keine Produkte aktiv. Wähle unter <span className="font-semibold">Mehr › Blutungs-Erfassung</span> deine
+          Produkte aus.
+        </p>
+      ) : null}
       {entries.length > 0 ? (
         <ul className="space-y-2">
           {entries.map((e) => (
