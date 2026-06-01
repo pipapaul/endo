@@ -73,7 +73,7 @@ export function BodyMap({
       <div className="flex justify-center">
         <div className="relative">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/bodymap.png" alt="Körperkarte" className="block max-h-[44vh] w-auto select-none" draggable={false} />
+          <img src="/bodymap.png" alt="Körperkarte" className="block max-h-[60vh] w-auto select-none" draggable={false} />
           {DOTS.map((d) => {
             const active = d.id === activeDot;
             return (
