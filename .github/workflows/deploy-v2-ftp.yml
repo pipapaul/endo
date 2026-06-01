@@ -7,7 +7,12 @@ on:
   push:
     branches:
       - v2.0
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      clean:
+        description: "Vollständig neu hochladen (Remote-Verzeichnis leeren)"
+        type: boolean
+        default: false
 
 # Avoid overlapping deploys clobbering each other.
 concurrency:
@@ -53,6 +58,9 @@ jobs:
           # Web root of the extra domain. Override via the repo variable
           # FTP_V2_SERVER_DIR if the domain lives in a subfolder (e.g. /v2/).
           server-dir: ${{ vars.FTP_V2_SERVER_DIR || '/' }}
-          log-level:  verbose
+          # Incremental sync (only changed files) keeps deploys fast; the state
+          # file on the server tracks what's already uploaded.
+          log-level:  minimal
           state-name: .ftp-deploy-sync-state.json
-          dangerous-clean-slate: true
+          # Only wipe + full re-upload when explicitly requested via manual run.
+          dangerous-clean-slate: ${{ inputs.clean == true }}
