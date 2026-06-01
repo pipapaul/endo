@@ -6,10 +6,10 @@ import { useData } from "@/lib/data/DataProvider";
 import { hasBleedingForEntry } from "@/lib/dailyEntries";
 import { todayIso } from "@/lib/data/factory";
 import { addDays } from "@/lib/cycle/cycle";
-import { QuickCheckIn } from "../QuickCheckIn";
+import { DayDetailSheet } from "../DayDetailSheet";
+import { MOOD_EMOJI } from "../checkin/sections";
 import type { DailyEntry } from "@/lib/types";
 
-const MOOD_EMOJI: Record<number, string> = { 1: "😞", 2: "😕", 3: "🙂", 4: "😄" };
 const WINDOW_DAYS = 30;
 
 function dayParts(date: string): { day: string; weekday: string } {
@@ -149,7 +149,7 @@ export function JournalScreen() {
       ) : null}
 
       {editDate ? (
-        <QuickCheckIn open={editDate !== null} onClose={() => setEditDate(null)} date={editDate} />
+        <DayDetailSheet open={editDate !== null} onClose={() => setEditDate(null)} date={editDate} />
       ) : null}
     </div>
   );

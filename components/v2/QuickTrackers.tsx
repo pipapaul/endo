@@ -10,11 +10,22 @@ import {
   getSimpleBleedingPbacEquivalent,
   type SimpleBleedingIntensity,
 } from "@/lib/pbac";
-import type { DailyEntry } from "@/lib/types";
+import type { DailyEntry, PainQuality } from "@/lib/types";
 
 type Tracker = "pain" | "period" | "med" | null;
 
 const COMMON_MEDS = ["Ibuprofen", "Paracetamol", "Naproxen", "Buscopan", "Novalgin"];
+
+const QUICK_PAIN_REGIONS = [
+  { id: "uterus", label: "Uterus" },
+  { id: "lower_abdomen", label: "Unterbauch" },
+  { id: "lower_abdomen_left", label: "Unterb. li." },
+  { id: "lower_abdomen_right", label: "Unterb. re." },
+  { id: "lower_back", label: "Kreuzbein" },
+  { id: "head", label: "Kopf" },
+];
+
+const QUICK_PAIN_QUALITIES: PainQuality[] = ["krampfend", "stechend", "brennend", "dumpf", "ziehend"];
 
 /**
  * Quick-trackers — fast, in-the-moment logging that lives below the quick
@@ -28,11 +39,15 @@ export function QuickTrackers({ date }: { date: string }) {
 
   // local sheet state
   const [painValue, setPainValue] = useState<number | null>(null);
+  const [painRegion, setPainRegion] = useState<string>("");
+  const [painQualities, setPainQualities] = useState<PainQuality[]>([]);
   const [medName, setMedName] = useState("");
 
   const close = () => {
     setActive(null);
     setPainValue(null);
+    setPainRegion("");
+    setPainQualities([]);
     setMedName("");
   };
 
@@ -44,9 +59,9 @@ export function QuickTrackers({ date }: { date: string }) {
         id: Date.now(),
         date,
         timestamp: now.toISOString(),
-        regionId: "",
+        regionId: painRegion,
         intensity: painValue,
-        qualities: [],
+        qualities: painQualities,
       };
       return { ...prev, quickPainEvents: [...(prev.quickPainEvents ?? []), event] };
     });
@@ -123,6 +138,32 @@ export function QuickTrackers({ date }: { date: string }) {
       >
         <p className="mb-3 text-sm text-rose-600">Wie stark ist der Schmerz gerade?</p>
         <ScalePicker value={painValue} onChange={setPainValue} />
+        <p className="mb-2 mt-4 text-sm text-rose-600">Wo?</p>
+        <div className="flex flex-wrap gap-2">
+          {QUICK_PAIN_REGIONS.map((r) => (
+            <Chip
+              key={r.id}
+              selected={painRegion === r.id}
+              onClick={() => setPainRegion((cur) => (cur === r.id ? "" : r.id))}
+            >
+              {r.label}
+            </Chip>
+          ))}
+        </div>
+        <p className="mb-2 mt-4 text-sm text-rose-600">Schmerzart</p>
+        <div className="flex flex-wrap gap-2">
+          {QUICK_PAIN_QUALITIES.map((q) => (
+            <Chip
+              key={q}
+              selected={painQualities.includes(q)}
+              onClick={() =>
+                setPainQualities((cur) => (cur.includes(q) ? cur.filter((x) => x !== q) : [...cur, q]))
+              }
+            >
+              {q}
+            </Chip>
+          ))}
+        </div>
       </Sheet>
 
       <Sheet open={active === "period"} onClose={close} title="Periodenprodukt / Blutung">

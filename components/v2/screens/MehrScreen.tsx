@@ -2,10 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, ClipboardList, Download, Palette, Trash2, Upload } from "lucide-react";
+import { ChevronRight, ClipboardList, Download, Droplet, Palette, Trash2, Upload } from "lucide-react";
 import { useData } from "@/lib/data/DataProvider";
 import { buildBackup, parseBackup } from "@/lib/data/importExport";
 import { getColorSchemeName, type ColorScheme } from "@/lib/theme";
+import { getTrackingMethodLabel } from "@/lib/pbac";
+import { ProductSettingsPanel } from "@/components/ui/ProductSettingsPanel";
 import { Card, Sheet } from "../ui";
 import { Button } from "@/components/ui/button";
 
@@ -22,12 +24,14 @@ function applyTheme(scheme: ColorScheme) {
 }
 
 export function MehrScreen() {
-  const { exportSnapshot, importSnapshot, clearAll, productSettings, daily } = useData();
+  const { exportSnapshot, importSnapshot, clearAll, productSettings, setProductSettings, daily } =
+    useData();
   const fileRef = useRef<HTMLInputElement>(null);
   const [scheme, setScheme] = useState<ColorScheme>("neutral");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [bleedingSettingsOpen, setBleedingSettingsOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -94,6 +98,24 @@ export function MehrScreen() {
             </button>
           ))}
         </div>
+      </Card>
+
+      <Card className="space-y-3">
+        <div className="flex items-center gap-2 text-rose-900">
+          <Droplet className="h-5 w-5 text-rose-500" />
+          <span className="font-semibold">Blutungs-Erfassung</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setBleedingSettingsOpen(true)}
+          className="flex w-full items-center justify-between gap-3 rounded-2xl border border-rose-100 bg-white px-4 py-3 text-left text-rose-800 transition hover:border-rose-200 hover:bg-rose-50"
+        >
+          <span>
+            <span className="block text-sm font-semibold">Methode & Produkte</span>
+            <span className="block text-xs text-rose-400">{getTrackingMethodLabel(productSettings.trackingMethod)}</span>
+          </span>
+          <ChevronRight className="h-5 w-5 text-rose-300" />
+        </button>
       </Card>
 
       <Card className="space-y-3">
@@ -172,6 +194,14 @@ export function MehrScreen() {
           <Trash2 className="mr-2 h-4 w-4" /> Alle Daten löschen
         </Button>
       </Card>
+
+      <Sheet
+        open={bleedingSettingsOpen}
+        onClose={() => setBleedingSettingsOpen(false)}
+        title="Blutungs-Erfassung"
+      >
+        <ProductSettingsPanel settings={productSettings} onSettingsChange={setProductSettings} />
+      </Sheet>
 
       <Sheet
         open={confirmDelete}
