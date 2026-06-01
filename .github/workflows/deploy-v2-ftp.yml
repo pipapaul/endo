@@ -1,0 +1,58 @@
+name: Deploy v2.0 to extra domain (FTP)
+
+# Builds the static export from the v2.0 branch and uploads it to a separate
+# FTP target (the extra domain's web root). Runs on every push to v2.0 and can
+# be triggered manually.
+on:
+  push:
+    branches:
+      - v2.0
+  workflow_dispatch: {}
+
+# Avoid overlapping deploys clobbering each other.
+concurrency:
+  group: deploy-v2-ftp
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install deps
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Build (Next.js static export)
+        run: npm run build
+        # Produces ./out/ via output: 'export' in next.config.mjs
+
+      - name: Deploy via FTP (plain, port 21)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
+        with:
+          server:     ${{ secrets.FTP_V2_HOST }}
+          username:   ${{ secrets.FTP_V2_USERNAME }}
+          password:   ${{ secrets.FTP_V2_PASSWORD }}
+          protocol:   ftp
+          port:       21
+          local-dir:  ./out/
+          # Web root of the extra domain. Override via the repo variable
+          # FTP_V2_SERVER_DIR if the domain lives in a subfolder (e.g. /v2/).
+          server-dir: ${{ vars.FTP_V2_SERVER_DIR || '/' }}
+          log-level:  verbose
+          state-name: .ftp-deploy-sync-state.json
+          dangerous-clean-slate: true
